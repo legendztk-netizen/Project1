@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "hydraulic-hose-rfq-platform-local",
+  "main": "./workers/app.ts",
+  "compatibility_date": "2026-08-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./build/client"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "upload_source_maps": true,
+  "vars": {
+    "APP_ENV": "local",
+    "PUBLIC_APP_NAME": "Hydraulic Supply"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "name": "hydraulic-hose-rfq-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "react-router build",
+    "check": "pnpm typecheck && pnpm test && pnpm build && wrangler deploy --dry-run",
+    "deploy:production": "pnpm build && wrangler deploy --name \"$CLOUDFLARE_WORKER_NAME\"",
+    "dev": "react-router dev",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run",
+    "test:smoke": "pnpm build && vitest run --config vitest.smoke.config.ts",
+    "test:watch": "vitest",
+    "typecheck": "pnpm typegen && tsc -b",
+    "typegen": "wrangler types worker-configuration.d.ts --env-interface CloudflareBindings && react-router typegen"
+  },
+  "dependencies": {
+    "isbot": "5.2.1",
+    "lucide-react": "1.33.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-router": "8.3.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.53.1",
+    "@react-router/dev": "8.3.0",
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "typescript": "5.9.3",
+    "vite": "8.2.2",
+    "vitest": "4.1.11",
+    "wrangler": "4.125.0"
+  }
+}
