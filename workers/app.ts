@@ -4,6 +4,10 @@ import {
 } from "react-router";
 
 import { cloudflareContext } from "./context";
+import {
+  type ApplicationBindings,
+  validateRuntimeEnvironment,
+} from "./environment";
 import { createHealthResponse } from "./health";
 
 const requestHandler = createRequestHandler(
@@ -13,6 +17,7 @@ const requestHandler = createRequestHandler(
 
 export default {
   fetch(request, env, ctx) {
+    const runtime = validateRuntimeEnvironment(env);
     const url = new URL(request.url);
 
     if (url.pathname === "/health") {
@@ -20,8 +25,8 @@ export default {
     }
 
     const routerContext = new RouterContextProvider();
-    routerContext.set(cloudflareContext, { env, ctx });
+    routerContext.set(cloudflareContext, { env, runtime, ctx });
 
     return requestHandler(request, routerContext);
   },
-} satisfies ExportedHandler<CloudflareBindings>;
+} satisfies ExportedHandler<ApplicationBindings>;

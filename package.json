@@ -8,16 +8,21 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "build": "react-router build",
-    "check": "pnpm typecheck && pnpm test && pnpm build && wrangler deploy --dry-run",
-    "deploy:production": "pnpm build && wrangler deploy --name \"$CLOUDFLARE_WORKER_NAME\"",
-    "dev": "react-router dev",
+    "build": "pnpm build:local",
+    "build:local": "node scripts/environment-config.mjs validate local && env -u CLOUDFLARE_ENV react-router build",
+    "build:preview": "node scripts/environment-config.mjs validate preview && CLOUDFLARE_ENV=preview react-router build",
+    "build:production": "node scripts/environment-config.mjs validate production && CLOUDFLARE_ENV=production react-router build",
+    "check": "pnpm typecheck && pnpm test && pnpm dry-run:local",
+    "deploy:preview": "node scripts/environment-config.mjs require-deployable preview && CLOUDFLARE_ENV=preview react-router build && CLOUDFLARE_ENV=preview wrangler deploy",
+    "deploy:production": "node scripts/environment-config.mjs require-deployable production && CLOUDFLARE_ENV=production react-router build && CLOUDFLARE_ENV=production wrangler deploy",
+    "dev": "node scripts/environment-config.mjs validate local && env -u CLOUDFLARE_ENV CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false react-router dev",
+    "dry-run:local": "pnpm build:local && env -u CLOUDFLARE_ENV wrangler deploy --dry-run",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
     "test:smoke": "pnpm build && vitest run --config vitest.smoke.config.ts",
     "test:watch": "vitest",
     "typecheck": "pnpm typegen && tsc -b",
-    "typegen": "wrangler types worker-configuration.d.ts --env-interface CloudflareBindings && react-router typegen"
+    "typegen": "env -u CLOUDFLARE_ENV wrangler types worker-configuration.d.ts --env-interface CloudflareBindings && react-router typegen"
   },
   "dependencies": {
     "isbot": "5.2.1",

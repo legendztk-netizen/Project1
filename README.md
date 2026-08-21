@@ -35,30 +35,41 @@ pnpm check
 `test:smoke` builds the application, starts Vite's workerd-backed Cloudflare
 preview, and verifies the Storefront, Admin, and health routes through HTTP.
 
-The production Worker name is passed explicitly at deployment time:
+## Environment commands
 
 ```bash
-CLOUDFLARE_WORKER_NAME=replace-with-production-worker-name pnpm deploy:production
+pnpm dev
+pnpm build
+pnpm build:preview
+pnpm build:production
 ```
 
-This command still requires the Cloudflare account and token placeholders below
-to be supplied by the shell or CI secret store.
+The unqualified `dev` and `build` commands always select the top-level local
+Wrangler environment, even when the parent shell already contains a
+`CLOUDFLARE_ENV` value. Preview and production builds set `CLOUDFLARE_ENV`
+explicitly before Vite resolves and flattens the selected Cloudflare environment.
 
-## Production placeholders
+Deployment commands are explicit and fail before building while an ID, origin,
+Access setting, email setting, or required secret remains unresolved:
 
-Copy `.env.example` to a shell-managed environment or CI secret store before a
-real deployment. Replace these named placeholders outside source control:
+```bash
+pnpm deploy:preview
+pnpm deploy:production
+```
+
+The environment contract and replacement procedure are documented in
+`docs/operations/environment-configuration.md`.
+
+## Deployment secrets
+
+Keep these values in the shell or CI secret store and never commit them:
 
 - `CLOUDFLARE_ACCOUNT_ID`
 - `CLOUDFLARE_API_TOKEN`
-- `CLOUDFLARE_WORKER_NAME`
-- `PUBLIC_STOREFRONT_HOSTNAME`
-- `ADMIN_HOSTNAME`
-
-The placeholder names are fixed here; their real preview and production values,
-Access settings, and environment-specific bindings are intentionally deferred
-to Spec 1 Ticket 02. Do not place credentials or real host names in
-`wrangler.jsonc`, and do not commit `.env` files.
+- `PREVIEW_SESSION_SIGNING_KEY`
+- `PREVIEW_RESEND_API_KEY`
+- `PRODUCTION_SESSION_SIGNING_KEY`
+- `PRODUCTION_RESEND_API_KEY`
 
 ## Current route boundary
 

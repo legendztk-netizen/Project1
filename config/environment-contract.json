@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "bindingNames": {
+    "database": "DB",
+    "privateFiles": "PRIVATE_FILES",
+    "asyncJobs": "ASYNC_JOBS"
+  },
+  "placeholderPolicy": {
+    "tokens": ["replace-with-"],
+    "suffixes": [".invalid"],
+    "deployedVariables": [
+      "PUBLIC_STOREFRONT_ORIGIN",
+      "ADMIN_ORIGIN",
+      "CLOUDFLARE_ACCESS_TEAM_DOMAIN",
+      "CLOUDFLARE_ACCESS_AUD",
+      "EMAIL_FROM",
+      "EMAIL_REPLY_DOMAIN"
+    ]
+  },
+  "environments": {
+    "local": {
+      "workerName": "hydraulic-hose-rfq-platform-local",
+      "resourceNames": {
+        "database": "hydraulic-hose-rfq-local",
+        "privateFiles": "hydraulic-hose-private-files-local",
+        "asyncJobs": "hydraulic-hose-async-jobs-local"
+      },
+      "requiredSecrets": [],
+      "vars": {
+        "APP_ENV": "local",
+        "PUBLIC_APP_NAME": "Hydraulic Supply",
+        "PUBLIC_STOREFRONT_ORIGIN": "http://storefront.localhost:5173",
+        "ADMIN_ORIGIN": "http://admin.localhost:5173",
+        "ADMIN_AUTH_MODE": "local-stub",
+        "CLOUDFLARE_ACCESS_TEAM_DOMAIN": "https://local.invalid",
+        "CLOUDFLARE_ACCESS_AUD": "local-stub",
+        "EMAIL_DELIVERY_MODE": "stub",
+        "EMAIL_FROM": "quotes@local.invalid",
+        "EMAIL_REPLY_DOMAIN": "reply.local.invalid"
+      }
+    },
+    "preview": {
+      "workerName": "hydraulic-hose-rfq-platform-preview",
+      "resourceNames": {
+        "database": "hydraulic-hose-rfq-preview",
+        "privateFiles": "hydraulic-hose-private-files-preview",
+        "asyncJobs": "hydraulic-hose-async-jobs-preview"
+      },
+      "requiredSecrets": ["PREVIEW_SESSION_SIGNING_KEY", "PREVIEW_RESEND_API_KEY"],
+      "vars": {
+        "APP_ENV": "preview",
+        "PUBLIC_APP_NAME": "Hydraulic Supply Preview",
+        "PUBLIC_STOREFRONT_ORIGIN": "https://storefront.preview.example.invalid",
+        "ADMIN_ORIGIN": "https://admin.preview.example.invalid",
+        "ADMIN_AUTH_MODE": "cloudflare-access",
+        "CLOUDFLARE_ACCESS_TEAM_DOMAIN": "https://replace-with-preview-team.cloudflareaccess.com",
+        "CLOUDFLARE_ACCESS_AUD": "replace-with-preview-access-aud",
+        "EMAIL_DELIVERY_MODE": "resend",
+        "EMAIL_FROM": "quotes@preview.example.invalid",
+        "EMAIL_REPLY_DOMAIN": "reply.preview.example.invalid"
+      }
+    },
+    "production": {
+      "workerName": "hydraulic-hose-rfq-platform-production",
+      "resourceNames": {
+        "database": "hydraulic-hose-rfq-production",
+        "privateFiles": "hydraulic-hose-private-files-production",
+        "asyncJobs": "hydraulic-hose-async-jobs-production"
+      },
+      "requiredSecrets": ["PRODUCTION_SESSION_SIGNING_KEY", "PRODUCTION_RESEND_API_KEY"],
+      "vars": {
+        "APP_ENV": "production",
+        "PUBLIC_APP_NAME": "Hydraulic Supply",
+        "PUBLIC_STOREFRONT_ORIGIN": "https://storefront.example.invalid",
+        "ADMIN_ORIGIN": "https://admin.example.invalid",
+        "ADMIN_AUTH_MODE": "cloudflare-access",
+        "CLOUDFLARE_ACCESS_TEAM_DOMAIN": "https://replace-with-production-team.cloudflareaccess.com",
+        "CLOUDFLARE_ACCESS_AUD": "replace-with-production-access-aud",
+        "EMAIL_DELIVERY_MODE": "resend",
+        "EMAIL_FROM": "quotes@example.invalid",
+        "EMAIL_REPLY_DOMAIN": "reply.example.invalid"
+      }
+    }
+  }
+}
