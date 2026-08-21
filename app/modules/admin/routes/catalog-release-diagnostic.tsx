@@ -4,14 +4,14 @@ import { Form, Link, redirect } from "react-router";
 import type { Route } from "./+types/catalog-release-diagnostic";
 import { createDiagnosticCatalogRelease } from "../../catalog/domain/catalog-release";
 import { createD1CatalogReleaseRepository } from "../../catalog/infrastructure/d1-catalog-release-repository";
-import { cloudflareContext } from "#workers/context";
+import { requireAdminRequestContext } from "../infrastructure/admin-request-context";
 
-export function meta(_: Route.MetaArgs) {
+export function meta() {
   return [{ title: "Catalog Release Diagnostic | Admin Backoffice" }];
 }
 
 export async function loader({ context }: Route.LoaderArgs) {
-  const { env } = context.get(cloudflareContext);
+  const { env } = requireAdminRequestContext(context);
   const repository = createD1CatalogReleaseRepository(env.DB);
   return {
     environment: env.APP_ENV,
@@ -20,22 +20,28 @@ export async function loader({ context }: Route.LoaderArgs) {
 }
 
 export async function action({ context, request }: Route.ActionArgs) {
-  const { env } = context.get(cloudflareContext);
+  const { adminIdentity, env } = requireAdminRequestContext(context);
   if (env.APP_ENV !== "local") {
-    throw new Response("Diagnostic mutation is available only in local development", {
-      status: 403,
-    });
+    throw new Response(
+      "Diagnostic mutation is available only in local development",
+      {
+        status: 403,
+      },
+    );
   }
-  if (request.method !== "POST") throw new Response("Method not allowed", { status: 405 });
+  if (request.method !== "POST")
+    throw new Response("Method not allowed", { status: 405 });
 
   const repository = createD1CatalogReleaseRepository(env.DB);
   const release = await createDiagnosticCatalogRelease(repository, {
-    actorId: "local-owner-diagnostic",
+    actorId: adminIdentity.id,
   });
   return redirect(`/admin/diagnostics/catalog-release?created=${release.id}`);
 }
 
-export default function CatalogReleaseDiagnostic({ loaderData }: Route.ComponentProps) {
+export default function CatalogReleaseDiagnostic({
+  loaderData,
+}: Route.ComponentProps) {
   const release = loaderData.latestRelease;
 
   return (
@@ -52,7 +58,10 @@ export default function CatalogReleaseDiagnostic({ loaderData }: Route.Component
       <header>
         <span className="eyebrow">Admin diagnostic</span>
         <h1>Catalog release diagnostic</h1>
-        <p>Persist and read one non-published draft through the catalog domain boundary.</p>
+        <p>
+          Persist and read one non-published draft through the catalog domain
+          boundary.
+        </p>
       </header>
 
       <section className="diagnostic-panel" aria-live="polite">

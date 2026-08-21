@@ -33,6 +33,7 @@ pnpm test:d1
 pnpm test:smoke
 pnpm build
 pnpm check
+pnpm deploy:validate:production
 ```
 
 `test:smoke` builds the application, starts Vite's workerd-backed Cloudflare
@@ -54,8 +55,17 @@ Wrangler environment, even when the parent shell already contains a
 `CLOUDFLARE_ENV` value. Preview and production builds set `CLOUDFLARE_ENV`
 explicitly before Vite resolves and flattens the selected Cloudflare environment.
 
-Deployment commands are explicit and fail before building while an ID, origin,
-Access setting, email setting, or required secret remains unresolved:
+Validation commands build the selected Worker and run Wrangler in dry-run mode;
+they do not require real Cloudflare resources:
+
+```bash
+pnpm deploy:validate:preview
+pnpm deploy:validate:production
+```
+
+Future live deployment commands are explicit, require
+`ALLOW_CLOUDFLARE_DEPLOYMENT=confirmed`, and fail before building while an ID,
+origin, Access setting, email setting, or required secret remains unresolved:
 
 ```bash
 pnpm deploy:preview
@@ -99,13 +109,14 @@ use different route modules and render different surface markers. The smoke test
 proves successful responses and verifies that those markers do not cross the
 route boundary.
 
-`/admin` is not authenticated or access-controlled yet. Anyone who can reach
-the Worker can currently open the Admin shell. Cloudflare Access enforcement,
-identity mapping, and the protected deployment boundary belong to Ticket 04.
-Ticket 03 adds the first React Router loader/action-to-D1 walking path through a
-local-only Catalog Release diagnostic. It proves migration, persistence, and
-fail-closed health behavior, but it does not prove the full architecture
-baseline or a protected Admin boundary.
+The Worker protects `/admin` before React Router executes. Local development
+uses an explicit Owner stub; preview and production require a cryptographically
+valid Cloudflare Access assertion whose email maps to an active D1 Owner or
+Subaccount. The deployed Admin origin, Access values, and D1 resource IDs remain
+placeholders and are not called until launch. Ticket 04 also proves the ordered
+deployment chain through fresh local D1 execution, local Worker health smoke,
+and Wrangler dry-run, completing the architecture baseline without a real
+production deployment.
 
 ## Module boundaries
 

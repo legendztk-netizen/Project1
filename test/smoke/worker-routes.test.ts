@@ -67,7 +67,9 @@ beforeAll(async () => {
   await Promise.race([
     waitUntilReady(),
     previewExit.then((code) => {
-      throw new Error(`Cloudflare Worker preview exited early with code ${code}`);
+      throw new Error(
+        `Cloudflare Worker preview exited early with code ${code}`,
+      );
     }),
   ]);
 });
@@ -107,13 +109,18 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(admin).toContain('data-surface="admin"');
     expect(admin).not.toContain('data-surface="storefront"');
     expect(admin).not.toContain('href="#"');
+    expect(admin).toContain("owner@local.invalid");
+    expect(admin).toContain("local-development");
   });
 
   it("persists a draft release through the Admin diagnostic and exposes no Storefront mutation", async () => {
-    const createResponse = await fetch(`${origin}/admin/diagnostics/catalog-release`, {
-      method: "POST",
-      redirect: "manual",
-    });
+    const createResponse = await fetch(
+      `${origin}/admin/diagnostics/catalog-release`,
+      {
+        method: "POST",
+        redirect: "manual",
+      },
+    );
     expect(createResponse.status).toBe(302);
     expect(createResponse.headers.get("location")).toMatch(
       /^\/admin\/diagnostics\/catalog-release\?created=/,

@@ -10,14 +10,19 @@ const resources = {
 
 function bindingsFor(environment: "local" | "preview" | "production") {
   const deployed = environment !== "local";
-  const hostname = environment === "production" ? "shop.example.com" : "preview.example.com";
+  const hostname =
+    environment === "production" ? "shop.example.com" : "preview.example.com";
 
   return {
     ...resources,
     ADMIN_AUTH_MODE: deployed ? "cloudflare-access" : "local-stub",
-    ADMIN_ORIGIN: deployed ? `https://admin.${hostname}` : "http://admin.localhost:5173",
+    ADMIN_ORIGIN: deployed
+      ? `https://admin.${hostname}`
+      : "http://admin.localhost:5173",
     APP_ENV: environment,
-    CLOUDFLARE_ACCESS_AUD: deployed ? `${environment}-access-audience` : "local-stub",
+    CLOUDFLARE_ACCESS_AUD: deployed
+      ? `${environment}-access-audience`
+      : "local-stub",
     CLOUDFLARE_ACCESS_TEAM_DOMAIN: deployed
       ? "https://team.cloudflareaccess.com"
       : "https://local.invalid",
@@ -72,5 +77,23 @@ describe("runtime environment validation", () => {
     expect(() => validateRuntimeEnvironment(bindings)).toThrowError(
       /PUBLIC_STOREFRONT_ORIGIN.*placeholder.*PREVIEW_RESEND_API_KEY/s,
     );
+  });
+
+  it("never permits the local Admin identity mode outside local development", () => {
+    expect(() =>
+      validateRuntimeEnvironment({
+        ...bindingsFor("preview"),
+        ADMIN_AUTH_MODE: "local-stub",
+      }),
+    ).toThrow("ADMIN_AUTH_MODE must be cloudflare-access for preview");
+  });
+
+  it("requires the local Admin identity mode in local development", () => {
+    expect(() =>
+      validateRuntimeEnvironment({
+        ...bindingsFor("local"),
+        ADMIN_AUTH_MODE: "cloudflare-access",
+      }),
+    ).toThrow("ADMIN_AUTH_MODE must be local-stub in local development");
   });
 });

@@ -20,10 +20,15 @@ interface D1QueryResult<T> {
   success: boolean;
 }
 
-const projectRoot = dirname(fileURLToPath(new URL("../package.json", import.meta.url)));
+const projectRoot = dirname(
+  fileURLToPath(new URL("../package.json", import.meta.url)),
+);
 const wranglerBin = join(projectRoot, "node_modules", ".bin", "wrangler");
 const schemaContract = JSON.parse(
-  readFileSync(join(projectRoot, "config", "database-schema-contract.json"), "utf8"),
+  readFileSync(
+    join(projectRoot, "config", "database-schema-contract.json"),
+    "utf8",
+  ),
 ) as { migrations: string[]; schemaVersion: number };
 const temporaryDirectories: string[] = [];
 
@@ -152,7 +157,9 @@ function shellQuote(value: string) {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-function runDeploymentChainAfterMigration(fixture: ReturnType<typeof createD1Fixture>) {
+function runDeploymentChainAfterMigration(
+  fixture: ReturnType<typeof createD1Fixture>,
+) {
   const marker = join(fixture.directory, "deployment-stage-ran");
   const deploymentStage = join(fixture.directory, "deployment-stage.mjs");
   writeFileSync(
@@ -168,18 +175,19 @@ function runDeploymentChainAfterMigration(fixture: ReturnType<typeof createD1Fix
     shellQuote(fixture.persistenceDirectory),
   ].join(" ");
   const deploymentCommand = `${shellQuote(process.execPath)} ${shellQuote(deploymentStage)}`;
-  const result = spawnSync("/bin/sh", ["-c", `${migrationCommand} && ${deploymentCommand}`], {
-    cwd: fixture.directory,
-    encoding: "utf8",
-    env: { ...process.env, CI: "1" },
-  });
+  const result = spawnSync(
+    "/bin/sh",
+    ["-c", `${migrationCommand} && ${deploymentCommand}`],
+    {
+      cwd: fixture.directory,
+      encoding: "utf8",
+      env: { ...process.env, CI: "1" },
+    },
+  );
   return { marker, result };
 }
 
-function queryD1<T>(
-  fixture: ReturnType<typeof createD1Fixture>,
-  sql: string,
-) {
+function queryD1<T>(fixture: ReturnType<typeof createD1Fixture>, sql: string) {
   const result = runWrangler(fixture, [
     "d1",
     "execute",
@@ -250,7 +258,9 @@ async function startHealthWorker(fixture: ReturnType<typeof createD1Fixture>) {
 
 async function stopWorker(worker: ChildProcess) {
   if (worker.exitCode !== null) return;
-  const exited = new Promise<void>((resolve) => worker.once("exit", () => resolve()));
+  const exited = new Promise<void>((resolve) =>
+    worker.once("exit", () => resolve()),
+  );
   worker.kill("SIGTERM");
   await exited;
 }
@@ -282,10 +292,13 @@ describe("real local D1 migration lifecycle", () => {
       directory,
       "SELECT name FROM d1_migrations ORDER BY id",
     );
-    expect(migrations.map(({ name }) => name)).toEqual(schemaContract.migrations);
+    expect(migrations.map(({ name }) => name)).toEqual(
+      schemaContract.migrations,
+    );
 
     const expectedTables = [
       "admin_audit_events",
+      "admin_identities",
       "application_schema_state",
       "catalog_imports",
       "catalog_releases",
@@ -310,7 +323,9 @@ describe("real local D1 migration lifecycle", () => {
       fixture,
       "SELECT name FROM d1_migrations ORDER BY id",
     );
-    expect(migrations.map(({ name }) => name)).toEqual(schemaContract.migrations);
+    expect(migrations.map(({ name }) => name)).toEqual(
+      schemaContract.migrations,
+    );
 
     const tables = queryD1<{ name: string }>(
       fixture,
@@ -318,6 +333,7 @@ describe("real local D1 migration lifecycle", () => {
     );
     expect(tables.map(({ name }) => name)).toEqual(
       expect.arrayContaining([
+        "admin_identities",
         "admin_audit_events",
         "application_schema_state",
         "catalog_imports",
@@ -325,11 +341,26 @@ describe("real local D1 migration lifecycle", () => {
         "d1_migrations",
       ]),
     );
+
+    const mixedCaseIdentity = runWrangler(fixture, [
+      "d1",
+      "execute",
+      "DB",
+      "--command",
+      `INSERT INTO admin_identities
+       (id, email, account_type, status, created_at, updated_at)
+       VALUES ('mixed-case', 'Owner@Example.com', 'owner', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    ]);
+    expect(mixedCaseIdentity.status).not.toBe(0);
+    expect(
+      `${mixedCaseIdentity.stdout}\n${mixedCaseIdentity.stderr}`,
+    ).toContain("admin_identity_email_lowercase");
   }, 30_000);
 
   it("rolls back a broken migration and makes the real Worker health check fail closed", async () => {
     const fixture = createD1Fixture(true);
-    const { marker, result: deploymentChain } = runDeploymentChainAfterMigration(fixture);
+    const { marker, result: deploymentChain } =
+      runDeploymentChainAfterMigration(fixture);
     expect(deploymentChain.status).not.toBe(0);
     expect(`${deploymentChain.stdout}\n${deploymentChain.stderr}`).toContain(
       "table_that_does_not_exist",
@@ -340,7 +371,9 @@ describe("real local D1 migration lifecycle", () => {
       fixture,
       "SELECT name FROM d1_migrations ORDER BY id",
     );
-    expect(migrations.map(({ name }) => name)).toEqual(schemaContract.migrations);
+    expect(migrations.map(({ name }) => name)).toEqual(
+      schemaContract.migrations,
+    );
     expect(migrations.map(({ name }) => name)).not.toContain(
       "9999_intentionally_broken.sql",
     );

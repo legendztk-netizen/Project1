@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 
+import databaseSchemaContract from "../config/database-schema-contract.json";
 import { createHealthResponse } from "../workers/health";
 
-function databaseFixture(options?: { fail?: boolean; migrations?: string[]; version?: number }) {
-  const migrations = options?.migrations ?? ["0000_initial_catalog_release.sql"];
-  const version = options?.version ?? 1;
+function databaseFixture(options?: {
+  fail?: boolean;
+  migrations?: string[];
+  version?: number;
+}) {
+  const migrations = options?.migrations ?? databaseSchemaContract.migrations;
+  const version = options?.version ?? databaseSchemaContract.schemaVersion;
 
   return {
     prepare(sql: string) {
@@ -31,7 +36,7 @@ describe("health response", () => {
     await expect(response.json()).resolves.toMatchObject({
       application: "hydraulic-hose-rfq-platform",
       database: {
-        currentSchemaVersion: 1,
+        currentSchemaVersion: databaseSchemaContract.schemaVersion,
         missingMigrations: [],
         ready: true,
       },
@@ -49,7 +54,7 @@ describe("health response", () => {
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toMatchObject({
       database: {
-        missingMigrations: ["0000_initial_catalog_release.sql"],
+        missingMigrations: databaseSchemaContract.migrations,
         ready: false,
         reason: "D1 schema metadata is unavailable",
       },

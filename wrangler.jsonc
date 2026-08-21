@@ -102,7 +102,10 @@
         "EMAIL_REPLY_DOMAIN": "reply.example.invalid"
       },
       "secrets": {
-        "required": ["PRODUCTION_SESSION_SIGNING_KEY", "PRODUCTION_RESEND_API_KEY"]
+        "required": [
+          "PRODUCTION_SESSION_SIGNING_KEY",
+          "PRODUCTION_RESEND_API_KEY"
+        ]
       },
       "d1_databases": [
         {

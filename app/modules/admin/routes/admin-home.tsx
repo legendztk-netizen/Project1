@@ -10,15 +10,15 @@ import { Link } from "react-router";
 
 import type { Route } from "./+types/admin-home";
 import { BrandMark } from "../../shared/ui/brand-mark";
-import { cloudflareContext } from "#workers/context";
+import { requireAdminRequestContext } from "../infrastructure/admin-request-context";
 
-export function meta(_: Route.MetaArgs) {
+export function meta() {
   return [{ title: "Admin Backoffice | Hydraulic Supply" }];
 }
 
 export function loader({ context }: Route.LoaderArgs) {
-  const { env } = context.get(cloudflareContext);
-  return { environment: env.APP_ENV };
+  const { adminIdentity, env } = requireAdminRequestContext(context);
+  return { adminIdentity, environment: env.APP_ENV };
 }
 
 const adminNavigation = [
@@ -58,7 +58,8 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
             <h1>Overview</h1>
           </div>
           <span className="environment-badge">
-            <Activity size={15} /> {loaderData.environment}
+            <Activity size={15} /> {loaderData.adminIdentity.accountType} ·{" "}
+            {loaderData.environment}
           </span>
         </header>
 
@@ -92,7 +93,10 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
               <p>The import and release workflow will appear here.</p>
             </div>
           </div>
-          <Link className="button button-secondary" to="/admin/diagnostics/catalog-release">
+          <Link
+            className="button button-secondary"
+            to="/admin/diagnostics/catalog-release"
+          >
             <Database size={17} /> Open D1 diagnostic
           </Link>
         </section>

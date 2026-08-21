@@ -15,7 +15,10 @@ interface EnvironmentDefinition {
 }
 
 interface EnvironmentContract {
-  environments: Record<"local" | "preview" | "production", EnvironmentDefinition>;
+  environments: Record<
+    "local" | "preview" | "production",
+    EnvironmentDefinition
+  >;
 }
 
 const root = new URL("../", import.meta.url);
@@ -26,7 +29,9 @@ function readJson(relativePath: string) {
 
 describe("environment configuration contract", () => {
   it("uses distinct Worker, D1, R2, Queue, and origin names", () => {
-    const contract = readJson("config/environment-contract.json") as EnvironmentContract;
+    const contract = readJson(
+      "config/environment-contract.json",
+    ) as EnvironmentContract;
     const environments = Object.values(contract.environments);
 
     for (const select of [
@@ -42,7 +47,9 @@ describe("environment configuration contract", () => {
   });
 
   it("does not select production identifiers in local or preview", () => {
-    const contract = readJson("config/environment-contract.json") as EnvironmentContract;
+    const contract = readJson(
+      "config/environment-contract.json",
+    ) as EnvironmentContract;
     const production = contract.environments.production;
     const nonProduction = JSON.stringify([
       contract.environments.local,
@@ -67,9 +74,15 @@ describe("environment configuration contract", () => {
       r2_buckets: Array<{ remote?: boolean }>;
     };
 
-    expect(wrangler.d1_databases.every((binding) => binding.remote !== true)).toBe(true);
-    expect(wrangler.r2_buckets.every((binding) => binding.remote !== true)).toBe(true);
-    expect(wrangler.queues.producers.every((binding) => binding.remote !== true)).toBe(true);
+    expect(
+      wrangler.d1_databases.every((binding) => binding.remote !== true),
+    ).toBe(true);
+    expect(
+      wrangler.r2_buckets.every((binding) => binding.remote !== true),
+    ).toBe(true);
+    expect(
+      wrangler.queues.producers.every((binding) => binding.remote !== true),
+    ).toBe(true);
   });
 
   it.each(["local", "preview", "production"])(
@@ -94,26 +107,34 @@ describe("environment configuration contract", () => {
     expect(packageJson.scripts.dev).not.toContain("production");
     expect(packageJson.scripts.build).not.toContain("production");
     expect(packageJson.scripts.dev).toContain("env -u CLOUDFLARE_ENV");
-    expect(packageJson.scripts["build:local"]).toContain("env -u CLOUDFLARE_ENV");
-    expect(packageJson.scripts["dry-run:local"]).toContain("env -u CLOUDFLARE_ENV");
+    expect(packageJson.scripts["build:local"]).toContain(
+      "env -u CLOUDFLARE_ENV",
+    );
+    expect(packageJson.scripts["dry-run:local"]).toContain(
+      "env -u CLOUDFLARE_ENV",
+    );
     expect(packageJson.scripts["dry-run:local"]).toContain("pnpm build:local");
-    expect(packageJson.scripts["build:preview"]).toContain("CLOUDFLARE_ENV=preview");
+    expect(packageJson.scripts["build:preview"]).toContain(
+      "CLOUDFLARE_ENV=preview",
+    );
     expect(packageJson.scripts["build:production"]).toContain(
       "CLOUDFLARE_ENV=production",
     );
-    expect(packageJson.scripts["deploy:production"]).toContain(
-      "require-deployable production",
+    expect(packageJson.scripts["deploy:production"]).toBe(
+      "node scripts/deployment-pipeline.mjs live production",
     );
     expect(packageJson.scripts.migrate).toBe(
       "node scripts/d1-migrations.mjs apply local",
     );
     expect(packageJson.scripts["migrate:preview"]).toContain("apply preview");
-    expect(packageJson.scripts["migrate:production"]).toContain("apply production");
-    expect(packageJson.scripts["deploy:preview"]).toMatch(
-      /migrate:preview.*build.*wrangler deploy/,
+    expect(packageJson.scripts["migrate:production"]).toContain(
+      "apply production",
     );
-    expect(packageJson.scripts["deploy:production"]).toMatch(
-      /migrate:production.*build.*wrangler deploy/,
+    expect(packageJson.scripts["deploy:validate:preview"]).toBe(
+      "node scripts/deployment-pipeline.mjs validation preview",
+    );
+    expect(packageJson.scripts["deploy:validate:production"]).toBe(
+      "node scripts/deployment-pipeline.mjs validation production",
     );
   });
 
@@ -150,8 +171,41 @@ describe("environment configuration contract", () => {
     },
   );
 
+  it("keeps GitHub checks secret-free and validation-only", () => {
+    const quality = readFileSync(
+      new URL("../.github/workflows/quality.yml", import.meta.url),
+      "utf8",
+    );
+    const deployment = readFileSync(
+      new URL(
+        "../.github/workflows/deployment-validation.yml",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+
+    expect(quality).toContain("pnpm ci:check");
+    expect(deployment).toContain("pnpm deploy:validate:production");
+    expect(`${quality}\n${deployment}`).not.toContain("secrets.");
+    expect(deployment).not.toContain("pnpm deploy:production");
+  });
+
+  it("blocks the live deployment entry point before evaluating remote resources", () => {
+    const result = spawnSync("pnpm", ["deploy:production"], {
+      cwd: new URL("../", import.meta.url),
+      encoding: "utf8",
+      env: { ...process.env, ALLOW_CLOUDFLARE_DEPLOYMENT: "" },
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("ALLOW_CLOUDFLARE_DEPLOYMENT=confirmed");
+    expect(result.stdout).not.toContain("stage=configuration");
+  });
+
   it("resolves preview and local commands after a production build without leaking production", () => {
-    const contract = readJson("config/environment-contract.json") as EnvironmentContract;
+    const contract = readJson(
+      "config/environment-contract.json",
+    ) as EnvironmentContract;
     const production = contract.environments.production;
     const productionIdentifiers = [
       production.workerName,

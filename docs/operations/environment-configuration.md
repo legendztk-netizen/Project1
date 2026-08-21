@@ -12,11 +12,11 @@ compares Wrangler with the contract before every environment build or deploy.
 The Worker imports the same contract and rejects incomplete runtime bindings in
 `workers/environment.ts`.
 
-| Environment | Default use | Admin auth | Email | Remote deployment |
-| --- | --- | --- | --- | --- |
-| local | `pnpm dev`, `pnpm build` | local stub | local stub | prohibited |
-| preview | explicit preview build/deploy | Cloudflare Access | Resend | blocked until placeholders are replaced |
-| production | explicit production build/deploy | Cloudflare Access | Resend | blocked until placeholders are replaced |
+| Environment | Default use                      | Admin auth        | Email      | Remote deployment                       |
+| ----------- | -------------------------------- | ----------------- | ---------- | --------------------------------------- |
+| local       | `pnpm dev`, `pnpm build`         | local stub        | local stub | prohibited                              |
+| preview     | explicit preview build/deploy    | Cloudflare Access | Resend     | blocked until placeholders are replaced |
+| production  | explicit production build/deploy | Cloudflare Access | Resend     | blocked until placeholders are replaced |
 
 Worker, D1, R2, Queue, Storefront origin, and Admin origin values are distinct
 for all three environments. The contract test fails if any of those identities
@@ -24,16 +24,16 @@ are reused.
 
 ## Required Bindings
 
-| Kind | Binding or variable |
-| --- | --- |
-| D1 | `DB` |
-| Private R2 | `PRIVATE_FILES` |
-| Queue producer | `ASYNC_JOBS` |
-| Public origin | `PUBLIC_STOREFRONT_ORIGIN` |
-| Admin origin | `ADMIN_ORIGIN` |
-| Access | `ADMIN_AUTH_MODE`, `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `CLOUDFLARE_ACCESS_AUD` |
-| Email | `EMAIL_DELIVERY_MODE`, `EMAIL_FROM`, `EMAIL_REPLY_DOMAIN`, environment-specific Resend secret |
-| Session integrity | environment-specific signing secret |
+| Kind              | Binding or variable                                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------- |
+| D1                | `DB`                                                                                                                  |
+| Private R2        | `PRIVATE_FILES`                                                                                                       |
+| Queue producer    | `ASYNC_JOBS`                                                                                                          |
+| Public origin     | `PUBLIC_STOREFRONT_ORIGIN`                                                                                            |
+| Admin origin      | `ADMIN_ORIGIN`                                                                                                        |
+| Access            | `ADMIN_AUTH_MODE`, `ADMIN_ORIGIN`, `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `CLOUDFLARE_ACCESS_AUD`, active D1 Admin Identity |
+| Email             | `EMAIL_DELIVERY_MODE`, `EMAIL_FROM`, `EMAIL_REPLY_DOMAIN`, environment-specific Resend secret                         |
+| Session integrity | environment-specific signing secret                                                                                   |
 
 Local D1, R2, and Queue bindings are simulated by workerd. Local authentication
 and email delivery use sanctioned stubs, so local development needs no remote
@@ -48,16 +48,24 @@ Before preview or production can deploy:
 1. Replace that environment's D1 `database_id` in `wrangler.jsonc`.
 2. Replace `.invalid` Storefront/Admin origins and email domains in both the
    contract and Wrangler configuration.
-3. Replace the Cloudflare Access team domain and audience in both files.
+3. Replace the Cloudflare Access team domain and audience in both files, then
+   provision the initial Owner and Subaccount as active D1 Admin Identities.
 4. Provide `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, and that
    environment's `PREVIEW_*` or `PRODUCTION_*` signing and Resend secrets
    through the shell or CI secret store.
 5. Run `node scripts/environment-config.mjs validate <environment>`.
-6. Run the explicit `pnpm deploy:preview` or `pnpm deploy:production` command.
+6. During local development, run `pnpm deploy:validate:preview` or
+   `pnpm deploy:validate:production`.
+7. Only after launch approval, run the explicit `pnpm deploy:preview` or
+   `pnpm deploy:production` command with
+   `ALLOW_CLOUDFLARE_DEPLOYMENT=confirmed`.
 
 The deployment gate reports every unresolved field at once. It never prints a
 secret value. Preview and production builds may be produced with placeholders
 for validation, but those builds are not deployable.
+
+Ticket 04 validates the production chain without real Cloudflare resources.
+See `docs/operations/admin-access-and-deployment.md`.
 
 ## Startup Failure
 

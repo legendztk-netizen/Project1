@@ -1,9 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = new URL("../", import.meta.url);
-const wranglerBin = fileURLToPath(new URL("../node_modules/.bin/wrangler", import.meta.url));
+const wranglerBin = fileURLToPath(
+  new URL("../node_modules/.bin/wrangler", import.meta.url),
+);
 const schemaContract = readJson("config/database-schema-contract.json");
 const environmentContract = readJson("config/environment-contract.json");
 const wrangler = readJson("wrangler.jsonc");
@@ -33,19 +37,25 @@ function validateMigrationContract() {
   );
 }
 
-function databaseConfiguration(environment) {
-  assert(environmentNames.includes(environment), `Unknown database environment: ${environment}`);
+function databaseConfiguration(environment, { allowPlaceholder = false } = {}) {
+  assert(
+    environmentNames.includes(environment),
+    `Unknown database environment: ${environment}`,
+  );
   validateMigrationContract();
   const definition = resolvedWranglerEnvironment(environment);
   assert(definition, `Wrangler environment ${environment} is missing`);
   const bindingName = environmentContract.bindingNames.database;
-  const database = definition.d1_databases?.find((item) => item.binding === bindingName);
+  const database = definition.d1_databases?.find(
+    (item) => item.binding === bindingName,
+  );
   assert(database, `${environment} is missing D1 binding ${bindingName}`);
   assert(
-    database.database_name === environmentContract.environments[environment].resourceNames.database,
+    database.database_name ===
+      environmentContract.environments[environment].resourceNames.database,
     `${environment} D1 name does not match the environment contract`,
   );
-  if (environment !== "local") {
+  if (environment !== "local" && !allowPlaceholder) {
     assert(
       database.database_id && !database.database_id.includes("replace-with-"),
       `${environment} D1 database_id is still a placeholder`,
@@ -58,7 +68,9 @@ function environmentArguments(environment) {
   if (environment === "local") {
     return [
       "--local",
-      ...(process.env.D1_PERSIST_TO ? ["--persist-to", process.env.D1_PERSIST_TO] : []),
+      ...(process.env.D1_PERSIST_TO
+        ? ["--persist-to", process.env.D1_PERSIST_TO]
+        : []),
     ];
   }
   return ["--env", environment, "--remote"];
@@ -88,7 +100,10 @@ function query(environment, statement) {
     { stdio: ["ignore", "pipe", "inherit"] },
   );
   const result = JSON.parse(output);
-  assert(result[0]?.success === true, `D1 verification query failed for ${environment}`);
+  assert(
+    result[0]?.success === true,
+    `D1 verification query failed for ${environment}`,
+  );
   return result[0].results;
 }
 
@@ -128,13 +143,41 @@ function applyMigrations(environment) {
   verifyDatabase(environment);
 }
 
+function validateMigrationPlan(environment) {
+  const database = databaseConfiguration(environment, {
+    allowPlaceholder: true,
+  });
+  const temporaryPersistence = mkdtempSync(
+    join(tmpdir(), "hydraulic-hose-migration-validation-"),
+  );
+  try {
+    execFileSync(
+      process.execPath,
+      [fileURLToPath(import.meta.url), "apply", "local"],
+      {
+        cwd: fileURLToPath(projectRoot),
+        env: { ...process.env, D1_PERSIST_TO: temporaryPersistence },
+        stdio: "inherit",
+      },
+    );
+    process.stdout.write(
+      `database=${environment} resource=${database.database_name} migrations=${schemaContract.migrations.length} sql=verified plan=valid\n`,
+    );
+  } finally {
+    rmSync(temporaryPersistence, { force: true, recursive: true });
+  }
+}
+
 const [, , command, environment] = process.argv;
 
 try {
   if (command === "apply") applyMigrations(environment);
   else if (command === "verify") verifyDatabase(environment);
+  else if (command === "validate") validateMigrationPlan(environment);
   else {
-    throw new Error("Usage: d1-migrations.mjs <apply|verify> <local|preview|production>");
+    throw new Error(
+      "Usage: d1-migrations.mjs <apply|verify|validate> <local|preview|production>",
+    );
   }
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
@@ -142,4 +185,4 @@ try {
   process.exitCode = 1;
 }
 
-export { applyMigrations, verifyDatabase };
+export { applyMigrations, validateMigrationPlan, verifyDatabase };

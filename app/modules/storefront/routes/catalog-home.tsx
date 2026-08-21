@@ -1,9 +1,4 @@
-import {
-  CircleHelp,
-  FileText,
-  Search,
-  Wrench,
-} from "lucide-react";
+import { CircleHelp, FileText, Search, Wrench } from "lucide-react";
 import { Link } from "react-router";
 
 import type { Route } from "./+types/catalog-home";
@@ -15,12 +10,13 @@ import {
 import { BrandMark } from "../../shared/ui/brand-mark";
 import { cloudflareContext } from "#workers/context";
 
-export function meta(_: Route.MetaArgs) {
+export function meta() {
   return [
     { title: "Hydraulic Supply | Hose and Fittings" },
     {
       name: "description",
-      content: "Hydraulic hose, fittings and custom assembly quote preparation.",
+      content:
+        "Hydraulic hose, fittings and custom assembly quote preparation.",
     },
   ];
 }
@@ -40,7 +36,10 @@ export default function CatalogHome({ loaderData }: Route.ComponentProps) {
           <span aria-disabled="true">Build a Hose</span>
           <span aria-disabled="true">My Quotes</span>
         </nav>
-        <span className="button button-secondary is-disabled" aria-disabled="true">
+        <span
+          className="button button-secondary is-disabled"
+          aria-disabled="true"
+        >
           <CircleHelp size={18} />
           Help
         </span>
@@ -77,7 +76,9 @@ export default function CatalogHome({ loaderData }: Route.ComponentProps) {
               {launchCatalogFamilies.map((family) => (
                 <li key={family.id}>
                   <span
-                    className={family.id === initialCatalogFamilyId ? "active" : ""}
+                    className={
+                      family.id === initialCatalogFamilyId ? "active" : ""
+                    }
                   >
                     {family.label}
                   </span>
@@ -99,7 +100,9 @@ export default function CatalogHome({ loaderData }: Route.ComponentProps) {
               {launchCatalogFamilies.map((family, index) => (
                 <article className="family-card" key={family.id}>
                   <div className="family-card-topline">
-                    <span className="family-index">{String(index + 1).padStart(2, "0")}</span>
+                    <span className="family-index">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
                     <span className="status-dot">{catalogSetupStatus}</span>
                   </div>
                   <h3>{family.label}</h3>
@@ -108,7 +111,10 @@ export default function CatalogHome({ loaderData }: Route.ComponentProps) {
               ))}
             </div>
 
-            <section className="featured-family" aria-labelledby="featured-title">
+            <section
+              className="featured-family"
+              aria-labelledby="featured-title"
+            >
               <div className="featured-media">
                 <img
                   src="/images/601R2-structure.png"
@@ -129,11 +135,19 @@ export default function CatalogHome({ loaderData }: Route.ComponentProps) {
                   </div>
                 </dl>
                 <div className="featured-actions">
-                  <button className="button button-primary" type="button" disabled>
+                  <button
+                    className="button button-primary"
+                    type="button"
+                    disabled
+                  >
                     <Wrench size={18} />
                     Build a Hose
                   </button>
-                  <button className="button button-secondary" type="button" disabled>
+                  <button
+                    className="button button-secondary"
+                    type="button"
+                    disabled
+                  >
                     <FileText size={18} />
                     View series
                   </button>
