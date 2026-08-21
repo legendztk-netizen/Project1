@@ -27,7 +27,8 @@
     {
       "binding": "DB",
       "database_name": "hydraulic-hose-rfq-local",
-      "migrations_dir": "migrations"
+      "migrations_dir": "migrations",
+      "migrations_table": "d1_migrations"
     }
   ],
   "r2_buckets": [
@@ -67,7 +68,8 @@
           "binding": "DB",
           "database_name": "hydraulic-hose-rfq-preview",
           "database_id": "replace-with-preview-d1-database-id",
-          "migrations_dir": "migrations"
+          "migrations_dir": "migrations",
+          "migrations_table": "d1_migrations"
         }
       ],
       "r2_buckets": [
@@ -107,7 +109,8 @@
           "binding": "DB",
           "database_name": "hydraulic-hose-rfq-production",
           "database_id": "replace-with-production-d1-database-id",
-          "migrations_dir": "migrations"
+          "migrations_dir": "migrations",
+          "migrations_table": "d1_migrations"
         }
       ],
       "r2_buckets": [

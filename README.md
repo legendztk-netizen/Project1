@@ -16,24 +16,29 @@ The initial skeleton exposes three deliberately separate surfaces:
 
 ```bash
 pnpm install
+pnpm migrate
 pnpm dev
 ```
 
 Open `http://localhost:5173`. Local runtime values come from `wrangler.jsonc`;
-they are non-secret development values.
+they are non-secret development values. `pnpm migrate` always targets the local
+D1 database; `pnpm dev` also reapplies pending local migrations before startup.
 
 ## Verification
 
 ```bash
 pnpm typecheck
 pnpm test
+pnpm test:d1
 pnpm test:smoke
 pnpm build
 pnpm check
 ```
 
 `test:smoke` builds the application, starts Vite's workerd-backed Cloudflare
-preview, and verifies the Storefront, Admin, and health routes through HTTP.
+preview, and verifies the Storefront, Admin, persisted Catalog Release
+diagnostic, and health routes through HTTP. `test:d1` uses persistent local D1
+instances rather than a database mock.
 
 ## Environment commands
 
@@ -60,6 +65,21 @@ pnpm deploy:production
 The environment contract and replacement procedure are documented in
 `docs/operations/environment-configuration.md`.
 
+## D1 migrations
+
+```bash
+pnpm migrate
+pnpm migrate:verify
+pnpm migrate:preview
+pnpm migrate:production
+```
+
+Only `pnpm migrate` has a default, and that default is always local. Preview and
+production promotion require their explicit commands and configured D1 IDs.
+Deployment runs the selected migration before building or deploying the Worker;
+an unsuccessful migration stops the command chain. The full operational contract
+is in `docs/operations/d1-migrations.md`.
+
 ## Deployment secrets
 
 Keep these values in the shell or CI secret store and never commit them:
@@ -82,8 +102,10 @@ route boundary.
 `/admin` is not authenticated or access-controlled yet. Anyone who can reach
 the Worker can currently open the Admin shell. Cloudflare Access enforcement,
 identity mapping, and the protected deployment boundary belong to Ticket 04.
-The completed Ticket 01 is therefore a runnable route shell, not proof of the
-full architecture baseline or a React Router-to-D1 walking skeleton.
+Ticket 03 adds the first React Router loader/action-to-D1 walking path through a
+local-only Catalog Release diagnostic. It proves migration, persistence, and
+fail-closed health behavior, but it does not prove the full architecture
+baseline or a protected Admin boundary.
 
 ## Module boundaries
 

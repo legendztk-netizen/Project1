@@ -92,6 +92,9 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
               <p>The import and release workflow will appear here.</p>
             </div>
           </div>
+          <Link className="button button-secondary" to="/admin/diagnostics/catalog-release">
+            <Database size={17} /> Open D1 diagnostic
+          </Link>
         </section>
       </main>
     </div>

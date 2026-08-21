@@ -104,6 +104,17 @@ describe("environment configuration contract", () => {
     expect(packageJson.scripts["deploy:production"]).toContain(
       "require-deployable production",
     );
+    expect(packageJson.scripts.migrate).toBe(
+      "node scripts/d1-migrations.mjs apply local",
+    );
+    expect(packageJson.scripts["migrate:preview"]).toContain("apply preview");
+    expect(packageJson.scripts["migrate:production"]).toContain("apply production");
+    expect(packageJson.scripts["deploy:preview"]).toMatch(
+      /migrate:preview.*build.*wrangler deploy/,
+    );
+    expect(packageJson.scripts["deploy:production"]).toMatch(
+      /migrate:production.*build.*wrangler deploy/,
+    );
   });
 
   it("ignores an inherited production selector in the default build", () => {

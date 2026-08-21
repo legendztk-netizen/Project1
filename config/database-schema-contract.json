@@ -1,0 +1,4 @@
+{
+  "schemaVersion": 1,
+  "migrations": ["0000_initial_catalog_release.sql"]
+}

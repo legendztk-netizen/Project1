@@ -108,4 +108,27 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(admin).not.toContain('data-surface="storefront"');
     expect(admin).not.toContain('href="#"');
   });
+
+  it("persists a draft release through the Admin diagnostic and exposes no Storefront mutation", async () => {
+    const createResponse = await fetch(`${origin}/admin/diagnostics/catalog-release`, {
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(createResponse.status).toBe(302);
+    expect(createResponse.headers.get("location")).toMatch(
+      /^\/admin\/diagnostics\/catalog-release\?created=/,
+    );
+
+    const diagnosticResponse = await fetch(
+      `${origin}${createResponse.headers.get("location")}`,
+    );
+    expect(diagnosticResponse.status).toBe(200);
+    const diagnostic = await diagnosticResponse.text();
+    expect(diagnostic).toContain("Catalog release diagnostic");
+    expect(diagnostic).toContain("Draft");
+    expect(diagnostic).toContain("Not published");
+
+    const storefrontMutation = await fetch(origin, { method: "POST" });
+    expect(storefrontMutation.status).toBe(405);
+  });
 });
