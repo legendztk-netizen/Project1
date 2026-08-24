@@ -50,25 +50,19 @@ function repositoryDouble() {
   };
 }
 
-function failingD1Double() {
-  let importCreated = false;
-  let cleanupRan = false;
+function failingAtomicD1Double() {
+  let batchAttempts = 0;
+  let statementCount = 0;
   const database = {
-    async batch() {
-      throw new Error("The final batch should not run after an insert failure");
+    async batch(statements: unknown[]) {
+      batchAttempts += 1;
+      statementCount = statements.length;
+      throw new Error("injected atomic batch failure");
     },
-    prepare(sql: string) {
+    prepare() {
       const statement = {
         bind() {
           return statement;
-        },
-        async run() {
-          if (sql.includes("INSERT INTO catalog_imports")) importCreated = true;
-          if (sql.includes('INSERT INTO "catalog_hose_ends"')) {
-            throw new Error("injected hose-end insert failure");
-          }
-          if (sql.includes("DELETE FROM catalog_imports")) cleanupRan = true;
-          return { success: true };
         },
       };
       return statement;
@@ -76,7 +70,7 @@ function failingD1Double() {
   } as unknown as D1Database;
   return {
     database,
-    state: () => ({ cleanupRan, importCreated }),
+    state: () => ({ batchAttempts, statementCount }),
   };
 }
 
@@ -108,12 +102,18 @@ describe("importCatalogWorkbook", () => {
       id: "import-1",
       status: "completed",
       summary: {
+        adapterCount: 136,
+        adapterFamilyCount: 17,
         compatibilityCount: 1081,
+        costBasisPriceCount: 0,
         ferruleCount: 61,
         hoseEndCount: 200,
         hoseSeriesCount: 6,
         hoseVariantCount: 61,
-        skuCount: 322,
+        quickCouplerCount: 57,
+        referencePriceCount: 515,
+        salesOfferCount: 515,
+        skuCount: 515,
       },
     });
   });
@@ -154,11 +154,11 @@ describe("importCatalogWorkbook", () => {
     });
   });
 
-  it("cleans up the pending import when normalized row persistence fails", async () => {
+  it("submits the complete normalized draft in one atomic D1 batch", async () => {
     const validation = validateCatalogWorkbook(fixture);
     if (!validation.draft)
       throw new Error("Expected the real fixture to validate");
-    const { database, state } = failingD1Double();
+    const { database, state } = failingAtomicD1Double();
     const repository = createD1CatalogWorkbookImportRepository(database);
 
     await expect(
@@ -177,18 +177,25 @@ describe("importCatalogWorkbook", () => {
           sourceFileSizeBytes: 543_210,
           status: "completed",
           summary: {
+            adapterCount: 136,
+            adapterFamilyCount: 17,
             compatibilityCount: 1081,
+            costBasisPriceCount: 0,
             ferruleCount: 61,
             hoseEndCount: 200,
             hoseSeriesCount: 6,
             hoseVariantCount: 61,
-            skuCount: 322,
+            quickCouplerCount: 57,
+            referencePriceCount: 515,
+            salesOfferCount: 515,
+            skuCount: 515,
           },
           validationResults: [],
           warningCount: 0,
         },
       }),
-    ).rejects.toThrow("injected hose-end insert failure");
-    expect(state()).toEqual({ cleanupRan: true, importCreated: true });
+    ).rejects.toThrow("injected atomic batch failure");
+    expect(state().batchAttempts).toBe(1);
+    expect(state().statementCount).toBeGreaterThan(30);
   });
 });

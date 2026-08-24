@@ -252,6 +252,227 @@ export const catalogFerrules = sqliteTable(
   ],
 );
 
+export const catalogAdapterFamilies = sqliteTable(
+  "catalog_adapter_families",
+  {
+    id: text("id").primaryKey(),
+    importId: text("import_id")
+      .notNull()
+      .references(() => catalogImports.id, { onDelete: "cascade" }),
+    adapterFamilyId: text("adapter_family_id").notNull(),
+    skuTemplate: text("sku_template").notNull(),
+    catalogModel: text("catalog_model").notNull(),
+    websiteProductName: text("website_product_name").notNull(),
+    shapeCode: text("shape_code").notNull(),
+    interface1: text("interface_1").notNull(),
+    connectionForm1: text("connection_form_1").notNull(),
+    size1: text("size_1"),
+    interface2: text("interface_2").notNull(),
+    connectionForm2: text("connection_form_2").notNull(),
+    size2: text("size_2"),
+    interface3: text("interface_3"),
+    connectionForm3: text("connection_form_3"),
+    size3: text("size_3"),
+    websiteDisplay: text("website_display").notNull(),
+    source: text("source").notNull(),
+    notes: text("notes"),
+    catalogPublicationStatus: text("catalog_publication_status").notNull(),
+    rfqEligibility: text("rfq_eligibility").notNull(),
+    technicalDataStatus: text("technical_data_status").notNull(),
+  },
+  (table) => [
+    uniqueIndex("catalog_adapter_families_import_family_uq").on(
+      table.importId,
+      table.adapterFamilyId,
+    ),
+  ],
+);
+
+export const catalogAdapters = sqliteTable(
+  "catalog_adapters",
+  {
+    id: text("id").primaryKey(),
+    importId: text("import_id").notNull(),
+    sku: text("sku").notNull(),
+    adapterFamilyId: text("adapter_family_id").notNull(),
+    skuTemplate: text("sku_template").notNull(),
+    catalogModel: text("catalog_model").notNull(),
+    websiteProductName: text("website_product_name").notNull(),
+    shapeCode: text("shape_code").notNull(),
+    interface1: text("interface_1").notNull(),
+    connectionForm1: text("connection_form_1").notNull(),
+    size1: text("size_1").notNull(),
+    interface2: text("interface_2").notNull(),
+    connectionForm2: text("connection_form_2").notNull(),
+    size2: text("size_2").notNull(),
+    interface3: text("interface_3"),
+    connectionForm3: text("connection_form_3"),
+    size3: text("size_3"),
+    websiteDisplay: text("website_display").notNull(),
+    source: text("source").notNull(),
+    notes: text("notes"),
+  },
+  (table) => [
+    uniqueIndex("catalog_adapters_import_sku_uq").on(table.importId, table.sku),
+    foreignKey({
+      columns: [table.importId, table.sku],
+      foreignColumns: [catalogSkus.importId, catalogSkus.sku],
+      name: "catalog_adapters_catalog_sku_fk",
+    }).onDelete("cascade"),
+    index("catalog_adapters_interfaces_idx").on(
+      table.importId,
+      table.interface1,
+      table.interface2,
+      table.size1,
+      table.size2,
+    ),
+  ],
+);
+
+export const catalogQuickCouplers = sqliteTable(
+  "catalog_quick_couplers",
+  {
+    id: text("id").primaryKey(),
+    importId: text("import_id").notNull(),
+    sku: text("sku").notNull(),
+    skuStandardCode: text("sku_standard_code").notNull(),
+    skuRoleCode: text("sku_role_code").notNull(),
+    bodyDash: text("body_dash").notNull(),
+    portCode: text("port_code").notNull(),
+    portDash: text("port_dash").notNull(),
+    couplerSeries: text("coupler_series").notNull(),
+    role: text("role").notNull(),
+    matingSeries: text("mating_series").notNull(),
+    interchangeStandard: text("interchange_standard").notNull(),
+    bodySize: text("body_size").notNull(),
+    portInterface: text("port_interface").notNull(),
+    portGender: text("port_gender").notNull(),
+    portThread: text("port_thread").notNull(),
+    connectionMechanism: text("connection_mechanism").notNull(),
+    valving: text("valving").notNull(),
+    bodyMaterial: text("body_material"),
+    coating: text("coating"),
+    sealMaterial: text("seal_material"),
+    maxWorkingBar: real("max_working_bar"),
+    minimumBurstBar: real("minimum_burst_bar"),
+    ratedFlowLMin: real("rated_flow_l_min"),
+    pressureDropBasis: text("pressure_drop_basis"),
+    tempMinC: real("temp_min_c"),
+    tempMaxC: real("temp_max_c"),
+    overallLengthMm: real("overall_length_mm"),
+    unitWeightG: real("unit_weight_g"),
+    drawingNumber: text("drawing_number"),
+    source: text("source").notNull(),
+    notes: text("notes"),
+  },
+  (table) => [
+    uniqueIndex("catalog_quick_couplers_import_sku_uq").on(
+      table.importId,
+      table.sku,
+    ),
+    foreignKey({
+      columns: [table.importId, table.sku],
+      foreignColumns: [catalogSkus.importId, catalogSkus.sku],
+      name: "catalog_quick_couplers_catalog_sku_fk",
+    }).onDelete("cascade"),
+    index("catalog_quick_couplers_identity_idx").on(
+      table.importId,
+      table.interchangeStandard,
+      table.role,
+      table.bodyDash,
+      table.portCode,
+      table.portDash,
+    ),
+  ],
+);
+
+export const catalogSalesOffers = sqliteTable(
+  "catalog_sales_offers",
+  {
+    id: text("id").primaryKey(),
+    importId: text("import_id").notNull(),
+    baseSku: text("base_sku").notNull(),
+    salesSku: text("sales_sku").notNull(),
+    productType: text("product_type").notNull(),
+    salesUnit: text("sales_unit").notNull(),
+    packageLengthFt: real("package_length_ft"),
+    unitsPerSalesPack: real("units_per_sales_pack").notNull(),
+    moq: real("moq").notNull(),
+    netUnitWeightKg: real("net_unit_weight_kg"),
+    leadTimeDays: real("lead_time_days").notNull(),
+    countryOfOrigin: text("country_of_origin").notNull(),
+    currency: text("currency"),
+    referencePriceUsd: real("reference_price_usd"),
+    innerPackQty: real("inner_pack_qty"),
+    masterCartonQty: real("master_carton_qty"),
+    cartonGrossWeightKg: real("carton_gross_weight_kg"),
+    cartonLCm: real("carton_l_cm"),
+    cartonWCm: real("carton_w_cm"),
+    cartonHCm: real("carton_h_cm"),
+    packingBasis: text("packing_basis"),
+    hsCode: text("hs_code"),
+    notes: text("notes"),
+    catalogPublicationStatus: text("catalog_publication_status").notNull(),
+    rfqEligibility: text("rfq_eligibility").notNull(),
+    technicalDataStatus: text("technical_data_status").notNull(),
+    quantityInputMode: text("quantity_input_mode").notNull(),
+    minimumLengthPerPieceFt: real("minimum_length_per_piece_ft"),
+    lengthIncrementFt: real("length_increment_ft"),
+    presetLength1Ft: real("preset_length_1_ft"),
+    presetLength2Ft: real("preset_length_2_ft"),
+    presetLength3Ft: real("preset_length_3_ft"),
+    continuousLengthConfirmation: text("continuous_length_confirmation"),
+  },
+  (table) => [
+    uniqueIndex("catalog_sales_offers_import_base_sku_uq").on(
+      table.importId,
+      table.baseSku,
+    ),
+    uniqueIndex("catalog_sales_offers_import_sales_sku_uq").on(
+      table.importId,
+      table.salesSku,
+    ),
+    foreignKey({
+      columns: [table.importId, table.baseSku],
+      foreignColumns: [catalogSkus.importId, catalogSkus.sku],
+      name: "catalog_sales_offers_catalog_sku_fk",
+    }).onDelete("cascade"),
+    index("catalog_sales_offers_public_price_idx").on(
+      table.importId,
+      table.referencePriceUsd,
+    ),
+  ],
+);
+
+export const catalogCostBases = sqliteTable(
+  "catalog_cost_bases",
+  {
+    id: text("id").primaryKey(),
+    importId: text("import_id").notNull(),
+    salesSku: text("sales_sku").notNull(),
+    currency: text("currency"),
+    factoryUnitPrice: real("factory_unit_price"),
+    priceIncoterm: text("price_incoterm"),
+    incotermPlace: text("incoterm_place"),
+    tierQty: real("tier_qty"),
+    tierPrice: real("tier_price"),
+  },
+  (table) => [
+    uniqueIndex("catalog_cost_bases_import_sales_sku_uq").on(
+      table.importId,
+      table.salesSku,
+    ),
+    foreignKey({
+      columns: [table.importId, table.salesSku],
+      foreignColumns: [
+        catalogSalesOffers.importId,
+        catalogSalesOffers.salesSku,
+      ],
+      name: "catalog_cost_bases_sales_offer_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
 export const catalogCompatibilities = sqliteTable(
   "catalog_compatibilities",
   {

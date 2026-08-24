@@ -6,11 +6,17 @@ import {
 } from "./catalog-workbook";
 
 export interface CatalogImportSummary {
+  adapterCount: number;
+  adapterFamilyCount: number;
   compatibilityCount: number;
+  costBasisPriceCount: number;
   ferruleCount: number;
   hoseEndCount: number;
   hoseSeriesCount: number;
   hoseVariantCount: number;
+  quickCouplerCount: number;
+  referencePriceCount: number;
+  salesOfferCount: number;
   skuCount: number;
 }
 
@@ -67,22 +73,38 @@ function releaseNumber(now: Date, id: string) {
 
 function emptySummary(): CatalogImportSummary {
   return {
+    adapterCount: 0,
+    adapterFamilyCount: 0,
     compatibilityCount: 0,
+    costBasisPriceCount: 0,
     ferruleCount: 0,
     hoseEndCount: 0,
     hoseSeriesCount: 0,
     hoseVariantCount: 0,
+    quickCouplerCount: 0,
+    referencePriceCount: 0,
+    salesOfferCount: 0,
     skuCount: 0,
   };
 }
 
 function draftSummary(draft: ValidatedCatalogDraft): CatalogImportSummary {
   return {
+    adapterCount: draft.adapters.length,
+    adapterFamilyCount: draft.adapterFamilies.length,
     compatibilityCount: draft.compatibilities.length,
+    costBasisPriceCount: draft.costBases.filter(
+      (row) => row.factoryUnitPrice !== null || row.tierPrice !== null,
+    ).length,
     ferruleCount: draft.ferrules.length,
     hoseEndCount: draft.hoseEnds.length,
     hoseSeriesCount: draft.hoseSeries.length,
     hoseVariantCount: draft.hoseVariants.length,
+    quickCouplerCount: draft.quickCouplers.length,
+    referencePriceCount: draft.salesOffers.filter(
+      (row) => row.referencePriceUsd !== null,
+    ).length,
+    salesOfferCount: draft.salesOffers.length,
     skuCount: draft.skus.length,
   };
 }

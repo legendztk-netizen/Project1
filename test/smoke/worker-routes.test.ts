@@ -169,7 +169,7 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(storefrontMutation.status).toBe(405);
   });
 
-  it("imports the supplied 01-04 workbook into a reviewable D1 draft", async () => {
+  it("imports the supplied 01-07 workbook into one reviewable D1 draft", async () => {
     const workbook = await readFile(
       "test/fixtures/catalog-import/hose-product-data-collection-template-length-ordering.xlsx",
     );
@@ -190,6 +190,11 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(importResponse.headers.get("location")).toMatch(
       /^\/admin\/catalog\/import\?import=/,
     );
+    const importId = new URL(
+      importResponse.headers.get("location") ?? "",
+      origin,
+    ).searchParams.get("import");
+    expect(importId).toBeTruthy();
 
     const reviewResponse = await fetch(
       `${origin}${importResponse.headers.get("location")}`,
@@ -203,8 +208,98 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(review).toContain(">200<");
     expect(review).toContain("Exact combinations");
     expect(review).toContain(">1081<");
+    expect(review).toContain("Adapter families");
+    expect(review).toContain(">17<");
+    expect(review).toContain("Adapter SKUs");
+    expect(review).toContain(">136<");
+    expect(review).toContain("Quick couplers");
+    expect(review).toContain(">57<");
+    expect(review).toContain("Sales offers");
+    expect(review).toContain("USD reference prices");
+    expect(review).toContain("Total sale SKUs");
+    expect(review).toContain(">515<");
     expect(review).toContain("All imported SKUs start Temporarily Unavailable");
     expect(review).toContain("only Approved + Complete");
+
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM catalog_adapters WHERE import_id = '${importId}'`,
+      ),
+    ).toEqual([{ count: 136 }]);
+    expect(
+      runLocalD1<{
+        connection_form_1: string;
+        connection_form_2: string;
+        interface_1: string;
+        interface_2: string;
+        shape_code: string;
+        size_1: string;
+        size_2: string;
+      }>(
+        `SELECT shape_code, interface_1, connection_form_1, size_1,
+                interface_2, connection_form_2, size_2
+         FROM catalog_adapters
+         WHERE import_id = '${importId}' AND sku = 'ADP_ST_JIC_M_10_NPT_M_04'`,
+      ),
+    ).toEqual([
+      {
+        connection_form_1: "M",
+        connection_form_2: "M",
+        interface_1: "JIC",
+        interface_2: "NPT",
+        shape_code: "ST",
+        size_1: "-10",
+        size_2: "-4",
+      },
+    ]);
+    expect(
+      runLocalD1<{
+        body_dash: string;
+        max_working_bar: number | null;
+        port_code: string;
+        port_dash: string;
+        role: string;
+        sku_standard_code: string;
+      }>(
+        `SELECT sku_standard_code, role, body_dash, port_code, port_dash, max_working_bar
+         FROM catalog_quick_couplers
+         WHERE import_id = '${importId}' AND sku = 'QDC_16028_SOC_04_FNPT_04'`,
+      ),
+    ).toEqual([
+      {
+        body_dash: "04",
+        max_working_bar: null,
+        port_code: "FNPT",
+        port_dash: "04",
+        role: "Coupler/Socket",
+        sku_standard_code: "16028",
+      },
+    ]);
+    expect(
+      runLocalD1<{ currency: string; reference_price_usd: number }>(
+        `SELECT currency, reference_price_usd FROM catalog_sales_offers
+         WHERE import_id = '${importId}' AND sales_sku = '601R1_001'`,
+      ),
+    ).toEqual([{ currency: "USD", reference_price_usd: 2.16 }]);
+    expect(
+      runLocalD1<{ name: string }>("PRAGMA table_info(catalog_sales_offers)")
+        .map((column) => column.name)
+        .includes("factory_unit_price"),
+    ).toBe(false);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM catalog_cost_bases
+         WHERE import_id = '${importId}' AND factory_unit_price IS NOT NULL`,
+      ),
+    ).toEqual([{ count: 0 }]);
+
+    const storefront = await (await fetch(origin)).text();
+    expect(storefront).not.toContain("Cost Basis");
+    expect(storefront).not.toContain("factory_unit_price");
+    const publicCostBasis = await fetch(
+      `${origin}/api/catalog/cost-basis/601R1_001`,
+    );
+    expect(publicCostBasis.status).toBe(404);
   });
 
   it("keeps a blocking workbook error out of draft releases", async () => {

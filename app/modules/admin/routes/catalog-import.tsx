@@ -91,7 +91,8 @@ export default function CatalogImport({
         <span className="eyebrow">Catalog operations</span>
         <h1>Import product workbook</h1>
         <p>
-          Validate worksheets 01-04 and create one reviewable draft release.
+          Validate all seven product worksheets and create one coherent draft
+          release candidate.
         </p>
       </header>
 
@@ -101,7 +102,8 @@ export default function CatalogImport({
           <div>
             <h2>Approved workbook</h2>
             <p>
-              Imports Hose, Hose End, Ferrule, and exact compatibility data.
+              Imports Hose, Hose End, Ferrule, compatibility, Adapter, Quick
+              Coupler, and USD pricing data.
             </p>
           </div>
         </div>
@@ -185,8 +187,36 @@ export default function CatalogImport({
                   <strong>{review.summary.ferruleCount}</strong>
                 </article>
                 <article>
+                  <span>Adapter families</span>
+                  <strong>{review.summary.adapterFamilyCount}</strong>
+                </article>
+                <article>
+                  <span>Adapter SKUs</span>
+                  <strong>{review.summary.adapterCount}</strong>
+                </article>
+                <article>
+                  <span>Quick couplers</span>
+                  <strong>{review.summary.quickCouplerCount}</strong>
+                </article>
+                <article>
                   <span>Exact combinations</span>
                   <strong>{review.summary.compatibilityCount}</strong>
+                </article>
+                <article>
+                  <span>Sales offers</span>
+                  <strong>{review.summary.salesOfferCount}</strong>
+                </article>
+                <article>
+                  <span>USD reference prices</span>
+                  <strong>{review.summary.referencePriceCount}</strong>
+                </article>
+                <article>
+                  <span>Cost basis priced</span>
+                  <strong>{review.summary.costBasisPriceCount}</strong>
+                </article>
+                <article>
+                  <span>Total sale SKUs</span>
+                  <strong>{review.summary.skuCount}</strong>
                 </article>
               </div>
               <p className="import-safety-note">

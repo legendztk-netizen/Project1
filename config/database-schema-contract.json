@@ -1,9 +1,10 @@
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "migrations": [
     "0000_initial_catalog_release.sql",
     "0001_add_admin_identities.sql",
     "0002_catalog_workbook_drafts.sql",
-    "0003_preserve_compatibility_publication_status.sql"
+    "0003_preserve_compatibility_publication_status.sql",
+    "0004_complete_catalog_workbook.sql"
   ]
 }

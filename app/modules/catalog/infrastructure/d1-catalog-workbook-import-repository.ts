@@ -8,20 +8,30 @@ import type {
   SaveValidatedCatalogDraftOperation,
 } from "../domain/catalog-workbook-import";
 import type {
+  AdapterDraft,
+  AdapterFamilyDraft,
   CatalogImportValidationResult,
   CatalogSkuDraft,
   CompatibilityDraft,
+  CostBasisDraft,
   FerruleDraft,
   HoseEndDraft,
   HoseVariantDraft,
+  QuickCouplerDraft,
+  SalesOfferDraft,
 } from "../domain/catalog-workbook";
 import {
+  catalogAdapterFamilies,
+  catalogAdapters,
   catalogCompatibilities,
+  catalogCostBases,
   catalogFerrules,
   catalogHoseEnds,
   catalogHoseSeries,
   catalogHoseVariants,
   catalogImportValidationResults,
+  catalogQuickCouplers,
+  catalogSalesOffers,
   catalogSkus,
 } from "./database-schema";
 
@@ -56,19 +66,26 @@ function parseCatalogImportSummary(value: string): CatalogImportSummary {
   }
 
   const summary = decoded as Record<string, unknown>;
-  const count = (key: keyof CatalogImportSummary) => {
+  const count = (key: keyof CatalogImportSummary, legacyDefault = false) => {
     const count = summary[key];
+    if (legacyDefault && count === undefined) return 0;
     if (typeof count !== "number" || !Number.isInteger(count) || count < 0) {
       throw new Error(`Catalog import summary has an invalid ${key}`);
     }
     return count;
   };
   return {
+    adapterCount: count("adapterCount", true),
+    adapterFamilyCount: count("adapterFamilyCount", true),
     compatibilityCount: count("compatibilityCount"),
+    costBasisPriceCount: count("costBasisPriceCount", true),
     ferruleCount: count("ferruleCount"),
     hoseEndCount: count("hoseEndCount"),
     hoseSeriesCount: count("hoseSeriesCount"),
     hoseVariantCount: count("hoseVariantCount"),
+    quickCouplerCount: count("quickCouplerCount", true),
+    referencePriceCount: count("referencePriceCount", true),
+    salesOfferCount: count("salesOfferCount", true),
     skuCount: count("skuCount"),
   };
 }
@@ -196,6 +213,137 @@ const compatibilityColumns = [
   ["productionApprovalStatus", "production_approval_status"],
 ] as const satisfies readonly ColumnMapping<PersistedRow<CompatibilityDraft>>[];
 
+const adapterFamilyColumns = [
+  ["id", "id"],
+  ["importId", "import_id"],
+  ["adapterFamilyId", "adapter_family_id"],
+  ["skuTemplate", "sku_template"],
+  ["catalogModel", "catalog_model"],
+  ["websiteProductName", "website_product_name"],
+  ["shapeCode", "shape_code"],
+  ["interface1", "interface_1"],
+  ["connectionForm1", "connection_form_1"],
+  ["size1", "size_1"],
+  ["interface2", "interface_2"],
+  ["connectionForm2", "connection_form_2"],
+  ["size2", "size_2"],
+  ["interface3", "interface_3"],
+  ["connectionForm3", "connection_form_3"],
+  ["size3", "size_3"],
+  ["websiteDisplay", "website_display"],
+  ["source", "source"],
+  ["notes", "notes"],
+  ["catalogPublicationStatus", "catalog_publication_status"],
+  ["rfqEligibility", "rfq_eligibility"],
+  ["technicalDataStatus", "technical_data_status"],
+] as const satisfies readonly ColumnMapping<PersistedRow<AdapterFamilyDraft>>[];
+
+const adapterColumns = [
+  ["id", "id"],
+  ["importId", "import_id"],
+  ["sku", "sku"],
+  ["adapterFamilyId", "adapter_family_id"],
+  ["skuTemplate", "sku_template"],
+  ["catalogModel", "catalog_model"],
+  ["websiteProductName", "website_product_name"],
+  ["shapeCode", "shape_code"],
+  ["interface1", "interface_1"],
+  ["connectionForm1", "connection_form_1"],
+  ["size1", "size_1"],
+  ["interface2", "interface_2"],
+  ["connectionForm2", "connection_form_2"],
+  ["size2", "size_2"],
+  ["interface3", "interface_3"],
+  ["connectionForm3", "connection_form_3"],
+  ["size3", "size_3"],
+  ["websiteDisplay", "website_display"],
+  ["source", "source"],
+  ["notes", "notes"],
+] as const satisfies readonly ColumnMapping<PersistedRow<AdapterDraft>>[];
+
+const quickCouplerColumns = [
+  ["id", "id"],
+  ["importId", "import_id"],
+  ["sku", "sku"],
+  ["skuStandardCode", "sku_standard_code"],
+  ["skuRoleCode", "sku_role_code"],
+  ["bodyDash", "body_dash"],
+  ["portCode", "port_code"],
+  ["portDash", "port_dash"],
+  ["couplerSeries", "coupler_series"],
+  ["role", "role"],
+  ["matingSeries", "mating_series"],
+  ["interchangeStandard", "interchange_standard"],
+  ["bodySize", "body_size"],
+  ["portInterface", "port_interface"],
+  ["portGender", "port_gender"],
+  ["portThread", "port_thread"],
+  ["connectionMechanism", "connection_mechanism"],
+  ["valving", "valving"],
+  ["bodyMaterial", "body_material"],
+  ["coating", "coating"],
+  ["sealMaterial", "seal_material"],
+  ["maxWorkingBar", "max_working_bar"],
+  ["minimumBurstBar", "minimum_burst_bar"],
+  ["ratedFlowLMin", "rated_flow_l_min"],
+  ["pressureDropBasis", "pressure_drop_basis"],
+  ["tempMinC", "temp_min_c"],
+  ["tempMaxC", "temp_max_c"],
+  ["overallLengthMm", "overall_length_mm"],
+  ["unitWeightG", "unit_weight_g"],
+  ["drawingNumber", "drawing_number"],
+  ["source", "source"],
+  ["notes", "notes"],
+] as const satisfies readonly ColumnMapping<PersistedRow<QuickCouplerDraft>>[];
+
+const salesOfferColumns = [
+  ["id", "id"],
+  ["importId", "import_id"],
+  ["baseSku", "base_sku"],
+  ["salesSku", "sales_sku"],
+  ["productType", "product_type"],
+  ["salesUnit", "sales_unit"],
+  ["packageLengthFt", "package_length_ft"],
+  ["unitsPerSalesPack", "units_per_sales_pack"],
+  ["moq", "moq"],
+  ["netUnitWeightKg", "net_unit_weight_kg"],
+  ["leadTimeDays", "lead_time_days"],
+  ["countryOfOrigin", "country_of_origin"],
+  ["currency", "currency"],
+  ["referencePriceUsd", "reference_price_usd"],
+  ["innerPackQty", "inner_pack_qty"],
+  ["masterCartonQty", "master_carton_qty"],
+  ["cartonGrossWeightKg", "carton_gross_weight_kg"],
+  ["cartonLCm", "carton_l_cm"],
+  ["cartonWCm", "carton_w_cm"],
+  ["cartonHCm", "carton_h_cm"],
+  ["packingBasis", "packing_basis"],
+  ["hsCode", "hs_code"],
+  ["notes", "notes"],
+  ["catalogPublicationStatus", "catalog_publication_status"],
+  ["rfqEligibility", "rfq_eligibility"],
+  ["technicalDataStatus", "technical_data_status"],
+  ["quantityInputMode", "quantity_input_mode"],
+  ["minimumLengthPerPieceFt", "minimum_length_per_piece_ft"],
+  ["lengthIncrementFt", "length_increment_ft"],
+  ["presetLength1Ft", "preset_length_1_ft"],
+  ["presetLength2Ft", "preset_length_2_ft"],
+  ["presetLength3Ft", "preset_length_3_ft"],
+  ["continuousLengthConfirmation", "continuous_length_confirmation"],
+] as const satisfies readonly ColumnMapping<PersistedRow<SalesOfferDraft>>[];
+
+const costBasisColumns = [
+  ["id", "id"],
+  ["importId", "import_id"],
+  ["salesSku", "sales_sku"],
+  ["currency", "currency"],
+  ["factoryUnitPrice", "factory_unit_price"],
+  ["priceIncoterm", "price_incoterm"],
+  ["incotermPlace", "incoterm_place"],
+  ["tierQty", "tier_qty"],
+  ["tierPrice", "tier_price"],
+] as const satisfies readonly ColumnMapping<PersistedRow<CostBasisDraft>>[];
+
 const validationColumns = [
   ["id", "id"],
   ["importId", "import_id"],
@@ -248,15 +396,15 @@ function jsonInsertStatement<TRow>(
     .bind(JSON.stringify(rows));
 }
 
-async function insertJsonRows<TRow>(
+function jsonInsertStatements<TRow>(
   database: D1Database,
   table: Table,
   columns: readonly ColumnMapping<TRow>[],
   rows: TRow[],
 ) {
-  for (const batch of chunks(rows, 100)) {
-    await jsonInsertStatement(database, table, columns, batch).run();
-  }
+  return chunks(rows, 100).map((batch) =>
+    jsonInsertStatement(database, table, columns, batch),
+  );
 }
 
 function importStatement(
@@ -431,21 +579,21 @@ export function createD1CatalogWorkbookImportRepository(
     async saveFailedImport(operation) {
       await database.batch([
         importStatement(database, operation.review, "failed"),
+        ...jsonInsertStatements(
+          database,
+          catalogImportValidationResults,
+          validationColumns,
+          validationRows(operation.review),
+        ),
         auditStatement(database, operation, "catalog_import.validation_failed"),
       ]);
-      await insertJsonRows(
-        database,
-        catalogImportValidationResults,
-        validationColumns,
-        validationRows(operation.review),
-      );
     },
 
     async saveValidatedDraft(operation) {
       const { draft, review } = operation;
-      await importStatement(database, review, "pending").run();
-      try {
-        await insertJsonRows(
+      await database.batch([
+        importStatement(database, review, "pending"),
+        ...jsonInsertStatements(
           database,
           catalogSkus,
           skuColumns,
@@ -454,8 +602,8 @@ export function createD1CatalogWorkbookImportRepository(
             id: `${review.id}:sku:${row.sku}`,
             importId: review.id,
           })),
-        );
-        await insertJsonRows(
+        ),
+        ...jsonInsertStatements(
           database,
           catalogHoseSeries,
           hoseSeriesColumns,
@@ -464,8 +612,8 @@ export function createD1CatalogWorkbookImportRepository(
             importId: review.id,
             seriesCode,
           })),
-        );
-        await insertJsonRows(
+        ),
+        ...jsonInsertStatements(
           database,
           catalogHoseVariants,
           hoseVariantColumns,
@@ -474,8 +622,8 @@ export function createD1CatalogWorkbookImportRepository(
             id: `${review.id}:hose:${row.sku}`,
             importId: review.id,
           })),
-        );
-        await insertJsonRows(
+        ),
+        ...jsonInsertStatements(
           database,
           catalogHoseEnds,
           hoseEndColumns,
@@ -484,8 +632,8 @@ export function createD1CatalogWorkbookImportRepository(
             id: `${review.id}:end:${row.sku}`,
             importId: review.id,
           })),
-        );
-        await insertJsonRows(
+        ),
+        ...jsonInsertStatements(
           database,
           catalogFerrules,
           ferruleColumns,
@@ -494,8 +642,58 @@ export function createD1CatalogWorkbookImportRepository(
             id: `${review.id}:ferrule:${row.sku}`,
             importId: review.id,
           })),
-        );
-        await insertJsonRows(
+        ),
+        ...jsonInsertStatements(
+          database,
+          catalogAdapterFamilies,
+          adapterFamilyColumns,
+          draft.adapterFamilies.map((row) => ({
+            ...row,
+            id: `${review.id}:adapter-family:${row.adapterFamilyId}`,
+            importId: review.id,
+          })),
+        ),
+        ...jsonInsertStatements(
+          database,
+          catalogAdapters,
+          adapterColumns,
+          draft.adapters.map((row) => ({
+            ...row,
+            id: `${review.id}:adapter:${row.sku}`,
+            importId: review.id,
+          })),
+        ),
+        ...jsonInsertStatements(
+          database,
+          catalogQuickCouplers,
+          quickCouplerColumns,
+          draft.quickCouplers.map((row) => ({
+            ...row,
+            id: `${review.id}:quick-coupler:${row.sku}`,
+            importId: review.id,
+          })),
+        ),
+        ...jsonInsertStatements(
+          database,
+          catalogSalesOffers,
+          salesOfferColumns,
+          draft.salesOffers.map((row) => ({
+            ...row,
+            id: `${review.id}:sales-offer:${row.salesSku}`,
+            importId: review.id,
+          })),
+        ),
+        ...jsonInsertStatements(
+          database,
+          catalogCostBases,
+          costBasisColumns,
+          draft.costBases.map((row) => ({
+            ...row,
+            id: `${review.id}:cost-basis:${row.salesSku}`,
+            importId: review.id,
+          })),
+        ),
+        ...jsonInsertStatements(
           database,
           catalogCompatibilities,
           compatibilityColumns,
@@ -504,43 +702,34 @@ export function createD1CatalogWorkbookImportRepository(
             id: `${review.id}:compatibility:${row.compatibilityId}`,
             importId: review.id,
           })),
-        );
-        await insertJsonRows(
+        ),
+        ...jsonInsertStatements(
           database,
           catalogImportValidationResults,
           validationColumns,
           validationRows(review),
-        );
-
-        await database.batch([
-          database
-            .prepare(
-              `UPDATE catalog_imports
-               SET status = 'completed', completed_at = ?2
-               WHERE id = ?1 AND status = 'pending'`,
-            )
-            .bind(review.id, review.completedAt),
-          database
-            .prepare(
-              `INSERT INTO catalog_releases (
-                id, release_number, status, source_import_id, version, created_at, published_at
-              ) VALUES (?1, ?2, 'draft', ?3, 1, ?4, NULL)`,
-            )
-            .bind(
-              review.draftReleaseId,
-              review.draftReleaseNumber,
-              review.id,
-              review.completedAt,
-            ),
-          auditStatement(database, operation, "catalog_import.draft_created"),
-        ]);
-      } catch (error) {
-        await database
-          .prepare("DELETE FROM catalog_imports WHERE id = ?1")
-          .bind(review.id)
-          .run();
-        throw error;
-      }
+        ),
+        database
+          .prepare(
+            `UPDATE catalog_imports
+             SET status = 'completed', completed_at = ?2
+             WHERE id = ?1 AND status = 'pending'`,
+          )
+          .bind(review.id, review.completedAt),
+        database
+          .prepare(
+            `INSERT INTO catalog_releases (
+              id, release_number, status, source_import_id, version, created_at, published_at
+            ) VALUES (?1, ?2, 'draft', ?3, 1, ?4, NULL)`,
+          )
+          .bind(
+            review.draftReleaseId,
+            review.draftReleaseNumber,
+            review.id,
+            review.completedAt,
+          ),
+        auditStatement(database, operation, "catalog_import.draft_created"),
+      ]);
     },
   };
 }

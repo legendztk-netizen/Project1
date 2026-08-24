@@ -35,7 +35,7 @@ beforeAll(async () => {
   );
 });
 
-describe("01-04 catalog workbook contract", () => {
+describe("01-07 catalog workbook contract", () => {
   it("normalizes the supplied finished workbook without inventing relationships", () => {
     const result = validateCatalogWorkbook(fixture);
 
@@ -48,6 +48,12 @@ describe("01-04 catalog workbook contract", () => {
     expect(result.draft?.hoseEnds).toHaveLength(200);
     expect(result.draft?.ferrules).toHaveLength(61);
     expect(result.draft?.compatibilities).toHaveLength(1081);
+    expect(result.draft?.adapterFamilies).toHaveLength(17);
+    expect(result.draft?.adapters).toHaveLength(136);
+    expect(result.draft?.quickCouplers).toHaveLength(57);
+    expect(result.draft?.salesOffers).toHaveLength(515);
+    expect(result.draft?.costBases).toHaveLength(515);
+    expect(result.draft?.skus).toHaveLength(515);
 
     const hoseEnd = result.draft?.hoseEnds.find(
       (row) => row.sku === "ORFS90_F_SW_20_16",
@@ -69,6 +75,51 @@ describe("01-04 catalog workbook contract", () => {
       qualificationStatus: "Not Tested",
       rfqEligibility: "Eligible",
       technicalDataStatus: "Pending",
+    });
+
+    const adapter = result.draft?.adapters.find(
+      (row) => row.sku === "ADP_ST_JIC_M_10_NPT_M_04",
+    );
+    expect(adapter).toMatchObject({
+      connectionForm1: "M",
+      connectionForm2: "M",
+      interface1: "JIC",
+      interface2: "NPT",
+      shapeCode: "ST",
+      size1: "-10",
+      size2: "-4",
+    });
+
+    const quickCoupler = result.draft?.quickCouplers.find(
+      (row) => row.sku === "QDC_16028_SOC_04_FNPT_04",
+    );
+    expect(quickCoupler).toMatchObject({
+      bodyDash: "04",
+      bodyMaterial: null,
+      bodySize: "1/4 in",
+      interchangeStandard: "ISO 16028",
+      maxWorkingBar: null,
+      portCode: "FNPT",
+      portDash: "04",
+      portInterface: "NPTF",
+      role: "Coupler/Socket",
+      skuRoleCode: "SOC",
+      skuStandardCode: "16028",
+      technicalDataStatus: "Pending",
+    });
+
+    const publicOffer = result.draft?.salesOffers.find(
+      (row) => row.salesSku === "601R1_001",
+    );
+    expect(publicOffer).toMatchObject({
+      cartonGrossWeightKg: null,
+      currency: "USD",
+      referencePriceUsd: 2.16,
+    });
+    expect(result.draft?.costBases[0]).toMatchObject({
+      currency: "USD",
+      factoryUnitPrice: null,
+      tierPrice: null,
     });
     expect(result.draft?.skus.every((sku) => sku.supplyAvailability)).toBe(
       true,
@@ -173,6 +224,114 @@ describe("01-04 catalog workbook contract", () => {
         row: 6,
         sku: "601R1_002",
       }),
+    );
+  });
+
+  it("blocks orphaned and duplicate worksheet 07 price references", () => {
+    const orphaned = cloneFixture();
+    const orphanPrices = sheetByName(orphaned, "07_价格包装");
+    orphanPrices.data[4][2] = "MISSING_PRODUCT";
+
+    const orphanResult = validateCatalogWorkbook(orphaned);
+
+    expect(orphanResult.draft).toBeNull();
+    expect(orphanResult.blockingErrors).toContainEqual(
+      expect.objectContaining({
+        code: "orphan_price_row",
+        field: "Base SKU / 基础SKU",
+        row: 5,
+        sku: "601R1_001",
+      }),
+    );
+
+    const duplicated = cloneFixture();
+    const duplicatePrices = sheetByName(duplicated, "07_价格包装");
+    duplicatePrices.data[5][2] = duplicatePrices.data[4][2];
+    duplicatePrices.data[5][3] = duplicatePrices.data[4][3];
+
+    const duplicateResult = validateCatalogWorkbook(duplicated);
+
+    expect(duplicateResult.draft).toBeNull();
+    expect(duplicateResult.blockingErrors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "duplicate_price_row",
+          field: "Base SKU / 基础SKU",
+          row: 6,
+        }),
+        expect.objectContaining({
+          code: "duplicate_price_row",
+          field: "Sales SKU / 销售SKU",
+          row: 6,
+        }),
+      ]),
+    );
+  });
+
+  it("requires explicit USD currency when a public or internal price exists", () => {
+    const sheets = cloneFixture();
+    const prices = sheetByName(sheets, "07_价格包装");
+    prices.data[4][11] = null;
+
+    const result = validateCatalogWorkbook(sheets);
+
+    expect(result.draft).toBeNull();
+    expect(result.blockingErrors).toContainEqual(
+      expect.objectContaining({
+        code: "price_currency_required",
+        field: "Currency / 币种",
+        row: 5,
+      }),
+    );
+  });
+
+  it("keeps worksheet 07 product type and status aligned with the exact Base SKU", () => {
+    const sheets = cloneFixture();
+    const prices = sheetByName(sheets, "07_价格包装");
+    prices.data[4][1] = "Adapter";
+    prices.data[4][27] = "Blocked";
+
+    const result = validateCatalogWorkbook(sheets);
+
+    expect(result.draft).toBeNull();
+    expect(result.blockingErrors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "price_product_type_mismatch",
+          field: "Product Type / 产品类型",
+          row: 5,
+        }),
+        expect.objectContaining({
+          code: "price_status_mismatch",
+          field: "RFQ Eligibility / 询价资格",
+          row: 5,
+        }),
+      ]),
+    );
+  });
+
+  it("blocks impossible worksheet 07 quantities and prices", () => {
+    const sheets = cloneFixture();
+    const prices = sheetByName(sheets, "07_价格包装");
+    prices.data[4][7] = 1.5;
+    prices.data[4][17] = -1;
+
+    const result = validateCatalogWorkbook(sheets);
+
+    expect(result.draft).toBeNull();
+    expect(result.blockingErrors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "invalid_positive_integer",
+          field: "MOQ / 最小起订量",
+          row: 5,
+        }),
+        expect.objectContaining({
+          code: "invalid_positive_number",
+          field: "Retail Unit Price USD / 零售单价",
+          row: 5,
+        }),
+      ]),
     );
   });
 });

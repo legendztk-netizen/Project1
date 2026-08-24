@@ -5,6 +5,7 @@ The initial skeleton exposes three deliberately separate surfaces:
 
 - `/` - Customer Storefront catalog workspace
 - `/admin` - Admin Backoffice shell
+- `/admin/catalog/import` - authorized seven-worksheet catalog import and review
 - `/health` - machine-readable Worker health response
 
 ## Prerequisites
@@ -38,7 +39,7 @@ pnpm deploy:validate:production
 
 `test:smoke` builds the application, starts Vite's workerd-backed Cloudflare
 preview, and verifies the Storefront, Admin, persisted Catalog Release
-diagnostic, and health routes through HTTP. `test:d1` uses persistent local D1
+diagnostic, full 01-07 workbook import, and health routes through HTTP. `test:d1` uses persistent local D1
 instances rather than a database mock.
 
 ## Environment commands
