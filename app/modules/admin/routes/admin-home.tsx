@@ -24,7 +24,7 @@ export function loader({ context }: Route.LoaderArgs) {
 const adminNavigation = [
   { label: "Overview", icon: LayoutDashboard },
   { label: "Catalog", icon: Boxes },
-  { label: "Imports", icon: FileUp },
+  { label: "Imports", icon: FileUp, to: "/admin/catalog/import" },
   { label: "Releases", icon: Database },
   { label: "System", icon: Settings },
 ];
@@ -35,16 +35,27 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
       <aside className="admin-sidebar">
         <BrandMark />
         <nav aria-label="Admin navigation">
-          {adminNavigation.map(({ label, icon: Icon }) => (
-            <span
-              aria-current={label === "Overview" ? "page" : undefined}
-              className={`admin-nav-item${label === "Overview" ? " active" : ""}`}
-              key={label}
-            >
-              <Icon size={18} />
-              {label}
-            </span>
-          ))}
+          {adminNavigation.map(({ label, icon: Icon, to }) => {
+            const content = (
+              <>
+                <Icon size={18} />
+                {label}
+              </>
+            );
+            return to ? (
+              <Link className="admin-nav-item" key={label} to={to}>
+                {content}
+              </Link>
+            ) : (
+              <span
+                aria-current={label === "Overview" ? "page" : undefined}
+                className={`admin-nav-item${label === "Overview" ? " active" : ""}`}
+                key={label}
+              >
+                {content}
+              </span>
+            );
+          })}
         </nav>
         <Link className="admin-storefront-link" to="/">
           Open storefront
@@ -93,6 +104,9 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
               <p>The import and release workflow will appear here.</p>
             </div>
           </div>
+          <Link className="button button-primary" to="/admin/catalog/import">
+            <FileUp size={17} /> Import product workbook
+          </Link>
           <Link
             className="button button-secondary"
             to="/admin/diagnostics/catalog-release"

@@ -15,6 +15,20 @@
       "when": 1787308333417,
       "tag": "0001_add_admin_identities",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787535436130,
+      "tag": "0002_catalog_workbook_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1787537068514,
+      "tag": "0003_preserve_compatibility_publication_status",
+      "breakpoints": true
     }
   ]
 }

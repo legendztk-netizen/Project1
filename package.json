@@ -36,6 +36,7 @@
     "typegen": "env -u CLOUDFLARE_ENV wrangler types worker-configuration.d.ts --env-interface CloudflareBindings && react-router typegen"
   },
   "dependencies": {
+    "@e965/xlsx": "0.20.3",
     "drizzle-orm": "0.45.2",
     "isbot": "5.2.1",
     "jose": "6.2.9",

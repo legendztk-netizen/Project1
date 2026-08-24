@@ -1,0 +1,1598 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "04cb532e-bc4e-494f-8631-9b71c4d3ab4c",
+  "prevId": "3f6c47f4-f69e-4f5a-9cc3-ad9c70b268b6",
+  "tables": {
+    "admin_identities": {
+      "name": "admin_identities",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "account_type": {
+          "name": "account_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "can_manage_subaccounts": {
+          "name": "can_manage_subaccounts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "admin_identities_email_uq": {
+          "name": "admin_identities_email_uq",
+          "columns": [
+            "email"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "admin_identity_account_type": {
+          "name": "admin_identity_account_type",
+          "value": "\"admin_identities\".\"account_type\" in ('owner', 'subaccount')"
+        },
+        "admin_identity_email_lowercase": {
+          "name": "admin_identity_email_lowercase",
+          "value": "\"admin_identities\".\"email\" = lower(\"admin_identities\".\"email\")"
+        },
+        "admin_identity_status": {
+          "name": "admin_identity_status",
+          "value": "\"admin_identities\".\"status\" in ('active', 'disabled')"
+        }
+      }
+    },
+    "admin_audit_events": {
+      "name": "admin_audit_events",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "entity_type": {
+          "name": "entity_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "entity_id": {
+          "name": "entity_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payload_json": {
+          "name": "payload_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'{}'"
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "admin_audit_events_entity_idx": {
+          "name": "admin_audit_events_entity_idx",
+          "columns": [
+            "entity_type",
+            "entity_id"
+          ],
+          "isUnique": false
+        },
+        "admin_audit_events_occurred_at_idx": {
+          "name": "admin_audit_events_occurred_at_idx",
+          "columns": [
+            "occurred_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "application_schema_state": {
+      "name": "application_schema_state",
+      "columns": {
+        "singleton": {
+          "name": "singleton",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "catalog_compatibilities": {
+      "name": "catalog_compatibilities",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "import_id": {
+          "name": "import_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "compatibility_id": {
+          "name": "compatibility_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "hose_sku": {
+          "name": "hose_sku",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "hose_end_sku": {
+          "name": "hose_end_sku",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ferrule_sku": {
+          "name": "ferrule_sku",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "assembly_method": {
+          "name": "assembly_method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "skive_requirement": {
+          "name": "skive_requirement",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "outer_skive_length_mm": {
+          "name": "outer_skive_length_mm",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "inner_skive_length_mm": {
+          "name": "inner_skive_length_mm",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "insertion_depth_mm": {
+          "name": "insertion_depth_mm",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "crimp_program": {
+          "name": "crimp_program",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "final_crimp_diameter_mm": {
+          "name": "final_crimp_diameter_mm",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "tolerance_mm": {
+          "name": "tolerance_mm",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "measurement_location": {
+          "name": "measurement_location",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "assembly_working_bar": {
+          "name": "assembly_working_bar",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "proof_pressure_bar": {
+          "name": "proof_pressure_bar",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "proof_hold_seconds": {
+          "name": "proof_hold_seconds",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "qualification_id": {
+          "name": "qualification_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "qualification_status": {
+          "name": "qualification_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "rfq_eligibility": {
+          "name": "rfq_eligibility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "reference_system": {
+          "name": "reference_system",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reference_hose_code": {
+          "name": "reference_hose_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reference_assembly_method": {
+          "name": "reference_assembly_method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reference_crimp_diameter_mm": {
+          "name": "reference_crimp_diameter_mm",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reference_tolerance_mm": {
+          "name": "reference_tolerance_mm",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reference_source": {
+          "name": "reference_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "technical_data_status": {
+          "name": "technical_data_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "production_approval_status": {
+          "name": "production_approval_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "catalog_compatibilities_import_id_uq": {
+          "name": "catalog_compatibilities_import_id_uq",
+          "columns": [
+            "import_id",
+            "compatibility_id"
+          ],
+          "isUnique": true
+        },
+        "catalog_compatibilities_exact_tuple_uq": {
+          "name": "catalog_compatibilities_exact_tuple_uq",
+          "columns": [
+            "import_id",
+            "hose_sku",
+            "hose_end_sku",
+            "ferrule_sku"
+          ],
+          "isUnique": true
+        },
+        "catalog_compatibilities_import_status_idx": {
+          "name": "catalog_compatibilities_import_status_idx",
+          "columns": [
+            "import_id",
+            "rfq_eligibility",
+            "qualification_status"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "catalog_compatibilities_import_id_catalog_imports_id_fk": {
+          "name": "catalog_compatibilities_import_id_catalog_imports_id_fk",
+          "tableFrom": "catalog_compatibilities",
+          "tableTo": "catalog_imports",
+          "columnsFrom": [
+            "import_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "catalog_compatibilities_hose_sku_fk": {
+          "name": "catalog_compatibilities_hose_sku_fk",
+          "tableFrom": "catalog_compatibilities",
+          "tableTo": "catalog_skus",
+          "columnsFrom": [
+            "import_id",
+            "hose_sku"
+          ],
+          "columnsTo": [
+            "import_id",
+            "sku"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "catalog_compatibilities_hose_end_sku_fk": {
+          "name": "catalog_compatibilities_hose_end_sku_fk",
+          "tableFrom": "catalog_compatibilities",
+          "tableTo": "catalog_skus",
+          "columnsFrom": [
+            "import_id",
+            "hose_end_sku"
+          ],
+          "columnsTo": [
+            "import_id",
+            "sku"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "catalog_compatibilities_ferrule_sku_fk": {
+          "name": "catalog_compatibilities_ferrule_sku_fk",
+          "tableFrom": "catalog_compatibilities",
+          "tableTo": "catalog_skus",
+          "columnsFrom": [
+            "import_id",
+            "ferrule_sku"
+          ],
+          "columnsTo": [
+            "import_id",
+            "sku"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "catalog_compatibility_production_approval": {
+          "name": "catalog_compatibility_production_approval",
+          "value": "\"catalog_compatibilities\".\"production_approval_status\" in ('approved', 'not_approved')"
+        }
+      }
+    },
+    "catalog_ferrules": {
+      "name": "catalog_ferrules",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "import_id": {
+          "name": "import_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sku": {
+          "name": "sku",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ferrule_series": {
+          "name": "ferrule_series",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "hose_construction": {
+          "name": "hose_construction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "hose_tail_dash": {
+          "name": "hose_tail_dash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "skive_requirement": {
+          "name": "skive_requirement",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "material": {
+          "name": "material",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "coating": {
+          "name": "coating",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "catalog_ferrules_import_sku_uq": {
+          "name": "catalog_ferrules_import_sku_uq",
+          "columns": [
+            "import_id",
+            "sku"
+          ],
+          "isUnique": true
+        },
+        "catalog_ferrules_series_dash_idx": {
+          "name": "catalog_ferrules_series_dash_idx",
+          "columns": [
+            "import_id",
+            "ferrule_series",
+            "hose_tail_dash"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "catalog_ferrules_catalog_sku_fk": {
+          "name": "catalog_ferrules_catalog_sku_fk",
+          "tableFrom": "catalog_ferrules",
+          "tableTo": "catalog_skus",
+          "columnsFrom": [
+            "import_id",
+            "sku"
+          ],
+          "columnsTo": [
+            "import_id",
+            "sku"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "catalog_hose_ends": {
+      "name": "catalog_hose_ends",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "import_id": {
+          "name": "import_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sku": {
+          "name": "sku",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "fitting_series": {
+          "name": "fitting_series",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "competitor_part_number": {
+          "name": "competitor_part_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "interface_family": {
+          "name": "interface_family",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "connection_standard": {
+          "name": "connection_standard",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "gender": {
+          "name": "gender",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "swivel_form": {
+          "name": "swivel_form",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "angle": {
+          "name": "angle",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sealing_form": {
+          "name": "sealing_form",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread": {
+          "name": "thread",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "connection_dash": {
+          "name": "connection_dash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "hose_tail_dash": {
+          "name": "hose_tail_dash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "material": {
+          "name": "material",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "coating": {
+          "name": "coating",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "salt_spray_hours": {
+          "name": "salt_spray_hours",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "max_working_bar": {
+          "name": "max_working_bar",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "dimension_a_mm": {
+          "name": "dimension_a_mm",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cutoff_b_mm": {
+          "name": "cutoff_b_mm",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "hex_1_mm": {
+          "name": "hex_1_mm",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "hex_2_mm": {
+          "name": "hex_2_mm",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "minimum_bore_mm": {
+          "name": "minimum_bore_mm",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "unit_weight_g": {
+          "name": "unit_weight_g",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "drawing_number": {
+          "name": "drawing_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "drawing_revision": {
+          "name": "drawing_revision",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "catalog_hose_ends_import_sku_uq": {
+          "name": "catalog_hose_ends_import_sku_uq",
+          "columns": [
+            "import_id",
+            "sku"
+          ],
+          "isUnique": true
+        },
+        "catalog_hose_ends_interface_idx": {
+          "name": "catalog_hose_ends_interface_idx",
+          "columns": [
+            "import_id",
+            "interface_family",
+            "connection_dash",
+            "hose_tail_dash"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "catalog_hose_ends_catalog_sku_fk": {
+          "name": "catalog_hose_ends_catalog_sku_fk",
+          "tableFrom": "catalog_hose_ends",
+          "tableTo": "catalog_skus",
+          "columnsFrom": [
+            "import_id",
+            "sku"
+          ],
+          "columnsTo": [
+            "import_id",
+            "sku"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "catalog_hose_series": {
+      "name": "catalog_hose_series",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "import_id": {
+          "name": "import_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "series_code": {
+          "name": "series_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "catalog_hose_series_import_code_uq": {
+          "name": "catalog_hose_series_import_code_uq",
+          "columns": [
+            "import_id",
+            "series_code"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "catalog_hose_series_import_id_catalog_imports_id_fk": {
+          "name": "catalog_hose_series_import_id_catalog_imports_id_fk",
+          "tableFrom": "catalog_hose_series",
+          "tableTo": "catalog_imports",
+          "columnsFrom": [
+            "import_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "catalog_hose_variants": {
+      "name": "catalog_hose_variants",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "import_id": {
+          "name": "import_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sku": {
+          "name": "sku",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "hose_series": {
+          "name": "hose_series",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "primary_standard": {
+          "name": "primary_standard",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "equivalent_standard": {
+          "name": "equivalent_standard",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "dash": {
+          "name": "dash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "nominal_id_in": {
+          "name": "nominal_id_in",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "id_mm": {
+          "name": "id_mm",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "od_mm": {
+          "name": "od_mm",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "working_bar": {
+          "name": "working_bar",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "working_psi": {
+          "name": "working_psi",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "burst_bar": {
+          "name": "burst_bar",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "bend_radius_mm": {
+          "name": "bend_radius_mm",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "weight_kg_m": {
+          "name": "weight_kg_m",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "temp_min_c": {
+          "name": "temp_min_c",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "temp_max_c": {
+          "name": "temp_max_c",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tube_material": {
+          "name": "tube_material",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "reinforcement": {
+          "name": "reinforcement",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cover_material": {
+          "name": "cover_material",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cover_color": {
+          "name": "cover_color",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cover_finish": {
+          "name": "cover_finish",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "skive_requirement": {
+          "name": "skive_requirement",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "msha_marking": {
+          "name": "msha_marking",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "fluid_compatibility": {
+          "name": "fluid_compatibility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "catalog_hose_variants_import_sku_uq": {
+          "name": "catalog_hose_variants_import_sku_uq",
+          "columns": [
+            "import_id",
+            "sku"
+          ],
+          "isUnique": true
+        },
+        "catalog_hose_variants_series_dash_idx": {
+          "name": "catalog_hose_variants_series_dash_idx",
+          "columns": [
+            "import_id",
+            "hose_series",
+            "dash"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "catalog_hose_variants_catalog_sku_fk": {
+          "name": "catalog_hose_variants_catalog_sku_fk",
+          "tableFrom": "catalog_hose_variants",
+          "tableTo": "catalog_skus",
+          "columnsFrom": [
+            "import_id",
+            "sku"
+          ],
+          "columnsTo": [
+            "import_id",
+            "sku"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "catalog_import_validation_results": {
+      "name": "catalog_import_validation_results",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "import_id": {
+          "name": "import_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "worksheet": {
+          "name": "worksheet",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "row_number": {
+          "name": "row_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "field_name": {
+          "name": "field_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "stable_sku": {
+          "name": "stable_sku",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "severity": {
+          "name": "severity",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "message": {
+          "name": "message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "catalog_import_validation_import_idx": {
+          "name": "catalog_import_validation_import_idx",
+          "columns": [
+            "import_id",
+            "row_number"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "catalog_import_validation_results_import_id_catalog_imports_id_fk": {
+          "name": "catalog_import_validation_results_import_id_catalog_imports_id_fk",
+          "tableFrom": "catalog_import_validation_results",
+          "tableTo": "catalog_imports",
+          "columnsFrom": [
+            "import_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "catalog_import_validation_severity": {
+          "name": "catalog_import_validation_severity",
+          "value": "\"catalog_import_validation_results\".\"severity\" in ('error', 'warning')"
+        }
+      }
+    },
+    "catalog_imports": {
+      "name": "catalog_imports",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_file_name": {
+          "name": "source_file_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source_file_size_bytes": {
+          "name": "source_file_size_bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "summary_json": {
+          "name": "summary_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'{}'"
+        },
+        "error_count": {
+          "name": "error_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "warning_count": {
+          "name": "warning_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "catalog_imports_created_at_idx": {
+          "name": "catalog_imports_created_at_idx",
+          "columns": [
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "catalog_import_kind": {
+          "name": "catalog_import_kind",
+          "value": "\"catalog_imports\".\"kind\" in ('diagnostic', 'workbook')"
+        },
+        "catalog_import_status": {
+          "name": "catalog_import_status",
+          "value": "\"catalog_imports\".\"status\" in ('pending', 'completed', 'failed')"
+        }
+      }
+    },
+    "catalog_releases": {
+      "name": "catalog_releases",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "release_number": {
+          "name": "release_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_import_id": {
+          "name": "source_import_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "published_at": {
+          "name": "published_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "catalog_releases_release_number_uq": {
+          "name": "catalog_releases_release_number_uq",
+          "columns": [
+            "release_number"
+          ],
+          "isUnique": true
+        },
+        "catalog_releases_status_created_at_idx": {
+          "name": "catalog_releases_status_created_at_idx",
+          "columns": [
+            "status",
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "catalog_releases_source_import_id_catalog_imports_id_fk": {
+          "name": "catalog_releases_source_import_id_catalog_imports_id_fk",
+          "tableFrom": "catalog_releases",
+          "tableTo": "catalog_imports",
+          "columnsFrom": [
+            "source_import_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "catalog_release_status": {
+          "name": "catalog_release_status",
+          "value": "\"catalog_releases\".\"status\" in ('draft', 'published', 'superseded')"
+        }
+      }
+    },
+    "catalog_skus": {
+      "name": "catalog_skus",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "import_id": {
+          "name": "import_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sku": {
+          "name": "sku",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_worksheet": {
+          "name": "source_worksheet",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "product_type": {
+          "name": "product_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "hose_series": {
+          "name": "hose_series",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "catalog_publication_status": {
+          "name": "catalog_publication_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "rfq_eligibility": {
+          "name": "rfq_eligibility",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "technical_data_status": {
+          "name": "technical_data_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "supply_availability": {
+          "name": "supply_availability",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "catalog_skus_import_sku_uq": {
+          "name": "catalog_skus_import_sku_uq",
+          "columns": [
+            "import_id",
+            "sku"
+          ],
+          "isUnique": true
+        },
+        "catalog_skus_import_type_idx": {
+          "name": "catalog_skus_import_type_idx",
+          "columns": [
+            "import_id",
+            "product_type"
+          ],
+          "isUnique": false
+        },
+        "catalog_skus_import_series_idx": {
+          "name": "catalog_skus_import_series_idx",
+          "columns": [
+            "import_id",
+            "hose_series"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "catalog_skus_import_id_catalog_imports_id_fk": {
+          "name": "catalog_skus_import_id_catalog_imports_id_fk",
+          "tableFrom": "catalog_skus",
+          "tableTo": "catalog_imports",
+          "columnsFrom": [
+            "import_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "catalog_sku_product_type": {
+          "name": "catalog_sku_product_type",
+          "value": "\"catalog_skus\".\"product_type\" in ('hose', 'hose_end', 'ferrule', 'adapter', 'quick_coupler')"
+        },
+        "catalog_sku_supply_availability": {
+          "name": "catalog_sku_supply_availability",
+          "value": "\"catalog_skus\".\"supply_availability\" in ('available_for_quote', 'temporarily_unavailable', 'discontinued')"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

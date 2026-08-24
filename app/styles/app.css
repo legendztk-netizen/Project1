@@ -2,7 +2,12 @@
   color: #182027;
   background: #f3f5f6;
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
     sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -559,6 +564,209 @@ a {
   padding: 34px 0 64px;
 }
 
+.catalog-import-page {
+  width: min(1180px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 34px 0 64px;
+}
+
+.catalog-import-page > header h1 {
+  margin: 8px 0 10px;
+  font-size: 2rem;
+}
+
+.catalog-import-page > header p,
+.catalog-upload-panel p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.catalog-upload-panel,
+.catalog-import-review {
+  margin-top: 28px;
+  padding: 24px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.catalog-upload-panel > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.catalog-upload-panel h2,
+.catalog-import-review h2 {
+  margin: 0 0 5px;
+  font-size: 1.15rem;
+}
+
+.catalog-upload-panel form {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto;
+  align-items: end;
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.file-field {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.file-field input {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 10px;
+  color: var(--ink);
+  background: #ffffff;
+  border: 1px solid #aeb8bf;
+  border-radius: 5px;
+}
+
+.form-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px !important;
+  color: #a4251b !important;
+  font-weight: 650;
+}
+
+.import-result-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.import-result-heading.completed {
+  color: var(--success);
+}
+
+.import-result-heading.failed {
+  color: #a4251b;
+}
+
+.import-result-heading .eyebrow {
+  margin-bottom: 4px;
+}
+
+.import-metadata {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  margin: 24px 0 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.import-metadata > div {
+  min-width: 0;
+  padding: 14px 16px 14px 0;
+}
+
+.import-metadata dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.import-metadata dd {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.import-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-top: 20px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+
+.import-summary-grid article {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  padding: 16px;
+  border-right: 1px solid var(--line);
+}
+
+.import-summary-grid article:last-child {
+  border-right: 0;
+}
+
+.import-summary-grid span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.import-summary-grid strong {
+  font-size: 1.25rem;
+}
+
+.import-safety-note {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  color: #4b5962;
+  background: #f3f6f7;
+  border-left: 3px solid var(--steel);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.validation-table-wrap {
+  margin-top: 22px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+
+.validation-table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+  font-size: 0.76rem;
+}
+
+.validation-table th,
+.validation-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.validation-table th {
+  color: #48555e;
+  background: #f3f5f6;
+}
+
+.severity-badge {
+  display: inline-flex;
+  padding: 3px 7px;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.severity-badge.error {
+  color: #9b241a;
+  background: #fdece9;
+}
+
+.severity-badge.warning {
+  color: #7a5312;
+  background: #fff4d6;
+}
+
 .diagnostic-toolbar {
   display: flex;
   align-items: center;
@@ -723,6 +931,10 @@ a {
     width: min(100% - 36px, 880px);
   }
 
+  .catalog-import-page {
+    width: min(100% - 36px, 1180px);
+  }
+
   .diagnostic-toolbar {
     align-items: flex-start;
     flex-direction: column;
@@ -731,6 +943,21 @@ a {
 
   .diagnostic-panel dl {
     grid-template-columns: 1fr;
+  }
+
+  .catalog-upload-panel form,
+  .import-metadata,
+  .import-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .import-summary-grid article {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .import-summary-grid article:last-child {
+    border-bottom: 0;
   }
 
   .admin-nav-item {
