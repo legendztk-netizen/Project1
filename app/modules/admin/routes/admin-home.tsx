@@ -23,7 +23,7 @@ export function loader({ context }: Route.LoaderArgs) {
 
 const adminNavigation = [
   { label: "Overview", icon: LayoutDashboard },
-  { label: "Catalog", icon: Boxes },
+  { label: "Catalog", icon: Boxes, to: "/admin/catalog/review" },
   { label: "Imports", icon: FileUp, to: "/admin/catalog/import" },
   { label: "Releases", icon: Database },
   { label: "System", icon: Settings },
@@ -106,6 +106,9 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
           </div>
           <Link className="button button-primary" to="/admin/catalog/import">
             <FileUp size={17} /> Import product workbook
+          </Link>
+          <Link className="button button-secondary" to="/admin/catalog/review">
+            <Boxes size={17} /> Review draft products
           </Link>
           <Link
             className="button button-secondary"

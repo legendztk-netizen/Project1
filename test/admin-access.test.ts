@@ -52,6 +52,7 @@ describe("Admin route boundary", () => {
     ["/admin", true],
     ["/admin/", true],
     ["/admin/catalog", true],
+    ["/admin/catalog/review", true],
     ["/administrator", false],
     ["/", false],
   ])("classifies %s", (pathname, expected) => {
@@ -82,7 +83,7 @@ describe("Admin route boundary", () => {
   it("rejects a missing deployed Access assertion", async () => {
     await expect(
       authorizeAdminRequest(
-        new Request("https://admin.example.com/admin"),
+        new Request("https://admin.example.com/admin/catalog/review"),
         deployedBindings,
       ),
     ).rejects.toMatchObject({ status: 401 });

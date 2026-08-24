@@ -302,6 +302,194 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(publicCostBasis.status).toBe(404);
   });
 
+  it("reviews and changes only draft Supply Availability through confirmation", async () => {
+    const [draft] = runLocalD1<{
+      id: string;
+      source_import_id: string;
+    }>(
+      `SELECT catalog_releases.id, catalog_releases.source_import_id
+       FROM catalog_releases
+       INNER JOIN catalog_imports
+         ON catalog_imports.id = catalog_releases.source_import_id
+       WHERE catalog_releases.status = 'draft'
+         AND catalog_imports.kind = 'workbook'
+         AND catalog_imports.status = 'completed'
+       ORDER BY catalog_releases.created_at DESC LIMIT 1`,
+    );
+    expect(draft).toBeTruthy();
+    if (!draft) throw new Error("Expected one imported workbook draft");
+
+    runLocalD1(
+      `UPDATE catalog_cost_bases SET factory_unit_price = 1.11
+       WHERE import_id = '${draft.source_import_id}' AND sales_sku = '601R1_001'`,
+    );
+    const reviewResponse = await fetch(
+      `${origin}/admin/catalog/review?release=${draft.id}&sku=601R1_001`,
+    );
+    const review = await reviewResponse.text();
+    expect(reviewResponse.status).toBe(200);
+    expect(review).toContain("Review draft products");
+    expect(review).toContain("601R1_001");
+    expect(review).toContain("Cost Basis");
+    expect(review).toContain("USD 1.11");
+
+    const activeImportId = `availability-active-import-${crypto.randomUUID()}`;
+    const activeReleaseId = `availability-active-release-${crypto.randomUUID()}`;
+    const activeSkuId = `availability-active-sku-${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+    runLocalD1(
+      `INSERT INTO catalog_imports (
+         id, kind, status, summary_json, error_count, warning_count,
+         created_at, completed_at
+       ) VALUES (
+         '${activeImportId}', 'workbook', 'completed', '{}', 0, 0, '${now}', '${now}'
+       );
+       INSERT INTO catalog_releases (
+         id, release_number, status, source_import_id, version, created_at, published_at
+       ) VALUES (
+         '${activeReleaseId}', 'ACTIVE-${activeReleaseId}', 'published',
+         '${activeImportId}', 1, '${now}', '${now}'
+       );
+       INSERT INTO catalog_skus (
+         id, import_id, sku, source_worksheet, product_type, hose_series,
+         catalog_publication_status, rfq_eligibility, technical_data_status,
+         supply_availability
+       ) VALUES (
+         '${activeSkuId}', '${activeImportId}', '601R1_001', '01_胶管主数据',
+         'hose', '601R1', 'Published', 'Eligible', 'Complete',
+         'temporarily_unavailable'
+       );`,
+    );
+
+    const auditBefore = runLocalD1<{ count: number }>(
+      `SELECT COUNT(*) AS count FROM admin_audit_events
+       WHERE entity_id = '${draft.id}'
+         AND event_type = 'catalog_release.supply_availability_bulk_changed'`,
+    )[0]?.count;
+
+    const previewSelected = new FormData();
+    previewSelected.set("intent", "preview");
+    previewSelected.set("releaseId", draft.id);
+    previewSelected.set("selectorMode", "selected");
+    previewSelected.set("selectedSku", "601R1_001");
+    previewSelected.set("target", "available_for_quote");
+    const previewResponse = await fetch(`${origin}/admin/catalog/review`, {
+      body: previewSelected,
+      method: "POST",
+    });
+    const preview = await previewResponse.text();
+    expect(previewResponse.status).toBe(200);
+    expect(preview).toContain("Confirm bulk change");
+    expect(preview).toContain('data-affected-count="1"');
+    expect(preview).toContain('data-matched-count="1"');
+    expect(
+      runLocalD1<{ supply_availability: string }>(
+        `SELECT supply_availability FROM catalog_skus
+         WHERE import_id = '${draft.source_import_id}' AND sku = '601R1_001'`,
+      ),
+    ).toEqual([{ supply_availability: "temporarily_unavailable" }]);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM admin_audit_events
+         WHERE entity_id = '${draft.id}'
+           AND event_type = 'catalog_release.supply_availability_bulk_changed'`,
+      )[0]?.count,
+    ).toBe(auditBefore);
+
+    for (const [selectorMode, selectorName, selectorValue] of [
+      ["worksheet", "sourceWorksheet", "02_压接接头"],
+      ["hose_series", "hoseSeries", "601R1"],
+    ] as const) {
+      const form = new FormData();
+      form.set("intent", "preview");
+      form.set("releaseId", draft.id);
+      form.set("selectorMode", selectorMode);
+      form.set(selectorName, selectorValue);
+      form.set("target", "discontinued");
+      const response = await fetch(`${origin}/admin/catalog/review`, {
+        body: form,
+        method: "POST",
+      });
+      const html = await response.text();
+      expect(response.status).toBe(200);
+      expect(html).toContain("Confirm bulk change");
+      expect(html).toMatch(/data-affected-count="[1-9][0-9]*"/);
+      expect(html).toMatch(/data-matched-count="[1-9][0-9]*"/);
+    }
+
+    const applySelected = new FormData();
+    applySelected.set("intent", "apply");
+    applySelected.set("releaseId", draft.id);
+    applySelected.set("selectorMode", "selected");
+    applySelected.set("selectedSku", "601R1_001");
+    applySelected.set("target", "available_for_quote");
+    const applyResponse = await fetch(`${origin}/admin/catalog/review`, {
+      body: applySelected,
+      method: "POST",
+      redirect: "manual",
+    });
+    const applyBody = await applyResponse.text();
+    expect(applyResponse.status, applyBody).toBe(302);
+    expect(applyResponse.headers.get("location")).toContain("updated=1");
+    expect(
+      runLocalD1<{ supply_availability: string }>(
+        `SELECT supply_availability FROM catalog_skus
+         WHERE import_id = '${draft.source_import_id}' AND sku = '601R1_001'`,
+      ),
+    ).toEqual([{ supply_availability: "available_for_quote" }]);
+    expect(
+      runLocalD1<{ supply_availability: string }>(
+        `SELECT supply_availability FROM catalog_skus
+         WHERE import_id = '${activeImportId}' AND sku = '601R1_001'`,
+      ),
+    ).toEqual([{ supply_availability: "temporarily_unavailable" }]);
+
+    const audits = runLocalD1<{ payload_json: string }>(
+      `SELECT payload_json FROM admin_audit_events
+       WHERE entity_id = '${draft.id}'
+         AND event_type = 'catalog_release.supply_availability_bulk_changed'
+       ORDER BY occurred_at DESC LIMIT 1`,
+    );
+    expect(JSON.parse(audits[0]?.payload_json ?? "{}")).toMatchObject({
+      affectedCount: 1,
+      affectedSkus: ["601R1_001"],
+      selector: { mode: "selected", skus: ["601R1_001"] },
+      target: "available_for_quote",
+    });
+
+    const mixed = new FormData();
+    mixed.set("intent", "preview");
+    mixed.set("releaseId", draft.id);
+    mixed.set("selectorMode", "selected");
+    mixed.append("selectedSku", "601R1_001");
+    mixed.append("selectedSku", "601R1_002");
+    mixed.set("target", "available_for_quote");
+    const mixedHtml = await (
+      await fetch(`${origin}/admin/catalog/review`, {
+        body: mixed,
+        method: "POST",
+      })
+    ).text();
+    expect(mixedHtml).toContain('data-affected-count="1"');
+    expect(mixedHtml).toContain('data-matched-count="2"');
+
+    const zero = new FormData();
+    zero.set("intent", "preview");
+    zero.set("releaseId", draft.id);
+    zero.set("selectorMode", "selected");
+    zero.set("selectedSku", "601R1_001");
+    zero.set("target", "available_for_quote");
+    const zeroHtml = await (
+      await fetch(`${origin}/admin/catalog/review`, {
+        body: zero,
+        method: "POST",
+      })
+    ).text();
+    expect(zeroHtml).toContain('data-affected-count="0"');
+    expect(zeroHtml).toContain('data-matched-count="1"');
+    expect(zeroHtml).not.toContain("Apply to 0 products");
+  });
+
   it("keeps a blocking workbook error out of draft releases", async () => {
     const activeImportId = `active-import-${crypto.randomUUID()}`;
     const activeReleaseId = `active-release-${crypto.randomUUID()}`;

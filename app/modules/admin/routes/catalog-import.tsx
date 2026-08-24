@@ -224,6 +224,12 @@ export default function CatalogImport({
                 does not mean production approval; only Approved + Complete
                 compatibility data is production-approved.
               </p>
+              <Link
+                className="button button-primary"
+                to={`/admin/catalog/review?release=${encodeURIComponent(review.draftReleaseId ?? "")}`}
+              >
+                Review draft products
+              </Link>
             </>
           ) : null}
 
