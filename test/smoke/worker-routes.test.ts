@@ -154,7 +154,7 @@ describe("Cloudflare Worker route surfaces", () => {
 
     expect(storefront).toContain('data-surface="storefront"');
     expect(storefront).not.toContain('data-surface="admin"');
-    expect(storefront).not.toContain('href="/catalog/');
+    expect(storefront).toContain('href="/catalog/hydraulic-hose"');
     expect(admin).toContain('data-surface="admin"');
     expect(admin).not.toContain('data-surface="storefront"');
     expect(admin).not.toContain('href="#"');
@@ -560,9 +560,7 @@ describe("Cloudflare Worker route surfaces", () => {
     draft.version = revalidatedDraftVersion?.version ?? draft.version;
 
     const storefrontBefore = await (await fetch(origin)).text();
-    expect(storefrontBefore).toContain(
-      `Catalog ${activeBefore.release_number}`,
-    );
+    expect(storefrontBefore).toContain("Current catalog");
     const activeProductBefore = await fetch(
       `${origin}/api/catalog/products/601R1_001`,
     );
@@ -671,7 +669,7 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(auditPayload).not.toHaveProperty("costBasis");
 
     const storefrontAfter = await (await fetch(origin)).text();
-    expect(storefrontAfter).toContain(`Catalog ${draft.release_number}`);
+    expect(storefrontAfter).toContain("Current catalog");
     expect(storefrontAfter).not.toContain("Cost Basis");
     const activeProductAfter = await fetch(
       `${origin}/api/catalog/products/601R1_002`,
@@ -1003,6 +1001,143 @@ describe("Cloudflare Worker route surfaces", () => {
          WHERE release_id = '${loser.id}'`,
       ),
     ).toEqual([{ count: 0 }]);
+  }, 120_000);
+
+  it("serves the five-class published storefront without exposing cost data", async () => {
+    const workbook = await readFile(
+      "test/fixtures/catalog-import/hose-product-data-collection-template-length-ordering.xlsx",
+    );
+    const form = new FormData();
+    form.set(
+      "workbook",
+      new File([workbook], "published-storefront-data.xlsx", {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+    );
+    const importResponse = await fetch(`${origin}/admin/catalog/import`, {
+      body: form,
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(importResponse.status).toBe(302);
+    const importId = new URL(
+      importResponse.headers.get("location") ?? "",
+      origin,
+    ).searchParams.get("import");
+    expect(importId).toBeTruthy();
+
+    const [draft] = runLocalD1<{ id: string }>(
+      `SELECT id FROM catalog_releases
+       WHERE source_import_id = '${importId}' AND status = 'draft'`,
+    );
+    const [active] = runLocalD1<{
+      active_generation: number;
+      release_id: string;
+    }>(
+      `SELECT version AS active_generation, release_id
+       FROM catalog_active_release WHERE singleton = 1`,
+    );
+    expect(draft).toBeTruthy();
+    expect(active).toBeTruthy();
+    if (!draft || !active || !importId)
+      throw new Error("Expected imported draft and active release");
+
+    runLocalD1(
+      `UPDATE catalog_skus
+       SET catalog_publication_status = 'Published'
+       WHERE import_id = '${importId}';
+       UPDATE catalog_skus
+       SET supply_availability = 'available_for_quote'
+       WHERE import_id = '${importId}'
+         AND sku IN (
+           '601R1_001', 'JIC_F_SW_04_04', '601R1_1WB_001',
+           'ADP_ST_JIC_M_02_NPT_M_02'
+         );
+       UPDATE catalog_skus
+       SET supply_availability = 'discontinued'
+       WHERE import_id = '${importId}' AND sku = 'QDC_16028_PLG_04_FNPT_04';`,
+    );
+    const [draftState] = runLocalD1<{ version: number }>(
+      `SELECT version FROM catalog_releases WHERE id = '${draft.id}'`,
+    );
+
+    const publish = new FormData();
+    publish.set("intent", "publish");
+    publish.set("releaseId", draft.id);
+    publish.set("expectedDraftVersion", String(draftState?.version));
+    publish.set("expectedActiveGeneration", String(active.active_generation));
+    publish.set("expectedActiveReleaseId", active.release_id);
+    const publishResponse = await fetch(`${origin}/admin/catalog/releases`, {
+      body: publish,
+      headers: { "x-request-id": `storefront-${draft.id}` },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(publishResponse.status, await publishResponse.text()).toBe(302);
+
+    const storefrontResponse = await fetch(origin);
+    const storefront = await storefrontResponse.text();
+    expect(storefrontResponse.status).toBe(200);
+    expect(storefront).toContain('href="/catalog/hydraulic-hose/');
+    expect(storefront).toContain('href="/catalog/hose-ends/');
+    expect(storefront).toContain('href="/catalog/ferrules/');
+    expect(storefront).toContain('href="/catalog/adapters/');
+    expect(storefront).toContain('href="/catalog/quick-couplers/');
+    expect(storefront).not.toContain("Cost Basis");
+    expect(storefront).not.toContain("factory_unit_price");
+
+    const search = await (await fetch(`${origin}/?q=9%2F16-18+UNF`)).text();
+    expect(search).toContain("JIC 37° Female Swivel 0° Straight Hose End");
+    expect(search).toContain("JIC_F_SW_06_");
+
+    const aliasSearch = await (await fetch(`${origin}/?q=FBSPX-04-04W`)).text();
+    expect(aliasSearch).toContain("BSPP Female Swivel 0° Straight Hose End");
+    expect(aliasSearch).toContain("BSPP_F_SW_04_04");
+
+    const availablePath =
+      "/catalog/hose-ends/jic-37-female-swivel-0-straight?sku=JIC_F_SW_04_04";
+    const available = await (await fetch(`${origin}${availablePath}`)).text();
+    expect(available).toContain("SAE J514");
+    expect(available).toContain("9/16-18 UNF");
+    expect(available).toContain("Available for Quote");
+    expect(available).toMatch(
+      /<button[^>]*product-quote-command[^>]*>[^]*Add to Quote/,
+    );
+    expect(available).toContain('data-command="add-to-quote"');
+    expect(available).toContain('data-sku="JIC_F_SW_04_04"');
+    expect(available).not.toMatch(/product-quote-command[^>]*disabled/);
+    expect(available).toContain("14 calendar days");
+    expect(available).toContain("10% restocking fee");
+
+    const unavailable = await (
+      await fetch(`${origin}/catalog/hydraulic-hose/601r1?sku=601R1_002`)
+    ).text();
+    expect(unavailable).toContain("Temporarily Unavailable");
+    expect(unavailable).toMatch(/product-quote-command[^>]*disabled/);
+
+    const discontinued = await (
+      await fetch(
+        `${origin}/catalog/quick-couplers/iso-16028-flat-face-plug-nipple-nptf-female?sku=QDC_16028_PLG_04_FNPT_04`,
+      )
+    ).text();
+    expect(discontinued).toContain("Discontinued");
+    expect(discontinued).toMatch(/product-quote-command[^>]*disabled/);
+
+    const mediaFallback = await (
+      await fetch(
+        `${origin}/catalog/ferrules/601r1-1-wire-braid-other?sku=601R1_1WB_001`,
+      )
+    ).text();
+    expect(mediaFallback).toContain("Technical image pending");
+
+    const productResponse = await fetch(
+      `${origin}/api/catalog/products/JIC_F_SW_04_04`,
+    );
+    const productText = await productResponse.text();
+    expect(productResponse.status).toBe(200);
+    expect(productText).toContain("SAE J514");
+    expect(productText).not.toContain("factory_unit_price");
+    expect(productText).not.toContain("costBasis");
   }, 120_000);
 
   it("keeps a blocking workbook error out of draft releases", async () => {

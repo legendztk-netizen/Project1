@@ -2,6 +2,11 @@ import { index, route, type RouteConfig } from "@react-router/dev/routes";
 
 export default [
   index("modules/storefront/routes/catalog-home.tsx"),
+  route("catalog/:category", "modules/storefront/routes/catalog-category.tsx"),
+  route(
+    "catalog/:category/:familyKey",
+    "modules/storefront/routes/catalog-product-family.tsx",
+  ),
   route(
     "api/catalog/products/:sku",
     "modules/storefront/routes/catalog-product-resource.ts",

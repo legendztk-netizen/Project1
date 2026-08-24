@@ -4,6 +4,10 @@ React Router v8 and TypeScript application running as one Cloudflare Worker.
 The initial skeleton exposes three deliberately separate surfaces:
 
 - `/` - Customer Storefront catalog workspace
+- `/catalog/:category` - published product families filtered by product class
+- `/catalog/:category/:familyKey?sku=...` - canonical family page with one
+  exact SKU variant selected
+- `/api/catalog/products/:sku` - public active-release product resource
 - `/admin` - Admin Backoffice shell
 - `/admin/catalog/import` - authorized seven-worksheet catalog import and review
 - `/admin/catalog/review` - authorized draft product review and bulk Supply Availability changes
@@ -43,8 +47,9 @@ pnpm deploy:validate:production
 preview, and verifies the Storefront, Admin, persisted Catalog Release
 diagnostic, full 01-07 workbook import, draft-only bulk Supply Availability
 commands, atomic Catalog Release publication, audit output, active-release
-isolation, and health routes through HTTP. `test:d1` uses persistent local D1
-instances rather than a database mock.
+isolation, five-class Storefront search and family routing, availability-driven
+Add to Quote commands, public Cost Basis exclusion, and health routes through
+HTTP. `test:d1` uses persistent local D1 instances rather than a database mock.
 
 ## Environment commands
 
