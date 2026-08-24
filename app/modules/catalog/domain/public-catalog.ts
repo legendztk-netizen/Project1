@@ -1,6 +1,7 @@
 import type { CatalogFamilyId } from "./catalog-family";
 import type { SupplyAvailability } from "./catalog-draft-availability";
 import type { RfqEligibility } from "./catalog-workbook";
+import type { DashSize } from "./dash-size";
 
 export type PublicProductType =
   "hose" | "hose_end" | "ferrule" | "adapter" | "quick_coupler";
@@ -9,6 +10,19 @@ export interface PublicCatalogSpec {
   label: string;
   value: string;
 }
+
+export type PublicVariantSelection =
+  | {
+      dash: DashSize | null;
+      kind: "hose";
+      nominalIdIn: number | null;
+    }
+  | {
+      connectionDash: DashSize | null;
+      hoseTailDash: DashSize | null;
+      kind: "hose_end";
+      thread: string | null;
+    };
 
 export interface PublicCatalogItem {
   aliases: string[];
@@ -34,6 +48,7 @@ export interface PublicCatalogItem {
   sku: string;
   specs: PublicCatalogSpec[];
   supplyAvailability: SupplyAvailability;
+  variantSelection: PublicVariantSelection | null;
 }
 
 export interface PublicCatalogFamily {

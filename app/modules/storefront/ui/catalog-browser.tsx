@@ -104,7 +104,7 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
             {data.families.length ? (
               <div className="product-family-grid">
                 {data.families.map((family) => {
-                  const familyUrl = `/catalog/${family.category}/${family.familyKey}?sku=${encodeURIComponent(family.representative.sku)}`;
+                  const familyUrl = `/catalog/${family.category}/${family.familyKey}`;
                   return (
                     <article
                       className="product-family-card"

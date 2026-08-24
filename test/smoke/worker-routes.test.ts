@@ -1083,6 +1083,9 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(storefront).toContain('href="/catalog/ferrules/');
     expect(storefront).toContain('href="/catalog/adapters/');
     expect(storefront).toContain('href="/catalog/quick-couplers/');
+    expect(storefront).not.toMatch(
+      /href="\/catalog\/(?:hydraulic-hose|hose-ends)\/[^"?]+\?sku=/,
+    );
     expect(storefront).not.toContain("Cost Basis");
     expect(storefront).not.toContain("factory_unit_price");
 
@@ -1100,6 +1103,13 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(available).toContain("SAE J514");
     expect(available).toContain("9/16-18 UNF");
     expect(available).toContain("Available for Quote");
+    expect(available).toContain("1. Connection Dash");
+    expect(available).toContain("2. Hose Tail Dash");
+    expect(available).toContain('data-connection-dash="-4"');
+    expect(available).toContain('data-hose-tail-dash="-4"');
+    expect(available).toContain("7/16-20 UNF");
+    expect(available).toContain("1/4 in hose ID");
+    expect(available).not.toContain("Size / connection variant");
     expect(available).toMatch(
       /<button[^>]*product-quote-command[^>]*>[^]*Add to Quote/,
     );
@@ -1108,6 +1118,16 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(available).not.toMatch(/product-quote-command[^>]*disabled/);
     expect(available).toContain("14 calendar days");
     expect(available).toContain("10% restocking fee");
+
+    const unselectedHoseEnd = await (
+      await fetch(`${origin}/catalog/hose-ends/jic-37-female-swivel-0-straight`)
+    ).text();
+    expect(unselectedHoseEnd).toContain("1. Connection Dash");
+    expect(unselectedHoseEnd).not.toContain("2. Hose Tail Dash");
+    expect(unselectedHoseEnd).toContain("Choose a size to continue.");
+    expect(unselectedHoseEnd).not.toContain('data-sku="JIC_F_SW_04_04"');
+    expect(unselectedHoseEnd).not.toContain("Technical specifications");
+    expect(unselectedHoseEnd).toMatch(/product-quote-command[^>]*disabled/);
 
     const unavailable = await (
       await fetch(`${origin}/catalog/hydraulic-hose/601r1?sku=601R1_002`)
@@ -1129,6 +1149,23 @@ describe("Cloudflare Worker route surfaces", () => {
       )
     ).text();
     expect(mediaFallback).toContain("Technical image pending");
+
+    const hoseVariant = await (
+      await fetch(`${origin}/catalog/hydraulic-hose/601r1?sku=601R1_001`)
+    ).text();
+    expect(hoseVariant).toContain("Hose Size");
+    expect(hoseVariant).toContain('data-hose-dash="-4"');
+    expect(hoseVariant).toContain("1/4 in hose ID");
+    expect(hoseVariant).not.toContain("Size / connection variant");
+
+    const unselectedHose = await (
+      await fetch(`${origin}/catalog/hydraulic-hose/601r1`)
+    ).text();
+    expect(unselectedHose).toContain("Hose Size");
+    expect(unselectedHose).toContain("Choose a size to continue.");
+    expect(unselectedHose).not.toContain('data-sku="601R1_001"');
+    expect(unselectedHose).not.toContain("Technical specifications");
+    expect(unselectedHose).toMatch(/product-quote-command[^>]*disabled/);
 
     const productResponse = await fetch(
       `${origin}/api/catalog/products/JIC_F_SW_04_04`,

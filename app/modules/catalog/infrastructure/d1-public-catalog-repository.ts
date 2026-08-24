@@ -10,6 +10,7 @@ import {
   type PublicProductType,
 } from "../domain/public-catalog";
 import type { CatalogFamilyId } from "../domain/catalog-family";
+import { normalizeDashSize } from "../domain/dash-size";
 
 interface PublicCatalogRow {
   adapter_family_id: string | null;
@@ -383,6 +384,21 @@ export function publicCatalogItemFromRow(
     sku: row.sku,
     specs: product.specs,
     supplyAvailability: row.supply_availability,
+    variantSelection:
+      row.product_type === "hose"
+        ? {
+            dash: normalizeDashSize(row.dash),
+            kind: "hose",
+            nominalIdIn: row.nominal_id_in,
+          }
+        : row.product_type === "hose_end"
+          ? {
+              connectionDash: normalizeDashSize(row.connection_dash),
+              hoseTailDash: normalizeDashSize(row.hose_tail_dash),
+              kind: "hose_end",
+              thread: row.thread,
+            }
+          : null,
   };
 }
 

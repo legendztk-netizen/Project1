@@ -5,8 +5,8 @@ The initial skeleton exposes three deliberately separate surfaces:
 
 - `/` - Customer Storefront catalog workspace
 - `/catalog/:category` - published product families filtered by product class
-- `/catalog/:category/:familyKey?sku=...` - canonical family page with one
-  exact SKU variant selected
+- `/catalog/:category/:familyKey[?sku=...]` - canonical family page; the
+  optional query restores one exact SKU variant
 - `/api/catalog/products/:sku` - public active-release product resource
 - `/admin` - Admin Backoffice shell
 - `/admin/catalog/import` - authorized seven-worksheet catalog import and review

@@ -173,4 +173,13 @@ describe("public catalog read model", () => {
       false,
     );
   });
+
+  it("exposes hose-end dimensions separately from the internal SKU", () => {
+    expect(hoseEnd().variantSelection).toEqual({
+      connectionDash: "-6",
+      hoseTailDash: "-6",
+      kind: "hose_end",
+      thread: "9/16-18 UNF",
+    });
+  });
 });
