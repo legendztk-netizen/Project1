@@ -7,6 +7,7 @@ import {
   initialCatalogFamilyId,
   launchCatalogFamilies,
 } from "../../catalog/domain/catalog-family";
+import { createD1CatalogPublicationRepository } from "../../catalog/infrastructure/d1-catalog-publication-repository";
 import { BrandMark } from "../../shared/ui/brand-mark";
 import { cloudflareContext } from "#workers/context";
 
@@ -21,9 +22,12 @@ export function meta() {
   ];
 }
 
-export function loader({ context }: Route.LoaderArgs) {
+export async function loader({ context }: Route.LoaderArgs) {
   const { env } = context.get(cloudflareContext);
-  return { appName: env.PUBLIC_APP_NAME };
+  const activeRelease = await createD1CatalogPublicationRepository(
+    env.DB,
+  ).findActiveRelease();
+  return { activeRelease, appName: env.PUBLIC_APP_NAME };
 }
 
 export default function CatalogHome({ loaderData }: Route.ComponentProps) {
@@ -93,7 +97,11 @@ export default function CatalogHome({ loaderData }: Route.ComponentProps) {
                 <span className="eyebrow">Launch assortment</span>
                 <h2>Browse product families</h2>
               </div>
-              <span className="release-status">Catalog setup in progress</span>
+              <span className="release-status">
+                {loaderData.activeRelease
+                  ? `Catalog ${loaderData.activeRelease.releaseNumber}`
+                  : "Catalog setup in progress"}
+              </span>
             </div>
 
             <div className="family-grid">

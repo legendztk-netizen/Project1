@@ -4,11 +4,13 @@ import {
   Database,
   FileUp,
   LayoutDashboard,
+  Rocket,
   Settings,
 } from "lucide-react";
 import { Link } from "react-router";
 
 import type { Route } from "./+types/admin-home";
+import { createD1CatalogPublicationRepository } from "../../catalog/infrastructure/d1-catalog-publication-repository";
 import { BrandMark } from "../../shared/ui/brand-mark";
 import { requireAdminRequestContext } from "../infrastructure/admin-request-context";
 
@@ -16,16 +18,19 @@ export function meta() {
   return [{ title: "Admin Backoffice | Hydraulic Supply" }];
 }
 
-export function loader({ context }: Route.LoaderArgs) {
+export async function loader({ context }: Route.LoaderArgs) {
   const { adminIdentity, env } = requireAdminRequestContext(context);
-  return { adminIdentity, environment: env.APP_ENV };
+  const activeRelease = await createD1CatalogPublicationRepository(
+    env.DB,
+  ).findActiveRelease();
+  return { activeRelease, adminIdentity, environment: env.APP_ENV };
 }
 
 const adminNavigation = [
   { label: "Overview", icon: LayoutDashboard },
   { label: "Catalog", icon: Boxes, to: "/admin/catalog/review" },
   { label: "Imports", icon: FileUp, to: "/admin/catalog/import" },
-  { label: "Releases", icon: Database },
+  { label: "Releases", icon: Database, to: "/admin/catalog/releases" },
   { label: "System", icon: Settings },
 ];
 
@@ -82,8 +87,14 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
           </article>
           <article>
             <span>Catalog release</span>
-            <strong>Not published</strong>
-            <small>Import workflow pending</small>
+            <strong>
+              {loaderData.activeRelease?.releaseNumber ?? "Not published"}
+            </strong>
+            <small>
+              {loaderData.activeRelease
+                ? "Active customer release"
+                : "Import workflow pending"}
+            </small>
           </article>
           <article>
             <span>Environment</span>
@@ -109,6 +120,12 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
           </Link>
           <Link className="button button-secondary" to="/admin/catalog/review">
             <Boxes size={17} /> Review draft products
+          </Link>
+          <Link
+            className="button button-secondary"
+            to="/admin/catalog/releases"
+          >
+            <Rocket size={17} /> Publish Catalog Release
           </Link>
           <Link
             className="button button-secondary"

@@ -567,9 +567,47 @@ export const catalogReleases = sqliteTable(
       sql`${table.status} in ('draft', 'published', 'superseded')`,
     ),
     uniqueIndex("catalog_releases_release_number_uq").on(table.releaseNumber),
+    uniqueIndex("catalog_releases_one_published_uq")
+      .on(table.status)
+      .where(sql`${table.status} = 'published'`),
     index("catalog_releases_status_created_at_idx").on(
       table.status,
       table.createdAt,
+    ),
+  ],
+);
+
+export const catalogActiveRelease = sqliteTable(
+  "catalog_active_release",
+  {
+    singleton: integer("singleton").primaryKey(),
+    releaseId: text("release_id").references(() => catalogReleases.id),
+    version: integer("version").notNull().default(0),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    check("catalog_active_release_singleton", sql`${table.singleton} = 1`),
+  ],
+);
+
+export const catalogReleasePublications = sqliteTable(
+  "catalog_release_publications",
+  {
+    releaseId: text("release_id")
+      .primaryKey()
+      .references(() => catalogReleases.id),
+    previousReleaseId: text("previous_release_id").references(
+      () => catalogReleases.id,
+    ),
+    expectedActiveVersion: integer("expected_active_version").notNull(),
+    expectedDraftVersion: integer("expected_draft_version").notNull(),
+    publishedBy: text("published_by").notNull(),
+    requestCorrelationId: text("request_correlation_id").notNull(),
+    publishedAt: text("published_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("catalog_release_publications_request_uq").on(
+      table.requestCorrelationId,
     ),
   ],
 );

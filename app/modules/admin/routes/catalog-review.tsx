@@ -254,6 +254,15 @@ export default function CatalogReview({
         <span className="release-status">Draft only</span>
       </header>
 
+      <div className="catalog-review-next-action">
+        <Link
+          className="button button-secondary"
+          to={`/admin/catalog/releases?release=${encodeURIComponent(review.release.id)}`}
+        >
+          Review for publication
+        </Link>
+      </div>
+
       {loaderData.updatedCount > 0 ? (
         <p className="catalog-update-success" role="status">
           <Check size={17} /> Updated {loaderData.updatedCount} draft products.

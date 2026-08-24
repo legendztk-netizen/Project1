@@ -39,6 +39,25 @@ function runLocalD1<T>(sql: string) {
   return payload[0]?.results ?? [];
 }
 
+function runLocalD1Failure(sql: string) {
+  const result = spawnSync(
+    join(process.cwd(), "node_modules", ".bin", "wrangler"),
+    [
+      "d1",
+      "execute",
+      "hydraulic-hose-rfq-local",
+      "--config",
+      join(process.cwd(), "wrangler.jsonc"),
+      "--local",
+      "--command",
+      sql,
+    ],
+    { cwd: process.cwd(), encoding: "utf8", env: { ...process.env, CI: "1" } },
+  );
+  expect(result.status).not.toBe(0);
+  return `${result.stdout}\n${result.stderr}`;
+}
+
 async function findAvailablePort() {
   return new Promise<number>((resolve, reject) => {
     const server = createServer();
@@ -338,17 +357,12 @@ describe("Cloudflare Worker route surfaces", () => {
     const activeSkuId = `availability-active-sku-${crypto.randomUUID()}`;
     const now = new Date().toISOString();
     runLocalD1(
-      `INSERT INTO catalog_imports (
+      `UPDATE catalog_releases SET status = 'superseded' WHERE status = 'published';
+       INSERT INTO catalog_imports (
          id, kind, status, summary_json, error_count, warning_count,
          created_at, completed_at
        ) VALUES (
          '${activeImportId}', 'workbook', 'completed', '{}', 0, 0, '${now}', '${now}'
-       );
-       INSERT INTO catalog_releases (
-         id, release_number, status, source_import_id, version, created_at, published_at
-       ) VALUES (
-         '${activeReleaseId}', 'ACTIVE-${activeReleaseId}', 'published',
-         '${activeImportId}', 1, '${now}', '${now}'
        );
        INSERT INTO catalog_skus (
          id, import_id, sku, source_worksheet, product_type, hose_series,
@@ -358,7 +372,16 @@ describe("Cloudflare Worker route surfaces", () => {
          '${activeSkuId}', '${activeImportId}', '601R1_001', '01_胶管主数据',
          'hose', '601R1', 'Published', 'Eligible', 'Complete',
          'temporarily_unavailable'
-       );`,
+       );
+       INSERT INTO catalog_releases (
+         id, release_number, status, source_import_id, version, created_at, published_at
+       ) VALUES (
+         '${activeReleaseId}', 'ACTIVE-${activeReleaseId}', 'published',
+         '${activeImportId}', 1, '${now}', '${now}'
+       );
+       UPDATE catalog_active_release
+       SET release_id = '${activeReleaseId}', version = version + 1, updated_at = '${now}'
+       WHERE singleton = 1;`,
     );
 
     const auditBefore = runLocalD1<{ count: number }>(
@@ -488,25 +511,501 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(zeroHtml).toContain('data-affected-count="0"');
     expect(zeroHtml).toContain('data-matched-count="1"');
     expect(zeroHtml).not.toContain("Apply to 0 products");
+    runLocalD1(
+      `UPDATE catalog_cost_bases SET factory_unit_price = NULL
+       WHERE import_id = '${draft.source_import_id}' AND sales_sku = '601R1_001'`,
+    );
   });
 
-  it("keeps a blocking workbook error out of draft releases", async () => {
-    const activeImportId = `active-import-${crypto.randomUUID()}`;
-    const activeReleaseId = `active-release-${crypto.randomUUID()}`;
-    const now = new Date().toISOString();
-    runLocalD1(
-      `INSERT INTO catalog_imports (
-        id, kind, status, summary_json, error_count, warning_count, created_at, completed_at
-      ) VALUES (
-        '${activeImportId}', 'diagnostic', 'completed', '{}', 0, 0, '${now}', '${now}'
-      );
-      INSERT INTO catalog_releases (
-        id, release_number, status, source_import_id, version, created_at, published_at
-      ) VALUES (
-        '${activeReleaseId}', 'ACTIVE-${activeReleaseId}', 'published',
-        '${activeImportId}', 1, '${now}', '${now}'
-      );`,
+  it("atomically publishes one release and rejects stale or invalid publication", async () => {
+    const [draft] = runLocalD1<{
+      id: string;
+      release_number: string;
+      source_import_id: string;
+      version: number;
+    }>(
+      `SELECT id, release_number, source_import_id, version
+       FROM catalog_releases
+       WHERE status = 'draft' AND source_import_id IN (
+         SELECT id FROM catalog_imports WHERE kind = 'workbook' AND status = 'completed'
+       ) ORDER BY created_at DESC LIMIT 1`,
     );
+    const [activeBefore] = runLocalD1<{
+      active_generation: number;
+      id: string;
+      release_number: string;
+      source_import_id: string;
+    }>(
+      `SELECT catalog_active_release.version AS active_generation,
+              catalog_releases.id, catalog_releases.release_number,
+              catalog_releases.source_import_id
+       FROM catalog_active_release
+       INNER JOIN catalog_releases ON catalog_releases.id = catalog_active_release.release_id
+       WHERE catalog_active_release.singleton = 1`,
+    );
+    expect(draft).toBeTruthy();
+    expect(activeBefore).toBeTruthy();
+    if (!draft || !activeBefore)
+      throw new Error("Expected draft and active releases");
+
+    runLocalD1(
+      `UPDATE catalog_skus
+       SET catalog_publication_status = 'Published'
+       WHERE import_id = '${draft.source_import_id}' AND sku = '601R1_002'`,
+    );
+    const [revalidatedDraftVersion] = runLocalD1<{ version: number }>(
+      `SELECT version FROM catalog_releases WHERE id = '${draft.id}'`,
+    );
+    expect(revalidatedDraftVersion?.version).toBeGreaterThan(draft.version);
+    draft.version = revalidatedDraftVersion?.version ?? draft.version;
+
+    const storefrontBefore = await (await fetch(origin)).text();
+    expect(storefrontBefore).toContain(
+      `Catalog ${activeBefore.release_number}`,
+    );
+    const activeProductBefore = await fetch(
+      `${origin}/api/catalog/products/601R1_001`,
+    );
+    expect(activeProductBefore.status).toBe(200);
+    const activeProductBeforePayload = await activeProductBefore.json();
+    expect(activeProductBeforePayload).toMatchObject({
+      product: {
+        canAddToQuote: false,
+        releaseId: activeBefore.id,
+        sku: "601R1_001",
+        supplyAvailability: "temporarily_unavailable",
+      },
+    });
+
+    const previewResponse = await fetch(
+      `${origin}/admin/catalog/releases?release=${draft.id}`,
+    );
+    const previewHtml = await previewResponse.text();
+    expect(previewResponse.status).toBe(200);
+    expect(previewHtml).toContain("Catalog Releases");
+    expect(previewHtml).toContain("Additions");
+    expect(previewHtml).toContain("Changes");
+    expect(previewHtml).toContain("Hose Series 601R1");
+    expect(previewHtml).toContain("View all");
+    expect(previewHtml).toContain("Deactivations");
+    expect(previewHtml).toContain("Warnings");
+    expect(previewHtml).toContain("Blockers");
+    expect(previewHtml).not.toContain("Cost Basis");
+
+    const confirm = new FormData();
+    confirm.set("intent", "confirm");
+    confirm.set("releaseId", draft.id);
+    const confirmationResponse = await fetch(
+      `${origin}/admin/catalog/releases`,
+      { body: confirm, method: "POST" },
+    );
+    const confirmationHtml = await confirmationResponse.text();
+    expect(confirmationResponse.status).toBe(200);
+    expect(confirmationHtml).toContain("Final confirmation");
+    expect(confirmationHtml).toContain("Publish Catalog Release");
+
+    const publish = new FormData();
+    publish.set("intent", "publish");
+    publish.set("releaseId", draft.id);
+    publish.set("expectedDraftVersion", String(draft.version));
+    publish.set(
+      "expectedActiveGeneration",
+      String(activeBefore.active_generation),
+    );
+    publish.set("expectedActiveReleaseId", activeBefore.id);
+    const publishResponse = await fetch(`${origin}/admin/catalog/releases`, {
+      body: publish,
+      headers: { "x-request-id": `smoke-publish-${draft.id}` },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(publishResponse.status, await publishResponse.text()).toBe(302);
+    expect(publishResponse.headers.get("location")).toContain(
+      `published=${draft.id}`,
+    );
+
+    const releases = runLocalD1<{
+      id: string;
+      published_at: string | null;
+      status: string;
+    }>(
+      `SELECT id, status, published_at FROM catalog_releases
+       WHERE id IN ('${activeBefore.id}', '${draft.id}') ORDER BY id`,
+    );
+    expect(
+      releases.find((release) => release.id === activeBefore.id)?.status,
+    ).toBe("superseded");
+    expect(releases.find((release) => release.id === draft.id)).toMatchObject({
+      status: "published",
+    });
+    expect(
+      releases.find((release) => release.id === draft.id)?.published_at,
+    ).toBeTruthy();
+    const [activeAfter] = runLocalD1<{
+      active_generation: number;
+      release_id: string;
+    }>(
+      `SELECT version AS active_generation, release_id
+       FROM catalog_active_release WHERE singleton = 1`,
+    );
+    expect(activeAfter?.release_id).toBe(draft.id);
+    expect(activeAfter?.active_generation).toBe(
+      activeBefore.active_generation + 1,
+    );
+
+    const audit = runLocalD1<{
+      actor_id: string;
+      payload_json: string;
+    }>(
+      `SELECT actor_id, payload_json FROM admin_audit_events
+       WHERE entity_id = '${draft.id}' AND event_type = 'catalog_release.published'`,
+    );
+    expect(audit).toHaveLength(1);
+    expect(audit[0]?.actor_id).toBe("local-owner");
+    const auditPayload = JSON.parse(audit[0]?.payload_json ?? "{}");
+    expect(auditPayload).toMatchObject({
+      previousReleaseId: activeBefore.id,
+      requestCorrelationId: `smoke-publish-${draft.id}`,
+    });
+    expect(auditPayload).not.toHaveProperty("factoryUnitPrice");
+    expect(auditPayload).not.toHaveProperty("costBasis");
+
+    const storefrontAfter = await (await fetch(origin)).text();
+    expect(storefrontAfter).toContain(`Catalog ${draft.release_number}`);
+    expect(storefrontAfter).not.toContain("Cost Basis");
+    const activeProductAfter = await fetch(
+      `${origin}/api/catalog/products/601R1_002`,
+    );
+    expect(activeProductAfter.status).toBe(200);
+    const activeProductAfterText = await activeProductAfter.text();
+    expect(JSON.parse(activeProductAfterText)).toMatchObject({
+      product: {
+        canAddToQuote: false,
+        releaseId: draft.id,
+        sku: "601R1_002",
+        supplyAvailability: "temporarily_unavailable",
+      },
+    });
+    expect(activeProductAfterText).not.toContain("factory_unit_price");
+    expect(activeProductAfterText).not.toContain("costBasis");
+    expect(
+      (await fetch(`${origin}/api/catalog/products/601R1_001`)).status,
+    ).toBe(404);
+    const historicalProduct = await fetch(
+      `${origin}/api/catalog/releases/${activeBefore.id}/products/601R1_001`,
+    );
+    expect(historicalProduct.status).toBe(200);
+    await expect(historicalProduct.json()).resolves.toMatchObject({
+      product: { releaseId: activeBefore.id, sku: "601R1_001" },
+    });
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM catalog_skus
+         WHERE import_id = '${draft.source_import_id}'
+           AND supply_availability = 'temporarily_unavailable'`,
+      )[0]?.count,
+    ).toBeGreaterThan(0);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM catalog_skus
+         WHERE import_id = '${activeBefore.source_import_id}'`,
+      )[0]?.count,
+    ).toBe(1);
+
+    const immutableEdit = runLocalD1Failure(
+      `UPDATE catalog_skus SET supply_availability = 'discontinued'
+       WHERE import_id = '${draft.source_import_id}' AND sku = '601R1_002'`,
+    );
+    expect(immutableEdit).toContain("published catalog data is immutable");
+    const immutableInsert = runLocalD1Failure(
+      `INSERT INTO catalog_skus (
+         id, import_id, sku, source_worksheet, product_type, hose_series,
+         catalog_publication_status, rfq_eligibility, technical_data_status,
+         supply_availability
+       ) VALUES (
+         'forbidden-${crypto.randomUUID()}', '${draft.source_import_id}',
+         'FORBIDDEN_001', '01_胶管主数据', 'hose', '601R1',
+         'Published', 'Eligible', 'Complete', 'available_for_quote'
+       )`,
+    );
+    expect(immutableInsert).toContain("published catalog data is immutable");
+
+    const publishedSkuBefore = runLocalD1<{
+      supply_availability: string;
+    }>(
+      `SELECT supply_availability FROM catalog_skus
+       WHERE import_id = '${draft.source_import_id}' AND sku = '601R1_001'`,
+    );
+    const publishedVersionBefore = runLocalD1<{ version: number }>(
+      `SELECT version FROM catalog_releases WHERE id = '${draft.id}'`,
+    );
+    const forbiddenEdit = new FormData();
+    forbiddenEdit.set("intent", "apply");
+    forbiddenEdit.set("releaseId", draft.id);
+    forbiddenEdit.set("selectorMode", "selected");
+    forbiddenEdit.set("selectedSku", "601R1_001");
+    forbiddenEdit.set("target", "discontinued");
+    const forbiddenEditResponse = await fetch(
+      `${origin}/admin/catalog/review`,
+      { body: forbiddenEdit, method: "POST" },
+    );
+    expect(forbiddenEditResponse.status).toBe(200);
+    expect(await forbiddenEditResponse.text()).toContain(
+      "No draft products require this change",
+    );
+    expect(
+      runLocalD1<{ supply_availability: string }>(
+        `SELECT supply_availability FROM catalog_skus
+         WHERE import_id = '${draft.source_import_id}' AND sku = '601R1_001'`,
+      ),
+    ).toEqual(publishedSkuBefore);
+    expect(
+      runLocalD1<{ version: number }>(
+        `SELECT version FROM catalog_releases WHERE id = '${draft.id}'`,
+      ),
+    ).toEqual(publishedVersionBefore);
+
+    const workbook = await readFile(
+      "test/fixtures/catalog-import/hose-product-data-collection-template-length-ordering.xlsx",
+    );
+    const nextImport = new FormData();
+    nextImport.set(
+      "workbook",
+      new File([workbook], "next-product-data.xlsx", {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+    );
+    const nextImportResponse = await fetch(`${origin}/admin/catalog/import`, {
+      body: nextImport,
+      method: "POST",
+      redirect: "manual",
+    });
+    const nextImportLocation = nextImportResponse.headers.get("location");
+    expect(nextImportResponse.status).toBe(302);
+    const nextImportId = new URL(
+      nextImportLocation ?? "",
+      origin,
+    ).searchParams.get("import");
+    const [nextDraft] = runLocalD1<{
+      id: string;
+      version: number;
+    }>(
+      `SELECT id, version FROM catalog_releases
+       WHERE source_import_id = '${nextImportId}' AND status = 'draft'`,
+    );
+    expect(nextDraft).toBeTruthy();
+    if (!nextDraft || !activeAfter) throw new Error("Expected next draft");
+
+    const competingImport = new FormData();
+    competingImport.set(
+      "workbook",
+      new File([workbook], "competing-product-data.xlsx", {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+    );
+    const competingImportResponse = await fetch(
+      `${origin}/admin/catalog/import`,
+      { body: competingImport, method: "POST", redirect: "manual" },
+    );
+    expect(competingImportResponse.status).toBe(302);
+    const competingImportId = new URL(
+      competingImportResponse.headers.get("location") ?? "",
+      origin,
+    ).searchParams.get("import");
+    const [competingDraft] = runLocalD1<{ id: string; version: number }>(
+      `SELECT id, version FROM catalog_releases
+       WHERE source_import_id = '${competingImportId}' AND status = 'draft'`,
+    );
+    expect(competingDraft).toBeTruthy();
+    if (!competingDraft) throw new Error("Expected competing draft");
+
+    const publicationForm = (releaseId: string, releaseVersion: number) => {
+      const form = new FormData();
+      form.set("intent", "publish");
+      form.set("releaseId", releaseId);
+      form.set("expectedDraftVersion", String(releaseVersion));
+      form.set(
+        "expectedActiveGeneration",
+        String(activeAfter.active_generation),
+      );
+      form.set("expectedActiveReleaseId", draft.id);
+      return form;
+    };
+    const competingResponses = await Promise.all(
+      [nextDraft, competingDraft].map((candidate) =>
+        fetch(`${origin}/admin/catalog/releases`, {
+          body: publicationForm(candidate.id, candidate.version),
+          headers: { "x-request-id": `concurrent-${candidate.id}` },
+          method: "POST",
+          redirect: "manual",
+        }),
+      ),
+    );
+    expect(
+      competingResponses.map((response) => response.status).sort(),
+    ).toEqual([200, 302]);
+    const [activeWinner] = runLocalD1<{
+      active_generation: number;
+      release_id: string;
+    }>(
+      `SELECT release_id, version AS active_generation
+       FROM catalog_active_release WHERE singleton = 1`,
+    );
+    expect([nextDraft.id, competingDraft.id]).toContain(
+      activeWinner?.release_id,
+    );
+    const loser =
+      activeWinner?.release_id === nextDraft.id ? competingDraft : nextDraft;
+    const loserImportId =
+      loser.id === nextDraft.id ? nextImportId : competingImportId;
+    expect(loserImportId).toBeTruthy();
+    const candidateReleases = runLocalD1<{ id: string; status: string }>(
+      `SELECT id, status FROM catalog_releases
+       WHERE id IN ('${nextDraft.id}', '${competingDraft.id}') ORDER BY id`,
+    );
+    expect(
+      candidateReleases.find(
+        (release) => release.id === activeWinner?.release_id,
+      )?.status,
+    ).toBe("published");
+    expect(
+      candidateReleases.find((release) => release.id === loser.id)?.status,
+    ).toBe("draft");
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM catalog_release_publications
+         WHERE release_id = '${loser.id}'`,
+      ),
+    ).toEqual([{ count: 0 }]);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM admin_audit_events
+         WHERE entity_id = '${loser.id}'
+           AND event_type = 'catalog_release.published'`,
+      ),
+    ).toEqual([{ count: 0 }]);
+
+    const [nextImportSummary] = runLocalD1<{ summary_json: string }>(
+      `SELECT summary_json FROM catalog_imports WHERE id = '${loserImportId}'`,
+    );
+    const expectedSalesOfferCount = Number(
+      JSON.parse(nextImportSummary?.summary_json ?? "{}").salesOfferCount,
+    );
+    const [versionBeforeCorruption] = runLocalD1<{ version: number }>(
+      `SELECT version FROM catalog_releases WHERE id = '${loser.id}'`,
+    );
+    runLocalD1(
+      `UPDATE catalog_imports
+       SET summary_json = json_set(summary_json, '$.salesOfferCount', ${expectedSalesOfferCount + 1})
+       WHERE id = '${loserImportId}'`,
+    );
+    const [versionAfterCorruption] = runLocalD1<{ version: number }>(
+      `SELECT version FROM catalog_releases WHERE id = '${loser.id}'`,
+    );
+    expect(versionAfterCorruption?.version).toBe(
+      (versionBeforeCorruption?.version ?? 0) + 1,
+    );
+    const invalidDatabaseAttempt = runLocalD1Failure(
+      `INSERT INTO catalog_release_publications (
+         release_id, previous_release_id, expected_active_version,
+         expected_draft_version, published_by, request_correlation_id, published_at
+       ) VALUES (
+         '${loser.id}', '${activeWinner?.release_id}', ${activeWinner?.active_generation},
+         ${versionAfterCorruption?.version}, 'local-owner',
+         'invalid-${loser.id}', CURRENT_TIMESTAMP
+       )`,
+    );
+    expect(invalidDatabaseAttempt).toContain(
+      "catalog publication precondition failed",
+    );
+    const blockedResponse = await fetch(
+      `${origin}/admin/catalog/releases?release=${loser.id}`,
+    );
+    const blockedHtml = await blockedResponse.text();
+    expect(blockedHtml).toContain("count_mismatch_salesOfferCount");
+    expect(blockedHtml).toContain("Resolve blockers before publishing");
+    expect(
+      runLocalD1<{ release_id: string }>(
+        "SELECT release_id FROM catalog_active_release WHERE singleton = 1",
+      ),
+    ).toEqual([{ release_id: activeWinner?.release_id }]);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM catalog_release_publications
+         WHERE release_id = '${loser.id}'`,
+      ),
+    ).toEqual([{ count: 0 }]);
+    runLocalD1(
+      `UPDATE catalog_imports
+       SET summary_json = json_set(summary_json, '$.salesOfferCount', ${expectedSalesOfferCount})
+       WHERE id = '${loserImportId}'`,
+    );
+
+    const metadataMutation = runLocalD1Failure(
+      `UPDATE catalog_releases SET source_import_id = '${draft.source_import_id}'
+       WHERE id = '${loser.id}'`,
+    );
+    expect(metadataMutation).toContain(
+      "draft catalog release metadata is immutable",
+    );
+
+    const [rollbackDraft] = runLocalD1<{ version: number }>(
+      `SELECT version FROM catalog_releases WHERE id = '${loser.id}'`,
+    );
+    const rollbackRequestId = `rollback-${loser.id}`;
+    runLocalD1(
+      `INSERT INTO admin_audit_events (
+         id, event_type, entity_type, entity_id,
+         actor_id, payload_json, occurred_at
+       ) VALUES (
+         'catalog-release-published:${rollbackRequestId}',
+         'catalog_release.rollback_fixture', 'catalog_release', '${loser.id}',
+         'local-owner', '{}', CURRENT_TIMESTAMP
+       )`,
+    );
+    const rollbackForm = new FormData();
+    rollbackForm.set("intent", "publish");
+    rollbackForm.set("releaseId", loser.id);
+    rollbackForm.set("expectedDraftVersion", String(rollbackDraft?.version));
+    rollbackForm.set(
+      "expectedActiveGeneration",
+      String(activeWinner?.active_generation),
+    );
+    rollbackForm.set("expectedActiveReleaseId", activeWinner?.release_id ?? "");
+    const rollbackResponse = await fetch(`${origin}/admin/catalog/releases`, {
+      body: rollbackForm,
+      headers: { "x-request-id": rollbackRequestId },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(rollbackResponse.status).toBe(200);
+    expect(await rollbackResponse.text()).toContain(
+      "Catalog Release publication failed.",
+    );
+    expect(
+      runLocalD1<{ release_id: string }>(
+        "SELECT release_id FROM catalog_active_release WHERE singleton = 1",
+      ),
+    ).toEqual([{ release_id: activeWinner?.release_id }]);
+    expect(
+      runLocalD1<{ status: string }>(
+        `SELECT status FROM catalog_releases WHERE id = '${loser.id}'`,
+      ),
+    ).toEqual([{ status: "draft" }]);
+    expect(
+      runLocalD1<{ status: string }>(
+        `SELECT status FROM catalog_releases WHERE id = '${activeWinner?.release_id}'`,
+      ),
+    ).toEqual([{ status: "published" }]);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM catalog_release_publications
+         WHERE release_id = '${loser.id}'`,
+      ),
+    ).toEqual([{ count: 0 }]);
+  }, 120_000);
+
+  it("keeps a blocking workbook error out of draft releases", async () => {
     const activeBefore = runLocalD1<{ id: string }>(
       "SELECT id FROM catalog_releases WHERE status = 'published' ORDER BY id",
     );

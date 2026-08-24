@@ -5,6 +5,6 @@ export default defineConfig({
     environment: "node",
     include: ["test/smoke/**/*.test.ts"],
     hookTimeout: 30_000,
-    testTimeout: 30_000,
+    testTimeout: 60_000,
   },
 });
