@@ -88,6 +88,28 @@ export async function action({ context, request }: Route.ActionArgs) {
       });
     }
 
+    if (intent === "update-length-hose") {
+      const lineId = textValue(form, "lineId");
+      const pieceCount = parseStandardProductQuantity(form.get("pieceCount"));
+      if (pieceCount === null) {
+        return data(
+          {
+            lineId,
+            pieceCountError: "Pieces must be a whole number from 1 to 9,999.",
+          },
+          { status: 422 },
+        );
+      }
+      const result = await service.updateLengthBasedHose(
+        request,
+        lineId,
+        pieceCount,
+      );
+      return redirect("/quote-list", {
+        headers: responseHeaders(result.setCookie),
+      });
+    }
+
     if (intent === "remove") {
       const result = await service.remove(request, textValue(form, "lineId"));
       return redirect("/quote-list", {
@@ -108,6 +130,14 @@ function lineSubtotal(quantity: number, referenceUnitPrice: number | null) {
   return referenceUnitPrice == null ? null : quantity * referenceUnitPrice;
 }
 
+function merchandiseEstimate(
+  line: Route.ComponentProps["loaderData"]["lines"][number],
+) {
+  return line.lineKind === "length_based_hose"
+    ? line.estimatedMerchandiseAmount
+    : lineSubtotal(line.quantity, line.referenceUnitPrice);
+}
+
 export default function AnonymousQuoteList({
   actionData,
   loaderData,
@@ -115,8 +145,11 @@ export default function AnonymousQuoteList({
   const navigation = useNavigation();
   const busy = navigation.state !== "idle";
   const referenceTotal = loaderData.lines.reduce(
-    (total, line) =>
-      total + (lineSubtotal(line.quantity, line.referenceUnitPrice) ?? 0),
+    (total, line) => total + (merchandiseEstimate(line) ?? 0),
+    0,
+  );
+  const cuttingLabelingFeeTotal = loaderData.lines.reduce(
+    (total, line) => total + (line.cuttingLabelingFeeAmount ?? 0),
     0,
   );
   const hasUnpricedLine = loaderData.lines.some(
@@ -146,7 +179,7 @@ export default function AnonymousQuoteList({
           </span>
         </header>
 
-        {actionData?.formError ? (
+        {actionData && "formError" in actionData ? (
           <p className="quote-list-error" role="alert">
             <AlertCircle size={18} /> {actionData.formError}
           </p>
@@ -156,10 +189,13 @@ export default function AnonymousQuoteList({
           <div className="quote-list-layout">
             <section className="quote-lines" aria-label="Quote List products">
               {loaderData.lines.map((line) => {
-                const subtotal = lineSubtotal(
-                  line.quantity,
-                  line.referenceUnitPrice,
-                );
+                const subtotal = merchandiseEstimate(line);
+                const pieceCountError =
+                  actionData &&
+                  "lineId" in actionData &&
+                  actionData.lineId === line.id
+                    ? actionData.pieceCountError
+                    : null;
                 return (
                   <article className="quote-line" key={line.id}>
                     <div className="quote-line-main">
@@ -170,9 +206,22 @@ export default function AnonymousQuoteList({
                       <p>
                         SKU <strong>{line.sku}</strong>
                       </p>
+                      {line.lengthOrder ? (
+                        <p className="quote-line-length">
+                          <strong>Made to order</strong>
+                          <span>
+                            {line.lengthOrder.originalLengthValue} ft x{" "}
+                            {line.lengthOrder.pieceCount}{" "}
+                            {line.lengthOrder.pieceCount === 1
+                              ? "piece"
+                              : "pieces"}{" "}
+                            = {line.lengthOrder.totalFootage} total ft
+                          </span>
+                        </p>
+                      ) : null}
                     </div>
                     <div className="quote-line-price">
-                      <span>Reference subtotal</span>
+                      <span>Merchandise estimate</span>
                       <strong>
                         {subtotal == null
                           ? "Price on quote"
@@ -183,20 +232,51 @@ export default function AnonymousQuoteList({
                           ? "No reference unit price"
                           : `${line.currency} ${line.referenceUnitPrice.toFixed(2)} / ${line.salesUnit}`}
                       </small>
+                      {line.cuttingLabelingFeeAmount !== null &&
+                      line.cuttingLabelingFeeAmount > 0 ? (
+                        <small>
+                          Cutting &amp; Labeling Fee: {line.currency}{" "}
+                          {line.cuttingLabelingFeeAmount.toFixed(2)}
+                        </small>
+                      ) : null}
                     </div>
                     <div className="quote-line-actions">
                       <Form method="post">
-                        <input name="intent" type="hidden" value="update" />
+                        <input
+                          name="intent"
+                          type="hidden"
+                          value={
+                            line.lineKind === "length_based_hose"
+                              ? "update-length-hose"
+                              : "update"
+                          }
+                        />
                         <input name="lineId" type="hidden" value={line.id} />
-                        <label htmlFor={`quantity-${line.id}`}>Quantity</label>
+                        <label htmlFor={`quantity-${line.id}`}>
+                          {line.lineKind === "length_based_hose"
+                            ? "Number of pieces"
+                            : "Quantity"}
+                        </label>
                         <div>
                           <input
-                            defaultValue={line.quantity}
+                            aria-describedby={
+                              pieceCountError
+                                ? `quantity-error-${line.id}`
+                                : undefined
+                            }
+                            aria-invalid={Boolean(pieceCountError)}
+                            defaultValue={
+                              line.lengthOrder?.pieceCount ?? line.quantity
+                            }
                             disabled={busy}
                             id={`quantity-${line.id}`}
                             max={maximumStandardProductQuantity}
                             min="1"
-                            name="quantity"
+                            name={
+                              line.lineKind === "length_based_hose"
+                                ? "pieceCount"
+                                : "quantity"
+                            }
                             required
                             step="1"
                             type="number"
@@ -210,6 +290,15 @@ export default function AnonymousQuoteList({
                             <RefreshCw size={17} /> Update
                           </button>
                         </div>
+                        {pieceCountError ? (
+                          <small
+                            className="quote-line-field-error"
+                            id={`quantity-error-${line.id}`}
+                            role="alert"
+                          >
+                            {pieceCountError}
+                          </small>
+                        ) : null}
                       </Form>
                       <Form method="post">
                         <input name="intent" type="hidden" value="remove" />
@@ -234,6 +323,13 @@ export default function AnonymousQuoteList({
               <span className="eyebrow">Reference only</span>
               <h2>Product estimate</h2>
               <strong>USD {referenceTotal.toFixed(2)}</strong>
+              <small>Estimated merchandise subtotal</small>
+              {cuttingLabelingFeeTotal > 0 ? (
+                <p>
+                  Cutting &amp; Labeling Fee: USD{" "}
+                  {cuttingLabelingFeeTotal.toFixed(2)}
+                </p>
+              ) : null}
               {hasUnpricedLine ? <p>Plus products priced on quote.</p> : null}
               <p>
                 This is not checkout. Taxes, freight and final commercial terms

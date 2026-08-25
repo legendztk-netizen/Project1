@@ -11,6 +11,19 @@ export interface PublicCatalogSpec {
   value: string;
 }
 
+export interface PublicLengthOrdering {
+  cuttingLabelingFee: {
+    currency: "USD";
+    ratePerPiece: number;
+    scope: string;
+    version: number;
+  };
+  incrementFt: number;
+  minimumLengthFt: number;
+  presetsFt: number[];
+  unit: "ft";
+}
+
 export type PublicVariantSelection =
   | {
       dash: DashSize | null;
@@ -36,6 +49,7 @@ export interface PublicCatalogItem {
   offer: {
     currency: string;
     leadTimeDays: number;
+    lengthOrdering: PublicLengthOrdering | null;
     madeToOrder: boolean;
     moq: number;
     referencePrice: number | null;

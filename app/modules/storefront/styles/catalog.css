@@ -323,6 +323,137 @@
   font-size: 1.08rem;
 }
 
+.length-order-form {
+  display: grid;
+  gap: 18px;
+  padding-top: 22px;
+}
+
+.length-shortcuts {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.length-shortcuts legend,
+.length-order-fields label > span:first-child {
+  margin-bottom: 8px;
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.length-shortcut-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.length-shortcut {
+  min-height: 44px;
+  padding: 0 12px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid #aeb8bf;
+  border-radius: 5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.length-shortcut:hover {
+  border-color: #6f7f88;
+}
+
+.length-shortcut[aria-pressed="true"] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.length-order-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.length-order-fields label {
+  display: grid;
+  min-width: 0;
+}
+
+.length-order-fields input {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  padding: 0 12px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid #aeb8bf;
+  border-radius: 5px;
+}
+
+.length-order-fields input[aria-invalid="true"] {
+  border-color: #b43b32;
+}
+
+.length-input-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  align-items: center;
+}
+
+.length-input-shell input {
+  grid-area: 1 / 1 / 2 / 3;
+  padding-right: 46px;
+}
+
+.length-input-shell strong {
+  z-index: 1;
+  grid-area: 1 / 2;
+  color: var(--muted);
+  font-size: 0.78rem;
+  pointer-events: none;
+}
+
+.field-error {
+  margin: 6px 0 0;
+  color: #a22f28;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.length-order-estimate {
+  display: grid;
+  gap: 9px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.length-order-estimate p {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.length-order-estimate span,
+.length-order-estimate small,
+.length-order-prompt {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.length-order-prompt {
+  margin: 0;
+}
+
+.length-order-form .product-quote-command {
+  margin-top: 0;
+}
+
 .product-quote-command {
   width: 100%;
   min-height: 48px;
@@ -442,6 +573,10 @@
   }
 
   .product-commercials {
+    grid-template-columns: 1fr;
+  }
+
+  .length-order-fields {
     grid-template-columns: 1fr;
   }
 

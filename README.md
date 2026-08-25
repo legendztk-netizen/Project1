@@ -8,7 +8,8 @@ The initial skeleton exposes three deliberately separate surfaces:
 - `/catalog/:category/:familyKey[?sku=...]` - canonical family page; the
   optional query restores one exact SKU variant
 - `/api/catalog/products/:sku` - public active-release product resource
-- `/quote-list` - server-side anonymous Standard Product Quote List
+- `/quote-list` - server-side anonymous Quote List for Standard Products and
+  Length-Based Hose
 - `/admin` - Admin Backoffice shell
 - `/admin/catalog/import` - authorized seven-worksheet catalog import and review
 - `/admin/catalog/review` - authorized draft product review and bulk Supply Availability changes
@@ -49,9 +50,10 @@ preview, and verifies the Storefront, Admin, persisted Catalog Release
 diagnostic, full 01-07 workbook import, draft-only bulk Supply Availability
 commands, atomic Catalog Release publication, audit output, active-release
 isolation, five-class Storefront search and family routing, availability-driven
-Add to Quote commands, anonymous Quote List lifecycle and revalidation, public
-Cost Basis exclusion, and health routes through HTTP. `test:d1` uses persistent
-local D1 instances rather than a database mock.
+Add to Quote commands, anonymous Quote List lifecycle and revalidation,
+Length-Based Hose input validation, merge rules, fee snapshots and line
+editing, public Cost Basis exclusion, and health routes through HTTP. `test:d1`
+uses persistent local D1 instances rather than a database mock.
 
 ## Environment commands
 

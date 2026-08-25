@@ -69,6 +69,14 @@ function sessionIdFromCookie(cookie: string) {
   return decodeURIComponent(value).split(".", 1)[0] ?? "";
 }
 
+function renderedText(html: string) {
+  return html
+    .replaceAll("<!-- -->", "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function quoteFormFromProductDetail(html: string) {
   const command = html.indexOf('data-command="add-to-quote"');
   const start = html.lastIndexOf("<form", command);
@@ -1206,6 +1214,12 @@ describe("Cloudflare Worker route surfaces", () => {
        WHERE session_id = '${sessionId}' AND sku = 'JIC_F_SW_04_04'`,
     );
     expect(mergedLine?.quantity).toBe(3);
+    expect(
+      runLocalD1Failure(
+        `UPDATE anonymous_quote_lines SET piece_count = 1
+         WHERE id = '${mergedLine?.id ?? ""}';`,
+      ),
+    ).toContain("invalid anonymous quote line shape");
 
     const addDifferent = new FormData();
     addDifferent.set("intent", "add");
@@ -1292,6 +1306,241 @@ describe("Cloudflare Worker route surfaces", () => {
       redirect: "manual",
     });
     expect(restoreQuantityResponse.status).toBe(302);
+
+    runLocalD1(
+      `INSERT INTO cutting_labeling_fee_rates
+         (scope_key, hose_series, currency, rate_per_piece, version)
+       VALUES ('series:601R1', '601R1', 'USD', 1.25, 2)
+       ON CONFLICT(scope_key) DO UPDATE SET
+         rate_per_piece = excluded.rate_per_piece,
+         version = excluded.version;`,
+    );
+    const hosePath = "/catalog/hydraulic-hose/601r1?sku=601R1_001";
+    const hoseDetailResponse = await fetch(`${origin}${hosePath}`);
+    const hoseDetail = await hoseDetailResponse.text();
+    expect(hoseDetailResponse.status).toBe(200);
+    expect(hoseDetail).toContain("Length per piece");
+    expect(hoseDetail).toContain("Number of pieces");
+    const hoseDetailText = renderedText(hoseDetail);
+    expect(hoseDetailText).toContain("25 ft");
+    expect(hoseDetailText).toContain("50 ft");
+    expect(hoseDetailText).toContain("100 ft");
+    expect(hoseDetail).toContain('name="lengthPerPiece"');
+    expect(hoseDetail).toContain('name="pieceCount"');
+    expect(hoseDetail).toMatch(
+      /data-command="add-length-hose-to-quote"[^>]*disabled/,
+    );
+
+    const lineCountBeforeInvalidLength = lineCount?.count ?? 0;
+    const invalidLengthOrder = new FormData();
+    invalidLengthOrder.set("intent", "add-length-hose");
+    invalidLengthOrder.set("sku", "601R1_001");
+    invalidLengthOrder.set("lengthPerPiece", "");
+    invalidLengthOrder.set("lengthUnit", "ft");
+    invalidLengthOrder.set("pieceCount", "0");
+    const invalidLengthResponse = await fetch(`${origin}${hosePath}`, {
+      body: invalidLengthOrder,
+      headers: { cookie: quoteCookie },
+      method: "POST",
+    });
+    expect(invalidLengthResponse.status).toBe(422);
+    const invalidLengthMarkup = await invalidLengthResponse.text();
+    expect(invalidLengthMarkup).toContain(
+      '<small class="field-error" id="length-error" role="alert">Enter the length of each piece.</small>',
+    );
+    expect(invalidLengthMarkup).toContain(
+      "Pieces must be a whole number from 1 to 9,999.",
+    );
+
+    const unsupportedUnitOrder = new FormData();
+    unsupportedUnitOrder.set("intent", "add-length-hose");
+    unsupportedUnitOrder.set("sku", "601R1_001");
+    unsupportedUnitOrder.set("lengthPerPiece", "50");
+    unsupportedUnitOrder.set("lengthUnit", "m");
+    unsupportedUnitOrder.set("pieceCount", "1");
+    const unsupportedUnitResponse = await fetch(`${origin}${hosePath}`, {
+      body: unsupportedUnitOrder,
+      headers: { cookie: quoteCookie },
+      method: "POST",
+    });
+    expect(unsupportedUnitResponse.status).toBe(422);
+    expect(await unsupportedUnitResponse.text()).toContain(
+      '<small class="field-error" id="length-error" role="alert">Only feet (ft) are supported for cut hose.</small>',
+    );
+    const [lineCountAfterInvalidLength] = runLocalD1<{ count: number }>(
+      `SELECT COUNT(*) AS count FROM anonymous_quote_lines
+       WHERE session_id = '${sessionId}'`,
+    );
+    expect(lineCountAfterInvalidLength?.count).toBe(
+      lineCountBeforeInvalidLength,
+    );
+
+    const addCutHose = async (length: number, pieces: number) => {
+      const form = new FormData();
+      form.set("intent", "add-length-hose");
+      form.set("sku", "601R1_001");
+      form.set("lengthPerPiece", String(length));
+      form.set("lengthUnit", "ft");
+      form.set("pieceCount", String(pieces));
+      return fetch(`${origin}${hosePath}`, {
+        body: form,
+        headers: { cookie: quoteCookie },
+        method: "POST",
+        redirect: "manual",
+      });
+    };
+
+    const addFiftyFootResponse = await addCutHose(50, 2);
+    expect(addFiftyFootResponse.status, await addFiftyFootResponse.text()).toBe(
+      302,
+    );
+    expect(addFiftyFootResponse.headers.get("location")).toBe("/quote-list");
+    const [fiftyFootLine] = runLocalD1<{
+      current_estimate_amount: number;
+      cutting_labeling_fee_amount: number;
+      cutting_labeling_fee_rate: number;
+      estimated_merchandise_amount: number;
+      id: string;
+      line_identity: string;
+      line_kind: string;
+      normalized_length_ft: number;
+      original_length_unit: string;
+      original_length_value: number;
+      piece_count: number;
+      quantity: number;
+      total_footage: number;
+    }>(
+      `SELECT id, line_identity, line_kind, quantity,
+              original_length_value, original_length_unit,
+              normalized_length_ft, piece_count, total_footage,
+              cutting_labeling_fee_rate, cutting_labeling_fee_amount,
+              estimated_merchandise_amount, current_estimate_amount
+       FROM anonymous_quote_lines
+       WHERE session_id = '${sessionId}'
+         AND line_identity = 'length-hose:601R1_001:50ft'`,
+    );
+    expect(fiftyFootLine).toMatchObject({
+      current_estimate_amount: 218.5,
+      cutting_labeling_fee_amount: 2.5,
+      cutting_labeling_fee_rate: 1.25,
+      estimated_merchandise_amount: 216,
+      line_identity: "length-hose:601R1_001:50ft",
+      line_kind: "length_based_hose",
+      normalized_length_ft: 50,
+      original_length_unit: "ft",
+      original_length_value: 50,
+      piece_count: 2,
+      quantity: 2,
+      total_footage: 100,
+    });
+
+    const mergeFiftyFootResponse = await addCutHose(50, 1);
+    expect(mergeFiftyFootResponse.status).toBe(302);
+    const addTwentyFiveFootResponse = await addCutHose(25, 1);
+    expect(addTwentyFiveFootResponse.status).toBe(302);
+    const hoseLines = runLocalD1<{
+      current_estimate_amount: number;
+      id: string;
+      normalized_length_ft: number;
+      piece_count: number;
+      total_footage: number;
+    }>(
+      `SELECT id, normalized_length_ft, piece_count, total_footage,
+              current_estimate_amount
+       FROM anonymous_quote_lines
+       WHERE session_id = '${sessionId}' AND sku = '601R1_001'
+       ORDER BY normalized_length_ft`,
+    );
+    expect(hoseLines).toMatchObject([
+      {
+        current_estimate_amount: 55.25,
+        normalized_length_ft: 25,
+        piece_count: 1,
+        total_footage: 25,
+      },
+      {
+        current_estimate_amount: 327.75,
+        normalized_length_ft: 50,
+        piece_count: 3,
+        total_footage: 150,
+      },
+    ]);
+
+    const overflowCutHoseResponse = await addCutHose(50, 9999);
+    expect(overflowCutHoseResponse.status).toBe(422);
+    expect(renderedText(await overflowCutHoseResponse.text())).toContain(
+      "The combined number of pieces must be between 1 and 9,999.",
+    );
+    const [fiftyFootAfterOverflow] = runLocalD1<{ piece_count: number }>(
+      `SELECT piece_count FROM anonymous_quote_lines
+       WHERE id = '${fiftyFootLine?.id ?? ""}'`,
+    );
+    expect(fiftyFootAfterOverflow?.piece_count).toBe(3);
+
+    const hoseQuoteListResponse = await fetch(`${origin}/quote-list`, {
+      headers: { cookie: quoteCookie },
+    });
+    const hoseQuoteList = await hoseQuoteListResponse.text();
+    const hoseQuoteListText = renderedText(hoseQuoteList);
+    expect(hoseQuoteListResponse.status).toBe(200);
+    expect(hoseQuoteListText).toContain("Made to order");
+    expect(hoseQuoteListText).toContain("50 ft x 3 pieces = 150 total ft");
+    expect(hoseQuoteList).toContain("Cutting &amp; Labeling Fee");
+
+    const updateCutHose = new FormData();
+    updateCutHose.set("intent", "update-length-hose");
+    updateCutHose.set("lineId", fiftyFootLine?.id ?? "");
+    updateCutHose.set("pieceCount", "4");
+    const updateCutHoseResponse = await fetch(`${origin}/quote-list`, {
+      body: updateCutHose,
+      headers: { cookie: quoteCookie },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(updateCutHoseResponse.status).toBe(302);
+    const [updatedFiftyFootLine] = runLocalD1<{
+      current_estimate_amount: number;
+      piece_count: number;
+      total_footage: number;
+    }>(
+      `SELECT piece_count, total_footage, current_estimate_amount
+       FROM anonymous_quote_lines WHERE id = '${fiftyFootLine?.id ?? ""}'`,
+    );
+    expect(updatedFiftyFootLine).toEqual({
+      current_estimate_amount: 437,
+      piece_count: 4,
+      total_footage: 200,
+    });
+
+    updateCutHose.set("pieceCount", "10000");
+    const invalidPiecesResponse = await fetch(`${origin}/quote-list`, {
+      body: updateCutHose,
+      headers: { cookie: quoteCookie },
+      method: "POST",
+    });
+    expect(invalidPiecesResponse.status).toBe(422);
+    expect(await invalidPiecesResponse.text()).toContain(
+      "Pieces must be a whole number from 1 to 9,999.",
+    );
+
+    const twentyFiveFootLine = hoseLines.find(
+      (line) => line.normalized_length_ft === 25,
+    );
+    const removeCutHose = new FormData();
+    removeCutHose.set("intent", "remove");
+    removeCutHose.set("lineId", twentyFiveFootLine?.id ?? "");
+    const removeCutHoseResponse = await fetch(`${origin}/quote-list`, {
+      body: removeCutHose,
+      headers: { cookie: quoteCookie },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(removeCutHoseResponse.status).toBe(302);
+    const [remainingCutHoseLines] = runLocalD1<{ count: number }>(
+      `SELECT COUNT(*) AS count FROM anonymous_quote_lines
+       WHERE session_id = '${sessionId}' AND sku = '601R1_001'`,
+    );
+    expect(remainingCutHoseLines?.count).toBe(1);
 
     const replacementForm = new FormData();
     replacementForm.set(

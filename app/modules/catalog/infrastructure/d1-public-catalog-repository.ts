@@ -32,6 +32,9 @@ interface PublicCatalogRow {
   cover_finish: string | null;
   cover_material: string | null;
   currency: string | null;
+  cutting_labeling_fee_rate: number | null;
+  cutting_labeling_fee_scope: string | null;
+  cutting_labeling_fee_version: number | null;
   cutoff_b_mm: number | null;
   dash: string | null;
   dimension_a_mm: number | null;
@@ -54,6 +57,7 @@ interface PublicCatalogRow {
   interface_2: string | null;
   interface_family: string | null;
   lead_time_days: number | null;
+  length_increment_ft: number | null;
   hose_end_max_working_bar: number | null;
   hose_end_unit_weight_g: number | null;
   hose_temp_max_c: number | null;
@@ -65,6 +69,7 @@ interface PublicCatalogRow {
   coupler_unit_weight_g: number | null;
   minimum_bore_mm: number | null;
   minimum_burst_bar: number | null;
+  minimum_length_per_piece_ft: number | null;
   moq: number | null;
   nominal_id_in: number | null;
   od_mm: number | null;
@@ -74,6 +79,9 @@ interface PublicCatalogRow {
   port_thread: string | null;
   primary_standard: string | null;
   product_type: PublicProductType;
+  preset_length_1_ft: number | null;
+  preset_length_2_ft: number | null;
+  preset_length_3_ft: number | null;
   quantity_input_mode: string | null;
   rated_flow_l_min: number | null;
   reference_price_usd: number | null;
@@ -353,6 +361,34 @@ export function publicCatalogItemFromRow(
   row: PublicCatalogRow,
 ): PublicCatalogItem {
   const product = buildPublicCatalogPresentation(row);
+  const madeToOrder = (row.quantity_input_mode ?? "")
+    .toLocaleLowerCase()
+    .includes("length");
+  const presets = [
+    row.preset_length_1_ft,
+    row.preset_length_2_ft,
+    row.preset_length_3_ft,
+  ].filter((value): value is number => value !== null && value > 0);
+  const lengthOrdering =
+    madeToOrder &&
+    row.minimum_length_per_piece_ft !== null &&
+    row.length_increment_ft !== null &&
+    row.cutting_labeling_fee_rate !== null &&
+    row.cutting_labeling_fee_scope !== null &&
+    row.cutting_labeling_fee_version !== null
+      ? {
+          cuttingLabelingFee: {
+            currency: "USD" as const,
+            ratePerPiece: row.cutting_labeling_fee_rate,
+            scope: row.cutting_labeling_fee_scope,
+            version: row.cutting_labeling_fee_version,
+          },
+          incrementFt: row.length_increment_ft,
+          minimumLengthFt: row.minimum_length_per_piece_ft,
+          presetsFt: presets,
+          unit: "ft" as const,
+        }
+      : null;
   return {
     aliases: product.aliases.filter((value): value is string => Boolean(value)),
     canAddToQuote:
@@ -369,9 +405,8 @@ export function publicCatalogItemFromRow(
         ? {
             currency: row.currency ?? "USD",
             leadTimeDays: row.lead_time_days,
-            madeToOrder: (row.quantity_input_mode ?? "")
-              .toLocaleLowerCase()
-              .includes("length"),
+            lengthOrdering,
+            madeToOrder,
             moq: row.moq,
             referencePrice: row.reference_price_usd,
             salesUnit: row.sales_unit,
@@ -407,6 +442,11 @@ const publicCatalogSql = `
          s.rfq_eligibility, s.supply_availability,
          o.sales_unit, o.moq, o.lead_time_days, o.currency,
          o.reference_price_usd, o.quantity_input_mode,
+         o.minimum_length_per_piece_ft, o.length_increment_ft,
+         o.preset_length_1_ft, o.preset_length_2_ft, o.preset_length_3_ft,
+         COALESCE(series_fee.rate_per_piece, global_fee.rate_per_piece) AS cutting_labeling_fee_rate,
+         COALESCE(series_fee.scope_key, global_fee.scope_key) AS cutting_labeling_fee_scope,
+         COALESCE(series_fee.version, global_fee.version) AS cutting_labeling_fee_version,
          h.primary_standard, h.equivalent_standard, h.dash,
          h.nominal_id_in, h.id_mm, h.od_mm, h.working_bar, h.working_psi,
          h.burst_bar, h.bend_radius_mm,
@@ -446,6 +486,10 @@ const publicCatalogSql = `
   INNER JOIN catalog_skus s ON s.import_id = r.source_import_id
   LEFT JOIN catalog_sales_offers o
     ON o.import_id = s.import_id AND o.base_sku = s.sku
+  LEFT JOIN cutting_labeling_fee_rates global_fee
+    ON global_fee.scope_key = 'global'
+  LEFT JOIN cutting_labeling_fee_rates series_fee
+    ON series_fee.scope_key = 'series:' || s.hose_series
   LEFT JOIN catalog_hose_variants h
     ON h.import_id = s.import_id AND h.sku = s.sku
   LEFT JOIN catalog_hose_ends e
