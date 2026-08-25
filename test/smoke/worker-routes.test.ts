@@ -363,6 +363,148 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(publicCostBasis.status).toBe(404);
   });
 
+  it("maintains versioned configurator registries only on a draft release", async () => {
+    const [draft] = runLocalD1<{ id: string }>(
+      `SELECT catalog_releases.id
+       FROM catalog_releases
+       INNER JOIN catalog_imports
+         ON catalog_imports.id = catalog_releases.source_import_id
+       WHERE catalog_releases.status = 'draft'
+         AND catalog_imports.kind = 'workbook'
+         AND catalog_imports.status = 'completed'
+       ORDER BY catalog_releases.created_at DESC LIMIT 1`,
+    );
+    expect(draft).toBeTruthy();
+    if (!draft) throw new Error("Expected one imported workbook draft");
+
+    const pageResponse = await fetch(
+      `${origin}/admin/catalog/reference-data?release=${draft.id}`,
+    );
+    const page = await pageResponse.text();
+    expect(pageResponse.status).toBe(200);
+    expect(page).toContain("Configurator Registries");
+    expect(page).toContain("Endpoint Classes and Hose End Assignments");
+    expect(page).toContain("Measurement Methods and Ordered Mappings");
+    expect(page).toContain("Clocking Convention");
+    expect(page).toContain("Installed Protection");
+    expect(page).toContain("Assembly Estimate Schedule");
+    expect(page).toContain("No additional installed protection");
+
+    const replaceMapping = new FormData();
+    replaceMapping.set("intent", "save_measurement_mapping");
+    replaceMapping.set("releaseId", draft.id);
+    replaceMapping.set("endAClassCode", "STRAIGHT_MALE_END");
+    replaceMapping.set("endBClassCode", "STRAIGHT_MALE_END");
+    replaceMapping.set("guidanceStatus", "guided");
+    replaceMapping.set("methodCode", "M02");
+    const replaceMappingResponse = await fetch(
+      `${origin}/admin/catalog/reference-data`,
+      { body: replaceMapping, method: "POST", redirect: "manual" },
+    );
+    expect(replaceMappingResponse.status).toBe(302);
+    expect(
+      runLocalD1<{ count: number; method_code: string }>(
+        `SELECT COUNT(*) AS count,
+                json_extract(payload_json, '$.methodCode') AS method_code
+         FROM catalog_configurator_registry_entries
+         WHERE release_id = '${draft.id}'
+           AND registry_type = 'measurement_mapping'
+           AND entry_key = 'STRAIGHT_MALE_END:STRAIGHT_MALE_END'`,
+      ),
+    ).toEqual([{ count: 1, method_code: "M02" }]);
+    replaceMapping.set("methodCode", "M01");
+    const restoreMappingResponse = await fetch(
+      `${origin}/admin/catalog/reference-data`,
+      { body: replaceMapping, method: "POST", redirect: "manual" },
+    );
+    expect(restoreMappingResponse.status).toBe(302);
+
+    const [before] = runLocalD1<{
+      record_version: number;
+      release_version: number;
+    }>(
+      `SELECT entry.record_version, release.version AS release_version
+       FROM catalog_configurator_registry_entries entry
+       INNER JOIN catalog_releases release ON release.id = entry.release_id
+       WHERE entry.release_id = '${draft.id}'
+         AND entry.registry_type = 'assembly_estimate_schedule'
+         AND entry.entry_key = 'DEFAULT'`,
+    );
+    expect(before).toBeTruthy();
+
+    const saveSchedule = new FormData();
+    saveSchedule.set("intent", "save_estimate_schedule");
+    saveSchedule.set("releaseId", draft.id);
+    saveSchedule.set("assemblyServicePriceUsd", "");
+    const saveResponse = await fetch(`${origin}/admin/catalog/reference-data`, {
+      body: saveSchedule,
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(saveResponse.status, await saveResponse.text()).toBe(302);
+    expect(saveResponse.headers.get("location")).toContain(
+      "saved=assembly_estimate_schedule",
+    );
+
+    const [after] = runLocalD1<{
+      record_version: number;
+      release_version: number;
+    }>(
+      `SELECT entry.record_version, release.version AS release_version
+       FROM catalog_configurator_registry_entries entry
+       INNER JOIN catalog_releases release ON release.id = entry.release_id
+       WHERE entry.release_id = '${draft.id}'
+         AND entry.registry_type = 'assembly_estimate_schedule'
+         AND entry.entry_key = 'DEFAULT'`,
+    );
+    expect(after?.record_version).toBe((before?.record_version ?? 0) + 1);
+    expect(after?.release_version).toBe((before?.release_version ?? 0) + 1);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM admin_audit_events
+         WHERE entity_id = '${draft.id}:assembly_estimate_schedule:DEFAULT'
+           AND event_type = 'configurator_registry.saved'`,
+      )[0]?.count,
+    ).toBeGreaterThan(0);
+
+    const invalidMapping = new FormData();
+    invalidMapping.set("intent", "save_measurement_mapping");
+    invalidMapping.set("releaseId", draft.id);
+    invalidMapping.set("endAClassCode", "NOT_REGISTERED");
+    invalidMapping.set("endBClassCode", "STRAIGHT_MALE_END");
+    invalidMapping.set("guidanceStatus", "guided");
+    invalidMapping.set("methodCode", "M01");
+    const invalidResponse = await fetch(
+      `${origin}/admin/catalog/reference-data`,
+      { body: invalidMapping, method: "POST" },
+    );
+    expect(invalidResponse.status).toBe(200);
+    expect(await invalidResponse.text()).toContain(
+      "Measurement Endpoint Class NOT_REGISTERED is missing",
+    );
+
+    runLocalD1(
+      `DELETE FROM catalog_configurator_registry_entries
+       WHERE release_id = '${draft.id}'
+         AND registry_type = 'measurement_method'
+         AND entry_key = 'M07'`,
+    );
+    const invalidPreview = await (
+      await fetch(`${origin}/admin/catalog/releases?release=${draft.id}`)
+    ).text();
+    expect(invalidPreview).toContain("Configurator registry is missing M07");
+    runLocalD1(
+      `INSERT INTO catalog_configurator_registry_entries (
+         release_id, registry_type, entry_key, payload_json,
+         record_version, updated_at
+       )
+       SELECT '${draft.id}', registry_type, entry_key, payload_json, 1,
+              CURRENT_TIMESTAMP
+       FROM configurator_registry_seed_templates
+       WHERE registry_type = 'measurement_method' AND entry_key = 'M07'`,
+    );
+  });
+
   it("reviews and changes only draft Supply Availability through confirmation", async () => {
     const [draft] = runLocalD1<{
       id: string;
@@ -643,6 +785,105 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(confirmationResponse.status).toBe(200);
     expect(confirmationHtml).toContain("Final confirmation");
     expect(confirmationHtml).toContain("Publish Catalog Release");
+
+    runLocalD1(
+      `DELETE FROM catalog_configurator_registry_entries
+       WHERE release_id = '${draft.id}'
+         AND registry_type = 'measurement_method'
+         AND entry_key = 'M07'`,
+    );
+    const atomicRegistryGuard = runLocalD1Failure(
+      `INSERT INTO catalog_release_publications (
+         release_id, previous_release_id, expected_active_version,
+         expected_draft_version, published_by, request_correlation_id, published_at
+       ) VALUES (
+         '${draft.id}', '${activeBefore.id}', ${activeBefore.active_generation},
+         ${draft.version}, 'local-owner', 'invalid-registry-${draft.id}',
+         CURRENT_TIMESTAMP
+       )`,
+    );
+    expect(atomicRegistryGuard).toContain(
+      "catalog configurator registry precondition failed",
+    );
+    runLocalD1(
+      `INSERT INTO catalog_configurator_registry_entries (
+         release_id, registry_type, entry_key, payload_json,
+         record_version, updated_at
+       )
+       SELECT '${draft.id}', registry_type, entry_key, payload_json, 1,
+              CURRENT_TIMESTAMP
+       FROM configurator_registry_seed_templates
+       WHERE registry_type = 'measurement_method' AND entry_key = 'M07'`,
+    );
+    const [draftHoseEnd] = runLocalD1<{ sku: string }>(
+      `SELECT sku FROM catalog_hose_ends
+       WHERE import_id = '${draft.source_import_id}' ORDER BY sku LIMIT 1`,
+    );
+    expect(draftHoseEnd).toBeTruthy();
+    if (!draftHoseEnd) throw new Error("Expected a draft Hose End");
+    runLocalD1(
+      `INSERT INTO catalog_configurator_registry_entries (
+         release_id, registry_type, entry_key, payload_json,
+         record_version, updated_at
+       ) VALUES (
+         '${draft.id}', 'endpoint_assignment', '${draftHoseEnd.sku}',
+         json_object('hoseEndSku', '${draftHoseEnd.sku}',
+                     'endpointClassCode', 'NOT_REGISTERED'),
+         1, CURRENT_TIMESTAMP
+       )`,
+    );
+    const endpointClassGuard = runLocalD1Failure(
+      `INSERT INTO catalog_release_publications (
+         release_id, previous_release_id, expected_active_version,
+         expected_draft_version, published_by, request_correlation_id, published_at
+       ) VALUES (
+         '${draft.id}', '${activeBefore.id}', ${activeBefore.active_generation},
+         ${draft.version}, 'local-owner', 'invalid-endpoint-class-${draft.id}',
+         CURRENT_TIMESTAMP
+       )`,
+    );
+    expect(endpointClassGuard).toContain(
+      "catalog configurator registry precondition failed",
+    );
+    runLocalD1(
+      `DELETE FROM catalog_configurator_registry_entries
+       WHERE release_id = '${draft.id}'
+         AND registry_type = 'endpoint_assignment'
+         AND entry_key = '${draftHoseEnd.sku}'`,
+    );
+
+    const registryEdit = new FormData();
+    registryEdit.set("intent", "save_estimate_schedule");
+    registryEdit.set("releaseId", draft.id);
+    registryEdit.set("assemblyServicePriceUsd", "");
+    const registryEditResponse = await fetch(
+      `${origin}/admin/catalog/reference-data`,
+      { body: registryEdit, method: "POST", redirect: "manual" },
+    );
+    expect(registryEditResponse.status).toBe(302);
+
+    const stalePublish = new FormData();
+    stalePublish.set("intent", "publish");
+    stalePublish.set("releaseId", draft.id);
+    stalePublish.set("expectedDraftVersion", String(draft.version));
+    stalePublish.set(
+      "expectedActiveGeneration",
+      String(activeBefore.active_generation),
+    );
+    stalePublish.set("expectedActiveReleaseId", activeBefore.id);
+    const stalePublishResponse = await fetch(
+      `${origin}/admin/catalog/releases`,
+      { body: stalePublish, method: "POST" },
+    );
+    expect(stalePublishResponse.status).toBe(200);
+    expect(await stalePublishResponse.text()).toContain(
+      "The publication preview is stale",
+    );
+    const [currentDraftVersion] = runLocalD1<{ version: number }>(
+      `SELECT version FROM catalog_releases WHERE id = '${draft.id}'`,
+    );
+    expect(currentDraftVersion?.version).toBe(draft.version + 1);
+    draft.version = currentDraftVersion?.version ?? draft.version;
 
     const publish = new FormData();
     publish.set("intent", "publish");
@@ -1754,15 +1995,15 @@ describe("Cloudflare Worker route surfaces", () => {
     const hoseVariant = await (
       await fetch(`${origin}/catalog/hydraulic-hose/601r1?sku=601R1_001`)
     ).text();
-    expect(hoseVariant).toContain("Hose Size");
-    expect(hoseVariant).toContain('data-hose-dash="-4"');
-    expect(hoseVariant).toContain("1/4 in hose ID");
+    expect(hoseVariant).toContain("Hose Inside Diameter");
+    expect(hoseVariant).toContain('data-hose-dash="-3"');
+    expect(hoseVariant).toContain("3/16 in");
     expect(hoseVariant).not.toContain("Size / connection variant");
 
     const unselectedHose = await (
       await fetch(`${origin}/catalog/hydraulic-hose/601r1`)
     ).text();
-    expect(unselectedHose).toContain("Hose Size");
+    expect(unselectedHose).toContain("Hose Inside Diameter");
     expect(unselectedHose).toContain("Choose a size to continue.");
     expect(unselectedHose).not.toContain('data-sku="601R1_001"');
     expect(unselectedHose).not.toContain("Technical specifications");

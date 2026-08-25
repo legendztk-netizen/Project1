@@ -21,6 +21,10 @@ export default [
   route("admin/catalog/review", "modules/admin/routes/catalog-review.tsx"),
   route("admin/catalog/releases", "modules/admin/routes/catalog-releases.tsx"),
   route(
+    "admin/catalog/reference-data",
+    "modules/admin/routes/catalog-reference-data.tsx",
+  ),
+  route(
     "admin/diagnostics/catalog-release",
     "modules/admin/routes/catalog-release-diagnostic.tsx",
   ),

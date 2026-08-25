@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Rocket,
   Settings,
+  Waypoints,
 } from "lucide-react";
 import { Link } from "react-router";
 
@@ -31,6 +32,11 @@ const adminNavigation = [
   { label: "Catalog", icon: Boxes, to: "/admin/catalog/review" },
   { label: "Imports", icon: FileUp, to: "/admin/catalog/import" },
   { label: "Releases", icon: Database, to: "/admin/catalog/releases" },
+  {
+    label: "Configurator Data",
+    icon: Waypoints,
+    to: "/admin/catalog/reference-data",
+  },
   { label: "System", icon: Settings },
 ];
 
@@ -126,6 +132,12 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
             to="/admin/catalog/releases"
           >
             <Rocket size={17} /> Publish Catalog Release
+          </Link>
+          <Link
+            className="button button-secondary"
+            to="/admin/catalog/reference-data"
+          >
+            <Waypoints size={17} /> Configurator Reference Data
           </Link>
           <Link
             className="button button-secondary"

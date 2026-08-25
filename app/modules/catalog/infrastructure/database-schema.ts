@@ -4,6 +4,7 @@ import {
   foreignKey,
   index,
   integer,
+  primaryKey,
   real,
   sqliteTable,
   text,
@@ -587,6 +588,53 @@ export const catalogActiveRelease = sqliteTable(
   },
   (table) => [
     check("catalog_active_release_singleton", sql`${table.singleton} = 1`),
+  ],
+);
+
+export const configuratorRegistrySeedTemplates = sqliteTable(
+  "configurator_registry_seed_templates",
+  {
+    registryType: text("registry_type").notNull(),
+    entryKey: text("entry_key").notNull(),
+    payloadJson: text("payload_json").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.registryType, table.entryKey],
+      name: "configurator_registry_seed_templates_pk",
+    }),
+    check(
+      "configurator_seed_registry_type",
+      sql`${table.registryType} in ('endpoint_class', 'endpoint_assignment', 'measurement_method', 'measurement_mapping', 'clocking_convention', 'installed_protection', 'protection_rule', 'assembly_estimate_schedule')`,
+    ),
+  ],
+);
+
+export const catalogConfiguratorRegistryEntries = sqliteTable(
+  "catalog_configurator_registry_entries",
+  {
+    releaseId: text("release_id")
+      .notNull()
+      .references(() => catalogReleases.id),
+    registryType: text("registry_type").notNull(),
+    entryKey: text("entry_key").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    recordVersion: integer("record_version").notNull().default(1),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.releaseId, table.registryType, table.entryKey],
+      name: "catalog_configurator_registry_entries_pk",
+    }),
+    check(
+      "catalog_configurator_registry_type",
+      sql`${table.registryType} in ('endpoint_class', 'endpoint_assignment', 'measurement_method', 'measurement_mapping', 'clocking_convention', 'installed_protection', 'protection_rule', 'assembly_estimate_schedule')`,
+    ),
+    index("catalog_configurator_registry_release_type_idx").on(
+      table.releaseId,
+      table.registryType,
+    ),
   ],
 );
 

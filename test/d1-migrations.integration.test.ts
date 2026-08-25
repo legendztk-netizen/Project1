@@ -218,7 +218,10 @@ async function findAvailablePort() {
   });
 }
 
-async function startHealthWorker(fixture: ReturnType<typeof createD1Fixture>) {
+async function startHealthWorker(
+  fixture: ReturnType<typeof createD1Fixture>,
+  path = "",
+) {
   const port = await findAvailablePort();
   const output: string[] = [];
   const worker = spawn(
@@ -246,7 +249,7 @@ async function startHealthWorker(fixture: ReturnType<typeof createD1Fixture>) {
       throw new Error(`Health fixture exited early:\n${output.join("")}`);
     }
     try {
-      return { response: await fetch(origin), worker };
+      return { response: await fetch(`${origin}${path}`), worker };
     } catch {
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
@@ -360,6 +363,205 @@ describe("real local D1 migration lifecycle", () => {
       `${mixedCaseIdentity.stdout}\n${mixedCaseIdentity.stderr}`,
     ).toContain("admin_identity_email_lowercase");
   }, 30_000);
+
+  it("adds registry seeds only to pre-existing draft releases during an upgrade", () => {
+    const fixture = createD1Fixture();
+    const registryMigration = "0013_configurator_reference_registries.sql";
+    rmSync(join(fixture.directory, "migrations", registryMigration));
+    const preRegistryMigration = applyMigrations(fixture);
+    expect(
+      preRegistryMigration.status,
+      `${preRegistryMigration.stdout}\n${preRegistryMigration.stderr}`,
+    ).toBe(0);
+
+    queryD1(
+      fixture,
+      `INSERT INTO catalog_imports
+         (id, kind, status, summary_json, error_count, warning_count, created_at, completed_at)
+       VALUES
+         ('upgrade-import-published', 'diagnostic', 'completed', '{}', 0, 0,
+          '2026-08-25T00:00:00.000Z', '2026-08-25T00:00:00.000Z'),
+         ('upgrade-import-draft', 'diagnostic', 'completed', '{}', 0, 0,
+          '2026-08-25T00:01:00.000Z', '2026-08-25T00:01:00.000Z');
+       INSERT INTO catalog_releases
+         (id, release_number, status, source_import_id, version, created_at, published_at)
+       VALUES
+         ('upgrade-release-published', 'UPGRADE-PUBLISHED', 'published',
+          'upgrade-import-published', 1, '2026-08-25T00:00:00.000Z',
+          '2026-08-25T00:00:30.000Z'),
+         ('upgrade-release-draft', 'UPGRADE-DRAFT', 'draft',
+          'upgrade-import-draft', 1, '2026-08-25T00:01:00.000Z', NULL);`,
+    );
+
+    copyFileSync(
+      join(projectRoot, "migrations", registryMigration),
+      join(fixture.directory, "migrations", registryMigration),
+    );
+    const registryUpgrade = applyMigrations(fixture);
+    expect(
+      registryUpgrade.status,
+      `${registryUpgrade.stdout}\n${registryUpgrade.stderr}`,
+    ).toBe(0);
+
+    expect(
+      queryD1<{ count: number; release_id: string }>(
+        fixture,
+        `SELECT release_id, COUNT(*) AS count
+         FROM catalog_configurator_registry_entries
+         GROUP BY release_id ORDER BY release_id`,
+      ),
+    ).toEqual([{ count: 23, release_id: "upgrade-release-draft" }]);
+  }, 30_000);
+
+  it("selects active and historical registry versions and locks published history", async () => {
+    const fixture = createD1Fixture();
+    const migrated = applyMigrations(fixture);
+    expect(migrated.status, `${migrated.stdout}\n${migrated.stderr}`).toBe(0);
+
+    expect(
+      queryD1<{ count: number }>(
+        fixture,
+        `SELECT COUNT(*) AS count
+         FROM catalog_configurator_registry_entries entry
+         INNER JOIN catalog_releases release ON release.id = entry.release_id
+         WHERE release.status IN ('published', 'superseded')`,
+      ),
+    ).toEqual([{ count: 0 }]);
+
+    queryD1(
+      fixture,
+      `INSERT INTO catalog_imports
+         (id, kind, status, summary_json, error_count, warning_count, created_at, completed_at)
+       VALUES
+         ('registry-import-1', 'diagnostic', 'completed', '{}', 0, 0,
+          '2026-08-25T00:00:00.000Z', '2026-08-25T00:00:00.000Z');
+       INSERT INTO catalog_releases
+         (id, release_number, status, source_import_id, version, created_at)
+       VALUES
+         ('registry-release-1', 'REGISTRY-1', 'draft', 'registry-import-1', 1,
+          '2026-08-25T00:00:00.000Z');`,
+    );
+
+    const counts = queryD1<{ count: number; registry_type: string }>(
+      fixture,
+      `SELECT registry_type, COUNT(*) AS count
+       FROM catalog_configurator_registry_entries
+       WHERE release_id = 'registry-release-1'
+       GROUP BY registry_type ORDER BY registry_type`,
+    );
+    expect(counts).toEqual([
+      { count: 1, registry_type: "assembly_estimate_schedule" },
+      { count: 1, registry_type: "clocking_convention" },
+      { count: 6, registry_type: "endpoint_class" },
+      { count: 1, registry_type: "installed_protection" },
+      { count: 7, registry_type: "measurement_mapping" },
+      { count: 7, registry_type: "measurement_method" },
+    ]);
+
+    queryD1(
+      fixture,
+      `UPDATE catalog_configurator_registry_entries
+       SET payload_json = json_set(payload_json, '$.assemblyServicePriceUsd', 12.5),
+           record_version = record_version + 1
+       WHERE release_id = 'registry-release-1'
+         AND registry_type = 'assembly_estimate_schedule'
+         AND entry_key = 'DEFAULT';
+       UPDATE catalog_releases
+       SET status = 'published', published_at = '2026-08-25T01:00:00.000Z',
+           version = version + 1
+       WHERE id = 'registry-release-1';`,
+    );
+
+    const published = queryD1<{
+      price: number;
+      record_version: number;
+    }>(
+      fixture,
+      `SELECT json_extract(payload_json, '$.assemblyServicePriceUsd') AS price,
+              record_version
+       FROM catalog_configurator_registry_entries
+       WHERE release_id = 'registry-release-1'
+         AND registry_type = 'assembly_estimate_schedule'`,
+    );
+    expect(published).toEqual([{ price: 12.5, record_version: 2 }]);
+
+    const forbiddenUpdate = runWrangler(fixture, [
+      "d1",
+      "execute",
+      "DB",
+      "--command",
+      `UPDATE catalog_configurator_registry_entries
+       SET payload_json = json_set(payload_json, '$.assemblyServicePriceUsd', 99)
+       WHERE release_id = 'registry-release-1'
+         AND registry_type = 'assembly_estimate_schedule'`,
+    ]);
+    expect(forbiddenUpdate.status).not.toBe(0);
+    expect(`${forbiddenUpdate.stdout}\n${forbiddenUpdate.stderr}`).toContain(
+      "published configurator registry is immutable",
+    );
+
+    queryD1(
+      fixture,
+      `INSERT INTO catalog_imports
+         (id, kind, status, summary_json, error_count, warning_count, created_at, completed_at)
+       VALUES
+         ('registry-import-2', 'diagnostic', 'completed', '{}', 0, 0,
+          '2026-08-25T02:00:00.000Z', '2026-08-25T02:00:00.000Z');
+       INSERT INTO catalog_releases
+         (id, release_number, status, source_import_id, version, created_at)
+       VALUES
+         ('registry-release-2', 'REGISTRY-2', 'draft', 'registry-import-2', 1,
+          '2026-08-25T02:00:00.000Z');
+       UPDATE catalog_configurator_registry_entries
+       SET payload_json = json_set(payload_json, '$.assemblyServicePriceUsd', 99),
+           record_version = record_version + 1
+       WHERE release_id = 'registry-release-2'
+         AND registry_type = 'assembly_estimate_schedule';
+       UPDATE catalog_releases
+       SET status = 'superseded'
+       WHERE id = 'registry-release-1';
+       UPDATE catalog_releases
+       SET status = 'published', published_at = '2026-08-25T03:00:00.000Z',
+           version = version + 1
+       WHERE id = 'registry-release-2';
+       UPDATE catalog_active_release
+       SET release_id = 'registry-release-2', version = version + 1,
+           updated_at = '2026-08-25T02:00:00.000Z'
+       WHERE singleton = 1;`,
+    );
+
+    const activeWorker = await startHealthWorker(
+      fixture,
+      "/configurator-reference/active",
+    );
+    try {
+      expect(activeWorker.response.status).toBe(200);
+      await expect(activeWorker.response.json()).resolves.toMatchObject({
+        snapshot: {
+          assemblyEstimateSchedule: { assemblyServicePriceUsd: 99 },
+          release: { id: "registry-release-2", status: "published" },
+        },
+      });
+    } finally {
+      await stopWorker(activeWorker.worker);
+    }
+
+    const historicalWorker = await startHealthWorker(
+      fixture,
+      "/configurator-reference/active?release=registry-release-1",
+    );
+    try {
+      expect(historicalWorker.response.status).toBe(200);
+      await expect(historicalWorker.response.json()).resolves.toMatchObject({
+        snapshot: {
+          assemblyEstimateSchedule: { assemblyServicePriceUsd: 12.5 },
+          release: { id: "registry-release-1", status: "superseded" },
+        },
+      });
+    } finally {
+      await stopWorker(historicalWorker.worker);
+    }
+  }, 60_000);
 
   it("rolls back a broken migration and makes the real Worker health check fail closed", async () => {
     const fixture = createD1Fixture(true);

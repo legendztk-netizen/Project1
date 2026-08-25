@@ -11,6 +11,8 @@ import type {
   RfqEligibility,
   TechnicalDataStatus,
 } from "../domain/catalog-workbook";
+import { validateConfiguratorReferenceSnapshot } from "../../configurator-reference/domain/configurator-reference";
+import { createD1ConfiguratorReferenceRepository } from "../../configurator-reference/infrastructure/d1-configurator-reference-repository";
 
 interface DraftReleaseRow {
   created_at: string;
@@ -499,6 +501,48 @@ export function createD1CatalogPublicationRepository(
         blockers.push({
           code: "invalid_catalog_state",
           message: `${invalidState?.count} SKUs contain an invalid publication, RFQ, technical, or supply state.`,
+        });
+      }
+
+      try {
+        const snapshot = await createD1ConfiguratorReferenceRepository(
+          database,
+        ).findSnapshot(draft.id);
+        if (!snapshot) {
+          blockers.push({
+            code: "missing_configurator_registry_snapshot",
+            message: "Configurator reference data is missing for this release.",
+          });
+        } else {
+          blockers.push(...validateConfiguratorReferenceSnapshot(snapshot));
+        }
+      } catch (error) {
+        blockers.push({
+          code: "invalid_configurator_registry_payload",
+          message:
+            error instanceof Error
+              ? `Configurator reference data is invalid: ${error.message}`
+              : "Configurator reference data is invalid.",
+        });
+      }
+
+      const orphanedAssignments = await database
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM catalog_configurator_registry_entries entry
+           LEFT JOIN catalog_hose_ends hose_end
+             ON hose_end.import_id = ?
+            AND hose_end.sku = json_extract(entry.payload_json, '$.hoseEndSku')
+           WHERE entry.release_id = ?
+             AND entry.registry_type = 'endpoint_assignment'
+             AND hose_end.sku IS NULL`,
+        )
+        .bind(draft.source_import_id, draft.id)
+        .first<{ count: number }>();
+      if ((orphanedAssignments?.count ?? 0) > 0) {
+        blockers.push({
+          code: "orphaned_endpoint_assignment",
+          message: `${orphanedAssignments?.count} endpoint assignments reference Hose End SKUs outside this release.`,
         });
       }
 
