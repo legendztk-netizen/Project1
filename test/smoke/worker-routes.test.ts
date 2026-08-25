@@ -409,6 +409,9 @@ describe("Cloudflare Worker route surfaces", () => {
       expect(guide).toContain(method);
     }
     expect(guide).toContain("View the assembly from End A toward End B");
+    expect(guide).toContain("Clocking angle");
+    expect(guide).toContain("Enter any whole degree from 000 to 359");
+    expect(guide).toContain('type="range"');
     expect(guide).toContain("Not sure");
 
     const replaceMapping = new FormData();

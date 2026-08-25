@@ -282,12 +282,194 @@
   gap: 40px;
 }
 
-.clocking-guide-layout > img {
-  width: 100%;
-  max-height: 480px;
-  object-fit: contain;
+.clocking-interactive {
+  min-width: 0;
+}
+
+.clocking-diagram-frame {
+  overflow: hidden;
   background: #fff;
   border: 1px solid var(--line);
+}
+
+.clocking-diagram {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1000 / 620;
+}
+
+.clocking-axis {
+  stroke: #aab2b9;
+  stroke-width: 3;
+  stroke-dasharray: 10 10;
+}
+
+.clocking-dial {
+  fill: none;
+  stroke: #d7dde1;
+  stroke-width: 3;
+}
+
+.clocking-tick {
+  fill: #7f8a93;
+}
+
+.clocking-arm {
+  stroke-width: 34;
+  stroke-linecap: round;
+  transition:
+    x2 180ms ease,
+    y2 180ms ease;
+}
+
+.clocking-arm.end-b {
+  stroke: #17222b;
+}
+
+.clocking-arm.end-a {
+  stroke: #77818a;
+}
+
+.clocking-hub {
+  fill: #1d2329;
+  stroke: #7a858f;
+  stroke-width: 10;
+}
+
+.clocking-hub-center {
+  fill: #c7cdd2;
+  stroke: #17222b;
+  stroke-width: 5;
+}
+
+.clocking-end {
+  fill: #e2e5e8;
+  stroke: #17222b;
+  stroke-width: 8;
+  transition:
+    cx 180ms ease,
+    cy 180ms ease;
+}
+
+.clocking-angle-arc {
+  fill: none;
+  stroke: #1769aa;
+  stroke-width: 8;
+}
+
+.clocking-label rect {
+  fill: #fff;
+  stroke: #17222b;
+  stroke-width: 2;
+}
+
+.clocking-label.current rect {
+  stroke: #1769aa;
+  stroke-width: 3;
+}
+
+.clocking-label text,
+.clocking-direction {
+  fill: #17222b;
+  font-family: inherit;
+  font-size: 28px;
+  font-weight: 750;
+  letter-spacing: 0;
+}
+
+.clocking-direction {
+  fill: #1769aa;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.clocking-controls {
+  padding: 16px;
+  background: #f4f6f7;
+  border: 1px solid var(--line);
+  border-top: 0;
+}
+
+.clocking-control-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.clocking-control-heading label {
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 750;
+}
+
+.clocking-control-heading p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.clocking-control-heading output {
+  color: var(--ink);
+  font-size: 1.2rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.clocking-input-row {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.clocking-input-row input[type="number"] {
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 8px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid #9da8b2;
+  border-radius: 4px;
+  font: inherit;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.clocking-input-row input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.clocking-presets {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.clocking-presets button {
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 5px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.clocking-presets button:hover,
+.clocking-presets button[aria-pressed="true"] {
+  color: #fff;
+  background: var(--ink);
+  border-color: var(--ink);
 }
 
 .clocking-guide ol {
@@ -363,5 +545,9 @@
   .clocking-guide-layout {
     grid-template-columns: 1fr;
     gap: 22px;
+  }
+
+  .clocking-presets {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }

@@ -1,4 +1,5 @@
 import { ArrowLeft, CircleAlert, Ruler, RotateCw } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router";
 
 import m01Image from "../../../../assets/measurement-diagrams/M01-straight-male-to-straight-male.jpg";
@@ -8,7 +9,6 @@ import m04Image from "../../../../assets/measurement-diagrams/M04-straight-to-90
 import m05Image from "../../../../assets/measurement-diagrams/M05-45-elbow-to-45-elbow.jpg";
 import m06Image from "../../../../assets/measurement-diagrams/M06-90-elbow-to-90-elbow.jpg";
 import m07Image from "../../../../assets/measurement-diagrams/M07-orfs-flat-face-to-flat-face.jpg";
-import m08Image from "../../../../assets/measurement-diagrams/M08-double-elbow-clocking-end-view.jpg";
 import { StorefrontHeader } from "../ui/storefront-header";
 import "../styles/measurement-guide.css";
 
@@ -168,6 +168,163 @@ const endpointReferences = [
     "The flat sealing plane at the face of the connection.",
   ],
 ] as const;
+
+const clockingPresets = [0, 45, 90, 135, 180, 225, 270, 315] as const;
+
+function clampClockingAngle(value: number) {
+  return Math.max(0, Math.min(359, Math.round(value)));
+}
+
+function clockingPoint(angle: number, radius: number) {
+  const radians = (angle * Math.PI) / 180;
+  return [500 - Math.sin(radians) * radius, 315 + Math.cos(radians) * radius];
+}
+
+function clockingArc(angle: number) {
+  const [x, y] = clockingPoint(angle, 130);
+  return `M 500 445 A 130 130 0 ${angle > 180 ? 1 : 0} 1 ${x} ${y}`;
+}
+
+function ClockingDiagram() {
+  const [angle, setAngle] = useState(90);
+  const [endAX, endAY] = clockingPoint(angle, 205);
+  const formattedAngle = String(angle).padStart(3, "0");
+
+  function updateAngle(value: number) {
+    if (Number.isFinite(value)) setAngle(clampClockingAngle(value));
+  }
+
+  return (
+    <div className="clocking-interactive">
+      <div className="clocking-diagram-frame">
+        <svg
+          aria-label={`Double-elbow Clocking at ${formattedAngle} degrees`}
+          className="clocking-diagram"
+          role="img"
+          viewBox="0 0 1000 620"
+        >
+          <defs>
+            <marker
+              id="clocking-arrow"
+              markerHeight="8"
+              markerWidth="8"
+              orient="auto"
+              refX="5"
+              refY="5"
+              viewBox="0 0 10 10"
+            >
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#1769aa" />
+            </marker>
+          </defs>
+          <line className="clocking-axis" x1="190" x2="810" y1="315" y2="315" />
+          <line className="clocking-axis" x1="500" x2="500" y1="55" y2="575" />
+          <circle className="clocking-dial" cx="500" cy="315" r="220" />
+          {clockingPresets.map((preset) => {
+            const [x, y] = clockingPoint(preset, 220);
+            return (
+              <circle
+                className="clocking-tick"
+                cx={x}
+                cy={y}
+                key={preset}
+                r="5"
+              />
+            );
+          })}
+          <line
+            className="clocking-arm end-b"
+            x1="500"
+            x2="500"
+            y1="315"
+            y2="520"
+          />
+          <line
+            className="clocking-arm end-a"
+            x1="500"
+            x2={endAX}
+            y1="315"
+            y2={endAY}
+          />
+          <circle className="clocking-hub" cx="500" cy="315" r="68" />
+          <circle className="clocking-hub-center" cx="500" cy="315" r="24" />
+          <circle className="clocking-end" cx="500" cy="520" r="38" />
+          <circle className="clocking-end" cx={endAX} cy={endAY} r="38" />
+          {angle > 0 ? (
+            <path
+              className="clocking-angle-arc"
+              d={clockingArc(angle)}
+              markerEnd="url(#clocking-arrow)"
+            />
+          ) : null}
+          <g className="clocking-label" transform="translate(500 42)">
+            <rect height="46" rx="4" width="370" x="-185" y="-32" />
+            <text textAnchor="middle">View End A toward End B</text>
+          </g>
+          <g className="clocking-label" transform="translate(500 595)">
+            <rect height="46" rx="4" width="310" x="-155" y="-32" />
+            <text textAnchor="middle">End B · 000°</text>
+          </g>
+          <g
+            className="clocking-label current"
+            transform={`translate(${endAX < 480 ? 220 : 780} ${endAY < 215 ? 135 : endAY > 415 ? 455 : 260})`}
+          >
+            <rect height="46" rx="4" width="330" x="-165" y="-32" />
+            <text textAnchor="middle">End A · {formattedAngle}°</text>
+          </g>
+          <text className="clocking-direction" x="790" y="570">
+            CLOCKWISE
+          </text>
+        </svg>
+      </div>
+
+      <div className="clocking-controls">
+        <div className="clocking-control-heading">
+          <div>
+            <label htmlFor="clocking-angle">Clocking angle</label>
+            <p>Enter any whole degree from 000 to 359.</p>
+          </div>
+          <output htmlFor="clocking-angle clocking-slider">
+            {formattedAngle}°
+          </output>
+        </div>
+        <div className="clocking-input-row">
+          <input
+            id="clocking-angle"
+            inputMode="numeric"
+            max="359"
+            min="0"
+            onChange={(event) => updateAngle(event.currentTarget.valueAsNumber)}
+            step="1"
+            type="number"
+            value={angle}
+          />
+          <input
+            aria-label="Adjust Clocking angle"
+            id="clocking-slider"
+            max="359"
+            min="0"
+            onChange={(event) => updateAngle(event.currentTarget.valueAsNumber)}
+            step="1"
+            type="range"
+            value={angle}
+          />
+        </div>
+        <div aria-label="Clocking angle presets" className="clocking-presets">
+          {clockingPresets.map((preset) => (
+            <button
+              aria-pressed={angle === preset}
+              key={preset}
+              onClick={() => setAngle(preset)}
+              type="button"
+            >
+              {String(preset).padStart(3, "0")}°
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function meta() {
   return [
@@ -389,12 +546,7 @@ export default function AssemblyMeasurementGuide() {
             </div>
           </div>
           <div className="clocking-guide-layout">
-            <img
-              alt="End view of two elbow fittings at different rotational angles"
-              decoding="async"
-              loading="lazy"
-              src={m08Image}
-            />
+            <ClockingDiagram />
             <div>
               <ol>
                 <li>View the assembly from End A toward End B.</li>
