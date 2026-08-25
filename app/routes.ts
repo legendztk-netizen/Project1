@@ -15,6 +15,7 @@ export default [
     "api/catalog/releases/:releaseId/products/:sku",
     "modules/storefront/routes/catalog-release-product-resource.ts",
   ),
+  route("quote-list", "modules/storefront/routes/anonymous-quote-list.tsx"),
   route("admin", "modules/admin/routes/admin-home.tsx"),
   route("admin/catalog/import", "modules/admin/routes/catalog-import.tsx"),
   route("admin/catalog/review", "modules/admin/routes/catalog-review.tsx"),

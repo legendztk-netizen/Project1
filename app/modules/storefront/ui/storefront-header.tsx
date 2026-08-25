@@ -1,16 +1,32 @@
 import { CircleHelp } from "lucide-react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 
 import { BrandMark } from "../../shared/ui/brand-mark";
 
 export function StorefrontHeader() {
+  const location = useLocation();
   return (
     <header className="storefront-header">
       <BrandMark />
       <nav aria-label="Customer navigation">
-        <Link to="/">Products</Link>
+        <Link
+          className={
+            location.pathname === "/" ||
+            location.pathname.startsWith("/catalog")
+              ? "active"
+              : ""
+          }
+          to="/"
+        >
+          Products
+        </Link>
         <span aria-disabled="true">Build a Hose</span>
-        <span aria-disabled="true">My Quotes</span>
+        <Link
+          className={location.pathname === "/quote-list" ? "active" : ""}
+          to="/quote-list"
+        >
+          Quote List
+        </Link>
       </nav>
       <span
         className="button button-secondary is-disabled"

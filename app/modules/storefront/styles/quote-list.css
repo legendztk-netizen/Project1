@@ -1,0 +1,232 @@
+.quote-list-page {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 28px 32px 64px;
+}
+
+.quote-list-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 30px 0 24px;
+}
+
+.quote-list-heading h1 {
+  margin: 5px 0 8px;
+  font-size: 2rem;
+  letter-spacing: 0;
+}
+
+.quote-list-heading p {
+  max-width: 720px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.quote-line-count {
+  min-width: max-content;
+  padding: 8px 11px;
+  color: var(--steel);
+  background: #eef5f7;
+  border: 1px solid #c7dbe2;
+  border-radius: 4px;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.quote-list-error {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 14px;
+  color: #8b2018;
+  background: #fff2f0;
+  border: 1px solid #efb7b1;
+  border-radius: 5px;
+}
+
+.quote-list-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 310px;
+  align-items: start;
+  gap: 24px;
+}
+
+.quote-lines {
+  display: grid;
+  gap: 12px;
+}
+
+.quote-line {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 0.5fr) auto;
+  align-items: center;
+  gap: 24px;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.quote-line h2 {
+  margin: 5px 0 8px;
+  font-size: 1.05rem;
+  letter-spacing: 0;
+}
+
+.quote-line-main p,
+.quote-line-price span,
+.quote-line-price small {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.quote-line-main p strong {
+  color: var(--ink);
+}
+
+.quote-line-price {
+  display: grid;
+  gap: 4px;
+}
+
+.quote-line-price strong {
+  font-size: 1rem;
+}
+
+.quote-line-actions {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+}
+
+.quote-line-actions label {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.quote-line-actions form:first-child > div {
+  display: flex;
+  gap: 6px;
+}
+
+.quote-line-actions input {
+  width: 80px;
+  min-height: 40px;
+  padding: 0 9px;
+  border: 1px solid #aeb8bf;
+  border-radius: 4px;
+}
+
+.quote-remove-command {
+  color: #a1261d;
+  background: transparent;
+  border-color: #e2b5b1;
+}
+
+.quote-summary {
+  padding: 22px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-top: 4px solid var(--steel);
+  border-radius: 6px;
+}
+
+.quote-summary h2 {
+  margin: 6px 0 14px;
+  font-size: 1.15rem;
+}
+
+.quote-summary > strong {
+  display: block;
+  font-size: 1.65rem;
+}
+
+.quote-summary p,
+.quote-summary small {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.quote-summary .button {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.quote-summary small {
+  display: block;
+  margin-top: 9px;
+}
+
+.quote-list-empty {
+  display: grid;
+  min-height: 320px;
+  place-items: center;
+  align-content: center;
+  gap: 9px;
+  padding: 36px;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.quote-list-empty h2,
+.quote-list-empty p {
+  margin: 0;
+}
+
+.quote-list-empty p {
+  color: var(--muted);
+}
+
+.quote-list-empty .button {
+  margin-top: 10px;
+}
+
+@media (max-width: 980px) {
+  .quote-list-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-summary {
+    order: -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .quote-list-page {
+    padding: 22px 18px 48px;
+  }
+
+  .quote-list-heading {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .quote-line {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .quote-line-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .quote-line-actions form:first-child > div {
+    display: grid;
+    grid-template-columns: 82px 1fr;
+  }
+
+  .quote-line-actions input,
+  .quote-line-actions .button {
+    width: 100%;
+  }
+}

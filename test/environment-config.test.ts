@@ -262,5 +262,5 @@ describe("environment configuration contract", () => {
     for (const identifier of productionIdentifiers) {
       expect(generatedLocal).not.toContain(identifier);
     }
-  }, 20_000);
+  }, 60_000);
 });

@@ -176,7 +176,7 @@ a {
   font-weight: 650;
 }
 
-.storefront-header nav a:first-child {
+.storefront-header nav a.active {
   color: var(--ink);
   border-color: var(--accent);
 }

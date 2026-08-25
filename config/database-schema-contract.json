@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 10,
+  "schemaVersion": 11,
   "migrations": [
     "0000_initial_catalog_release.sql",
     "0001_add_admin_identities.sql",
@@ -10,6 +10,7 @@
     "0006_immutable_catalog_content.sql",
     "0007_block_published_catalog_inserts.sql",
     "0008_lock_draft_release_metadata.sql",
-    "0009_validate_release_inside_publication.sql"
+    "0009_validate_release_inside_publication.sql",
+    "0010_anonymous_quote_lists.sql"
   ]
 }

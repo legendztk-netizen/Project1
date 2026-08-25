@@ -58,6 +58,40 @@ function runLocalD1Failure(sql: string) {
   return `${result.stdout}\n${result.stderr}`;
 }
 
+function cookieHeader(response: Response) {
+  const setCookie = response.headers.get("set-cookie");
+  expect(setCookie).toBeTruthy();
+  return setCookie?.split(";", 1)[0] ?? "";
+}
+
+function sessionIdFromCookie(cookie: string) {
+  const value = cookie.slice(cookie.indexOf("=") + 1);
+  return decodeURIComponent(value).split(".", 1)[0] ?? "";
+}
+
+function quoteFormFromProductDetail(html: string) {
+  const command = html.indexOf('data-command="add-to-quote"');
+  const start = html.lastIndexOf("<form", command);
+  const end = html.indexOf("</form>", command);
+  expect(command).toBeGreaterThan(-1);
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(command);
+  const markup = html.slice(start, end + "</form>".length);
+  const action = markup.match(/action="([^"]+)"/)?.[1];
+  expect(action).toBe("/quote-list");
+
+  const form = new FormData();
+  for (const input of markup.matchAll(
+    /<input[^>]*name="([^"]+)"[^>]*value="([^"]*)"[^>]*>/g,
+  )) {
+    form.set(input[1] ?? "", input[2] ?? "");
+  }
+  expect(form.get("intent")).toBe("add");
+  expect(form.get("sku")).toBe("JIC_F_SW_04_04");
+  expect(form.get("quantity")).toBe("1");
+  return { action: action ?? "", form };
+}
+
 async function findAvailablePort() {
   return new Promise<number>((resolve, reject) => {
     const server = createServer();
@@ -1118,6 +1152,324 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(available).not.toMatch(/product-quote-command[^>]*disabled/);
     expect(available).toContain("14 calendar days");
     expect(available).toContain("10% restocking fee");
+
+    const lengthBasedAdd = new FormData();
+    lengthBasedAdd.set("intent", "add");
+    lengthBasedAdd.set("sku", "601R1_001");
+    lengthBasedAdd.set("quantity", "1");
+    const lengthBasedAddResponse = await fetch(`${origin}/quote-list`, {
+      body: lengthBasedAdd,
+      method: "POST",
+    });
+    expect(lengthBasedAddResponse.status).toBe(409);
+    expect(await lengthBasedAddResponse.text()).toContain(
+      "requires length or configuration details",
+    );
+
+    const renderedQuoteForm = quoteFormFromProductDetail(available);
+    const addResponse = await fetch(`${origin}${renderedQuoteForm.action}`, {
+      body: renderedQuoteForm.form,
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(addResponse.status, await addResponse.text()).toBe(302);
+    expect(addResponse.headers.get("location")).toBe("/quote-list");
+    const quoteCookie = cookieHeader(addResponse);
+    expect(quoteCookie).not.toContain("JIC_F_SW_04_04");
+    const sessionId = sessionIdFromCookie(quoteCookie);
+
+    const quoteListResponse = await fetch(`${origin}/quote-list`, {
+      headers: { cookie: quoteCookie },
+    });
+    const quoteList = await quoteListResponse.text();
+    expect(quoteListResponse.status).toBe(200);
+    expect(quoteList).toContain("Quote List");
+    expect(quoteList).toContain("JIC_F_SW_04_04");
+    expect(quoteList).toContain('value="1"');
+    expect(quoteListResponse.headers.get("set-cookie")).toContain(
+      "Max-Age=2592000",
+    );
+
+    const addAgain = new FormData();
+    addAgain.set("intent", "add");
+    addAgain.set("sku", "JIC_F_SW_04_04");
+    addAgain.set("quantity", "2");
+    const mergeResponse = await fetch(`${origin}/quote-list`, {
+      body: addAgain,
+      headers: { cookie: quoteCookie },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(mergeResponse.status).toBe(302);
+    const [mergedLine] = runLocalD1<{ id: string; quantity: number }>(
+      `SELECT id, quantity FROM anonymous_quote_lines
+       WHERE session_id = '${sessionId}' AND sku = 'JIC_F_SW_04_04'`,
+    );
+    expect(mergedLine?.quantity).toBe(3);
+
+    const addDifferent = new FormData();
+    addDifferent.set("intent", "add");
+    addDifferent.set("sku", "ADP_ST_JIC_M_02_NPT_M_02");
+    addDifferent.set("quantity", "1");
+    const differentResponse = await fetch(`${origin}/quote-list`, {
+      body: addDifferent,
+      headers: { cookie: quoteCookie },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(differentResponse.status).toBe(302);
+    const [lineCount] = runLocalD1<{ count: number }>(
+      `SELECT COUNT(*) AS count FROM anonymous_quote_lines
+       WHERE session_id = '${sessionId}'`,
+    );
+    expect(lineCount?.count).toBe(2);
+
+    const update = new FormData();
+    update.set("intent", "update");
+    update.set("lineId", mergedLine?.id ?? "");
+    update.set("quantity", "5");
+    const updateResponse = await fetch(`${origin}/quote-list`, {
+      body: update,
+      headers: { cookie: quoteCookie },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(updateResponse.status).toBe(302);
+
+    const invalidQuantity = new FormData();
+    invalidQuantity.set("intent", "update");
+    invalidQuantity.set("lineId", mergedLine?.id ?? "");
+    invalidQuantity.set("quantity", "10000");
+    const invalidQuantityResponse = await fetch(`${origin}/quote-list`, {
+      body: invalidQuantity,
+      headers: { cookie: quoteCookie },
+      method: "POST",
+    });
+    expect(invalidQuantityResponse.status).toBe(409);
+    expect(await invalidQuantityResponse.text()).toContain(
+      "Quantity must be a whole number from 1 to 9,999.",
+    );
+
+    const maximumQuantity = new FormData();
+    maximumQuantity.set("intent", "update");
+    maximumQuantity.set("lineId", mergedLine?.id ?? "");
+    maximumQuantity.set("quantity", "9999");
+    const maximumQuantityResponse = await fetch(`${origin}/quote-list`, {
+      body: maximumQuantity,
+      headers: { cookie: quoteCookie },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(maximumQuantityResponse.status).toBe(302);
+
+    const overflowAdd = new FormData();
+    overflowAdd.set("intent", "add");
+    overflowAdd.set("sku", "JIC_F_SW_04_04");
+    overflowAdd.set("quantity", "1");
+    const overflowAddResponse = await fetch(`${origin}/quote-list`, {
+      body: overflowAdd,
+      headers: { cookie: quoteCookie },
+      method: "POST",
+    });
+    expect(overflowAddResponse.status).toBe(409);
+    expect(await overflowAddResponse.text()).toContain(
+      "The combined quantity must be between 1 and 9,999.",
+    );
+    const [quantityAfterOverflow] = runLocalD1<{ quantity: number }>(
+      `SELECT quantity FROM anonymous_quote_lines
+       WHERE id = '${mergedLine?.id ?? ""}'`,
+    );
+    expect(quantityAfterOverflow?.quantity).toBe(9999);
+
+    const restoreQuantity = new FormData();
+    restoreQuantity.set("intent", "update");
+    restoreQuantity.set("lineId", mergedLine?.id ?? "");
+    restoreQuantity.set("quantity", "5");
+    const restoreQuantityResponse = await fetch(`${origin}/quote-list`, {
+      body: restoreQuantity,
+      headers: { cookie: quoteCookie },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(restoreQuantityResponse.status).toBe(302);
+
+    const replacementForm = new FormData();
+    replacementForm.set(
+      "workbook",
+      new File([workbook], "replacement-storefront-data.xlsx", {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+    );
+    const replacementImportResponse = await fetch(
+      `${origin}/admin/catalog/import`,
+      { body: replacementForm, method: "POST", redirect: "manual" },
+    );
+    expect(replacementImportResponse.status).toBe(302);
+    const replacementImportId = new URL(
+      replacementImportResponse.headers.get("location") ?? "",
+      origin,
+    ).searchParams.get("import");
+    const [replacementDraft] = runLocalD1<{ id: string; version: number }>(
+      `SELECT id, version FROM catalog_releases
+       WHERE source_import_id = '${replacementImportId}' AND status = 'draft'`,
+    );
+    const [replacementActive] = runLocalD1<{
+      active_generation: number;
+      release_id: string;
+    }>(
+      `SELECT version AS active_generation, release_id
+       FROM catalog_active_release WHERE singleton = 1`,
+    );
+    if (!replacementImportId || !replacementDraft || !replacementActive) {
+      throw new Error("Expected replacement Catalog Release");
+    }
+    runLocalD1(
+      `UPDATE catalog_skus
+       SET catalog_publication_status = 'Published'
+       WHERE import_id = '${replacementImportId}';
+       UPDATE catalog_skus
+       SET supply_availability = 'available_for_quote'
+       WHERE import_id = '${replacementImportId}'
+         AND sku = 'ADP_ST_JIC_M_02_NPT_M_02';
+       UPDATE catalog_skus
+       SET supply_availability = 'discontinued'
+       WHERE import_id = '${replacementImportId}'
+         AND sku = 'QDC_16028_PLG_04_FNPT_04';`,
+    );
+    const [replacementDraftState] = runLocalD1<{ version: number }>(
+      `SELECT version FROM catalog_releases WHERE id = '${replacementDraft.id}'`,
+    );
+    const replacementPublish = new FormData();
+    replacementPublish.set("intent", "publish");
+    replacementPublish.set("releaseId", replacementDraft.id);
+    replacementPublish.set(
+      "expectedDraftVersion",
+      String(replacementDraftState?.version),
+    );
+    replacementPublish.set(
+      "expectedActiveGeneration",
+      String(replacementActive.active_generation),
+    );
+    replacementPublish.set(
+      "expectedActiveReleaseId",
+      replacementActive.release_id,
+    );
+    const replacementPublishResponse = await fetch(
+      `${origin}/admin/catalog/releases`,
+      {
+        body: replacementPublish,
+        headers: {
+          "x-request-id": `quote-availability-${replacementDraft.id}`,
+        },
+        method: "POST",
+        redirect: "manual",
+      },
+    );
+    expect(
+      replacementPublishResponse.status,
+      await replacementPublishResponse.text(),
+    ).toBe(302);
+    const unavailableUpdateResponse = await fetch(`${origin}/quote-list`, {
+      body: update,
+      headers: { cookie: quoteCookie },
+      method: "POST",
+    });
+    expect(unavailableUpdateResponse.status).toBe(409);
+    expect(await unavailableUpdateResponse.text()).toContain(
+      "not currently available",
+    );
+    const rollingBefore = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    runLocalD1(
+      `UPDATE anonymous_quote_sessions
+       SET expires_at = '${rollingBefore.toISOString()}'
+       WHERE id = '${sessionId}'`,
+    );
+    const rollingResponse = await fetch(`${origin}/quote-list`, {
+      headers: { cookie: quoteCookie },
+    });
+    expect(rollingResponse.status).toBe(200);
+    const [rolledSession] = runLocalD1<{ expires_at: string }>(
+      `SELECT expires_at FROM anonymous_quote_sessions WHERE id = '${sessionId}'`,
+    );
+    expect(new Date(rolledSession?.expires_at ?? 0).getTime()).toBeGreaterThan(
+      Date.now() + 29 * 24 * 60 * 60 * 1000,
+    );
+
+    const tamperedCookie = quoteCookie.replace(sessionId, `${sessionId}-other`);
+    const tamperedResponse = await fetch(`${origin}/quote-list`, {
+      headers: { cookie: tamperedCookie },
+    });
+    expect(tamperedResponse.status).toBe(200);
+    expect(await tamperedResponse.text()).not.toContain("JIC_F_SW_04_04");
+
+    const staleUpdateResponse = await fetch(`${origin}/quote-list`, {
+      body: update,
+      headers: { cookie: tamperedCookie },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(staleUpdateResponse.status).toBe(302);
+    const recoveredCookie = cookieHeader(staleUpdateResponse);
+    const recoveredSessionId = sessionIdFromCookie(recoveredCookie);
+    expect(recoveredSessionId).not.toBe(sessionId);
+    const [recoveredLineCount] = runLocalD1<{ count: number }>(
+      `SELECT COUNT(*) AS count FROM anonymous_quote_lines
+       WHERE session_id = '${recoveredSessionId}'`,
+    );
+    expect(recoveredLineCount?.count).toBe(0);
+    const [originalLineAfterRecovery] = runLocalD1<{ quantity: number }>(
+      `SELECT quantity FROM anonymous_quote_lines
+       WHERE session_id = '${sessionId}' AND id = '${mergedLine?.id ?? ""}'`,
+    );
+    expect(originalLineAfterRecovery?.quantity).toBe(5);
+
+    const remove = new FormData();
+    remove.set("intent", "remove");
+    remove.set("lineId", mergedLine?.id ?? "");
+    const removeResponse = await fetch(`${origin}/quote-list`, {
+      body: remove,
+      headers: { cookie: quoteCookie },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(removeResponse.status).toBe(302);
+    const [removedCount] = runLocalD1<{ count: number }>(
+      `SELECT COUNT(*) AS count FROM anonymous_quote_lines
+       WHERE session_id = '${sessionId}' AND sku = 'JIC_F_SW_04_04'`,
+    );
+    expect(removedCount?.count).toBe(0);
+
+    runLocalD1(
+      `UPDATE anonymous_quote_sessions
+       SET expires_at = '2020-01-01T00:00:00.000Z'
+       WHERE id = '${sessionId}'`,
+    );
+    const expiredResponse = await fetch(`${origin}/quote-list`, {
+      headers: { cookie: quoteCookie },
+    });
+    expect(expiredResponse.status).toBe(200);
+    expect(await expiredResponse.text()).not.toContain(
+      "ADP_ST_JIC_M_02_NPT_M_02",
+    );
+    const expiredRecoveryAdd = new FormData();
+    expiredRecoveryAdd.set("intent", "add");
+    expiredRecoveryAdd.set("sku", "ADP_ST_JIC_M_02_NPT_M_02");
+    expiredRecoveryAdd.set("quantity", "1");
+    const expiredRecoveryResponse = await fetch(`${origin}/quote-list`, {
+      body: expiredRecoveryAdd,
+      headers: { cookie: quoteCookie },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(expiredRecoveryResponse.status).toBe(302);
+    expect(sessionIdFromCookie(cookieHeader(expiredRecoveryResponse))).not.toBe(
+      sessionId,
+    );
+    const [expiredSessionCount] = runLocalD1<{ count: number }>(
+      `SELECT COUNT(*) AS count FROM anonymous_quote_sessions
+       WHERE id = '${sessionId}'`,
+    );
+    expect(expiredSessionCount?.count).toBe(0);
 
     const unselectedHoseEnd = await (
       await fetch(`${origin}/catalog/hose-ends/jic-37-female-swivel-0-straight`)
