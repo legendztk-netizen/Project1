@@ -177,11 +177,13 @@ function HoseEndSizePicker({
           {connectionOptions.map(([dash, thread]) => (
             <DashChoice
               active={connectionDash === dash}
+              ariaLabel={`Select ${thread ?? "connection size not specified"}, Connection Dash ${displayDash(dash)}`}
               dash={dash}
               dataAttribute="data-connection-dash"
               key={dash}
               onSelect={() => selectConnection(dash)}
-              secondary={thread ?? "Thread confirmed in quote"}
+              primary={thread ?? "Thread confirmed in quote"}
+              secondary={`Connection Dash ${displayDash(dash)}`}
             />
           ))}
         </div>
@@ -197,14 +199,15 @@ function HoseEndSizePicker({
               return (
                 <DashChoice
                   active={hoseTailDash === selection.hoseTailDash}
-                  ariaLabel={`Select ${displayDash(selection.hoseTailDash)}, ${idLabel}`}
+                  ariaLabel={`Select ${idLabel}, Hose Tail Dash ${displayDash(selection.hoseTailDash)}`}
                   dash={selection.hoseTailDash}
                   dataAttribute="data-hose-tail-dash"
                   key={variant.sku}
                   onSelect={() =>
                     selectTail(selection.hoseTailDash, variant.sku)
                   }
-                  secondary={idLabel}
+                  primary={idLabel}
+                  secondary={`Hose Tail Dash ${displayDash(selection.hoseTailDash)}`}
                 />
               );
             })}

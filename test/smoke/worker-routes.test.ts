@@ -1448,6 +1448,18 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(available).toContain('data-hose-tail-dash="-4"');
     expect(available).toContain("7/16-20 UNF");
     expect(available).toContain("1/4 in hose ID");
+    expect(available).toContain(
+      'aria-label="Select 7/16-20 UNF, Connection Dash -4"',
+    );
+    expect(available).toContain(
+      'aria-label="Select 1/4 in hose ID, Hose Tail Dash -4"',
+    );
+    expect(available).toMatch(
+      /<strong>7\/16-20 UNF<\/strong><small>Connection Dash -4<\/small>/,
+    );
+    expect(available).toMatch(
+      /<strong>1\/4 in hose ID<\/strong><small>Hose Tail Dash -4<\/small>/,
+    );
     expect(available).not.toContain("Size / connection variant");
     expect(available).toMatch(
       /<button[^>]*product-quote-command[^>]*>[^]*Add to Quote/,
