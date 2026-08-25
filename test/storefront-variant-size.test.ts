@@ -8,6 +8,7 @@ import {
 import {
   displayDash,
   hoseIdLabel,
+  hoseSizeLabel,
 } from "../app/modules/storefront/domain/variant-label";
 
 describe("storefront Dash size presentation", () => {
@@ -25,6 +26,8 @@ describe("storefront Dash size presentation", () => {
   });
 
   it("converts hose Dash sizes to customer-readable nominal IDs", () => {
+    expect(hoseSizeLabel(0.25, null)).toBe("1/4 in");
+    expect(hoseSizeLabel(null, normalizeDashSize("06"))).toBe("3/8 in");
     expect(hoseIdLabel(0.25, null)).toBe("1/4 in hose ID");
     expect(hoseIdLabel(null, normalizeDashSize("06"))).toBe("3/8 in hose ID");
     expect(hoseIdLabel(null, normalizeDashSize("-16"))).toBe("1 in hose ID");

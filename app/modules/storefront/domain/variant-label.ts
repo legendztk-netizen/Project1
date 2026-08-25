@@ -25,8 +25,14 @@ export function hoseIdLabel(
   nominalIdIn: number | null,
   fallbackDash: DashSize | null,
 ) {
+  const size = hoseSizeLabel(nominalIdIn, fallbackDash);
+  return size === null ? "Hose ID not specified" : `${size} hose ID`;
+}
+
+export function hoseSizeLabel(
+  nominalIdIn: number | null,
+  fallbackDash: DashSize | null,
+) {
   const value = nominalIdIn ?? nominalInchesFromDash(fallbackDash);
-  return value === null
-    ? "Hose ID not specified"
-    : `${formatInches(value)} in hose ID`;
+  return value === null ? null : `${formatInches(value)} in`;
 }

@@ -1,4 +1,4 @@
-import { Check } from "lucide-react";
+import { Check, CircleHelp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
@@ -10,7 +10,11 @@ import type {
   PublicCatalogFamily,
   PublicCatalogItem,
 } from "../../catalog/domain/public-catalog";
-import { displayDash, hoseIdLabel } from "../domain/variant-label";
+import {
+  displayDash,
+  hoseIdLabel,
+  hoseSizeLabel,
+} from "../domain/variant-label";
 import { ProductCommercialPanel } from "./product-commercial-panel";
 
 function navigateToSku(navigate: ReturnType<typeof useNavigate>, sku: string) {
@@ -23,6 +27,7 @@ function DashChoice({
   dash,
   dataAttribute,
   onSelect,
+  primary,
   secondary,
 }: {
   active: boolean;
@@ -31,6 +36,7 @@ function DashChoice({
   dataAttribute:
     "data-connection-dash" | "data-hose-dash" | "data-hose-tail-dash";
   onSelect: () => void;
+  primary?: string;
   secondary: string;
 }) {
   return (
@@ -43,7 +49,7 @@ function DashChoice({
       type="button"
     >
       <span>
-        <strong>{displayDash(dash)}</strong>
+        <strong>{primary ?? displayDash(dash)}</strong>
         <small>{secondary}</small>
       </span>
       {active ? <Check aria-hidden="true" size={17} /> : null}
@@ -74,20 +80,36 @@ function HoseSizePicker({
 
   return (
     <fieldset className="variant-choice-group">
-      <legend>Hose Size</legend>
-      <p>Select the nominal hose inside diameter.</p>
+      <legend>Hose Inside Diameter</legend>
+      <details className="dash-size-help">
+        <summary aria-label="What is a Dash size?" title="What is a Dash size?">
+          <CircleHelp aria-hidden="true" size={18} />
+        </summary>
+        <div className="dash-size-help-panel">
+          <strong>Dash size</strong>
+          <p>
+            An industry code for nominal hose ID in sixteenths of an inch. For
+            example, Dash -8 means 8/16 in, or 1/2 in.
+          </p>
+        </div>
+      </details>
+      <p>Choose the nominal inside diameter.</p>
       <div className="variant-choice-grid">
         {options.map(({ selection, variant }) => {
-          const idLabel = hoseIdLabel(selection.nominalIdIn, selection.dash);
+          const sizeLabel =
+            hoseSizeLabel(selection.nominalIdIn, selection.dash) ??
+            "Size not specified";
+          const dashLabel = displayDash(selection.dash);
           return (
             <DashChoice
               active={selectionComplete && variant.sku === selectedSku}
-              ariaLabel={`Select ${displayDash(selection.dash)}, ${idLabel}`}
+              ariaLabel={`Select ${sizeLabel} hose inside diameter, Dash ${dashLabel}`}
               dash={selection.dash}
               dataAttribute="data-hose-dash"
               key={variant.sku}
               onSelect={() => selectSku(variant.sku)}
-              secondary={idLabel}
+              primary={sizeLabel}
+              secondary={`Hose ID · Dash ${dashLabel}`}
             />
           );
         })}
