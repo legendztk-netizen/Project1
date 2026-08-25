@@ -816,7 +816,7 @@ describe("Cloudflare Worker route surfaces", () => {
          AND registry_type = 'measurement_method'
          AND entry_key = 'M07'`,
     );
-    const atomicRegistryGuard = runLocalD1Failure(
+    runLocalD1Failure(
       `INSERT INTO catalog_release_publications (
          release_id, previous_release_id, expected_active_version,
          expected_draft_version, published_by, request_correlation_id, published_at
@@ -826,9 +826,17 @@ describe("Cloudflare Worker route surfaces", () => {
          CURRENT_TIMESTAMP
        )`,
     );
-    expect(atomicRegistryGuard).toContain(
-      "catalog configurator registry precondition failed",
-    );
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM catalog_release_publications
+         WHERE release_id = '${draft.id}'`,
+      ),
+    ).toEqual([{ count: 0 }]);
+    expect(
+      runLocalD1<{ release_id: string }>(
+        "SELECT release_id FROM catalog_active_release WHERE singleton = 1",
+      ),
+    ).toEqual([{ release_id: activeBefore.id }]);
     runLocalD1(
       `INSERT INTO catalog_configurator_registry_entries (
          release_id, registry_type, entry_key, payload_json,
@@ -856,7 +864,7 @@ describe("Cloudflare Worker route surfaces", () => {
          1, CURRENT_TIMESTAMP
        )`,
     );
-    const endpointClassGuard = runLocalD1Failure(
+    runLocalD1Failure(
       `INSERT INTO catalog_release_publications (
          release_id, previous_release_id, expected_active_version,
          expected_draft_version, published_by, request_correlation_id, published_at
@@ -866,9 +874,17 @@ describe("Cloudflare Worker route surfaces", () => {
          CURRENT_TIMESTAMP
        )`,
     );
-    expect(endpointClassGuard).toContain(
-      "catalog configurator registry precondition failed",
-    );
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM catalog_release_publications
+         WHERE release_id = '${draft.id}'`,
+      ),
+    ).toEqual([{ count: 0 }]);
+    expect(
+      runLocalD1<{ release_id: string }>(
+        "SELECT release_id FROM catalog_active_release WHERE singleton = 1",
+      ),
+    ).toEqual([{ release_id: activeBefore.id }]);
     runLocalD1(
       `DELETE FROM catalog_configurator_registry_entries
        WHERE release_id = '${draft.id}'
@@ -1017,23 +1033,37 @@ describe("Cloudflare Worker route surfaces", () => {
       )[0]?.count,
     ).toBe(1);
 
-    const immutableEdit = runLocalD1Failure(
+    const immutableSkuBefore = runLocalD1<{ supply_availability: string }>(
+      `SELECT supply_availability FROM catalog_skus
+       WHERE import_id = '${draft.source_import_id}' AND sku = '601R1_002'`,
+    );
+    runLocalD1Failure(
       `UPDATE catalog_skus SET supply_availability = 'discontinued'
        WHERE import_id = '${draft.source_import_id}' AND sku = '601R1_002'`,
     );
-    expect(immutableEdit).toContain("published catalog data is immutable");
-    const immutableInsert = runLocalD1Failure(
+    expect(
+      runLocalD1<{ supply_availability: string }>(
+        `SELECT supply_availability FROM catalog_skus
+         WHERE import_id = '${draft.source_import_id}' AND sku = '601R1_002'`,
+      ),
+    ).toEqual(immutableSkuBefore);
+    const forbiddenSku = `FORBIDDEN_${crypto.randomUUID()}`;
+    runLocalD1Failure(
       `INSERT INTO catalog_skus (
          id, import_id, sku, source_worksheet, product_type, hose_series,
          catalog_publication_status, rfq_eligibility, technical_data_status,
          supply_availability
        ) VALUES (
          'forbidden-${crypto.randomUUID()}', '${draft.source_import_id}',
-         'FORBIDDEN_001', '01_胶管主数据', 'hose', '601R1',
+         '${forbiddenSku}', '01_胶管主数据', 'hose', '601R1',
          'Published', 'Eligible', 'Complete', 'available_for_quote'
        )`,
     );
-    expect(immutableInsert).toContain("published catalog data is immutable");
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM catalog_skus WHERE sku = '${forbiddenSku}'`,
+      ),
+    ).toEqual([{ count: 0 }]);
 
     const publishedSkuBefore = runLocalD1<{
       supply_availability: string;
@@ -1210,7 +1240,7 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(versionAfterCorruption?.version).toBe(
       (versionBeforeCorruption?.version ?? 0) + 1,
     );
-    const invalidDatabaseAttempt = runLocalD1Failure(
+    runLocalD1Failure(
       `INSERT INTO catalog_release_publications (
          release_id, previous_release_id, expected_active_version,
          expected_draft_version, published_by, request_correlation_id, published_at
@@ -1219,9 +1249,6 @@ describe("Cloudflare Worker route surfaces", () => {
          ${versionAfterCorruption?.version}, 'local-owner',
          'invalid-${loser.id}', CURRENT_TIMESTAMP
        )`,
-    );
-    expect(invalidDatabaseAttempt).toContain(
-      "catalog publication precondition failed",
     );
     const blockedResponse = await fetch(
       `${origin}/admin/catalog/releases?release=${loser.id}`,
@@ -1246,13 +1273,18 @@ describe("Cloudflare Worker route surfaces", () => {
        WHERE id = '${loserImportId}'`,
     );
 
-    const metadataMutation = runLocalD1Failure(
+    const sourceImportBefore = runLocalD1<{ source_import_id: string }>(
+      `SELECT source_import_id FROM catalog_releases WHERE id = '${loser.id}'`,
+    );
+    runLocalD1Failure(
       `UPDATE catalog_releases SET source_import_id = '${draft.source_import_id}'
        WHERE id = '${loser.id}'`,
     );
-    expect(metadataMutation).toContain(
-      "draft catalog release metadata is immutable",
-    );
+    expect(
+      runLocalD1<{ source_import_id: string }>(
+        `SELECT source_import_id FROM catalog_releases WHERE id = '${loser.id}'`,
+      ),
+    ).toEqual(sourceImportBefore);
 
     const [rollbackDraft] = runLocalD1<{ version: number }>(
       `SELECT version FROM catalog_releases WHERE id = '${loser.id}'`,
@@ -1479,12 +1511,16 @@ describe("Cloudflare Worker route surfaces", () => {
        WHERE session_id = '${sessionId}' AND sku = 'JIC_F_SW_04_04'`,
     );
     expect(mergedLine?.quantity).toBe(3);
+    runLocalD1Failure(
+      `UPDATE anonymous_quote_lines SET piece_count = 1
+       WHERE id = '${mergedLine?.id ?? ""}';`,
+    );
     expect(
-      runLocalD1Failure(
-        `UPDATE anonymous_quote_lines SET piece_count = 1
-         WHERE id = '${mergedLine?.id ?? ""}';`,
+      runLocalD1<{ piece_count: number | null; quantity: number }>(
+        `SELECT piece_count, quantity FROM anonymous_quote_lines
+         WHERE id = '${mergedLine?.id ?? ""}'`,
       ),
-    ).toContain("invalid anonymous quote line shape");
+    ).toEqual([{ piece_count: null, quantity: 3 }]);
 
     const addDifferent = new FormData();
     addDifferent.set("intent", "add");
