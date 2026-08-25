@@ -383,12 +383,33 @@ describe("Cloudflare Worker route surfaces", () => {
     const page = await pageResponse.text();
     expect(pageResponse.status).toBe(200);
     expect(page).toContain("Configurator Registries");
-    expect(page).toContain("Endpoint Classes and Hose End Assignments");
-    expect(page).toContain("Measurement Methods and Ordered Mappings");
+    expect(page).toContain("Measurement Methods");
     expect(page).toContain("Clocking Convention");
     expect(page).toContain("Installed Protection");
     expect(page).toContain("Assembly Estimate Schedule");
     expect(page).toContain("No additional installed protection");
+    expect(page).toContain("View customer measurement guide");
+    expect(page).not.toContain("Hose End assignments");
+
+    const guideResponse = await fetch(`${origin}/assembly-measurement-guide`);
+    const guide = await guideResponse.text();
+    expect(guideResponse.status).toBe(200);
+    expect(guide).toContain("Hose Assembly Measurement Guide");
+    expect(guide).toContain("Identify each measurement endpoint");
+    for (const method of [
+      "M01",
+      "M02",
+      "M03",
+      "M04",
+      "M05",
+      "M06",
+      "M07",
+      "M08",
+    ]) {
+      expect(guide).toContain(method);
+    }
+    expect(guide).toContain("View the assembly from End A toward End B");
+    expect(guide).toContain("Not sure");
 
     const replaceMapping = new FormData();
     replaceMapping.set("intent", "save_measurement_mapping");

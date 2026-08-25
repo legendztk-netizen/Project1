@@ -1,4 +1,4 @@
-import { CircleHelp } from "lucide-react";
+import { Ruler } from "lucide-react";
 import { Link, useLocation } from "react-router";
 
 import { BrandMark } from "../../shared/ui/brand-mark";
@@ -28,13 +28,13 @@ export function StorefrontHeader() {
           Quote List
         </Link>
       </nav>
-      <span
-        className="button button-secondary is-disabled"
-        aria-disabled="true"
+      <Link
+        className="button button-secondary"
+        to="/assembly-measurement-guide"
       >
-        <CircleHelp size={18} />
-        Help
-      </span>
+        <Ruler size={18} />
+        <span>Measurement Guide</span>
+      </Link>
     </header>
   );
 }

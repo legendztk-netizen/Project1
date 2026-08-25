@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   CircleAlert,
   Database,
+  Ruler,
   Save,
   ShieldCheck,
 } from "lucide-react";
@@ -213,9 +214,6 @@ export async function loader({ context, request }: Route.LoaderArgs) {
   const releaseId = new URL(request.url).searchParams.get("release");
   const snapshot = await repository.findDraftSnapshot(releaseId);
   return {
-    hoseEnds: snapshot
-      ? await repository.listDraftHoseEnds(snapshot.release.id)
-      : [],
     saved: new URL(request.url).searchParams.get("saved"),
     snapshot,
   };
@@ -353,13 +351,6 @@ export default function CatalogReferenceData({
     );
   }
 
-  const endpointClassCodes = snapshot.endpointClasses.map(({ code }) => code);
-  const assignedSkus = new Set(
-    snapshot.endpointAssignments.map(({ hoseEndSku }) => hoseEndSku),
-  );
-  const missingAssignmentCount = loaderData.hoseEnds.filter(
-    ({ sku }) => !assignedSkus.has(sku),
-  ).length;
   const schedule = snapshot.assemblyEstimateSchedule;
   const clocking = snapshot.clockingConvention;
 
@@ -368,6 +359,12 @@ export default function CatalogReferenceData({
       <div className="diagnostic-toolbar">
         <Link className="button button-secondary" to="/admin">
           <ArrowLeft size={17} /> Back to overview
+        </Link>
+        <Link
+          className="button button-secondary"
+          to="/assembly-measurement-guide"
+        >
+          <Ruler size={17} /> View customer measurement guide
         </Link>
       </div>
       <header>
@@ -398,9 +395,9 @@ export default function CatalogReferenceData({
           <small>M01-M07 seed set</small>
         </article>
         <article>
-          <span>Hose End assignments</span>
-          <strong>{snapshot.endpointAssignments.length}</strong>
-          <small>{missingAssignmentCount} remain Manual Quote Only</small>
+          <span>Customer selection</span>
+          <strong>M01-M07</strong>
+          <small>Not Sure routes the line to manual review</small>
         </article>
         <article>
           <span>Assembly service price</span>
@@ -415,78 +412,11 @@ export default function CatalogReferenceData({
 
       <section className="reference-section">
         <div>
-          <span className="eyebrow">Length measurement</span>
-          <h2>Endpoint Classes and Hose End Assignments</h2>
-          <p>
-            Unassigned Hose Ends remain available as products but use Manual
-            Quote Only in the assembly configurator.
-          </p>
-        </div>
-        <div className="reference-data-columns">
-          <RegistryForm
-            intent="save_endpoint_class"
-            releaseId={snapshot.release.id}
-          >
-            <Field label="Class code">
-              <input name="classCode" placeholder="CUSTOM_ENDPOINT" required />
-            </Field>
-            <Field label="Display name">
-              <input name="displayName" required />
-            </Field>
-            <Field label="Reference kind">
-              <input name="referenceKind" required />
-            </Field>
-          </RegistryForm>
-          <RegistryForm
-            intent="save_endpoint_assignment"
-            releaseId={snapshot.release.id}
-          >
-            <Field label="Hose End SKU">
-              <select name="hoseEndSku" required>
-                <option value="">Select Hose End</option>
-                {loaderData.hoseEnds.map((hoseEnd) => (
-                  <option key={hoseEnd.sku} value={hoseEnd.sku}>
-                    {hoseEnd.sku} · {hoseEnd.angle} · {hoseEnd.thread}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Measurement Endpoint Class">
-              <select name="endpointClassCode" required>
-                {endpointClassCodes.map((code) => (
-                  <option key={code}>{code}</option>
-                ))}
-              </select>
-            </Field>
-          </RegistryForm>
-        </div>
-        <div className="reference-table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Hose End SKU</th>
-                <th>Endpoint Class</th>
-              </tr>
-            </thead>
-            <tbody>
-              {snapshot.endpointAssignments.map((assignment) => (
-                <tr key={assignment.hoseEndSku}>
-                  <td>{assignment.hoseEndSku}</td>
-                  <td>{assignment.endpointClassCode}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="reference-section">
-        <div>
           <span className="eyebrow">M01-M07</span>
-          <h2>Measurement Methods and Ordered Mappings</h2>
+          <h2>Measurement Methods</h2>
           <p>
-            End A and End B are ordered. Missing or ambiguous pairs resolve to
-            Manual Quote Only.
+            Customers review all methods and select the one they used. Not Sure
+            routes the assembly to manual review.
           </p>
         </div>
         <div className="reference-table-wrap">
@@ -538,38 +468,6 @@ export default function CatalogReferenceData({
             </Field>
           </RegistryForm>
         </details>
-        <RegistryForm
-          intent="save_measurement_mapping"
-          releaseId={snapshot.release.id}
-        >
-          <Field label="End A Endpoint Class">
-            <select name="endAClassCode">
-              {endpointClassCodes.map((code) => (
-                <option key={code}>{code}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="End B Endpoint Class">
-            <select name="endBClassCode">
-              {endpointClassCodes.map((code) => (
-                <option key={code}>{code}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Routing">
-            <select name="guidanceStatus">
-              <option value="guided">Guided</option>
-              <option value="manual_quote_only">Manual Quote Only</option>
-            </select>
-          </Field>
-          <Field label="Method">
-            <select name="methodCode">
-              {snapshot.measurementMethods.map(({ code }) => (
-                <option key={code}>{code}</option>
-              ))}
-            </select>
-          </Field>
-        </RegistryForm>
       </section>
 
       <section className="reference-section">

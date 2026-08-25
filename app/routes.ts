@@ -16,6 +16,10 @@ export default [
     "modules/storefront/routes/catalog-release-product-resource.ts",
   ),
   route("quote-list", "modules/storefront/routes/anonymous-quote-list.tsx"),
+  route(
+    "assembly-measurement-guide",
+    "modules/storefront/routes/assembly-measurement-guide.tsx",
+  ),
   route("admin", "modules/admin/routes/admin-home.tsx"),
   route("admin/catalog/import", "modules/admin/routes/catalog-import.tsx"),
   route("admin/catalog/review", "modules/admin/routes/catalog-review.tsx"),
