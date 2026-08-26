@@ -1,6 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import * as XLSX from "@e965/xlsx";
@@ -9,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 const host = "127.0.0.1";
 let port: number;
 let origin: string;
+let persistenceDirectory: string;
 let preview: ChildProcess;
 let previewExit: Promise<number | null>;
 
@@ -27,6 +29,8 @@ function runLocalD1<T>(sql: string) {
       "--config",
       join(process.cwd(), "wrangler.jsonc"),
       "--local",
+      "--persist-to",
+      persistenceDirectory,
       "--command",
       sql,
       "--json",
@@ -49,6 +53,8 @@ function runLocalD1Failure(sql: string) {
       "--config",
       join(process.cwd(), "wrangler.jsonc"),
       "--local",
+      "--persist-to",
+      persistenceDirectory,
       "--command",
       sql,
     ],
@@ -137,6 +143,18 @@ async function waitUntilReady() {
 }
 
 beforeAll(async () => {
+  persistenceDirectory = await mkdtemp(join(tmpdir(), "hydraulic-hose-smoke-"));
+  const migration = spawnSync(
+    process.execPath,
+    ["scripts/d1-migrations.mjs", "apply", "local"],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: { ...process.env, D1_PERSIST_TO: persistenceDirectory },
+    },
+  );
+  expect(migration.status, `${migration.stdout}\n${migration.stderr}`).toBe(0);
+
   port = await findAvailablePort();
   origin = `http://${host}:${port}`;
   preview = spawn(
@@ -151,7 +169,13 @@ beforeAll(async () => {
       String(port),
       "--strictPort",
     ],
-    { stdio: "pipe" },
+    {
+      env: {
+        ...process.env,
+        CLOUDFLARE_PERSIST_PATH: persistenceDirectory,
+      },
+      stdio: "pipe",
+    },
   );
   previewExit = new Promise((resolve) => preview.once("exit", resolve));
 
@@ -169,6 +193,9 @@ afterAll(async () => {
   if (preview && preview.exitCode === null) {
     preview.kill("SIGTERM");
     await previewExit;
+  }
+  if (persistenceDirectory) {
+    await rm(persistenceDirectory, { force: true, recursive: true });
   }
 });
 
