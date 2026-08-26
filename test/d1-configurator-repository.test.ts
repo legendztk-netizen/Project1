@@ -45,14 +45,16 @@ describe("D1 configurator repository", () => {
     const prepare = vi.fn().mockReturnValue({ bind });
     const database = { prepare } as unknown as D1Database;
 
-    const result =
-      await createD1ConfiguratorRepository(database).findCompatibleEndA(
-        "601R1_002",
-      );
+    const result = await createD1ConfiguratorRepository(
+      database,
+    ).findCompatibleEndA("catalog-release-7", "601R1_002");
 
-    expect(bind).toHaveBeenCalledWith("601R1_002");
+    expect(bind).toHaveBeenCalledWith("catalog-release-7", "601R1_002");
     expect(result).toHaveLength(1);
     const sql = prepare.mock.calls[0]?.[0] as string;
+    expect(sql).not.toContain("catalog_active_release");
+    expect(sql).toContain("r.id = ?");
+    expect(sql).toContain("r.status IN ('published', 'superseded')");
     expect(sql).toContain("c.hose_sku = ?");
     expect(sql).toContain("c.catalog_publication_status = 'Published'");
     expect(sql).toContain("c.rfq_eligibility = 'Eligible'");

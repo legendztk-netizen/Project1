@@ -71,9 +71,7 @@ const compatibleEndASql = `
          f.ferrule_series, f.hose_construction AS ferrule_hose_construction,
          f.hose_tail_dash AS ferrule_hose_tail_dash,
          f.skive_requirement AS ferrule_skive_requirement
-  FROM catalog_active_release ar
-  INNER JOIN catalog_releases r
-    ON r.id = ar.release_id AND r.status = 'published'
+  FROM catalog_releases r
   INNER JOIN catalog_compatibilities c
     ON c.import_id = r.source_import_id
   INNER JOIN catalog_skus hs
@@ -86,7 +84,8 @@ const compatibleEndASql = `
     ON f.import_id = c.import_id AND f.sku = c.ferrule_sku
   INNER JOIN catalog_skus fs
     ON fs.import_id = f.import_id AND fs.sku = f.sku
-  WHERE ar.singleton = 1
+  WHERE r.id = ?
+    AND r.status IN ('published', 'superseded')
     AND c.hose_sku = ?
     AND c.catalog_publication_status = 'Published'
     AND c.rfq_eligibility = 'Eligible'
@@ -107,10 +106,10 @@ const compatibleEndASql = `
 
 export function createD1ConfiguratorRepository(database: D1Database) {
   return {
-    async findCompatibleEndA(hoseSku: string) {
+    async findCompatibleEndA(releaseId: string, hoseSku: string) {
       const rows = await database
         .prepare(compatibleEndASql)
-        .bind(hoseSku)
+        .bind(releaseId, hoseSku)
         .all<CompatibleEndARow>();
       return rows.results.map(compatibleEndACandidateFromRow);
     },

@@ -1490,7 +1490,7 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(buildCurrentLink).toContain("has not been added to your Quote List");
 
     const compatibleEndAResponse = await fetch(
-      `${origin}/api/configurator/compatible-end-a?hose=601R1_002`,
+      `${origin}/api/configurator/compatible-end-a?release=${draft.id}&hose=601R1_002`,
     );
     expect(compatibleEndAResponse.status).toBe(200);
     const compatibleEndA = (await compatibleEndAResponse.json()) as {
@@ -1500,8 +1500,10 @@ describe("Cloudflare Worker route surfaces", () => {
         hoseEndSku: string;
       }>;
       hoseSku: string;
+      releaseId: string;
     };
     expect(compatibleEndA.hoseSku).toBe("601R1_002");
+    expect(compatibleEndA.releaseId).toBe(draft.id);
     expect(compatibleEndA.candidates).toEqual([
       expect.objectContaining({
         compatibilityId: "COMP_0011",
@@ -2043,6 +2045,26 @@ describe("Cloudflare Worker route surfaces", () => {
       replacementPublishResponse.status,
       await replacementPublishResponse.text(),
     ).toBe(302);
+
+    const pinnedCompatibilityResponse = await fetch(
+      `${origin}/api/configurator/compatible-end-a?release=${draft.id}&hose=601R1_002`,
+    );
+    expect(pinnedCompatibilityResponse.status).toBe(200);
+    const pinnedCompatibility = (await pinnedCompatibilityResponse.json()) as {
+      candidates: Array<{ compatibilityId: string }>;
+      releaseId: string;
+    };
+    expect(pinnedCompatibility.releaseId).toBe(draft.id);
+    expect(pinnedCompatibility.candidates).toEqual([
+      expect.objectContaining({ compatibilityId: "COMP_0011" }),
+    ]);
+
+    const replacementCompatibility = (await (
+      await fetch(
+        `${origin}/api/configurator/compatible-end-a?release=${replacementDraft.id}&hose=601R1_002`,
+      )
+    ).json()) as { candidates: unknown[] };
+    expect(replacementCompatibility.candidates).toEqual([]);
 
     const legacyImportId = `legacy-hose-import-${crypto.randomUUID()}`;
     const legacyReleaseId = `legacy-hose-release-${crypto.randomUUID()}`;

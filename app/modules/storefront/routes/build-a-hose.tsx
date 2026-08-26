@@ -405,6 +405,7 @@ export function BuildAHoseView({
                   hoseSku={hoseDraft?.hose.sku ?? ""}
                   onBack={backToHose}
                   onSelect={setSelectedEndA}
+                  releaseId={hoseDraft?.catalogRelease.id ?? ""}
                   requestedEndASku={loaderData.requestedEndASku}
                   selected={selectedEndA}
                 />

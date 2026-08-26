@@ -3,13 +3,18 @@ import { createD1ConfiguratorRepository } from "../../configurator/infrastructur
 import { cloudflareContext } from "#workers/context";
 
 export async function loader({ context, request }: Route.LoaderArgs) {
-  const hoseSku = new URL(request.url).searchParams.get("hose")?.trim();
-  if (!hoseSku) {
-    return Response.json({ error: "Hose SKU is required" }, { status: 400 });
+  const searchParams = new URL(request.url).searchParams;
+  const hoseSku = searchParams.get("hose")?.trim();
+  const releaseId = searchParams.get("release")?.trim();
+  if (!releaseId || !hoseSku) {
+    return Response.json(
+      { error: "Catalog Release ID and Hose SKU are required" },
+      { status: 400 },
+    );
   }
   const { env } = context.get(cloudflareContext);
   const candidates = await createD1ConfiguratorRepository(
     env.DB,
-  ).findCompatibleEndA(hoseSku);
-  return Response.json({ candidates, hoseSku });
+  ).findCompatibleEndA(releaseId, hoseSku);
+  return Response.json({ candidates, hoseSku, releaseId });
 }

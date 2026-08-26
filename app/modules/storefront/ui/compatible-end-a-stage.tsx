@@ -60,12 +60,14 @@ export function CompatibleEndAStage({
   hoseSku,
   onBack,
   onSelect,
+  releaseId,
   requestedEndASku,
   selected,
 }: {
   hoseSku: string;
   onBack: () => void;
   onSelect: (candidate: CompatibleEndACandidate) => void;
+  releaseId: string;
   requestedEndASku: string | null;
   selected: CompatibleEndACandidate | null;
 }) {
@@ -109,7 +111,7 @@ export function CompatibleEndAStage({
     setLoadState({ kind: "loading" });
     setFilters(emptyEndAFilters);
     fetch(
-      `/api/configurator/compatible-end-a?hose=${encodeURIComponent(hoseSku)}`,
+      `/api/configurator/compatible-end-a?release=${encodeURIComponent(releaseId)}&hose=${encodeURIComponent(hoseSku)}`,
       { signal: controller.signal },
     )
       .then(async (response) => {
@@ -134,7 +136,7 @@ export function CompatibleEndAStage({
         });
       });
     return () => controller.abort();
-  }, [hoseSku]);
+  }, [hoseSku, releaseId]);
 
   function updateFilter(key: keyof EndAFilters, value: string) {
     setFilters((current) => ({ ...current, [key]: value }));

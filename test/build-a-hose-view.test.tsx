@@ -131,7 +131,7 @@ describe("Build a Hose view", () => {
       ).toBeTruthy(),
     );
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/configurator/compatible-end-a?hose=601R1_001",
+      "/api/configurator/compatible-end-a?release=release-002&hose=601R1_001",
       expect.objectContaining({ signal: expect.anything() }),
     );
     expect(screen.getByText("2 of 2 compatible fittings")).toBeTruthy();
