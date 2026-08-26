@@ -15,6 +15,7 @@ export default [
     "api/catalog/releases/:releaseId/products/:sku",
     "modules/storefront/routes/catalog-release-product-resource.ts",
   ),
+  route("build-a-hose", "modules/storefront/routes/build-a-hose.tsx"),
   route("quote-list", "modules/storefront/routes/anonymous-quote-list.tsx"),
   route(
     "assembly-measurement-guide",

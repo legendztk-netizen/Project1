@@ -1427,6 +1427,60 @@ describe("Cloudflare Worker route surfaces", () => {
     );
     expect(storefront).not.toContain("Cost Basis");
     expect(storefront).not.toContain("factory_unit_price");
+    expect(storefront).toContain('href="/build-a-hose"');
+
+    const [draftWritesBefore] = runLocalD1<{
+      lines: number;
+      sessions: number;
+    }>(
+      `SELECT
+         (SELECT COUNT(*) FROM anonymous_quote_sessions) AS sessions,
+         (SELECT COUNT(*) FROM anonymous_quote_lines) AS lines`,
+    );
+    const buildBlankResponse = await fetch(`${origin}/build-a-hose`);
+    const buildBlank = await buildBlankResponse.text();
+    expect(buildBlankResponse.status).toBe(200);
+    expect(buildBlank).toContain("Build a Hose");
+    expect(buildBlank).toContain("1. Choose a Hose Series");
+    expect(buildBlank).toContain("Choose a series to see its exact hose sizes");
+    expect(buildBlank).not.toContain(
+      'data-hose-sku="601R1_001" aria-pressed="true"',
+    );
+    expect(buildBlank).toMatch(/configurator-next[^>]*disabled/);
+
+    const buildSelectedResponse = await fetch(
+      `${origin}/build-a-hose?hose=601R1_001`,
+    );
+    const buildSelected = await buildSelectedResponse.text();
+    expect(buildSelectedResponse.status).toBe(200);
+    expect(buildSelected).toContain('data-hose-sku="601R1_001"');
+    expect(buildSelected).toContain("601R1 Hydraulic Hose");
+    expect(buildSelected).toContain("3626 psi");
+    expect(buildSelected).toContain("-40°C to 100°C");
+    expect(buildSelected).not.toMatch(/configurator-next[^>]*disabled/);
+    expect(buildSelected).toContain("has not been added to your Quote List");
+
+    const buildUnavailable = await (
+      await fetch(`${origin}/build-a-hose?hose=601R1_002`)
+    ).text();
+    expect(buildUnavailable).toContain(
+      "This hose is not currently selectable.",
+    );
+    const buildInvalid = await (
+      await fetch(`${origin}/build-a-hose?hose=SUPERSEDED_HOSE`)
+    ).text();
+    expect(buildInvalid).toContain(
+      "This hose link is not in the current catalog.",
+    );
+    const [draftWritesAfter] = runLocalD1<{
+      lines: number;
+      sessions: number;
+    }>(
+      `SELECT
+         (SELECT COUNT(*) FROM anonymous_quote_sessions) AS sessions,
+         (SELECT COUNT(*) FROM anonymous_quote_lines) AS lines`,
+    );
+    expect(draftWritesAfter).toEqual(draftWritesBefore);
 
     const search = await (await fetch(`${origin}/?q=9%2F16-18+UNF`)).text();
     expect(search).toContain("JIC 37° Female Swivel 0° Straight Hose End");

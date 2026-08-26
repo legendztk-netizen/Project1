@@ -20,7 +20,12 @@ export function StorefrontHeader() {
         >
           Products
         </Link>
-        <span aria-disabled="true">Build a Hose</span>
+        <Link
+          className={location.pathname === "/build-a-hose" ? "active" : ""}
+          to="/build-a-hose"
+        >
+          Build a Hose
+        </Link>
         <Link
           className={location.pathname === "/quote-list" ? "active" : ""}
           to="/quote-list"

@@ -27,8 +27,16 @@ export interface PublicLengthOrdering {
 export type PublicVariantSelection =
   | {
       dash: DashSize | null;
+      equivalentStandard: string | null;
+      hoseSeries: string;
       kind: "hose";
       nominalIdIn: number | null;
+      primaryStandard: string | null;
+      reinforcement: string | null;
+      temperatureMaxC: number | null;
+      temperatureMinC: number | null;
+      workingBar: number | null;
+      workingPsi: number | null;
     }
   | {
       connectionDash: DashSize | null;

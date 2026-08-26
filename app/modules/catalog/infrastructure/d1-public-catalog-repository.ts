@@ -423,8 +423,16 @@ export function publicCatalogItemFromRow(
       row.product_type === "hose"
         ? {
             dash: normalizeDashSize(row.dash),
+            equivalentStandard: row.equivalent_standard,
+            hoseSeries: row.hose_series ?? row.sku.split("_")[0] ?? row.sku,
             kind: "hose",
             nominalIdIn: row.nominal_id_in,
+            primaryStandard: row.primary_standard,
+            reinforcement: row.reinforcement,
+            temperatureMaxC: row.hose_temp_max_c,
+            temperatureMinC: row.hose_temp_min_c,
+            workingBar: row.working_bar,
+            workingPsi: row.working_psi,
           }
         : row.product_type === "hose_end"
           ? {
