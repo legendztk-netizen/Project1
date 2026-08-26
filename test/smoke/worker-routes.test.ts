@@ -1412,6 +1412,10 @@ describe("Cloudflare Worker route surfaces", () => {
       `UPDATE catalog_skus
        SET catalog_publication_status = 'Published'
        WHERE import_id = '${importId}';
+       UPDATE catalog_compatibilities
+       SET catalog_publication_status = 'Published'
+       WHERE import_id = '${importId}'
+         AND rfq_eligibility = 'Eligible';
        UPDATE catalog_skus
        SET supply_availability = 'available_for_quote'
        WHERE import_id = '${importId}'

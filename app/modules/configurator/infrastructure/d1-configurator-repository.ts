@@ -88,7 +88,7 @@ const compatibleEndASql = `
     ON fs.import_id = f.import_id AND fs.sku = f.sku
   WHERE ar.singleton = 1
     AND c.hose_sku = ?
-    AND c.catalog_publication_status <> 'Archived'
+    AND c.catalog_publication_status = 'Published'
     AND c.rfq_eligibility = 'Eligible'
     AND hs.product_type = 'hose'
     AND hs.catalog_publication_status = 'Published'

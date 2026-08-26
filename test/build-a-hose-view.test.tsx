@@ -180,6 +180,38 @@ describe("Build a Hose view", () => {
     expect(screen.getByText(/Requested SKU: UNSUPPORTED_04/)).toBeTruthy();
   });
 
+  it("returns to hose selection when no compatible End A is published", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({ candidates: [] }),
+        ok: true,
+      }),
+    );
+    renderPage([publicHoseFixture()]);
+    fireEvent.click(
+      screen.getByRole("button", { name: /601R1 Hydraulic Hose/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Select 3\/16 in/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue to End A" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", {
+          name: "No compatible End A fittings are published for this hose",
+        }),
+      ).toBeTruthy(),
+    );
+    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Choose another Hose" }),
+    );
+    expect(
+      screen.getByRole("group", { name: "1. Choose a Hose Series" }),
+    ).toBeTruthy();
+  });
+
   it("explains what to do when the active release has no published hoses", () => {
     renderPage([]);
 

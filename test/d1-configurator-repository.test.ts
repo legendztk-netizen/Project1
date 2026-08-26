@@ -54,6 +54,7 @@ describe("D1 configurator repository", () => {
     expect(result).toHaveLength(1);
     const sql = prepare.mock.calls[0]?.[0] as string;
     expect(sql).toContain("c.hose_sku = ?");
+    expect(sql).toContain("c.catalog_publication_status = 'Published'");
     expect(sql).toContain("c.rfq_eligibility = 'Eligible'");
     expect(sql).toContain("catalog_hose_ends e");
     expect(sql).toContain("catalog_ferrules f");
