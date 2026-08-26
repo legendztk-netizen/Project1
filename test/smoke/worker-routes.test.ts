@@ -1416,7 +1416,9 @@ describe("Cloudflare Worker route surfaces", () => {
        SET supply_availability = 'available_for_quote'
        WHERE import_id = '${importId}'
          AND sku IN (
-           '601R1_001', 'JIC_F_SW_04_04', '601R1_1WB_001',
+           '601R1_001', '601R1_002',
+           'JIC_F_SW_04_04', 'JIC_F_SW_04_06',
+           '601R1_1WB_001', '601R1_1WB_002',
            'ADP_ST_JIC_M_02_NPT_M_02'
          );
        UPDATE catalog_skus
@@ -1483,8 +1485,37 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(buildCurrentLink).not.toContain("Hose selection ready");
     expect(buildCurrentLink).toContain("has not been added to your Quote List");
 
+    const compatibleEndAResponse = await fetch(
+      `${origin}/api/configurator/compatible-end-a?hose=601R1_002`,
+    );
+    expect(compatibleEndAResponse.status).toBe(200);
+    const compatibleEndA = (await compatibleEndAResponse.json()) as {
+      candidates: Array<{
+        compatibilityId: string;
+        ferrule: { sku: string };
+        hoseEndSku: string;
+      }>;
+      hoseSku: string;
+    };
+    expect(compatibleEndA.hoseSku).toBe("601R1_002");
+    expect(compatibleEndA.candidates).toEqual([
+      expect.objectContaining({
+        compatibilityId: "COMP_0011",
+        ferrule: expect.objectContaining({ sku: "601R1_1WB_002" }),
+        hoseEndSku: "JIC_F_SW_04_04",
+      }),
+    ]);
+    expect(
+      compatibleEndA.candidates.some(
+        (candidate) => candidate.hoseEndSku === "JIC_F_SW_04_06",
+      ),
+    ).toBe(false);
+    expect(
+      await fetch(`${origin}/api/configurator/compatible-end-a`),
+    ).toMatchObject({ status: 400 });
+
     const buildUnavailable = await (
-      await fetch(`${origin}/build-a-hose?hose=601R1_002`)
+      await fetch(`${origin}/build-a-hose?hose=601R1_003`)
     ).text();
     expect(buildUnavailable).toContain(
       "This hose is not currently selectable.",

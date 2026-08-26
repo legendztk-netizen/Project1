@@ -16,6 +16,10 @@ export default [
     "modules/storefront/routes/catalog-release-product-resource.ts",
   ),
   route("build-a-hose", "modules/storefront/routes/build-a-hose.tsx"),
+  route(
+    "api/configurator/compatible-end-a",
+    "modules/storefront/routes/configurator-compatible-end-a-resource.ts",
+  ),
   route("quote-list", "modules/storefront/routes/anonymous-quote-list.tsx"),
   route(
     "assembly-measurement-guide",

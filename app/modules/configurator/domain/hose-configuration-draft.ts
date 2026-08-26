@@ -1,4 +1,5 @@
 import type { PublicCatalogItem } from "../../catalog/domain/public-catalog";
+import type { CompatibleEndACandidate } from "./compatible-end-a";
 
 export interface HoseConfigurationDraft {
   catalogRelease: {
@@ -22,6 +23,16 @@ export interface HoseConfigurationDraft {
     reinforcement: string | null;
     series: string;
     sku: string;
+  };
+  endA?: {
+    compatibilityId: string;
+    ferrule: CompatibleEndACandidate["ferrule"];
+    hoseEnd: Omit<
+      CompatibleEndACandidate,
+      "compatibilityId" | "ferrule" | "hoseEndSku"
+    > & {
+      sku: string;
+    };
   };
 }
 
