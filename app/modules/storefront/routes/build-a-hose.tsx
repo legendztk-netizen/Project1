@@ -30,6 +30,42 @@ type DirectSelectionState =
   | { kind: "superseded"; sku: string }
   | { kind: "unavailable"; sku: string };
 
+interface DirectSelectionCopy {
+  detail: string;
+  heading: string;
+}
+
+function directSelectionCopy(
+  state: Exclude<DirectSelectionState, { kind: "none" }>,
+): DirectSelectionCopy {
+  switch (state.kind) {
+    case "current":
+      return {
+        detail:
+          "Select its series and exact size below to start a new configuration.",
+        heading: "This link points to a current hose.",
+      };
+    case "unavailable":
+      return {
+        detail:
+          "Choose an available series and size below to start a new configuration.",
+        heading: "This hose is not currently selectable.",
+      };
+    case "superseded":
+      return {
+        detail:
+          "Choose an available series and size below to start a new configuration.",
+        heading: "This hose belongs to an older catalog release.",
+      };
+    case "invalid":
+      return {
+        detail:
+          "Choose an available series and size below to start a new configuration.",
+        heading: "This hose link is not in the current catalog.",
+      };
+  }
+}
+
 export async function loader({ context, request }: Route.LoaderArgs) {
   const { env } = context.get(cloudflareContext);
   const repository = createD1PublicCatalogRepository(env.DB);
@@ -144,6 +180,10 @@ export function BuildAHoseView({
     family.variants.some((variant) => variant.canAddToQuote),
   );
   const visualItem = selectedItem ?? selectedFamily?.representative ?? null;
+  const directCopy =
+    loaderData.directSelection.kind === "none"
+      ? null
+      : directSelectionCopy(loaderData.directSelection);
 
   function chooseFamily(familyKey: string) {
     setSelectedFamilyKey(familyKey);
@@ -186,24 +226,14 @@ export function BuildAHoseView({
           )}
         </ol>
 
-        {loaderData.directSelection.kind !== "none" ? (
+        {directCopy && loaderData.directSelection.kind !== "none" ? (
           <div className="configurator-alert" role="status">
             <AlertTriangle aria-hidden="true" size={20} />
             <div>
-              <strong>
-                {loaderData.directSelection.kind === "current"
-                  ? "This link points to a current hose."
-                  : loaderData.directSelection.kind === "unavailable"
-                    ? "This hose is not currently selectable."
-                    : loaderData.directSelection.kind === "superseded"
-                      ? "This hose belongs to an older catalog release."
-                      : "This hose link is not in the current catalog."}
-              </strong>
+              <strong>{directCopy.heading}</strong>
               <p>
-                {loaderData.directSelection.kind === "current"
-                  ? "Select its series and exact size below to start a new configuration."
-                  : "Choose an available series and size below to start a new configuration."}{" "}
-                Requested SKU: {loaderData.directSelection.sku}
+                {directCopy.detail} Requested SKU:{" "}
+                {loaderData.directSelection.sku}
               </p>
             </div>
           </div>
