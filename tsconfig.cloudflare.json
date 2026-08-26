@@ -5,7 +5,7 @@
     "app/**/*",
     "scripts/deployment-pipeline.mjs",
     "workers/**/*",
-    "test/**/*.ts",
+    "test/**/*",
     "worker-configuration.d.ts"
   ],
   "compilerOptions": {

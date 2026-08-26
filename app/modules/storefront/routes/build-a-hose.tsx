@@ -13,6 +13,7 @@ import { createHoseConfigurationDraft } from "../../configurator/domain/hose-con
 import {
   groupCatalogFamilies,
   type PublicCatalogItem,
+  type PublicVariantSelection,
 } from "../../catalog/domain/public-catalog";
 import { createD1PublicCatalogRepository } from "../../catalog/infrastructure/d1-public-catalog-repository";
 import { hoseSizeLabel } from "../domain/variant-label";
@@ -76,16 +77,23 @@ export function meta() {
 }
 
 function sizeLabel(item: PublicCatalogItem) {
-  const selection = item.variantSelection;
-  return selection?.kind === "hose"
+  const selection = hoseSelection(item);
+  return selection
     ? (hoseSizeLabel(selection.nominalIdIn, selection.dash) ??
         "Size not specified")
     : "Size not specified";
 }
 
-function pressureLabel(item: PublicCatalogItem) {
+type PublicHoseSelection = Extract<PublicVariantSelection, { kind: "hose" }>;
+
+function hoseSelection(item: PublicCatalogItem): PublicHoseSelection | null {
   const selection = item.variantSelection;
-  if (selection?.kind !== "hose") return "Confirmed during review";
+  return selection?.kind === "hose" ? selection : null;
+}
+
+function pressureLabel(item: PublicCatalogItem) {
+  const selection = hoseSelection(item);
+  if (!selection) return "Confirmed during review";
   const label = [
     selection.performance.workingPsi
       ? `${selection.performance.workingPsi} psi`
@@ -100,9 +108,9 @@ function pressureLabel(item: PublicCatalogItem) {
 }
 
 function temperatureLabel(item: PublicCatalogItem) {
-  const selection = item.variantSelection;
+  const selection = hoseSelection(item);
   if (
-    selection?.kind !== "hose" ||
+    !selection ||
     selection.performance.temperatureMinC === null ||
     selection.performance.temperatureMaxC === null
   ) {
@@ -111,7 +119,13 @@ function temperatureLabel(item: PublicCatalogItem) {
   return `${selection.performance.temperatureMinC}°C to ${selection.performance.temperatureMaxC}°C`;
 }
 
-export default function BuildAHose({ loaderData }: Route.ComponentProps) {
+type BuildAHoseLoaderData = Awaited<ReturnType<typeof loader>>;
+
+export function BuildAHoseView({
+  loaderData,
+}: {
+  loaderData: BuildAHoseLoaderData;
+}) {
   const [selectedFamilyKey, setSelectedFamilyKey] = useState<string | null>(
     null,
   );
@@ -233,7 +247,7 @@ export default function BuildAHose({ loaderData }: Route.ComponentProps) {
                     const availableCount = family.variants.filter(
                       (variant) => variant.canAddToQuote,
                     ).length;
-                    const selection = family.representative.variantSelection;
+                    const selection = hoseSelection(family.representative);
                     return (
                       <button
                         aria-pressed={active}
@@ -247,7 +261,7 @@ export default function BuildAHose({ loaderData }: Route.ComponentProps) {
                         <span>
                           <strong>{family.familyName}</strong>
                           <small>
-                            {selection?.kind === "hose"
+                            {selection
                               ? (selection.primaryStandard ??
                                 selection.equivalentStandard ??
                                 "Hydraulic hose")
@@ -274,11 +288,11 @@ export default function BuildAHose({ loaderData }: Route.ComponentProps) {
                   </p>
                   <div className="hose-size-grid">
                     {selectedFamily.variants.map((item) => {
-                      const selection = item.variantSelection;
+                      const selection = hoseSelection(item);
                       const active = item.sku === selectedSku;
                       return (
                         <button
-                          aria-label={`Select ${sizeLabel(item)}, ${selection?.kind === "hose" ? `Dash ${selection.dash}` : item.sku}`}
+                          aria-label={`Select ${sizeLabel(item)}, ${selection ? `Dash ${selection.dash}` : item.sku}`}
                           aria-pressed={active}
                           className="hose-size-choice"
                           data-hose-sku={item.sku}
@@ -290,7 +304,7 @@ export default function BuildAHose({ loaderData }: Route.ComponentProps) {
                           <span>
                             <strong>{sizeLabel(item)}</strong>
                             <small>
-                              {selection?.kind === "hose"
+                              {selection
                                 ? `Hose ID · Dash ${selection.dash}`
                                 : item.sku}
                             </small>
@@ -380,4 +394,8 @@ export default function BuildAHose({ loaderData }: Route.ComponentProps) {
       </main>
     </div>
   );
+}
+
+export default function BuildAHose({ loaderData }: Route.ComponentProps) {
+  return <BuildAHoseView loaderData={loaderData} />;
 }
