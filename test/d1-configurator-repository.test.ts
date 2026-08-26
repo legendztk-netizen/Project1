@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  compatibleEndACandidateFromRow,
+  compatibleHoseEndCandidateFromRow,
   createD1ConfiguratorRepository,
 } from "../app/modules/configurator/infrastructure/d1-configurator-repository";
 
@@ -27,7 +27,7 @@ const row = {
 
 describe("D1 configurator repository", () => {
   it("maps exact compatibility rows without collapsing standards", () => {
-    expect(compatibleEndACandidateFromRow(row)).toMatchObject({
+    expect(compatibleHoseEndCandidateFromRow(row)).toMatchObject({
       compatibilityId: "COMP_0011",
       connectionDash: "-4",
       connectionStandard: "SAE J514 / ISO 8434-2",

@@ -1,8 +1,8 @@
 import { interfaceGroup } from "../../catalog/domain/public-catalog";
 import { normalizeDashSize } from "../../catalog/domain/dash-size";
-import type { CompatibleEndACandidate } from "../domain/compatible-end-a";
+import type { CompatibleHoseEndCandidate } from "../domain/compatible-end-a";
 
-interface CompatibleEndARow {
+interface CompatibleHoseEndRow {
   angle: string;
   compatibility_id: string;
   competitor_part_number: string | null;
@@ -22,9 +22,9 @@ interface CompatibleEndARow {
   thread: string;
 }
 
-export function compatibleEndACandidateFromRow(
-  row: CompatibleEndARow,
-): CompatibleEndACandidate {
+export function compatibleHoseEndCandidateFromRow(
+  row: CompatibleHoseEndRow,
+): CompatibleHoseEndCandidate {
   const group = interfaceGroup(row.interface_family) ?? row.interface_family;
   return {
     aliases: [
@@ -63,7 +63,7 @@ export function compatibleEndACandidateFromRow(
   };
 }
 
-const compatibleEndASql = `
+const compatibleHoseEndSql = `
   SELECT c.compatibility_id, c.hose_end_sku, c.ferrule_sku,
          e.competitor_part_number, e.interface_family,
          e.connection_standard, e.gender, e.swivel_form, e.angle,
@@ -108,10 +108,10 @@ export function createD1ConfiguratorRepository(database: D1Database) {
   return {
     async findCompatibleEndA(releaseId: string, hoseSku: string) {
       const rows = await database
-        .prepare(compatibleEndASql)
+        .prepare(compatibleHoseEndSql)
         .bind(releaseId, hoseSku)
-        .all<CompatibleEndARow>();
-      return rows.results.map(compatibleEndACandidateFromRow);
+        .all<CompatibleHoseEndRow>();
+      return rows.results.map(compatibleHoseEndCandidateFromRow);
     },
   };
 }

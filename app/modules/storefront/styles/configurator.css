@@ -621,9 +621,7 @@
 }
 
 .later-stage-preview {
-  padding: 22px 24px;
-  background: var(--surface);
-  border: 1px solid var(--line);
+  padding: 8px 0 0;
 }
 
 .later-stage-preview h3 {

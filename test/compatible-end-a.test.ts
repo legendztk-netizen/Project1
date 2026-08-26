@@ -4,7 +4,7 @@ import {
   attachEndAToDraft,
   attachEndBToDraft,
   exactSameHoseEndCandidate,
-  filterCompatibleEndACandidates,
+  filterCompatibleHoseEndCandidates,
 } from "../app/modules/configurator/domain/compatible-end-a";
 import { createHoseConfigurationDraft } from "../app/modules/configurator/domain/hose-configuration-draft";
 import { compatibleEndAFixture } from "./fixtures/compatible-end-a";
@@ -42,7 +42,7 @@ describe("compatible End A candidates", () => {
 
   it("filters exact candidates by customer-readable fields", () => {
     expect(
-      filterCompatibleEndACandidates(candidates, {
+      filterCompatibleHoseEndCandidates(candidates, {
         angle: "90°",
         connectionDash: "-4",
         gender: "Female",
@@ -55,20 +55,22 @@ describe("compatible End A candidates", () => {
 
   it("searches only the supplied compatible set by SKU, alias, thread, and dash", () => {
     expect(
-      filterCompatibleEndACandidates(candidates, { query: "FJX-04" }).map(
+      filterCompatibleHoseEndCandidates(candidates, { query: "FJX-04" }).map(
         (candidate) => candidate.hoseEndSku,
       ),
     ).toEqual(["JIC_F_SW_04_04"]);
     expect(
-      filterCompatibleEndACandidates(candidates, { query: "1/4-18 NPTF" }).map(
-        (candidate) => candidate.hoseEndSku,
-      ),
+      filterCompatibleHoseEndCandidates(candidates, {
+        query: "1/4-18 NPTF",
+      }).map((candidate) => candidate.hoseEndSku),
     ).toEqual(["NPT_M_FX_04_04"]);
     expect(
-      filterCompatibleEndACandidates(candidates, { query: "-4" }),
+      filterCompatibleHoseEndCandidates(candidates, { query: "-4" }),
     ).toHaveLength(3);
     expect(
-      filterCompatibleEndACandidates(candidates, { query: "UNSUPPORTED_04" }),
+      filterCompatibleHoseEndCandidates(candidates, {
+        query: "UNSUPPORTED_04",
+      }),
     ).toEqual([]);
   });
 
@@ -91,7 +93,7 @@ describe("compatible End A candidates", () => {
     });
 
     expect(
-      filterCompatibleEndACandidates([npt, nptf], { query: "NPTF" }).map(
+      filterCompatibleHoseEndCandidates([npt, nptf], { query: "NPTF" }).map(
         (candidate) => candidate.hoseEndSku,
       ),
     ).toEqual(["NPTF_M_FX_04_04"]);

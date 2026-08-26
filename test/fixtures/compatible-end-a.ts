@@ -1,8 +1,8 @@
-import type { CompatibleEndACandidate } from "../../app/modules/configurator/domain/compatible-end-a";
+import type { CompatibleHoseEndCandidate } from "../../app/modules/configurator/domain/compatible-end-a";
 
 export function compatibleEndAFixture(
-  overrides: Partial<CompatibleEndACandidate> = {},
-): CompatibleEndACandidate {
+  overrides: Partial<CompatibleHoseEndCandidate> = {},
+): CompatibleHoseEndCandidate {
   return {
     aliases: ["FJX-04-04W", "7/16-20 UNF", "-4"],
     angle: "0° Straight",

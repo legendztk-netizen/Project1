@@ -25,8 +25,6 @@ export interface CompatibleHoseEndCandidate {
   thread: string;
 }
 
-export type CompatibleEndACandidate = CompatibleHoseEndCandidate;
-
 export interface HoseEndFilters {
   angle?: string;
   connectionDash?: string;
@@ -35,8 +33,6 @@ export interface HoseEndFilters {
   query?: string;
   swivelForm?: string;
 }
-
-export type EndAFilters = HoseEndFilters;
 
 function matches(value: string, filter?: string) {
   return !filter || value === filter;
@@ -73,8 +69,6 @@ export function filterCompatibleHoseEndCandidates(
       .includes(query);
   });
 }
-
-export const filterCompatibleEndACandidates = filterCompatibleHoseEndCandidates;
 
 function configuredEnd(candidate: CompatibleHoseEndCandidate) {
   return {

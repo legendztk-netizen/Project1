@@ -76,6 +76,20 @@ export function CompatibleHoseEndStage({
   requestedEndSku: string | null;
   selected: CompatibleHoseEndCandidate | null;
 }) {
+  const stageCopy =
+    endRole === "A"
+      ? {
+          backLabel: "Back to Hose",
+          emptyBackLabel: "Choose another Hose",
+          returnTarget: "Hose",
+          stepNumber: 2,
+        }
+      : {
+          backLabel: "Back to End A",
+          emptyBackLabel: "Back to End A",
+          returnTarget: "End A",
+          stepNumber: 3,
+        };
   const [loadState, setLoadState] = useState<HoseEndLoadState>({
     kind: "loading",
   });
@@ -160,10 +174,10 @@ export function CompatibleHoseEndStage({
           type="button"
         >
           <ArrowLeft aria-hidden="true" size={18} />
-          Back to {endRole === "A" ? "Hose" : "End A"}
+          {stageCopy.backLabel}
         </button>
         <div>
-          <span className="eyebrow">Step {endRole === "A" ? "2" : "3"}</span>
+          <span className="eyebrow">Step {stageCopy.stepNumber}</span>
           <h2 id={`end-${endRole.toLowerCase()}-heading`}>
             Choose End {endRole}
           </h2>
@@ -175,7 +189,7 @@ export function CompatibleHoseEndStage({
 
       {loadState.kind === "loading" ? (
         <div className="configurator-stage-prompt" role="status">
-          <span>2</span>
+          <span>{stageCopy.stepNumber}</span>
           <p>Loading compatible End {endRole} fittings...</p>
         </div>
       ) : loadState.kind === "error" ? (
@@ -183,7 +197,10 @@ export function CompatibleHoseEndStage({
           <AlertTriangle aria-hidden="true" size={20} />
           <div>
             <strong>Compatible fittings could not be loaded</strong>
-            <p>{loadState.message} Return to Hose and try again.</p>
+            <p>
+              {loadState.message} Return to {stageCopy.returnTarget} and try
+              again.
+            </p>
           </div>
         </div>
       ) : candidates.length === 0 ? (
@@ -193,8 +210,9 @@ export function CompatibleHoseEndStage({
             No compatible End {endRole} fittings are published for this hose
           </h3>
           <p>
-            Return to Hose and choose another size. A manual quote can be used
-            when the required combination is not listed.
+            Return to {stageCopy.returnTarget} and choose another option. A
+            manual quote can be used when the required combination is not
+            listed.
           </p>
           <button
             className="button button-secondary button-with-icon"
@@ -202,7 +220,7 @@ export function CompatibleHoseEndStage({
             type="button"
           >
             <ArrowLeft aria-hidden="true" size={18} />
-            {endRole === "A" ? "Choose another Hose" : "Back to End A"}
+            {stageCopy.emptyBackLabel}
           </button>
         </div>
       ) : (
