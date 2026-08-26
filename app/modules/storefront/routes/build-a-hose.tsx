@@ -12,9 +12,13 @@ import { Link } from "react-router";
 import type { Route } from "./+types/build-a-hose";
 import {
   attachEndAToDraft,
-  type CompatibleEndACandidate,
+  attachEndBToDraft,
+  type CompatibleHoseEndCandidate,
 } from "../../configurator/domain/compatible-end-a";
-import { createHoseConfigurationDraft } from "../../configurator/domain/hose-configuration-draft";
+import {
+  createHoseConfigurationDraft,
+  type HoseConfigurationDraft,
+} from "../../configurator/domain/hose-configuration-draft";
 import {
   groupCatalogFamilies,
   type PublicCatalogItem,
@@ -23,7 +27,7 @@ import {
 import { createD1PublicCatalogRepository } from "../../catalog/infrastructure/d1-public-catalog-repository";
 import { hoseSizeLabel } from "../domain/variant-label";
 import { CatalogMedia } from "../ui/catalog-media";
-import { CompatibleEndAStage } from "../ui/compatible-end-a-stage";
+import { CompatibleHoseEndStage } from "../ui/compatible-end-a-stage";
 import { StorefrontHeader } from "../ui/storefront-header";
 import "../styles/catalog.css";
 import "../styles/configurator.css";
@@ -167,7 +171,70 @@ function temperatureLabel(item: PublicCatalogItem) {
 
 type BuildAHoseLoaderData = Awaited<ReturnType<typeof loader>>;
 
-type ConfiguratorStage = "hose" | "end-a";
+type ConfiguratorStage = "hose" | "end-a" | "end-b";
+
+function ConfiguredEndSummary({
+  end,
+  role,
+}: {
+  end: NonNullable<HoseConfigurationDraft["endA"]>;
+  role: "A" | "B";
+}) {
+  return (
+    <section className="end-a-summary" aria-label={`Selected End ${role}`}>
+      <span className="eyebrow">End {role}</span>
+      <h3>{end.hoseEnd.displayName}</h3>
+      <p>SKU {end.hoseEnd.sku}</p>
+      <dl>
+        <div>
+          <dt>Thread</dt>
+          <dd>{end.hoseEnd.thread}</dd>
+        </div>
+        <div>
+          <dt>Exact standard</dt>
+          <dd>{end.hoseEnd.connectionStandard}</dd>
+        </div>
+        <div>
+          <dt>Seal</dt>
+          <dd>{end.hoseEnd.sealingForm}</dd>
+        </div>
+        <div>
+          <dt>Derived ferrule</dt>
+          <dd>{end.ferrule.sku}</dd>
+        </div>
+      </dl>
+      <p className="end-a-ferrule-note">
+        The ferrule is resolved automatically from exact compatibility data and
+        is not customer-selectable.
+      </p>
+    </section>
+  );
+}
+
+function LaterStagePreview() {
+  return (
+    <section
+      className="later-stage-preview"
+      aria-label="Remaining configuration"
+    >
+      <header>
+        <span className="eyebrow">Next steps</span>
+        <h3>Complete the assembly details</h3>
+        <p>No measurement method or option has been selected automatically.</p>
+      </header>
+      <div>
+        {["Measurement method", "Orientation", "Protection", "Application"].map(
+          (label) => (
+            <article key={label}>
+              <strong>{label}</strong>
+              <span>Not selected</span>
+            </article>
+          ),
+        )}
+      </div>
+    </section>
+  );
+}
 
 export function BuildAHoseView({
   loaderData,
@@ -180,7 +247,9 @@ export function BuildAHoseView({
   );
   const [selectedSku, setSelectedSku] = useState<string | null>(null);
   const [selectedEndA, setSelectedEndA] =
-    useState<CompatibleEndACandidate | null>(null);
+    useState<CompatibleHoseEndCandidate | null>(null);
+  const [selectedEndB, setSelectedEndB] =
+    useState<CompatibleHoseEndCandidate | null>(null);
   const selectedFamily = loaderData.families.find(
     (family) => family.familyKey === selectedFamilyKey,
   );
@@ -191,13 +260,13 @@ export function BuildAHoseView({
     () => (selectedItem ? createHoseConfigurationDraft(selectedItem) : null),
     [selectedItem],
   );
-  const draft = useMemo(
-    () =>
-      hoseDraft && selectedEndA
-        ? attachEndAToDraft(hoseDraft, selectedEndA)
-        : hoseDraft,
-    [hoseDraft, selectedEndA],
-  );
+  const draft = useMemo(() => {
+    if (!hoseDraft) return null;
+    const withEndA = selectedEndA
+      ? attachEndAToDraft(hoseDraft, selectedEndA)
+      : hoseDraft;
+    return selectedEndB ? attachEndBToDraft(withEndA, selectedEndB) : withEndA;
+  }, [hoseDraft, selectedEndA, selectedEndB]);
   const hasSelectableHose = loaderData.families.some((family) =>
     family.variants.some((variant) => variant.canAddToQuote),
   );
@@ -207,19 +276,21 @@ export function BuildAHoseView({
       ? null
       : directSelectionCopy(loaderData.directSelection);
   useEffect(() => {
-    if (stage === "end-a") window.scrollTo({ behavior: "auto", top: 0 });
+    if (stage !== "hose") window.scrollTo({ behavior: "auto", top: 0 });
   }, [stage]);
 
   function chooseFamily(familyKey: string) {
     setSelectedFamilyKey(familyKey);
     setSelectedSku(null);
     setSelectedEndA(null);
+    setSelectedEndB(null);
   }
 
   function chooseHose(item: PublicCatalogItem) {
     if (!item.canAddToQuote) return;
     setSelectedSku(item.sku);
     setSelectedEndA(null);
+    setSelectedEndB(null);
   }
 
   function continueToEndA() {
@@ -229,6 +300,15 @@ export function BuildAHoseView({
 
   function backToHose() {
     setStage("hose");
+  }
+
+  function continueToEndB() {
+    if (!draft?.endA) return;
+    setStage("end-b");
+  }
+
+  function backToEndA() {
+    setStage("end-a");
   }
 
   return (
@@ -252,7 +332,8 @@ export function BuildAHoseView({
             (label, index) => {
               const active =
                 (stage === "hose" && index === 0) ||
-                (stage === "end-a" && index === 1);
+                (stage === "end-a" && index === 1) ||
+                (stage === "end-b" && index === 2);
               return (
                 <li aria-current={active ? "step" : undefined} key={label}>
                   <span>{index + 1}</span>
@@ -400,15 +481,30 @@ export function BuildAHoseView({
                     </div>
                   )}
                 </>
-              ) : (
-                <CompatibleEndAStage
+              ) : stage === "end-a" ? (
+                <CompatibleHoseEndStage
+                  endRole="A"
                   hoseSku={hoseDraft?.hose.sku ?? ""}
                   onBack={backToHose}
                   onSelect={setSelectedEndA}
                   releaseId={hoseDraft?.catalogRelease.id ?? ""}
-                  requestedEndASku={loaderData.requestedEndASku}
+                  requestedEndSku={loaderData.requestedEndASku}
                   selected={selectedEndA}
                 />
+              ) : (
+                <>
+                  <CompatibleHoseEndStage
+                    copyFromEndA={selectedEndA}
+                    endRole="B"
+                    hoseSku={hoseDraft?.hose.sku ?? ""}
+                    onBack={backToEndA}
+                    onSelect={setSelectedEndB}
+                    releaseId={hoseDraft?.catalogRelease.id ?? ""}
+                    requestedEndSku={null}
+                    selected={selectedEndB}
+                  />
+                  {draft?.endA && draft.endB ? <LaterStagePreview /> : null}
+                </>
               )}
             </section>
 
@@ -452,36 +548,10 @@ export function BuildAHoseView({
                       </div>
                     </dl>
                     {draft.endA ? (
-                      <section
-                        className="end-a-summary"
-                        aria-label="Selected End A"
-                      >
-                        <span className="eyebrow">End A</span>
-                        <h3>{draft.endA.hoseEnd.displayName}</h3>
-                        <p>SKU {draft.endA.hoseEnd.sku}</p>
-                        <dl>
-                          <div>
-                            <dt>Thread</dt>
-                            <dd>{draft.endA.hoseEnd.thread}</dd>
-                          </div>
-                          <div>
-                            <dt>Exact standard</dt>
-                            <dd>{draft.endA.hoseEnd.connectionStandard}</dd>
-                          </div>
-                          <div>
-                            <dt>Seal</dt>
-                            <dd>{draft.endA.hoseEnd.sealingForm}</dd>
-                          </div>
-                          <div>
-                            <dt>Derived ferrule</dt>
-                            <dd>{draft.endA.ferrule.sku}</dd>
-                          </div>
-                        </dl>
-                        <p className="end-a-ferrule-note">
-                          The ferrule is resolved automatically from
-                          compatibility data and is not customer-selectable.
-                        </p>
-                      </section>
+                      <ConfiguredEndSummary end={draft.endA} role="A" />
+                    ) : null}
+                    {draft.endB ? (
+                      <ConfiguredEndSummary end={draft.endB} role="B" />
                     ) : null}
                   </>
                 ) : (
@@ -515,6 +585,27 @@ export function BuildAHoseView({
                       <strong>End A selection ready</strong>
                       <small>
                         Exact Hose End and Ferrule saved in this draft.
+                      </small>
+                    </span>
+                  </p>
+                ) : null}
+                {draft?.endA && stage === "end-a" ? (
+                  <button
+                    className="button button-primary configurator-next"
+                    onClick={continueToEndB}
+                    type="button"
+                  >
+                    Continue to End B
+                    <ArrowRight aria-hidden="true" size={18} />
+                  </button>
+                ) : null}
+                {draft?.endB && stage === "end-b" ? (
+                  <p className="configurator-ready" role="status">
+                    <Check aria-hidden="true" size={17} />
+                    <span>
+                      <strong>Both hose ends are ready</strong>
+                      <small>
+                        End A and End B remain separate ordered selections.
                       </small>
                     </span>
                   </p>

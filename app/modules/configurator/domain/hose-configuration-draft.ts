@@ -1,5 +1,16 @@
 import type { PublicCatalogItem } from "../../catalog/domain/public-catalog";
-import type { CompatibleEndACandidate } from "./compatible-end-a";
+import type { CompatibleHoseEndCandidate } from "./compatible-end-a";
+
+interface ConfiguredHoseEnd {
+  compatibilityId: string;
+  ferrule: CompatibleHoseEndCandidate["ferrule"];
+  hoseEnd: Omit<
+    CompatibleHoseEndCandidate,
+    "compatibilityId" | "ferrule" | "hoseEndSku"
+  > & {
+    sku: string;
+  };
+}
 
 export interface HoseConfigurationDraft {
   catalogRelease: {
@@ -24,16 +35,8 @@ export interface HoseConfigurationDraft {
     series: string;
     sku: string;
   };
-  endA?: {
-    compatibilityId: string;
-    ferrule: CompatibleEndACandidate["ferrule"];
-    hoseEnd: Omit<
-      CompatibleEndACandidate,
-      "compatibilityId" | "ferrule" | "hoseEndSku"
-    > & {
-      sku: string;
-    };
-  };
+  endA?: ConfiguredHoseEnd;
+  endB?: ConfiguredHoseEnd;
 }
 
 export function createHoseConfigurationDraft(

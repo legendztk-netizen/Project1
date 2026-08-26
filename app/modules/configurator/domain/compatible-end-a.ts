@@ -1,7 +1,7 @@
 import type { DashSize } from "../../catalog/domain/dash-size";
 import type { HoseConfigurationDraft } from "./hose-configuration-draft";
 
-export interface CompatibleEndACandidate {
+export interface CompatibleHoseEndCandidate {
   aliases: string[];
   angle: string;
   compatibilityId: string;
@@ -25,7 +25,9 @@ export interface CompatibleEndACandidate {
   thread: string;
 }
 
-export interface EndAFilters {
+export type CompatibleEndACandidate = CompatibleHoseEndCandidate;
+
+export interface HoseEndFilters {
   angle?: string;
   connectionDash?: string;
   gender?: string;
@@ -34,13 +36,15 @@ export interface EndAFilters {
   swivelForm?: string;
 }
 
+export type EndAFilters = HoseEndFilters;
+
 function matches(value: string, filter?: string) {
   return !filter || value === filter;
 }
 
-export function filterCompatibleEndACandidates(
-  candidates: CompatibleEndACandidate[],
-  filters: EndAFilters,
+export function filterCompatibleHoseEndCandidates(
+  candidates: CompatibleHoseEndCandidate[],
+  filters: HoseEndFilters,
 ) {
   const query = filters.query?.trim().toLocaleLowerCase() ?? "";
   return candidates.filter((candidate) => {
@@ -70,30 +74,57 @@ export function filterCompatibleEndACandidates(
   });
 }
 
+export const filterCompatibleEndACandidates = filterCompatibleHoseEndCandidates;
+
+function configuredEnd(candidate: CompatibleHoseEndCandidate) {
+  return {
+    compatibilityId: candidate.compatibilityId,
+    ferrule: { ...candidate.ferrule },
+    hoseEnd: {
+      aliases: [...candidate.aliases],
+      angle: candidate.angle,
+      connectionDash: candidate.connectionDash,
+      connectionStandard: candidate.connectionStandard,
+      displayName: candidate.displayName,
+      gender: candidate.gender,
+      hoseTailDash: candidate.hoseTailDash,
+      interfaceFamily: candidate.interfaceFamily,
+      interfaceGroup: candidate.interfaceGroup,
+      sealingForm: candidate.sealingForm,
+      sku: candidate.hoseEndSku,
+      swivelForm: candidate.swivelForm,
+      thread: candidate.thread,
+    },
+  };
+}
+
 export function attachEndAToDraft(
   draft: HoseConfigurationDraft,
-  candidate: CompatibleEndACandidate,
+  candidate: CompatibleHoseEndCandidate,
 ): HoseConfigurationDraft {
   return {
     ...draft,
-    endA: {
-      compatibilityId: candidate.compatibilityId,
-      ferrule: { ...candidate.ferrule },
-      hoseEnd: {
-        aliases: [...candidate.aliases],
-        angle: candidate.angle,
-        connectionDash: candidate.connectionDash,
-        connectionStandard: candidate.connectionStandard,
-        displayName: candidate.displayName,
-        gender: candidate.gender,
-        hoseTailDash: candidate.hoseTailDash,
-        interfaceFamily: candidate.interfaceFamily,
-        interfaceGroup: candidate.interfaceGroup,
-        sealingForm: candidate.sealingForm,
-        sku: candidate.hoseEndSku,
-        swivelForm: candidate.swivelForm,
-        thread: candidate.thread,
-      },
-    },
+    endA: configuredEnd(candidate),
   };
+}
+
+export function attachEndBToDraft(
+  draft: HoseConfigurationDraft,
+  candidate: CompatibleHoseEndCandidate,
+): HoseConfigurationDraft {
+  return {
+    ...draft,
+    endB: configuredEnd(candidate),
+  };
+}
+
+export function exactSameHoseEndCandidate(
+  candidates: CompatibleHoseEndCandidate[],
+  endA: CompatibleHoseEndCandidate | null,
+) {
+  if (!endA) return null;
+  return (
+    candidates.find((candidate) => candidate.hoseEndSku === endA.hoseEndSku) ??
+    null
+  );
 }

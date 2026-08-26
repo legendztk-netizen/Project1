@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
@@ -35,6 +36,35 @@ function renderPage(
       />
     </MemoryRouter>,
   );
+}
+
+function compatibleCandidates() {
+  return [
+    compatibleEndAFixture(),
+    compatibleEndAFixture({
+      aliases: ["MP-04-04W"],
+      compatibilityId: "COMP_0026",
+      connectionStandard: "SAE J476 / ASME B1.20.3",
+      displayName: "NPTF Male Fixed Straight Hose End",
+      ferrule: {
+        ...compatibleEndAFixture().ferrule,
+        sku: "601R1_1WB_003",
+      },
+      gender: "Male",
+      hoseEndSku: "NPT_M_FX_04_04",
+      interfaceFamily: "NPTF",
+      interfaceGroup: "NPT / NPTF",
+      sealingForm: "Tapered thread",
+      swivelForm: "Fixed",
+      thread: "1/4-18 NPTF",
+    }),
+  ];
+}
+
+function chooseFixtureHose() {
+  fireEvent.click(screen.getByRole("button", { name: /601R1 Hydraulic Hose/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Select 3\/16 in/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Continue to End A" }));
 }
 
 afterEach(() => {
@@ -96,22 +126,7 @@ describe("Build a Hose view", () => {
   });
 
   it("continues to guided End A results and stores the derived ferrule", async () => {
-    const candidates = [
-      compatibleEndAFixture(),
-      compatibleEndAFixture({
-        aliases: ["MP-04-04W"],
-        compatibilityId: "COMP_0026",
-        connectionStandard: "SAE J476 / ASME B1.20.3",
-        displayName: "NPTF Male Fixed Straight Hose End",
-        gender: "Male",
-        hoseEndSku: "NPT_M_FX_04_04",
-        interfaceFamily: "NPTF",
-        interfaceGroup: "NPT / NPTF",
-        sealingForm: "Tapered thread",
-        swivelForm: "Fixed",
-        thread: "1/4-18 NPTF",
-      }),
-    ];
+    const candidates = compatibleCandidates();
     const fetchMock = vi.fn().mockResolvedValue({
       json: async () => ({ candidates }),
       ok: true,
@@ -151,8 +166,117 @@ describe("Build a Hose view", () => {
       }),
     );
     expect(screen.getByText("End A selection ready")).toBeTruthy();
-    expect(screen.getByText("601R1_1WB_002")).toBeTruthy();
+    expect(screen.getByText("601R1_1WB_003")).toBeTruthy();
     expect(screen.getByText(/not customer-selectable/)).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Continue to End B" }),
+    ).toBeTruthy();
+  });
+
+  it("stores different End A and End B selections with their own compatibility", async () => {
+    const candidates = compatibleCandidates();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({ candidates }),
+        ok: true,
+      }),
+    );
+    renderPage([publicHoseFixture()]);
+    chooseFixtureHose();
+
+    await screen.findByRole("heading", { name: "Choose End A" });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /Select JIC 37° Female Swivel 0° Straight Hose End/,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Continue to End B" }));
+
+    await screen.findByRole("heading", { name: "Choose End B" });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /Select NPTF Male Fixed Straight Hose End/,
+      }),
+    );
+
+    const endA = screen.getByRole("region", { name: "Selected End A" });
+    const endB = screen.getByRole("region", { name: "Selected End B" });
+    expect(within(endA).getByText("SKU JIC_F_SW_04_04")).toBeTruthy();
+    expect(within(endA).getByText("601R1_1WB_002")).toBeTruthy();
+    expect(within(endB).getByText("SKU NPT_M_FX_04_04")).toBeTruthy();
+    expect(within(endB).getByText("601R1_1WB_003")).toBeTruthy();
+    expect(screen.getByText("Both hose ends are ready")).toBeTruthy();
+  });
+
+  it("copies only an exact eligible End A and leaves later choices unset", async () => {
+    const candidates = compatibleCandidates();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({ candidates }),
+        ok: true,
+      }),
+    );
+    renderPage([publicHoseFixture()]);
+    chooseFixtureHose();
+
+    await screen.findByRole("heading", { name: "Choose End A" });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /Select JIC 37° Female Swivel 0° Straight Hose End/,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Continue to End B" }));
+
+    await screen.findByRole("heading", { name: "Choose End B" });
+    fireEvent.click(screen.getByRole("button", { name: "Use Same as End A" }));
+
+    expect(screen.getAllByText("SKU JIC_F_SW_04_04")).toHaveLength(3);
+    const remaining = screen.getByRole("region", {
+      name: "Remaining configuration",
+    });
+    expect(within(remaining).getAllByText("Not selected")).toHaveLength(4);
+    expect(within(remaining).queryByText(/M0[1-8]/)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to End A" }));
+    expect(screen.getByRole("heading", { name: "Choose End A" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Selected End B" })).toBeTruthy();
+  });
+
+  it("does not offer Same as End A when the exact SKU is unavailable", async () => {
+    const [jic, npt] = compatibleCandidates();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        json: async () => ({ candidates: [jic] }),
+        ok: true,
+      })
+      .mockResolvedValueOnce({
+        json: async () => ({ candidates: [npt] }),
+        ok: true,
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage([publicHoseFixture()]);
+    chooseFixtureHose();
+
+    await screen.findByRole("heading", { name: "Choose End A" });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /Select JIC 37° Female Swivel 0° Straight Hose End/,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Continue to End B" }));
+
+    await screen.findByRole("heading", { name: "Choose End B" });
+    expect(
+      screen.queryByRole("button", { name: "Use Same as End A" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", {
+        name: /Select NPTF Male Fixed Straight Hose End/,
+      }),
+    ).toBeTruthy();
   });
 
   it("explains an invalid deep-linked End A after exact compatibility loads", async () => {

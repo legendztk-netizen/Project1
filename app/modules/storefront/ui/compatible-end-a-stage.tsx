@@ -2,17 +2,18 @@ import { AlertTriangle, ArrowLeft, Check, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
-  filterCompatibleEndACandidates,
-  type CompatibleEndACandidate,
-  type EndAFilters,
+  exactSameHoseEndCandidate,
+  filterCompatibleHoseEndCandidates,
+  type CompatibleHoseEndCandidate,
+  type HoseEndFilters,
 } from "../../configurator/domain/compatible-end-a";
 
-type EndALoadState =
+type HoseEndLoadState =
   | { kind: "loading" }
   | { kind: "error"; message: string }
-  | { candidates: CompatibleEndACandidate[]; kind: "ready" };
+  | { candidates: CompatibleHoseEndCandidate[]; kind: "ready" };
 
-const emptyEndAFilters: EndAFilters = {
+const emptyHoseEndFilters: HoseEndFilters = {
   angle: "",
   connectionDash: "",
   gender: "",
@@ -22,15 +23,15 @@ const emptyEndAFilters: EndAFilters = {
 };
 
 function uniqueCandidateValues(
-  candidates: CompatibleEndACandidate[],
-  select: (candidate: CompatibleEndACandidate) => string | null,
+  candidates: CompatibleHoseEndCandidate[],
+  select: (candidate: CompatibleHoseEndCandidate) => string | null,
 ) {
   return [...new Set(candidates.map(select).filter(Boolean) as string[])].sort(
     (left, right) => left.localeCompare(right, undefined, { numeric: true }),
   );
 }
 
-function EndAFilterSelect({
+function HoseEndFilterSelect({
   label,
   onChange,
   options,
@@ -56,30 +57,35 @@ function EndAFilterSelect({
   );
 }
 
-export function CompatibleEndAStage({
+export function CompatibleHoseEndStage({
+  copyFromEndA = null,
+  endRole,
   hoseSku,
   onBack,
   onSelect,
   releaseId,
-  requestedEndASku,
+  requestedEndSku,
   selected,
 }: {
+  copyFromEndA?: CompatibleHoseEndCandidate | null;
+  endRole: "A" | "B";
   hoseSku: string;
   onBack: () => void;
-  onSelect: (candidate: CompatibleEndACandidate) => void;
+  onSelect: (candidate: CompatibleHoseEndCandidate) => void;
   releaseId: string;
-  requestedEndASku: string | null;
-  selected: CompatibleEndACandidate | null;
+  requestedEndSku: string | null;
+  selected: CompatibleHoseEndCandidate | null;
 }) {
-  const [loadState, setLoadState] = useState<EndALoadState>({
+  const [loadState, setLoadState] = useState<HoseEndLoadState>({
     kind: "loading",
   });
-  const [filters, setFilters] = useState<EndAFilters>(emptyEndAFilters);
+  const [filters, setFilters] = useState<HoseEndFilters>(emptyHoseEndFilters);
   const candidates = loadState.kind === "ready" ? loadState.candidates : [];
   const filteredCandidates = useMemo(
-    () => filterCompatibleEndACandidates(candidates, filters),
+    () => filterCompatibleHoseEndCandidates(candidates, filters),
     [candidates, filters],
   );
+  const sameAsEndA = exactSameHoseEndCandidate(candidates, copyFromEndA);
   const filterOptions = {
     angle: uniqueCandidateValues(candidates, (candidate) => candidate.angle),
     connectionDash: uniqueCandidateValues(
@@ -102,14 +108,14 @@ export function CompatibleEndAStage({
       (candidate) => candidate.compatibilityId === selected.compatibilityId,
     ),
   );
-  const requestedEndACompatible = requestedEndASku
-    ? candidates.some((candidate) => candidate.hoseEndSku === requestedEndASku)
+  const requestedEndCompatible = requestedEndSku
+    ? candidates.some((candidate) => candidate.hoseEndSku === requestedEndSku)
     : false;
 
   useEffect(() => {
     const controller = new AbortController();
     setLoadState({ kind: "loading" });
-    setFilters(emptyEndAFilters);
+    setFilters(emptyHoseEndFilters);
     fetch(
       `/api/configurator/compatible-end-a?release=${encodeURIComponent(releaseId)}&hose=${encodeURIComponent(hoseSku)}`,
       { signal: controller.signal },
@@ -118,7 +124,7 @@ export function CompatibleEndAStage({
         if (!response.ok)
           throw new Error("Compatible fittings could not be loaded.");
         return (await response.json()) as {
-          candidates: CompatibleEndACandidate[];
+          candidates: CompatibleHoseEndCandidate[];
         };
       })
       .then(({ candidates: loadedCandidates }) => {
@@ -136,14 +142,17 @@ export function CompatibleEndAStage({
         });
       });
     return () => controller.abort();
-  }, [hoseSku, releaseId]);
+  }, [endRole, hoseSku, releaseId]);
 
-  function updateFilter(key: keyof EndAFilters, value: string) {
+  function updateFilter(key: keyof HoseEndFilters, value: string) {
     setFilters((current) => ({ ...current, [key]: value }));
   }
 
   return (
-    <section className="end-a-stage" aria-labelledby="end-a-heading">
+    <section
+      className="end-a-stage"
+      aria-labelledby={`end-${endRole.toLowerCase()}-heading`}
+    >
       <header className="end-a-stage-heading">
         <button
           className="button button-secondary button-with-icon"
@@ -151,11 +160,13 @@ export function CompatibleEndAStage({
           type="button"
         >
           <ArrowLeft aria-hidden="true" size={18} />
-          Back to Hose
+          Back to {endRole === "A" ? "Hose" : "End A"}
         </button>
         <div>
-          <span className="eyebrow">Step 2</span>
-          <h2 id="end-a-heading">Choose End A</h2>
+          <span className="eyebrow">Step {endRole === "A" ? "2" : "3"}</span>
+          <h2 id={`end-${endRole.toLowerCase()}-heading`}>
+            Choose End {endRole}
+          </h2>
           <p>
             Every result below is an exact compatible combination for {hoseSku}.
           </p>
@@ -165,7 +176,7 @@ export function CompatibleEndAStage({
       {loadState.kind === "loading" ? (
         <div className="configurator-stage-prompt" role="status">
           <span>2</span>
-          <p>Loading compatible End A fittings...</p>
+          <p>Loading compatible End {endRole} fittings...</p>
         </div>
       ) : loadState.kind === "error" ? (
         <div className="configurator-alert" role="alert">
@@ -178,7 +189,9 @@ export function CompatibleEndAStage({
       ) : candidates.length === 0 ? (
         <div className="end-a-empty">
           <AlertTriangle aria-hidden="true" size={28} />
-          <h3>No compatible End A fittings are published for this hose</h3>
+          <h3>
+            No compatible End {endRole} fittings are published for this hose
+          </h3>
           <p>
             Return to Hose and choose another size. A manual quote can be used
             when the required combination is not listed.
@@ -189,25 +202,45 @@ export function CompatibleEndAStage({
             type="button"
           >
             <ArrowLeft aria-hidden="true" size={18} />
-            Choose another Hose
+            {endRole === "A" ? "Choose another Hose" : "Back to End A"}
           </button>
         </div>
       ) : (
         <>
-          {requestedEndASku ? (
+          {requestedEndSku ? (
             <div className="configurator-alert" role="status">
               <AlertTriangle aria-hidden="true" size={20} />
               <div>
                 <strong>
-                  {requestedEndACompatible
-                    ? "This link points to a compatible End A."
-                    : "This End A is not compatible with the selected hose."}
+                  {requestedEndCompatible
+                    ? `This link points to a compatible End ${endRole}.`
+                    : `This End ${endRole} is not compatible with the selected hose.`}
                 </strong>
                 <p>
-                  Requested SKU: {requestedEndASku}. Choose an exact supported
+                  Requested SKU: {requestedEndSku}. Choose an exact supported
                   result below.
                 </p>
               </div>
+            </div>
+          ) : null}
+
+          {endRole === "B" && sameAsEndA ? (
+            <div className="same-as-end-a">
+              <div>
+                <span className="eyebrow">Exact match available</span>
+                <strong>Use the same fitting as End A</strong>
+                <p>
+                  {sameAsEndA.displayName} · {sameAsEndA.thread} · SKU{" "}
+                  {sameAsEndA.hoseEndSku}
+                </p>
+              </div>
+              <button
+                className="button button-secondary"
+                onClick={() => onSelect(sameAsEndA)}
+                type="button"
+              >
+                Use Same as End A
+              </button>
             </div>
           ) : null}
 
@@ -227,31 +260,31 @@ export function CompatibleEndAStage({
               </span>
             </label>
             <div className="end-a-filter-grid">
-              <EndAFilterSelect
+              <HoseEndFilterSelect
                 label="Interface family"
                 onChange={(value) => updateFilter("interfaceGroup", value)}
                 options={filterOptions.interfaceGroup}
                 value={filters.interfaceGroup ?? ""}
               />
-              <EndAFilterSelect
+              <HoseEndFilterSelect
                 label="Shape"
                 onChange={(value) => updateFilter("angle", value)}
                 options={filterOptions.angle}
                 value={filters.angle ?? ""}
               />
-              <EndAFilterSelect
+              <HoseEndFilterSelect
                 label="Gender"
                 onChange={(value) => updateFilter("gender", value)}
                 options={filterOptions.gender}
                 value={filters.gender ?? ""}
               />
-              <EndAFilterSelect
+              <HoseEndFilterSelect
                 label="Swivel / fixed"
                 onChange={(value) => updateFilter("swivelForm", value)}
                 options={filterOptions.swivelForm}
                 value={filters.swivelForm ?? ""}
               />
-              <EndAFilterSelect
+              <HoseEndFilterSelect
                 label="Connection size"
                 onChange={(value) => updateFilter("connectionDash", value)}
                 options={filterOptions.connectionDash}
@@ -264,7 +297,7 @@ export function CompatibleEndAStage({
                 fittings
               </span>
               <button
-                onClick={() => setFilters(emptyEndAFilters)}
+                onClick={() => setFilters(emptyHoseEndFilters)}
                 type="button"
               >
                 Clear filters
@@ -276,7 +309,9 @@ export function CompatibleEndAStage({
             <div className="configurator-alert" role="status">
               <AlertTriangle aria-hidden="true" size={20} />
               <div>
-                <strong>Your selected End A is hidden by these filters.</strong>
+                <strong>
+                  Your selected End {endRole} is hidden by these filters.
+                </strong>
                 <p>The selection is retained. Clear filters to see it again.</p>
               </div>
             </div>
@@ -292,7 +327,7 @@ export function CompatibleEndAStage({
               </p>
               <button
                 className="button button-secondary"
-                onClick={() => setFilters(emptyEndAFilters)}
+                onClick={() => setFilters(emptyHoseEndFilters)}
                 type="button"
               >
                 Clear filters
@@ -300,7 +335,7 @@ export function CompatibleEndAStage({
             </div>
           ) : (
             <div
-              aria-label="Compatible End A fittings"
+              aria-label={`Compatible End ${endRole} fittings`}
               className="end-a-results"
             >
               {filteredCandidates.map((candidate) => {

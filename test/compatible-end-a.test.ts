@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   attachEndAToDraft,
+  attachEndBToDraft,
+  exactSameHoseEndCandidate,
   filterCompatibleEndACandidates,
 } from "../app/modules/configurator/domain/compatible-end-a";
 import { createHoseConfigurationDraft } from "../app/modules/configurator/domain/hose-configuration-draft";
@@ -111,5 +113,49 @@ describe("compatible End A candidates", () => {
       },
       hose: { sku: "601R1_001" },
     });
+  });
+
+  it("keeps End A and End B as ordered component roles", () => {
+    const base = createHoseConfigurationDraft(publicHoseFixture());
+    if (!base) throw new Error("Expected hose draft");
+    const withEndA = attachEndAToDraft(base, candidates[0]);
+    const complete = attachEndBToDraft(withEndA, candidates[2]);
+
+    expect(complete).toMatchObject({
+      endA: {
+        compatibilityId: "COMP_0011",
+        ferrule: { sku: "601R1_1WB_002" },
+        hoseEnd: { sku: "JIC_F_SW_04_04" },
+      },
+      endB: {
+        compatibilityId: "COMP_0026",
+        ferrule: { sku: "601R1_1WB_002" },
+        hoseEnd: { sku: "NPT_M_FX_04_04" },
+      },
+    });
+  });
+
+  it("offers an exact End A copy but rejects a same-Dash approximation", () => {
+    expect(exactSameHoseEndCandidate(candidates, candidates[0])).toBe(
+      candidates[0],
+    );
+    expect(
+      exactSameHoseEndCandidate([candidates[1], candidates[2]], candidates[0]),
+    ).toBeNull();
+  });
+
+  it("stores identical Hose Ends as separate ordered snapshots", () => {
+    const base = createHoseConfigurationDraft(publicHoseFixture());
+    if (!base) throw new Error("Expected hose draft");
+    const complete = attachEndBToDraft(
+      attachEndAToDraft(base, candidates[0]),
+      candidates[0],
+    );
+
+    expect(complete.endA).not.toBe(complete.endB);
+    expect(complete.endA?.hoseEnd.sku).toBe("JIC_F_SW_04_04");
+    expect(complete.endB?.hoseEnd.sku).toBe("JIC_F_SW_04_04");
+    expect(complete.endA?.compatibilityId).toBe("COMP_0011");
+    expect(complete.endB?.compatibilityId).toBe("COMP_0011");
   });
 });
