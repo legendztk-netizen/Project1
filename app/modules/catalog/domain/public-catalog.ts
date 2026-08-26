@@ -24,6 +24,13 @@ export interface PublicLengthOrdering {
   unit: "ft";
 }
 
+export interface PublicHosePerformance {
+  temperatureMaxC: number | null;
+  temperatureMinC: number | null;
+  workingBar: number | null;
+  workingPsi: number | null;
+}
+
 export type PublicVariantSelection =
   | {
       dash: DashSize | null;
@@ -31,12 +38,9 @@ export type PublicVariantSelection =
       hoseSeries: string;
       kind: "hose";
       nominalIdIn: number | null;
+      performance: PublicHosePerformance;
       primaryStandard: string | null;
       reinforcement: string | null;
-      temperatureMaxC: number | null;
-      temperatureMinC: number | null;
-      workingBar: number | null;
-      workingPsi: number | null;
     }
   | {
       connectionDash: DashSize | null;

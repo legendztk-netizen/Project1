@@ -1443,22 +1443,18 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(buildBlank).toContain("Build a Hose");
     expect(buildBlank).toContain("1. Choose a Hose Series");
     expect(buildBlank).toContain("Choose a series to see its exact hose sizes");
-    expect(buildBlank).not.toContain(
-      'data-hose-sku="601R1_001" aria-pressed="true"',
-    );
-    expect(buildBlank).toMatch(/configurator-next[^>]*disabled/);
+    expect(buildBlank).not.toContain('data-hose-sku="601R1_001"');
+    expect(buildBlank).not.toContain("Hose selection ready");
 
-    const buildSelectedResponse = await fetch(
+    const buildCurrentLinkResponse = await fetch(
       `${origin}/build-a-hose?hose=601R1_001`,
     );
-    const buildSelected = await buildSelectedResponse.text();
-    expect(buildSelectedResponse.status).toBe(200);
-    expect(buildSelected).toContain('data-hose-sku="601R1_001"');
-    expect(buildSelected).toContain("601R1 Hydraulic Hose");
-    expect(buildSelected).toContain("3626 psi");
-    expect(buildSelected).toContain("-40°C to 100°C");
-    expect(buildSelected).not.toMatch(/configurator-next[^>]*disabled/);
-    expect(buildSelected).toContain("has not been added to your Quote List");
+    const buildCurrentLink = await buildCurrentLinkResponse.text();
+    expect(buildCurrentLinkResponse.status).toBe(200);
+    expect(buildCurrentLink).toContain("This link points to a current hose.");
+    expect(buildCurrentLink).not.toContain('data-hose-sku="601R1_001"');
+    expect(buildCurrentLink).not.toContain("Hose selection ready");
+    expect(buildCurrentLink).toContain("has not been added to your Quote List");
 
     const buildUnavailable = await (
       await fetch(`${origin}/build-a-hose?hose=601R1_002`)
@@ -1985,6 +1981,44 @@ describe("Cloudflare Worker route surfaces", () => {
       replacementPublishResponse.status,
       await replacementPublishResponse.text(),
     ).toBe(302);
+
+    const legacyImportId = `legacy-hose-import-${crypto.randomUUID()}`;
+    const legacyReleaseId = `legacy-hose-release-${crypto.randomUUID()}`;
+    const legacySku = `LEGACY_HOSE_${crypto.randomUUID()}`;
+    const legacyNow = new Date().toISOString();
+    runLocalD1(
+      `INSERT INTO catalog_imports (
+         id, kind, status, summary_json, error_count, warning_count,
+         created_at, completed_at
+       ) VALUES (
+         '${legacyImportId}', 'workbook', 'completed', '{}', 0, 0,
+         '${legacyNow}', '${legacyNow}'
+       );
+       INSERT INTO catalog_skus (
+         id, import_id, sku, source_worksheet, product_type, hose_series,
+         catalog_publication_status, rfq_eligibility, technical_data_status,
+         supply_availability
+       ) VALUES (
+         'legacy-hose-sku-${crypto.randomUUID()}', '${legacyImportId}',
+         '${legacySku}', '01_胶管主数据', 'hose', 'LEGACY', 'Published',
+         'Eligible', 'Complete', 'available_for_quote'
+       );
+       INSERT INTO catalog_releases (
+         id, release_number, status, source_import_id, version, created_at,
+         published_at
+       ) VALUES (
+         '${legacyReleaseId}', 'LEGACY-${legacyReleaseId}', 'superseded',
+         '${legacyImportId}', 1, '${legacyNow}', '${legacyNow}'
+       );`,
+    );
+    const supersededBuild = await (
+      await fetch(`${origin}/build-a-hose?hose=${legacySku}`)
+    ).text();
+    expect(supersededBuild).toContain(
+      "This hose belongs to an older catalog release.",
+    );
+    expect(supersededBuild).toContain(legacySku);
+
     const unavailableUpdateResponse = await fetch(`${origin}/quote-list`, {
       body: update,
       headers: { cookie: quoteCookie },

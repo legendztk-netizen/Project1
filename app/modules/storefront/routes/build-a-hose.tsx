@@ -1,6 +1,5 @@
 import {
   AlertTriangle,
-  ArrowRight,
   Check,
   Gauge,
   Layers3,
@@ -25,7 +24,9 @@ import { cloudflareContext } from "#workers/context";
 
 type DirectSelectionState =
   | { kind: "none" }
+  | { kind: "current"; sku: string }
   | { kind: "invalid"; sku: string }
+  | { kind: "superseded"; sku: string }
   | { kind: "unavailable"; sku: string };
 
 export async function loader({ context, request }: Route.LoaderArgs) {
@@ -42,21 +43,23 @@ export async function loader({ context, request }: Route.LoaderArgs) {
     : null;
 
   let directSelection: DirectSelectionState = { kind: "none" };
-  let initialSku: string | null = null;
   if (requestedSku) {
-    if (!requested) {
-      directSelection = { kind: "invalid", sku: requestedSku };
-    } else if (!requested.canAddToQuote) {
+    if (requested && !requested.canAddToQuote) {
       directSelection = { kind: "unavailable", sku: requestedSku };
+    } else if (requested) {
+      directSelection = { kind: "current", sku: requestedSku };
+    } else if (
+      await repository.wasHosePublishedInSupersededRelease(requestedSku)
+    ) {
+      directSelection = { kind: "superseded", sku: requestedSku };
     } else {
-      initialSku = requested.sku;
+      directSelection = { kind: "invalid", sku: requestedSku };
     }
   }
 
   return {
     directSelection,
     families: groupCatalogFamilies(eligibleHoses),
-    initialSku,
     publishedHoseCount: hoses.length,
     releaseNumber: hoses[0]?.releaseNumber ?? null,
   };
@@ -83,39 +86,36 @@ function sizeLabel(item: PublicCatalogItem) {
 function pressureLabel(item: PublicCatalogItem) {
   const selection = item.variantSelection;
   if (selection?.kind !== "hose") return "Confirmed during review";
-  return [
-    selection.workingPsi ? `${selection.workingPsi} psi` : null,
-    selection.workingBar ? `${selection.workingBar} bar` : null,
+  const label = [
+    selection.performance.workingPsi
+      ? `${selection.performance.workingPsi} psi`
+      : null,
+    selection.performance.workingBar
+      ? `${selection.performance.workingBar} bar`
+      : null,
   ]
     .filter(Boolean)
     .join(" / ");
+  return label || "Confirmed during review";
 }
 
 function temperatureLabel(item: PublicCatalogItem) {
   const selection = item.variantSelection;
   if (
     selection?.kind !== "hose" ||
-    selection.temperatureMinC === null ||
-    selection.temperatureMaxC === null
+    selection.performance.temperatureMinC === null ||
+    selection.performance.temperatureMaxC === null
   ) {
     return "Confirmed during review";
   }
-  return `${selection.temperatureMinC}°C to ${selection.temperatureMaxC}°C`;
+  return `${selection.performance.temperatureMinC}°C to ${selection.performance.temperatureMaxC}°C`;
 }
 
 export default function BuildAHose({ loaderData }: Route.ComponentProps) {
-  const initialItem = loaderData.initialSku
-    ? loaderData.families
-        .flatMap((family) => family.variants)
-        .find((item) => item.sku === loaderData.initialSku)
-    : null;
   const [selectedFamilyKey, setSelectedFamilyKey] = useState<string | null>(
-    initialItem?.familyKey ?? null,
+    null,
   );
-  const [selectedSku, setSelectedSku] = useState<string | null>(
-    initialItem?.sku ?? null,
-  );
-  const [selectionConfirmed, setSelectionConfirmed] = useState(false);
+  const [selectedSku, setSelectedSku] = useState<string | null>(null);
   const selectedFamily = loaderData.families.find(
     (family) => family.familyKey === selectedFamilyKey,
   );
@@ -134,13 +134,11 @@ export default function BuildAHose({ loaderData }: Route.ComponentProps) {
   function chooseFamily(familyKey: string) {
     setSelectedFamilyKey(familyKey);
     setSelectedSku(null);
-    setSelectionConfirmed(false);
   }
 
   function chooseHose(item: PublicCatalogItem) {
     if (!item.canAddToQuote) return;
     setSelectedSku(item.sku);
-    setSelectionConfirmed(false);
   }
 
   return (
@@ -179,13 +177,19 @@ export default function BuildAHose({ loaderData }: Route.ComponentProps) {
             <AlertTriangle aria-hidden="true" size={20} />
             <div>
               <strong>
-                {loaderData.directSelection.kind === "unavailable"
-                  ? "This hose is not currently selectable."
-                  : "This hose link is not in the current catalog."}
+                {loaderData.directSelection.kind === "current"
+                  ? "This link points to a current hose."
+                  : loaderData.directSelection.kind === "unavailable"
+                    ? "This hose is not currently selectable."
+                    : loaderData.directSelection.kind === "superseded"
+                      ? "This hose belongs to an older catalog release."
+                      : "This hose link is not in the current catalog."}
               </strong>
               <p>
-                Choose an available series and size below to start a new
-                configuration. Requested SKU: {loaderData.directSelection.sku}
+                {loaderData.directSelection.kind === "current"
+                  ? "Select its series and exact size below to start a new configuration."
+                  : "Choose an available series and size below to start a new configuration."}{" "}
+                Requested SKU: {loaderData.directSelection.sku}
               </p>
             </div>
           </div>
@@ -356,18 +360,13 @@ export default function BuildAHose({ loaderData }: Route.ComponentProps) {
                     Select a series, then an exact inside diameter.
                   </p>
                 )}
-                <button
-                  className="button button-primary configurator-next"
-                  disabled={!draft}
-                  onClick={() => setSelectionConfirmed(true)}
-                  type="button"
-                >
-                  Continue to End A <ArrowRight aria-hidden="true" size={18} />
-                </button>
-                {selectionConfirmed && draft ? (
-                  <p className="configurator-confirmation" role="status">
-                    <Check aria-hidden="true" size={16} /> Hose saved in this
-                    page session.
+                {draft ? (
+                  <p className="configurator-ready" role="status">
+                    <Check aria-hidden="true" size={17} />
+                    <span>
+                      <strong>Hose selection ready</strong>
+                      <small>End A is the next configuration step.</small>
+                    </span>
                   </p>
                 ) : null}
                 <p className="configurator-session-note">

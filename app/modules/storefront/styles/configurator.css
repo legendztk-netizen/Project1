@@ -312,20 +312,25 @@
   text-align: right;
 }
 
-.configurator-next {
-  width: 100%;
-  min-height: 48px;
-  margin-top: 18px;
-}
-
-.configurator-confirmation {
+.configurator-ready {
   display: flex;
   align-items: center;
-  gap: 7px;
-  margin: 12px 0 0;
+  gap: 10px;
+  margin: 18px 0 0;
+  padding: 13px 14px;
   color: var(--success);
+  background: #eef8f3;
+  border: 1px solid #badbca;
   font-size: 0.74rem;
-  font-weight: 700;
+}
+
+.configurator-ready > span {
+  display: grid;
+  gap: 2px;
+}
+
+.configurator-ready small {
+  color: #4d6d5e;
 }
 
 .configurator-session-note {

@@ -427,12 +427,14 @@ export function publicCatalogItemFromRow(
             hoseSeries: row.hose_series ?? row.sku.split("_")[0] ?? row.sku,
             kind: "hose",
             nominalIdIn: row.nominal_id_in,
+            performance: {
+              temperatureMaxC: row.hose_temp_max_c,
+              temperatureMinC: row.hose_temp_min_c,
+              workingBar: row.working_bar,
+              workingPsi: row.working_psi,
+            },
             primaryStandard: row.primary_standard,
             reinforcement: row.reinforcement,
-            temperatureMaxC: row.hose_temp_max_c,
-            temperatureMinC: row.hose_temp_min_c,
-            workingBar: row.working_bar,
-            workingPsi: row.working_psi,
           }
         : row.product_type === "hose_end"
           ? {
@@ -563,6 +565,22 @@ export function createD1PublicCatalogRepository(database: D1Database) {
     },
     async findItem(sku: string) {
       return (await allItems()).find((item) => item.sku === sku) ?? null;
+    },
+    async wasHosePublishedInSupersededRelease(sku: string) {
+      const row = await database
+        .prepare(
+          `SELECT 1 AS found
+           FROM catalog_releases r
+           INNER JOIN catalog_skus s ON s.import_id = r.source_import_id
+           WHERE r.status = 'superseded'
+             AND s.product_type = 'hose'
+             AND s.catalog_publication_status = 'Published'
+             AND s.sku = ?
+           LIMIT 1`,
+        )
+        .bind(sku)
+        .first<{ found: number }>();
+      return row?.found === 1;
     },
   };
 }

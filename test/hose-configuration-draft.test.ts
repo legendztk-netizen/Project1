@@ -35,12 +35,14 @@ function hose(overrides: Partial<PublicCatalogItem> = {}): PublicCatalogItem {
       hoseSeries: "601R1",
       kind: "hose",
       nominalIdIn: 0.1875,
+      performance: {
+        temperatureMaxC: 100,
+        temperatureMinC: -40,
+        workingBar: 250,
+        workingPsi: 3630,
+      },
       primaryStandard: "SAE 100 R1AT",
       reinforcement: "Single wire braid",
-      temperatureMaxC: 100,
-      temperatureMinC: -40,
-      workingBar: 250,
-      workingPsi: 3630,
     },
     ...overrides,
   };
@@ -57,16 +59,17 @@ describe("page-session hose configuration draft", () => {
         familyName: "601R1 Hydraulic Hose",
         mediaKey: "601R1",
         nominalIdIn: 0.1875,
+        performance: {
+          temperatureMaxC: 100,
+          temperatureMinC: -40,
+          workingBar: 250,
+          workingPsi: 3630,
+        },
         primaryStandard: "SAE 100 R1AT",
         reinforcement: "Single wire braid",
         series: "601R1",
         sku: "601R1_001",
-        temperatureMaxC: 100,
-        temperatureMinC: -40,
-        workingBar: 250,
-        workingPsi: 3630,
       },
-      status: "hose_selected",
     });
   });
 
@@ -79,5 +82,35 @@ describe("page-session hose configuration draft", () => {
         hose({ productType: "adapter", variantSelection: null }),
       ),
     ).toBe(null);
+  });
+
+  it("replaces the exact hose snapshot when the page-session selection changes", () => {
+    const nextSelection = hose().variantSelection;
+    if (nextSelection?.kind !== "hose") throw new Error("Expected hose data");
+    const first = createHoseConfigurationDraft(hose());
+    const second = createHoseConfigurationDraft(
+      hose({
+        displayName: "601R1 Hydraulic Hose -4",
+        sku: "601R1_002",
+        variantSelection: {
+          ...nextSelection,
+          dash: "-4",
+          nominalIdIn: 0.25,
+          performance: {
+            ...nextSelection.performance,
+            workingBar: 225,
+            workingPsi: 3260,
+          },
+        },
+      }),
+    );
+
+    expect(first?.hose.sku).toBe("601R1_001");
+    expect(second?.hose).toMatchObject({
+      dash: "-4",
+      nominalIdIn: 0.25,
+      performance: { workingBar: 225, workingPsi: 3260 },
+      sku: "601R1_002",
+    });
   });
 });
