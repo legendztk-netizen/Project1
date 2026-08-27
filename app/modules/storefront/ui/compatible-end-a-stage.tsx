@@ -4,9 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import {
   exactSameHoseEndCandidate,
   filterCompatibleHoseEndCandidates,
+  isExactCompatibleCandidate,
   type CompatibleHoseEndCandidate,
   type HoseEndFilters,
 } from "../../configurator/domain/compatible-end-a";
+import { fetchCompatibleHoseEndCandidates } from "../infrastructure/compatible-hose-end-client";
 
 type HoseEndLoadState =
   | { kind: "loading" }
@@ -57,11 +59,35 @@ function HoseEndFilterSelect({
   );
 }
 
+function RetainedEndUnavailableAlert({
+  endRole,
+  selected,
+}: {
+  endRole: "A" | "B";
+  selected: CompatibleHoseEndCandidate;
+}) {
+  return (
+    <div className="configurator-alert" role="alert">
+      <AlertTriangle aria-hidden="true" size={20} />
+      <div>
+        <strong>
+          Retained End {endRole} is not valid for the current Hose.
+        </strong>
+        <p>
+          SKU {selected.hoseEndSku} remains visible in the draft but must be
+          replaced with an exact compatible result below.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function CompatibleHoseEndStage({
   copyFromEndA = null,
   endRole,
   hoseSku,
   onBack,
+  onCandidatesLoaded,
   onSelect,
   releaseId,
   requestedEndSku,
@@ -71,6 +97,11 @@ export function CompatibleHoseEndStage({
   endRole: "A" | "B";
   hoseSku: string;
   onBack: () => void;
+  onCandidatesLoaded?: (snapshot: {
+    candidates: CompatibleHoseEndCandidate[];
+    hoseSku: string;
+    releaseId: string;
+  }) => void;
   onSelect: (candidate: CompatibleHoseEndCandidate) => void;
   releaseId: string;
   requestedEndSku: string | null;
@@ -118,8 +149,15 @@ export function CompatibleHoseEndStage({
   };
   const selectedHidden = Boolean(
     selected &&
-    !filteredCandidates.some(
-      (candidate) => candidate.compatibilityId === selected.compatibilityId,
+    !filteredCandidates.some((candidate) =>
+      isExactCompatibleCandidate(candidate, selected),
+    ),
+  );
+  const selectedUnavailable = Boolean(
+    selected &&
+    loadState.kind === "ready" &&
+    !candidates.some((candidate) =>
+      isExactCompatibleCandidate(candidate, selected),
     ),
   );
   const requestedEndCompatible = requestedEndSku
@@ -130,19 +168,18 @@ export function CompatibleHoseEndStage({
     const controller = new AbortController();
     setLoadState({ kind: "loading" });
     setFilters(emptyHoseEndFilters);
-    fetch(
-      `/api/configurator/compatible-end-a?release=${encodeURIComponent(releaseId)}&hose=${encodeURIComponent(hoseSku)}`,
-      { signal: controller.signal },
-    )
-      .then(async (response) => {
-        if (!response.ok)
-          throw new Error("Compatible fittings could not be loaded.");
-        return (await response.json()) as {
-          candidates: CompatibleHoseEndCandidate[];
-        };
-      })
-      .then(({ candidates: loadedCandidates }) => {
+    fetchCompatibleHoseEndCandidates({
+      hoseSku,
+      releaseId,
+      signal: controller.signal,
+    })
+      .then((loadedCandidates) => {
         setLoadState({ candidates: loadedCandidates, kind: "ready" });
+        onCandidatesLoaded?.({
+          candidates: loadedCandidates,
+          hoseSku,
+          releaseId,
+        });
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === "AbortError")
@@ -156,7 +193,7 @@ export function CompatibleHoseEndStage({
         });
       });
     return () => controller.abort();
-  }, [endRole, hoseSku, releaseId]);
+  }, [endRole, hoseSku, onCandidatesLoaded, releaseId]);
 
   function updateFilter(key: keyof HoseEndFilters, value: string) {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -204,25 +241,33 @@ export function CompatibleHoseEndStage({
           </div>
         </div>
       ) : candidates.length === 0 ? (
-        <div className="end-a-empty">
-          <AlertTriangle aria-hidden="true" size={28} />
-          <h3>
-            No compatible End {endRole} fittings are published for this hose
-          </h3>
-          <p>
-            Return to {stageCopy.returnTarget} and choose another option. A
-            manual quote can be used when the required combination is not
-            listed.
-          </p>
-          <button
-            className="button button-secondary button-with-icon"
-            onClick={onBack}
-            type="button"
-          >
-            <ArrowLeft aria-hidden="true" size={18} />
-            {stageCopy.emptyBackLabel}
-          </button>
-        </div>
+        <>
+          {selectedUnavailable && selected ? (
+            <RetainedEndUnavailableAlert
+              endRole={endRole}
+              selected={selected}
+            />
+          ) : null}
+          <div className="end-a-empty">
+            <AlertTriangle aria-hidden="true" size={28} />
+            <h3>
+              No compatible End {endRole} fittings are published for this hose
+            </h3>
+            <p>
+              Return to {stageCopy.returnTarget} and choose another option. A
+              manual quote can be used when the required combination is not
+              listed.
+            </p>
+            <button
+              className="button button-secondary button-with-icon"
+              onClick={onBack}
+              type="button"
+            >
+              <ArrowLeft aria-hidden="true" size={18} />
+              {stageCopy.emptyBackLabel}
+            </button>
+          </div>
+        </>
       ) : (
         <>
           {requestedEndSku ? (
@@ -323,7 +368,12 @@ export function CompatibleHoseEndStage({
             </div>
           </div>
 
-          {selectedHidden ? (
+          {selectedUnavailable && selected ? (
+            <RetainedEndUnavailableAlert
+              endRole={endRole}
+              selected={selected}
+            />
+          ) : selectedHidden ? (
             <div className="configurator-alert" role="status">
               <AlertTriangle aria-hidden="true" size={20} />
               <div>
@@ -357,8 +407,9 @@ export function CompatibleHoseEndStage({
               className="end-a-results"
             >
               {filteredCandidates.map((candidate) => {
-                const active =
-                  candidate.compatibilityId === selected?.compatibilityId;
+                const active = Boolean(
+                  selected && isExactCompatibleCandidate(candidate, selected),
+                );
                 return (
                   <button
                     aria-label={`Select ${candidate.displayName}, ${candidate.thread}, connection ${candidate.connectionDash}`}

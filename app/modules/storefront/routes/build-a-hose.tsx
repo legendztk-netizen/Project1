@@ -11,6 +11,18 @@ import { Link } from "react-router";
 
 import type { Route } from "./+types/build-a-hose";
 import {
+  captureAssemblySelectionBasis,
+  captureHoseSelectionBasis,
+  captureMeasurementSelectionBasis,
+  captureProtectionSelectionBasis,
+  isBlockingDraftValidationIssue,
+  matchesHoseSelectionBasis,
+  validateAssemblyDraft,
+  type CompatibleCandidateSnapshot,
+  type DraftSelectionProvenance,
+  type DraftValidationIssue,
+} from "../../configurator/domain/assembly-draft-validation";
+import {
   attachClockingToDraft,
   confirmClockingForDraft,
   evaluateAssemblyClockingApplicability,
@@ -42,6 +54,7 @@ import {
 } from "../../catalog/domain/public-catalog";
 import { createD1PublicCatalogRepository } from "../../catalog/infrastructure/d1-public-catalog-repository";
 import { hoseSizeLabel } from "../domain/variant-label";
+import { fetchCompatibleHoseEndCandidates } from "../infrastructure/compatible-hose-end-client";
 import { CatalogMedia } from "../ui/catalog-media";
 import { ClockingStage } from "../ui/clocking-stage";
 import { CompatibleHoseEndStage } from "../ui/compatible-end-a-stage";
@@ -226,6 +239,54 @@ type BuildAHoseLoaderData = Awaited<ReturnType<typeof loader>>;
 type ConfiguratorStage =
   "hose" | "end-a" | "end-b" | "length" | "clocking" | "protection";
 
+const validationKindLabel: Record<DraftValidationIssue["kind"], string> = {
+  manual_path: "Manual review",
+  reconfirmation: "Reconfirmation required",
+  retained_invalid: "Retained invalid selection",
+  technical_review: "Technical review",
+};
+
+const validationOwnerLabel: Record<DraftValidationIssue["owner"], string> = {
+  hose: "Hose",
+  "end-a": "End A",
+  "end-b": "End B",
+  length: "Finished Length",
+  clocking: "Clocking",
+  protection: "Protection",
+};
+
+function DraftValidationNotice({ issues }: { issues: DraftValidationIssue[] }) {
+  if (issues.length === 0) return null;
+  return (
+    <section
+      aria-label="Configuration validation issues"
+      className="draft-validation-notice"
+    >
+      <header>
+        <AlertTriangle aria-hidden="true" size={22} />
+        <div>
+          <h2>Configuration needs attention</h2>
+          <p>
+            Your previous choices are retained. Nothing has been removed or
+            replaced automatically.
+          </p>
+        </div>
+      </header>
+      <ul>
+        {issues.map((issue) => (
+          <li data-validation-owner={issue.owner} key={issue.code}>
+            <span>{validationOwnerLabel[issue.owner]}</span>
+            <div>
+              <strong>{validationKindLabel[issue.kind]}</strong>
+              <p>{issue.message}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function ConfiguredEndSummary({
   end,
   role,
@@ -301,6 +362,8 @@ export function BuildAHoseView({
     null,
   );
   const [selectedSku, setSelectedSku] = useState<string | null>(null);
+  const [retainedHoseItem, setRetainedHoseItem] =
+    useState<PublicCatalogItem | null>(null);
   const [selectedEndA, setSelectedEndA] =
     useState<CompatibleHoseEndCandidate | null>(null);
   const [selectedEndB, setSelectedEndB] =
@@ -313,16 +376,73 @@ export function BuildAHoseView({
     useState<ClockingDraftSnapshot | null>(null);
   const [protectionApplicationSelection, setProtectionApplicationSelection] =
     useState<ProtectionApplicationSelection | null>(null);
+  const [selectionProvenance, setSelectionProvenance] =
+    useState<DraftSelectionProvenance>({});
+  const [compatibleCandidateSnapshot, setCompatibleCandidateSnapshot] =
+    useState<CompatibleCandidateSnapshot | null>(null);
+  const [compatibilityCheckFailure, setCompatibilityCheckFailure] = useState<
+    DraftSelectionProvenance["endA"] | null
+  >(null);
   const selectedFamily = loaderData.families.find(
     (family) => family.familyKey === selectedFamilyKey,
   );
-  const selectedItem = selectedFamily?.variants.find(
+  const currentHoses = useMemo(
+    () => loaderData.families.flatMap(({ variants }) => variants),
+    [loaderData.families],
+  );
+  const currentSelectedItem = currentHoses.find(
     (item) => item.sku === selectedSku,
   );
+  const selectedItem = currentSelectedItem ?? retainedHoseItem;
   const hoseDraft = useMemo(
     () => (selectedItem ? createHoseConfigurationDraft(selectedItem) : null),
     [selectedItem],
   );
+  const currentHoseBasis = hoseDraft
+    ? captureHoseSelectionBasis(hoseDraft)
+    : null;
+  const currentCompatibilitySnapshotAvailable = Boolean(
+    currentHoseBasis &&
+    ((compatibleCandidateSnapshot?.hoseSku === currentHoseBasis.hoseSku &&
+      compatibleCandidateSnapshot.releaseId ===
+        currentHoseBasis.catalogReleaseId) ||
+      matchesHoseSelectionBasis(
+        compatibilityCheckFailure ?? undefined,
+        currentHoseBasis,
+      )),
+  );
+  const retainedEndNeedsCompatibilityRefresh = Boolean(
+    currentHoseBasis &&
+    (selectedEndA || selectedEndB) &&
+    !currentCompatibilitySnapshotAvailable,
+  );
+
+  useEffect(() => {
+    if (!hoseDraft || !retainedEndNeedsCompatibilityRefresh) return;
+    const controller = new AbortController();
+    const hoseBasis = captureHoseSelectionBasis(hoseDraft);
+    setCompatibleCandidateSnapshot(null);
+    setCompatibilityCheckFailure(null);
+    fetchCompatibleHoseEndCandidates({
+      hoseSku: hoseBasis.hoseSku,
+      releaseId: hoseBasis.catalogReleaseId,
+      signal: controller.signal,
+    })
+      .then((candidates) => {
+        setCompatibleCandidateSnapshot({
+          candidates,
+          hoseSku: hoseBasis.hoseSku,
+          releaseId: hoseBasis.catalogReleaseId,
+        });
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+        setCompatibilityCheckFailure(hoseBasis);
+      });
+    return () => controller.abort();
+  }, [hoseDraft, retainedEndNeedsCompatibilityRefresh]);
   const draft = useMemo(() => {
     if (!hoseDraft) return null;
     const withEndA = selectedEndA
@@ -359,6 +479,39 @@ export function BuildAHoseView({
     ? evaluateAssemblyClockingApplicability(draft)
     : { status: "not_applicable" as const };
   const clockingRequired = clockingApplicability.status === "required";
+  const draftValidation = useMemo(
+    () =>
+      draft
+        ? validateAssemblyDraft(draft, selectionProvenance, {
+            activeCatalogRelease: currentHoses[0]
+              ? {
+                  id: currentHoses[0].releaseId,
+                  number: currentHoses[0].releaseNumber,
+                }
+              : null,
+            assemblyEstimateSchedule: loaderData.assemblyEstimateSchedule,
+            clockingConvention: loaderData.clockingConvention,
+            compatibleCandidates: compatibleCandidateSnapshot,
+            compatibilityCheckFailure,
+            currentHoses,
+            installedProtectionRules: loaderData.installedProtectionRules,
+            installedProtections: loaderData.installedProtections,
+            measurementMethods: loaderData.measurementMethods,
+          })
+        : { blocking: false, issues: [], status: "current" as const },
+    [
+      compatibleCandidateSnapshot,
+      compatibilityCheckFailure,
+      currentHoses,
+      draft,
+      loaderData.assemblyEstimateSchedule,
+      loaderData.clockingConvention,
+      loaderData.installedProtectionRules,
+      loaderData.installedProtections,
+      loaderData.measurementMethods,
+      selectionProvenance,
+    ],
+  );
   const hasSelectableHose = loaderData.families.some((family) =>
     family.variants.some((variant) => variant.canAddToQuote),
   );
@@ -378,23 +531,14 @@ export function BuildAHoseView({
   }
 
   function chooseFamily(familyKey: string) {
-    if (familyKey !== selectedFamilyKey) retainClockingForReconfirmation();
     setSelectedFamilyKey(familyKey);
-    setSelectedSku(null);
-    setSelectedEndA(null);
-    setSelectedEndB(null);
-    setMeasurementSelection(null);
-    setFinishedLength(null);
   }
 
   function chooseHose(item: PublicCatalogItem) {
     if (!item.canAddToQuote) return;
     if (item.sku !== selectedSku) retainClockingForReconfirmation();
     setSelectedSku(item.sku);
-    setSelectedEndA(null);
-    setSelectedEndB(null);
-    setMeasurementSelection(null);
-    setFinishedLength(null);
+    setRetainedHoseItem(item);
   }
 
   function continueToEndA() {
@@ -424,6 +568,12 @@ export function BuildAHoseView({
       retainClockingForReconfirmation();
     }
     setSelectedEndA(candidate);
+    if (hoseDraft) {
+      setSelectionProvenance((current) => ({
+        ...current,
+        endA: captureHoseSelectionBasis(hoseDraft),
+      }));
+    }
   }
 
   function chooseEndB(candidate: CompatibleHoseEndCandidate) {
@@ -435,6 +585,12 @@ export function BuildAHoseView({
       retainClockingForReconfirmation();
     }
     setSelectedEndB(candidate);
+    if (hoseDraft) {
+      setSelectionProvenance((current) => ({
+        ...current,
+        endB: captureHoseSelectionBasis(hoseDraft),
+      }));
+    }
   }
 
   function continueToLength() {
@@ -448,13 +604,22 @@ export function BuildAHoseView({
 
   function chooseMeasurement(selection: MeasurementSelectionSnapshot) {
     setMeasurementSelection(selection);
-    setFinishedLength(null);
   }
 
   function saveFinishedLength(length: FinishedAssemblyLengthSnapshot) {
+    if (!draft?.endA || !draft.endB || !measurementSelection) return;
     setFinishedLength(length);
-    setProtectionApplicationSelection(null);
-    if (draft && requiresAssemblyClocking(draft)) setStage("clocking");
+    const assemblyBasis = captureAssemblySelectionBasis(draft);
+    if (assemblyBasis) {
+      setSelectionProvenance((current) => ({
+        ...current,
+        finishedLength: {
+          ...assemblyBasis,
+          measurement: captureMeasurementSelectionBasis(measurementSelection),
+        },
+      }));
+    }
+    if (requiresAssemblyClocking(draft)) setStage("clocking");
     else setStage("protection");
   }
 
@@ -467,7 +632,6 @@ export function BuildAHoseView({
     const confirmed = confirmClockingForDraft(draft, selection);
     if (confirmed) {
       setClockingSelection(confirmed);
-      setProtectionApplicationSelection(null);
       setStage("protection");
     }
   }
@@ -480,14 +644,44 @@ export function BuildAHoseView({
     selection: ProtectionApplicationSelection,
   ) {
     setProtectionApplicationSelection(selection);
+    if (!draft?.finishedLength) return;
+    const selectedDraft = attachProtectionAndApplicationToDraft(
+      draft,
+      selection,
+    );
+    const protectionBasis = captureProtectionSelectionBasis(
+      selectedDraft,
+      loaderData.assemblyEstimateSchedule,
+    );
+    if (!protectionBasis) return;
+    setSelectionProvenance((current) => ({
+      ...current,
+      protection: protectionBasis,
+    }));
   }
 
+  const receiveCompatibleCandidates = useMemo(
+    () => (snapshot: CompatibleCandidateSnapshot) => {
+      setCompatibleCandidateSnapshot(snapshot);
+      setCompatibilityCheckFailure(null);
+    },
+    [],
+  );
+
+  const hasBlockingIssueFor = (...owners: DraftValidationIssue["owner"][]) =>
+    draftValidation.issues.some(
+      (issue) =>
+        owners.includes(issue.owner) && isBlockingDraftValidationIssue(issue),
+    );
+
   const nextAction =
-    stage === "hose" && draft
+    stage === "hose" && draft && !hasBlockingIssueFor("hose")
       ? { label: "Continue to End A", onClick: continueToEndA }
-      : stage === "end-a" && draft?.endA
+      : stage === "end-a" && draft?.endA && !hasBlockingIssueFor("end-a")
         ? { label: "Continue to End B", onClick: continueToEndB }
-        : stage === "end-b" && draft?.endB
+        : stage === "end-b" &&
+            draft?.endB &&
+            !hasBlockingIssueFor("end-a", "end-b")
           ? {
               label: "Continue to Finished Length",
               onClick: continueToLength,
@@ -552,6 +746,8 @@ export function BuildAHoseView({
             </div>
           </div>
         ) : null}
+
+        <DraftValidationNotice issues={draftValidation.issues} />
 
         {loaderData.publishedHoseCount === 0 ? (
           <section className="configurator-empty">
@@ -687,6 +883,7 @@ export function BuildAHoseView({
                     endRole="A"
                     hoseSku={hoseDraft?.hose.sku ?? ""}
                     onBack={backToHose}
+                    onCandidatesLoaded={receiveCompatibleCandidates}
                     onSelect={chooseEndA}
                     releaseId={hoseDraft?.catalogRelease.id ?? ""}
                     requestedEndSku={loaderData.requestedEndASku}
@@ -699,6 +896,7 @@ export function BuildAHoseView({
                       endRole="B"
                       hoseSku={hoseDraft?.hose.sku ?? ""}
                       onBack={backToEndA}
+                      onCandidatesLoaded={receiveCompatibleCandidates}
                       onSelect={chooseEndB}
                       releaseId={hoseDraft?.catalogRelease.id ?? ""}
                       requestedEndSku={null}
@@ -816,7 +1014,9 @@ export function BuildAHoseView({
                       </span>
                     </p>
                   ) : null}
-                  {draft?.endA && stage === "end-a" ? (
+                  {draft?.endA &&
+                  stage === "end-a" &&
+                  !hasBlockingIssueFor("end-a") ? (
                     <p className="configurator-ready" role="status">
                       <Check aria-hidden="true" size={17} />
                       <span>
@@ -827,7 +1027,9 @@ export function BuildAHoseView({
                       </span>
                     </p>
                   ) : null}
-                  {draft?.endB && stage === "end-b" ? (
+                  {draft?.endB &&
+                  stage === "end-b" &&
+                  !hasBlockingIssueFor("end-a", "end-b") ? (
                     <p className="configurator-ready" role="status">
                       <Check aria-hidden="true" size={17} />
                       <span>

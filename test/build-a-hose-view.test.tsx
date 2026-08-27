@@ -823,6 +823,192 @@ describe("Build a Hose view", () => {
     expect(screen.getByText("72 in")).toBeTruthy();
   });
 
+  it("retains every downstream selection, assigns issues by step, and clears them when the Hose is restored", async () => {
+    const first = publicHoseFixture();
+    const firstSelection = first.variantSelection;
+    if (firstSelection?.kind !== "hose") throw new Error("Expected hose data");
+    const second = publicHoseFixture({
+      displayName: "601R1 Hydraulic Hose -4",
+      sku: "601R1_002",
+      variantSelection: {
+        ...firstSelection,
+        dash: "-4",
+        nominalIdIn: 0.25,
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({ candidates: compatibleCandidates() }),
+        ok: true,
+      }),
+    );
+    renderPage([first, second]);
+    await reachFinishedLengthStage();
+    saveM04Length();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Nylon Protective Sleeving/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save Protection" }));
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Back to Finished Length" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Back to End B" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to End A" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to Hose" }));
+    fireEvent.click(screen.getByRole("button", { name: /Select 1\/4 in/ }));
+
+    expect(screen.getByRole("region", { name: "Selected End A" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Selected End B" })).toBeTruthy();
+    expect(screen.getByText("M04 · M04 measurement")).toBeTruthy();
+    expect(screen.getByText("72 in")).toBeTruthy();
+    expect(screen.getAllByText("Nylon Protective Sleeving")).toHaveLength(1);
+    const notice = screen.getByRole("region", {
+      name: "Configuration validation issues",
+    });
+    expect(notice.textContent).toContain("Nothing has been removed");
+    expect(notice.textContent).toContain("End A");
+    expect(notice.textContent).toContain("End B");
+    expect(notice.textContent).toContain("Finished Length");
+    expect(notice.textContent).toContain("Protection");
+
+    fireEvent.click(screen.getByRole("button", { name: /Select 3\/16 in/ }));
+    const restoredNotice = screen.getByRole("region", {
+      name: "Configuration validation issues",
+    });
+    expect(restoredNotice.textContent).not.toContain("Reconfirmation required");
+    expect(restoredNotice.textContent).toContain("Technical review");
+    expect(screen.getByRole("region", { name: "Selected End A" })).toBeTruthy();
+    expect(screen.getByText("72 in")).toBeTruthy();
+  });
+
+  it("keeps an incompatible retained End visible until the customer replaces it", async () => {
+    const first = publicHoseFixture();
+    const firstSelection = first.variantSelection;
+    if (firstSelection?.kind !== "hose") throw new Error("Expected hose data");
+    const second = publicHoseFixture({
+      displayName: "601R1 Hydraulic Hose -4",
+      sku: "601R1_002",
+      variantSelection: {
+        ...firstSelection,
+        dash: "-4",
+        nominalIdIn: 0.25,
+      },
+    });
+    const fetchMock = vi.fn().mockImplementation(async (request: string) => ({
+      json: async () => ({
+        candidates: request.includes("hose=601R1_002")
+          ? []
+          : compatibleCandidates(),
+      }),
+      ok: true,
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage([first, second]);
+    await reachFinishedLengthStage();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to End B" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to End A" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to Hose" }));
+    fireEvent.click(screen.getByRole("button", { name: /Select 1\/4 in/ }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("region", { name: "Configuration validation issues" })
+          .textContent,
+      ).toContain("not an exact current combination"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Continue to End A" }));
+
+    expect(
+      await screen.findByText(
+        "Retained End A is not valid for the current Hose.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText(/SKU JIC_F_SW_04_04 remains visible/)).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Selected End A" })).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Continue to End B" }),
+    ).toBeNull();
+    expect(screen.queryByText("End A selection ready")).toBeNull();
+  });
+
+  it("clears only the replaced invalid End issue and preserves unrelated values", async () => {
+    const first = publicHoseFixture();
+    const firstSelection = first.variantSelection;
+    if (firstSelection?.kind !== "hose") throw new Error("Expected hose data");
+    const second = publicHoseFixture({
+      displayName: "601R1 Hydraulic Hose -4",
+      sku: "601R1_002",
+      variantSelection: {
+        ...firstSelection,
+        dash: "-4",
+        nominalIdIn: 0.25,
+      },
+    });
+    const replacement = compatibleCandidates()[1];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (request: string) => ({
+        json: async () => ({
+          candidates: request.includes("hose=601R1_002")
+            ? [replacement]
+            : compatibleCandidates(),
+        }),
+        ok: true,
+      })),
+    );
+    renderPage([first, second]);
+    await reachFinishedLengthStage();
+    saveM04Length();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Nylon Protective Sleeving/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save Protection" }));
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Back to Finished Length" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Back to End B" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to End A" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to Hose" }));
+    fireEvent.click(screen.getByRole("button", { name: /Select 1\/4 in/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue to End A" }));
+
+    expect(
+      await screen.findByText(
+        "Retained End A is not valid for the current Hose.",
+      ),
+    ).toBeTruthy();
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /Select NPTF Male Fixed Straight Hose End/,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("region", { name: "Configuration validation issues" })
+          .textContent,
+      ).not.toContain("End A JIC_F_SW_04_04"),
+    );
+    expect(
+      screen.getByRole("button", { name: "Continue to End B" }),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByRole("region", { name: "Selected End A" })).getByText(
+        "SKU NPT_M_FX_04_04",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByRole("region", { name: "Selected End B" })).getByText(
+        "SKU JIC_F_SW_04_04",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("72 in")).toBeTruthy();
+    expect(screen.getAllByText("Nylon Protective Sleeving")).toHaveLength(1);
+  });
+
   it("stores Not Sure without assigning an M-code or diagram", async () => {
     const [candidate] = compatibleCandidates();
     vi.stubGlobal(

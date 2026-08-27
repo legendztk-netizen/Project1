@@ -36,6 +36,21 @@ export interface HoseEndFilters {
   swivelForm?: string;
 }
 
+type ConfiguredHoseEnd = NonNullable<HoseConfigurationDraft["endA"]>;
+
+export function isExactCompatibleCandidate(
+  candidate: CompatibleHoseEndCandidate,
+  selected: CompatibleHoseEndCandidate | ConfiguredHoseEnd,
+) {
+  const selectedHoseEndSku =
+    "hoseEndSku" in selected ? selected.hoseEndSku : selected.hoseEnd.sku;
+  return (
+    candidate.compatibilityId === selected.compatibilityId &&
+    candidate.hoseEndSku === selectedHoseEndSku &&
+    candidate.ferrule.sku === selected.ferrule.sku
+  );
+}
+
 function matches(value: string, filter?: string) {
   return !filter || value === filter;
 }
