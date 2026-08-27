@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   Check,
+  ChevronDown,
   PackageCheck,
   Shield,
 } from "lucide-react";
@@ -25,7 +26,7 @@ import {
 } from "../../configurator/domain/protection-and-application";
 
 export interface ProtectionApplicationSelection {
-  application: ApplicationRequirementsSnapshot;
+  application: ApplicationRequirementsSnapshot | null;
   pricing: AssemblyLengthReferencePricing;
   protection: InstalledProtection;
 }
@@ -61,23 +62,26 @@ export function ProtectionApplicationStage({
   schedule: AssemblyEstimateSchedule | null;
   selection: ProtectionApplicationSelection | null;
 }) {
+  const [collectApplication, setCollectApplication] = useState(
+    selection?.application !== null && selection?.application !== undefined,
+  );
   const [fluidMedium, setFluidMedium] = useState<FluidMediumCode | "">(
-    selection?.application.fluidMedium ?? "",
+    selection?.application?.fluidMedium ?? "",
   );
   const [pressure, setPressure] = useState(
-    selection?.application.maximumWorkingPressure.originalValue ?? "",
+    selection?.application?.maximumWorkingPressure.originalValue ?? "",
   );
   const [pressureUnit, setPressureUnit] = useState<PressureUnit>(
-    selection?.application.maximumWorkingPressure.originalUnit ?? "psi",
+    selection?.application?.maximumWorkingPressure.originalUnit ?? "psi",
   );
   const [temperatureUnit, setTemperatureUnit] = useState<TemperatureUnit>(
-    selection?.application.minimumOperatingTemperature.originalUnit ?? "F",
+    selection?.application?.minimumOperatingTemperature.originalUnit ?? "F",
   );
   const [minimumTemperature, setMinimumTemperature] = useState(
-    selection?.application.minimumOperatingTemperature.originalValue ?? "",
+    selection?.application?.minimumOperatingTemperature.originalValue ?? "",
   );
   const [maximumTemperature, setMaximumTemperature] = useState(
-    selection?.application.maximumOperatingTemperature.originalValue ?? "",
+    selection?.application?.maximumOperatingTemperature.originalValue ?? "",
   );
   const [protectionCode, setProtectionCode] = useState(
     selection?.protection.code ?? "",
@@ -89,9 +93,13 @@ export function ProtectionApplicationStage({
       resolveInstalledProtectionOptionsFromEntries(
         installedProtections,
         installedProtectionRules,
-        { applicationCode: fluidMedium || null, hoseSeries: draft.hose.series },
+        {
+          applicationCode: collectApplication ? fluidMedium || null : null,
+          hoseSeries: draft.hose.series,
+        },
       ),
     [
+      collectApplication,
       draft.hose.series,
       fluidMedium,
       installedProtectionRules,
@@ -115,43 +123,45 @@ export function ProtectionApplicationStage({
 
   function save() {
     setError(null);
-    if (!fluidMedium) {
-      setError(
-        "Choose the fluid medium, or select Not Sure for technical review.",
-      );
-      return;
-    }
     if (!selectedProtection || !selectedProtectionIsAllowed) {
       setError("Choose an available installed protection option.");
       return;
     }
-    const evaluated = evaluateApplicationRequirements({
-      componentWorkingBarLimits: [
-        draft.endA?.assemblyWorkingBar ?? null,
-        draft.endA?.hoseEnd.maximumWorkingBar ?? null,
-        draft.endB?.assemblyWorkingBar ?? null,
-        draft.endB?.hoseEnd.maximumWorkingBar ?? null,
-      ],
-      fluidMedium,
-      hoseLimits: draft.hose.performance,
-      maximumOperatingTemperature: maximumTemperature,
-      maximumWorkingPressure: pressure,
-      minimumOperatingTemperature: minimumTemperature,
-      pressureUnit,
-      temperatureUnit,
-    });
-    if (!evaluated.valid) {
-      setError(evaluated.error);
+    if (!previewPricing) {
+      setError("Save Finished Length before installed protection.");
       return;
     }
-    if (!previewPricing) {
-      setError(
-        "Save Finished Length before protection and application details.",
-      );
-      return;
+    let application: ApplicationRequirementsSnapshot | null = null;
+    if (collectApplication) {
+      if (!fluidMedium) {
+        setError(
+          "Choose the fluid medium, or select Not Sure for technical review.",
+        );
+        return;
+      }
+      const evaluated = evaluateApplicationRequirements({
+        componentWorkingBarLimits: [
+          draft.endA?.assemblyWorkingBar ?? null,
+          draft.endA?.hoseEnd.maximumWorkingBar ?? null,
+          draft.endB?.assemblyWorkingBar ?? null,
+          draft.endB?.hoseEnd.maximumWorkingBar ?? null,
+        ],
+        fluidMedium,
+        hoseLimits: draft.hose.performance,
+        maximumOperatingTemperature: maximumTemperature,
+        maximumWorkingPressure: pressure,
+        minimumOperatingTemperature: minimumTemperature,
+        pressureUnit,
+        temperatureUnit,
+      });
+      if (!evaluated.valid) {
+        setError(evaluated.error);
+        return;
+      }
+      application = evaluated.application;
     }
     onSave({
-      application: evaluated.application,
+      application,
       pricing: previewPricing,
       protection: selectedProtection,
     });
@@ -168,11 +178,11 @@ export function ProtectionApplicationStage({
           <ArrowLeft aria-hidden="true" size={17} /> Back to Finished Length
         </button>
         <div>
-          <span className="eyebrow">Protection and application</span>
-          <h2>Complete the technical inputs</h2>
+          <span className="eyebrow">Installed protection</span>
+          <h2>Choose installed protection</h2>
           <p>
-            We screen your stated values against published limits. Final
-            suitability is confirmed during quote review.
+            Operating conditions are optional and can be confirmed during quote
+            review.
           </p>
         </div>
       </header>
@@ -224,84 +234,99 @@ export function ProtectionApplicationStage({
         ) : null}
       </fieldset>
 
-      <fieldset className="configurator-fieldset">
-        <legend>2. Application Requirements</legend>
-        <p>
-          Other and Not Sure remain quotable and are marked for Technical
-          Review.
-        </p>
-        <div className="application-form-grid">
-          <label className="application-field application-field-wide">
-            <span>Fluid medium</span>
-            <select
-              value={fluidMedium}
-              onChange={(event) =>
-                setFluidMedium(event.target.value as FluidMediumCode)
-              }
-            >
-              <option disabled value="">
-                Choose fluid medium
-              </option>
-              {mediumOptions.map((option) => (
-                <option key={option.code} value={option.code}>
-                  {option.label}
+      <details
+        className="application-optional-panel"
+        onToggle={(event) => setCollectApplication(event.currentTarget.open)}
+        open={collectApplication}
+      >
+        <summary>
+          <span>
+            <strong>2. Operating Conditions</strong>
+            <small>Provide these details only if you know them.</small>
+          </span>
+          <span className="application-optional-meta">
+            <span className="optional-badge">Optional</span>
+            <ChevronDown aria-hidden="true" size={18} />
+          </span>
+        </summary>
+        <div className="application-optional-content">
+          <p>
+            Other and Not Sure remain quotable and are marked for Technical
+            Review.
+          </p>
+          <div className="application-form-grid">
+            <label className="application-field application-field-wide">
+              <span>Fluid medium</span>
+              <select
+                value={fluidMedium}
+                onChange={(event) =>
+                  setFluidMedium(event.target.value as FluidMediumCode)
+                }
+              >
+                <option disabled value="">
+                  Choose fluid medium
                 </option>
-              ))}
-            </select>
-          </label>
-          <label className="application-field">
-            <span>Maximum system working pressure</span>
-            <input
-              inputMode="decimal"
-              onChange={(event) => setPressure(event.target.value)}
-              placeholder="Example: 3000"
-              value={pressure}
-            />
-          </label>
-          <label className="application-field application-unit-field">
-            <span>Pressure unit</span>
-            <select
-              value={pressureUnit}
-              onChange={(event) =>
-                setPressureUnit(event.target.value as PressureUnit)
-              }
-            >
-              <option value="psi">psi</option>
-              <option value="bar">bar</option>
-            </select>
-          </label>
-          <label className="application-field">
-            <span>Minimum operating temperature</span>
-            <input
-              inputMode="decimal"
-              onChange={(event) => setMinimumTemperature(event.target.value)}
-              placeholder="Example: -40"
-              value={minimumTemperature}
-            />
-          </label>
-          <label className="application-field">
-            <span>Maximum operating temperature</span>
-            <input
-              inputMode="decimal"
-              onChange={(event) => setMaximumTemperature(event.target.value)}
-              placeholder="Example: 212"
-              value={maximumTemperature}
-            />
-          </label>
-          <label className="application-field application-unit-field">
-            <span>Temperature unit</span>
-            <select
-              value={temperatureUnit}
-              onChange={(event) =>
-                setTemperatureUnit(event.target.value as TemperatureUnit)
-              }
-            >
-              <option value="F">°F</option>
-              <option value="C">°C</option>
-            </select>
-          </label>
+                {mediumOptions.map((option) => (
+                  <option key={option.code} value={option.code}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="application-field">
+              <span>Maximum system working pressure</span>
+              <input
+                inputMode="decimal"
+                onChange={(event) => setPressure(event.target.value)}
+                placeholder="Example: 3000"
+                value={pressure}
+              />
+            </label>
+            <label className="application-field application-unit-field">
+              <span>Pressure unit</span>
+              <select
+                value={pressureUnit}
+                onChange={(event) =>
+                  setPressureUnit(event.target.value as PressureUnit)
+                }
+              >
+                <option value="psi">psi</option>
+                <option value="bar">bar</option>
+              </select>
+            </label>
+            <label className="application-field">
+              <span>Minimum operating temperature</span>
+              <input
+                inputMode="decimal"
+                onChange={(event) => setMinimumTemperature(event.target.value)}
+                placeholder="Example: -40"
+                value={minimumTemperature}
+              />
+            </label>
+            <label className="application-field">
+              <span>Maximum operating temperature</span>
+              <input
+                inputMode="decimal"
+                onChange={(event) => setMaximumTemperature(event.target.value)}
+                placeholder="Example: 212"
+                value={maximumTemperature}
+              />
+            </label>
+            <label className="application-field application-unit-field">
+              <span>Temperature unit</span>
+              <select
+                value={temperatureUnit}
+                onChange={(event) =>
+                  setTemperatureUnit(event.target.value as TemperatureUnit)
+                }
+              >
+                <option value="F">°F</option>
+                <option value="C">°C</option>
+              </select>
+            </label>
+          </div>
         </div>
-      </fieldset>
+      </details>
 
       {previewPricing ? (
         <section
@@ -336,18 +361,20 @@ export function ProtectionApplicationStage({
         <p className="configurator-ready" role="status">
           <Check aria-hidden="true" size={17} />
           <span>
-            <strong>Protection and application saved</strong>
+            <strong>Protection saved</strong>
             <small>
-              {selection.application.technicalReviewRequired
-                ? "Technical Review Required"
-                : "Ready for the next step"}
+              {selection.application === null
+                ? "Operating conditions not provided (optional)"
+                : selection.application.technicalReviewRequired
+                  ? "Technical Review Required"
+                  : "Ready for the next step"}
             </small>
           </span>
         </p>
       ) : null}
 
       <div
-        aria-label="Save protection and application"
+        aria-label="Save installed protection"
         className="configurator-action-dock"
         role="region"
       >
@@ -357,7 +384,7 @@ export function ProtectionApplicationStage({
             onClick={save}
             type="button"
           >
-            Save Protection &amp; Application
+            Save Protection
           </button>
         </div>
       </div>

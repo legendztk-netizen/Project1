@@ -887,12 +887,9 @@ export function BuildAHoseView({
                     </section>
                   ) : null}
                   {draft?.installedProtection &&
-                  draft.applicationRequirements &&
                   draft.lengthReferencePricing ? (
                     <section className="configured-length-summary">
-                      <span className="eyebrow">
-                        Protection &amp; Application
-                      </span>
+                      <span className="eyebrow">Installed Protection</span>
                       <h3>{draft.installedProtection.publicName}</h3>
                       <dl>
                         <div>
@@ -915,10 +912,12 @@ export function BuildAHoseView({
                         <div>
                           <dt>Technical screening</dt>
                           <dd>
-                            {draft.applicationRequirements
-                              .technicalReviewRequired
-                              ? "Technical Review Required"
-                              : "Within stated limits"}
+                            {!draft.applicationRequirements
+                              ? "Operating conditions not provided (optional)"
+                              : draft.applicationRequirements
+                                    .technicalReviewRequired
+                                ? "Technical Review Required"
+                                : "Within stated limits"}
                           </dd>
                         </div>
                       </dl>

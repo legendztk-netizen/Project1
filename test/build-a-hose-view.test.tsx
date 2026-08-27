@@ -475,7 +475,7 @@ describe("Build a Hose view", () => {
     saveM04Length();
 
     expect(
-      screen.getByRole("heading", { name: "Complete the technical inputs" }),
+      screen.getByRole("heading", { name: "Choose installed protection" }),
     ).toBeTruthy();
     expect(
       screen.queryByRole("heading", { name: "Set Double-Elbow Clocking" }),
@@ -508,6 +508,7 @@ describe("Build a Hose view", () => {
     fireEvent.click(
       screen.getByRole("button", { name: /Nylon Protective Sleeving/ }),
     );
+    fireEvent.click(screen.getByText("2. Operating Conditions"));
     fireEvent.change(screen.getByLabelText("Fluid medium"), {
       target: { value: "petroleum_hydraulic_fluid" },
     });
@@ -526,12 +527,42 @@ describe("Build a Hose view", () => {
     });
     expect(within(pricing).getByText("$3.00")).toBeTruthy();
     expect(within(pricing).getByText("$22.10")).toBeTruthy();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Save Protection & Application" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Save Protection" }));
 
-    expect(screen.getByText("Protection and application saved")).toBeTruthy();
+    expect(screen.getByText("Protection saved")).toBeTruthy();
     expect(screen.getByText("Ready for the next step")).toBeTruthy();
+    expect(screen.getAllByText("Nylon Protective Sleeving")).toHaveLength(2);
+  });
+
+  it("saves installed protection without optional operating conditions", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({ candidates: compatibleCandidates() }),
+        ok: true,
+      }),
+    );
+    renderPage([publicHoseFixture()]);
+    await reachFinishedLengthStage();
+    saveM04Length();
+
+    expect(screen.getByText("Optional")).toBeTruthy();
+    expect(
+      screen
+        .getByText("2. Operating Conditions")
+        .closest("details")
+        ?.hasAttribute("open"),
+    ).toBe(false);
+    fireEvent.click(
+      screen.getByRole("button", { name: /Nylon Protective Sleeving/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save Protection" }));
+
+    expect(screen.getByText("Protection saved")).toBeTruthy();
+    expect(
+      screen.getAllByText("Operating conditions not provided (optional)")
+        .length,
+    ).toBeGreaterThan(0);
     expect(screen.getAllByText("Nylon Protective Sleeving")).toHaveLength(2);
   });
 
@@ -572,7 +603,7 @@ describe("Build a Hose view", () => {
       screen.queryByRole("heading", { name: "Set Double-Elbow Clocking" }),
     ).toBeNull();
     expect(
-      screen.getByRole("heading", { name: "Complete the technical inputs" }),
+      screen.getByRole("heading", { name: "Choose installed protection" }),
     ).toBeTruthy();
   });
 

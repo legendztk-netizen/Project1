@@ -228,7 +228,7 @@ export function calculateAssemblyLengthReferencePricing(input: {
 export function attachProtectionAndApplicationToDraft(
   draft: HoseConfigurationDraft,
   input: {
-    application: ApplicationRequirementsSnapshot;
+    application: ApplicationRequirementsSnapshot | null;
     pricing: AssemblyLengthReferencePricing;
     protection: InstalledProtection;
   },
@@ -240,7 +240,7 @@ export function attachProtectionAndApplicationToDraft(
   }
   return {
     ...draft,
-    applicationRequirements: input.application,
+    applicationRequirements: input.application ?? undefined,
     installedProtection: { ...input.protection },
     lengthReferencePricing: { ...input.pricing },
   };
