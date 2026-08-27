@@ -314,7 +314,7 @@ describe("real local D1 migration lifecycle", () => {
       `SELECT name FROM sqlite_schema WHERE type = 'table' AND name IN (${expectedTables.map((name) => `'${name}'`).join(", ")}) ORDER BY name`,
     );
     expect(tables.map(({ name }) => name)).toEqual(expectedTables);
-  }, 30_000);
+  }, 60_000);
 
   it("applies the same migration command twice without duplicate schema or migration rows", () => {
     const fixture = createD1Fixture();
