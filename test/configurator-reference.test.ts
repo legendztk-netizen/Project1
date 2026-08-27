@@ -11,6 +11,7 @@ import {
 
 const snapshot: ConfiguratorReferenceSnapshot = {
   assemblyEstimateSchedule: {
+    assemblyServicePricePerStartedFootUsd: null,
     assemblyServicePriceUsd: null,
     currency: "USD",
     ferrulePriceSource: "catalog_sales_offer",
@@ -60,6 +61,9 @@ const snapshot: ConfiguratorReferenceSnapshot = {
       isNoAdditionalProtection: true,
       publicName: "No additional installed protection",
       recordVersion: 1,
+      referenceBasePriceUsd: 0,
+      referenceInstallationPricePerStartedFootUsd: 0,
+      referenceMaterialPricePerFootUsd: 0,
       referencePriceUsd: 0,
       specification: "No additional installed sleeve or guard",
     },
@@ -70,6 +74,9 @@ const snapshot: ConfiguratorReferenceSnapshot = {
       isNoAdditionalProtection: false,
       publicName: "Textile protective sleeve",
       recordVersion: 1,
+      referenceBasePriceUsd: 0,
+      referenceInstallationPricePerStartedFootUsd: 0,
+      referenceMaterialPricePerFootUsd: 0,
       referencePriceUsd: 4,
       specification: "Abrasion protection",
     },

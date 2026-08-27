@@ -5,13 +5,19 @@ import type {
   MeasurementSelectionSnapshot,
 } from "./finished-assembly-length";
 import type { ClockingDraftSnapshot } from "./assembly-clocking";
+import type {
+  ApplicationRequirementsSnapshot,
+  AssemblyLengthReferencePricing,
+} from "./protection-and-application";
+import type { InstalledProtection } from "../../configurator-reference/domain/configurator-reference";
 
 interface ConfiguredHoseEnd {
+  assemblyWorkingBar: number | null;
   compatibilityId: string;
   ferrule: CompatibleHoseEndCandidate["ferrule"];
   hoseEnd: Omit<
     CompatibleHoseEndCandidate,
-    "compatibilityId" | "ferrule" | "hoseEndSku"
+    "assemblyWorkingBar" | "compatibilityId" | "ferrule" | "hoseEndSku"
   > & {
     sku: string;
   };
@@ -45,6 +51,9 @@ export interface HoseConfigurationDraft {
   clocking?: ClockingDraftSnapshot;
   finishedLength?: FinishedAssemblyLengthSnapshot;
   measurementSelection?: MeasurementSelectionSnapshot;
+  applicationRequirements?: ApplicationRequirementsSnapshot;
+  installedProtection?: InstalledProtection;
+  lengthReferencePricing?: AssemblyLengthReferencePricing;
 }
 
 export function createHoseConfigurationDraft(

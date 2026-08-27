@@ -4,6 +4,7 @@ import type { HoseConfigurationDraft } from "./hose-configuration-draft";
 export interface CompatibleHoseEndCandidate {
   aliases: string[];
   angle: string;
+  assemblyWorkingBar: number | null;
   compatibilityId: string;
   connectionDash: DashSize | null;
   connectionStandard: string;
@@ -20,6 +21,7 @@ export interface CompatibleHoseEndCandidate {
   hoseTailDash: DashSize | null;
   interfaceFamily: string;
   interfaceGroup: string;
+  maximumWorkingBar: number | null;
   sealingForm: string;
   swivelForm: string;
   thread: string;
@@ -72,6 +74,7 @@ export function filterCompatibleHoseEndCandidates(
 
 function configuredEnd(candidate: CompatibleHoseEndCandidate) {
   return {
+    assemblyWorkingBar: candidate.assemblyWorkingBar,
     compatibilityId: candidate.compatibilityId,
     ferrule: { ...candidate.ferrule },
     hoseEnd: {
@@ -84,6 +87,7 @@ function configuredEnd(candidate: CompatibleHoseEndCandidate) {
       hoseTailDash: candidate.hoseTailDash,
       interfaceFamily: candidate.interfaceFamily,
       interfaceGroup: candidate.interfaceGroup,
+      maximumWorkingBar: candidate.maximumWorkingBar,
       sealingForm: candidate.sealingForm,
       sku: candidate.hoseEndSku,
       swivelForm: candidate.swivelForm,

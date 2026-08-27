@@ -54,6 +54,9 @@ export interface InstalledProtection {
   isNoAdditionalProtection: boolean;
   publicName: string;
   recordVersion: number;
+  referenceBasePriceUsd: number | null;
+  referenceInstallationPricePerStartedFootUsd: number | null;
+  referenceMaterialPricePerFootUsd: number | null;
   referencePriceUsd: number | null;
   specification: string;
 }
@@ -66,6 +69,7 @@ export interface InstalledProtectionRule {
 }
 
 export interface AssemblyEstimateSchedule {
+  assemblyServicePricePerStartedFootUsd: number | null;
   assemblyServicePriceUsd: number | null;
   currency: "USD";
   ferrulePriceSource: "catalog_sales_offer";
@@ -277,14 +281,26 @@ export function resolveInstalledProtectionOptions(
   snapshot: ConfiguratorReferenceSnapshot,
   context: { applicationCode: string | null; hoseSeries: string },
 ) {
-  const protectionRequired = snapshot.installedProtectionRules.some(
+  return resolveInstalledProtectionOptionsFromEntries(
+    snapshot.installedProtections,
+    snapshot.installedProtectionRules,
+    context,
+  );
+}
+
+export function resolveInstalledProtectionOptionsFromEntries(
+  protections: InstalledProtection[],
+  rules: InstalledProtectionRule[],
+  context: { applicationCode: string | null; hoseSeries: string },
+) {
+  const protectionRequired = rules.some(
     (rule) =>
       rule.requiresProtection &&
       (rule.hoseSeries === null || rule.hoseSeries === context.hoseSeries) &&
       (rule.applicationCode === null ||
         rule.applicationCode === context.applicationCode),
   );
-  return snapshot.installedProtections.filter(
+  return protections.filter(
     (option) =>
       option.availability === "available" &&
       (!protectionRequired || !option.isNoAdditionalProtection),

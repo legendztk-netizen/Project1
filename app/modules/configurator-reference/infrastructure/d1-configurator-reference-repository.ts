@@ -289,6 +289,24 @@ function installedProtection(row: RegistryRow): InstalledProtection {
     isNoAdditionalProtection: booleanField(value, "isNoAdditionalProtection"),
     publicName: stringField(value, "publicName"),
     recordVersion: row.record_version,
+    referenceBasePriceUsd:
+      value.referenceBasePriceUsd === undefined
+        ? null
+        : nonNegativeNullableNumberField(value, "referenceBasePriceUsd"),
+    referenceInstallationPricePerStartedFootUsd:
+      value.referenceInstallationPricePerStartedFootUsd === undefined
+        ? null
+        : nonNegativeNullableNumberField(
+            value,
+            "referenceInstallationPricePerStartedFootUsd",
+          ),
+    referenceMaterialPricePerFootUsd:
+      value.referenceMaterialPricePerFootUsd === undefined
+        ? null
+        : nonNegativeNullableNumberField(
+            value,
+            "referenceMaterialPricePerFootUsd",
+          ),
     referencePriceUsd: nonNegativeNullableNumberField(
       value,
       "referencePriceUsd",
@@ -317,6 +335,13 @@ function estimateSchedule(row: RegistryRow): AssemblyEstimateSchedule {
     throw new Error("Assembly Estimate Schedule key must be DEFAULT");
   }
   return {
+    assemblyServicePricePerStartedFootUsd:
+      value.assemblyServicePricePerStartedFootUsd === undefined
+        ? null
+        : nonNegativeNullableNumberField(
+            value,
+            "assemblyServicePricePerStartedFootUsd",
+          ),
     assemblyServicePriceUsd: nonNegativeNullableNumberField(
       value,
       "assemblyServicePriceUsd",

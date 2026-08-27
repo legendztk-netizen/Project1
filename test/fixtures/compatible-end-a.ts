@@ -6,6 +6,7 @@ export function compatibleEndAFixture(
   return {
     aliases: ["FJX-04-04W", "7/16-20 UNF", "-4"],
     angle: "0° Straight",
+    assemblyWorkingBar: 250,
     compatibilityId: "COMP_0011",
     connectionDash: "-4",
     connectionStandard: "SAE J514 / ISO 8434-2",
@@ -22,6 +23,7 @@ export function compatibleEndAFixture(
     hoseTailDash: "-4",
     interfaceFamily: "JIC 37°",
     interfaceGroup: "JIC 37°",
+    maximumWorkingBar: 300,
     sealingForm: "37° cone seat",
     swivelForm: "Swivel",
     thread: "7/16-20 UNF",

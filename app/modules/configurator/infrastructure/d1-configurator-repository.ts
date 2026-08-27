@@ -4,6 +4,7 @@ import type { CompatibleHoseEndCandidate } from "../domain/compatible-end-a";
 
 interface CompatibleHoseEndRow {
   angle: string;
+  assembly_working_bar: number | string | null;
   compatibility_id: string;
   competitor_part_number: string | null;
   connection_dash: string;
@@ -17,9 +18,18 @@ interface CompatibleHoseEndRow {
   hose_end_sku: string;
   hose_tail_dash: string;
   interface_family: string;
+  max_working_bar: number | string | null;
   sealing_form: string;
   swivel_form: string;
   thread: string;
+}
+
+function nullableNumber(value: number | string | null) {
+  if (value === null || (typeof value === "string" && value.trim() === "")) {
+    return null;
+  }
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 export function compatibleHoseEndCandidateFromRow(
@@ -35,6 +45,7 @@ export function compatibleHoseEndCandidateFromRow(
       row.hose_tail_dash,
     ].filter((value): value is string => Boolean(value)),
     angle: row.angle,
+    assemblyWorkingBar: nullableNumber(row.assembly_working_bar),
     compatibilityId: row.compatibility_id,
     connectionDash: normalizeDashSize(row.connection_dash),
     connectionStandard: row.connection_standard,
@@ -57,6 +68,7 @@ export function compatibleHoseEndCandidateFromRow(
     hoseTailDash: normalizeDashSize(row.hose_tail_dash),
     interfaceFamily: row.interface_family,
     interfaceGroup: group,
+    maximumWorkingBar: nullableNumber(row.max_working_bar),
     sealingForm: row.sealing_form,
     swivelForm: row.swivel_form,
     thread: row.thread,
@@ -65,9 +77,11 @@ export function compatibleHoseEndCandidateFromRow(
 
 const compatibleHoseEndSql = `
   SELECT c.compatibility_id, c.hose_end_sku, c.ferrule_sku,
+         c.assembly_working_bar,
          e.competitor_part_number, e.interface_family,
          e.connection_standard, e.gender, e.swivel_form, e.angle,
          e.sealing_form, e.thread, e.connection_dash, e.hose_tail_dash,
+         e.max_working_bar,
          f.ferrule_series, f.hose_construction AS ferrule_hose_construction,
          f.hose_tail_dash AS ferrule_hose_tail_dash,
          f.skive_requirement AS ferrule_skive_requirement

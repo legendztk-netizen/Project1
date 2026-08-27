@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 15,
+  "schemaVersion": 16,
   "migrations": [
     "0000_initial_catalog_release.sql",
     "0001_add_admin_identities.sql",
@@ -15,6 +15,7 @@
     "0011_length_based_hose_quote_lines.sql",
     "0012_enforce_quote_line_shapes.sql",
     "0013_configurator_reference_registries.sql",
-    "0014_version_measurement_diagram_assets.sql"
+    "0014_version_measurement_diagram_assets.sql",
+    "0015_length_based_protection_pricing.sql"
   ]
 }

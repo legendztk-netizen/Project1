@@ -369,8 +369,11 @@ describe("real local D1 migration lifecycle", () => {
     const registryMigration = "0013_configurator_reference_registries.sql";
     const diagramVersionMigration =
       "0014_version_measurement_diagram_assets.sql";
+    const protectionPricingMigration =
+      "0015_length_based_protection_pricing.sql";
     rmSync(join(fixture.directory, "migrations", registryMigration));
     rmSync(join(fixture.directory, "migrations", diagramVersionMigration));
+    rmSync(join(fixture.directory, "migrations", protectionPricingMigration));
     const preRegistryMigration = applyMigrations(fixture);
     expect(
       preRegistryMigration.status,
@@ -404,6 +407,10 @@ describe("real local D1 migration lifecycle", () => {
       join(projectRoot, "migrations", diagramVersionMigration),
       join(fixture.directory, "migrations", diagramVersionMigration),
     );
+    copyFileSync(
+      join(projectRoot, "migrations", protectionPricingMigration),
+      join(fixture.directory, "migrations", protectionPricingMigration),
+    );
     const registryUpgrade = applyMigrations(fixture);
     expect(
       registryUpgrade.status,
@@ -417,7 +424,7 @@ describe("real local D1 migration lifecycle", () => {
          FROM catalog_configurator_registry_entries
          GROUP BY release_id ORDER BY release_id`,
       ),
-    ).toEqual([{ count: 23, release_id: "upgrade-release-draft" }]);
+    ).toEqual([{ count: 25, release_id: "upgrade-release-draft" }]);
   }, 30_000);
 
   it("selects active and historical registry versions and locks published history", async () => {
@@ -460,7 +467,7 @@ describe("real local D1 migration lifecycle", () => {
       { count: 1, registry_type: "assembly_estimate_schedule" },
       { count: 1, registry_type: "clocking_convention" },
       { count: 6, registry_type: "endpoint_class" },
-      { count: 1, registry_type: "installed_protection" },
+      { count: 3, registry_type: "installed_protection" },
       { count: 7, registry_type: "measurement_mapping" },
       { count: 7, registry_type: "measurement_method" },
     ]);

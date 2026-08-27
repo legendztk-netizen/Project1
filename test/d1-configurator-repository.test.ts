@@ -7,6 +7,7 @@ import {
 
 const row = {
   angle: "0° Straight",
+  assembly_working_bar: 250,
   compatibility_id: "COMP_0011",
   competitor_part_number: "FJX-04-04W",
   connection_dash: "04",
@@ -20,6 +21,7 @@ const row = {
   hose_end_sku: "JIC_F_SW_04_04",
   hose_tail_dash: "04",
   interface_family: "JIC 37°",
+  max_working_bar: 300,
   sealing_form: "37° cone seat",
   swivel_form: "Swivel",
   thread: "7/16-20 UNF",
@@ -29,13 +31,28 @@ describe("D1 configurator repository", () => {
   it("maps exact compatibility rows without collapsing standards", () => {
     expect(compatibleHoseEndCandidateFromRow(row)).toMatchObject({
       compatibilityId: "COMP_0011",
+      assemblyWorkingBar: 250,
       connectionDash: "-4",
       connectionStandard: "SAE J514 / ISO 8434-2",
       ferrule: { hoseTailDash: "-4", sku: "601R1_1WB_002" },
       hoseEndSku: "JIC_F_SW_04_04",
       interfaceFamily: "JIC 37°",
       interfaceGroup: "JIC 37°",
+      maximumWorkingBar: 300,
       thread: "7/16-20 UNF",
+    });
+  });
+
+  it("treats blank imported pressure limits as unavailable", () => {
+    expect(
+      compatibleHoseEndCandidateFromRow({
+        ...row,
+        assembly_working_bar: "",
+        max_working_bar: "",
+      }),
+    ).toMatchObject({
+      assemblyWorkingBar: null,
+      maximumWorkingBar: null,
     });
   });
 
@@ -58,6 +75,8 @@ describe("D1 configurator repository", () => {
     expect(sql).toContain("c.hose_sku = ?");
     expect(sql).toContain("c.catalog_publication_status = 'Published'");
     expect(sql).toContain("c.rfq_eligibility = 'Eligible'");
+    expect(sql).toContain("c.assembly_working_bar");
+    expect(sql).toContain("e.max_working_bar");
     expect(sql).toContain("catalog_hose_ends e");
     expect(sql).toContain("catalog_ferrules f");
     expect(

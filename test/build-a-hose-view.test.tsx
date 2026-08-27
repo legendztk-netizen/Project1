@@ -34,12 +34,51 @@ function renderPage(
     <MemoryRouter initialEntries={["/build-a-hose"]}>
       <BuildAHoseView
         loaderData={{
+          assemblyEstimateSchedule: {
+            assemblyServicePricePerStartedFootUsd: 0.5,
+            assemblyServicePriceUsd: null,
+            currency: "USD",
+            ferrulePriceSource: "catalog_sales_offer",
+            hoseEndPriceSource: "catalog_sales_offer",
+            hosePriceSource: "catalog_sales_offer_per_ft",
+            protectionPriceSource: "installed_protection_registry",
+            recordVersion: 2,
+          },
           clockingConvention:
             options.clockingConvention === undefined
               ? clockingConventionFixture()
               : options.clockingConvention,
           directSelection: { kind: "none" },
           families: groupCatalogFamilies(items),
+          installedProtectionRules: [],
+          installedProtections: [
+            {
+              availability: "available",
+              code: "NONE",
+              currency: "USD",
+              isNoAdditionalProtection: true,
+              publicName: "No additional installed protection",
+              recordVersion: 2,
+              referenceBasePriceUsd: 0,
+              referenceInstallationPricePerStartedFootUsd: 0,
+              referenceMaterialPricePerFootUsd: 0,
+              referencePriceUsd: 0,
+              specification: "No additional installed sleeve or guard",
+            },
+            {
+              availability: "available",
+              code: "NYLON",
+              currency: "USD",
+              isNoAdditionalProtection: false,
+              publicName: "Nylon Protective Sleeving",
+              recordVersion: 2,
+              referenceBasePriceUsd: 8,
+              referenceInstallationPricePerStartedFootUsd: 1,
+              referenceMaterialPricePerFootUsd: 1.35,
+              referencePriceUsd: null,
+              specification: "Abrasion-resistant nylon sleeve",
+            },
+          ],
           measurementMethods: measurementMethodsFixture(),
           publishedHoseCount: items.length,
           releaseNumber: items[0]?.releaseNumber ?? null,
@@ -409,6 +448,9 @@ describe("Build a Hose view", () => {
     expect(summary).toBeTruthy();
     expect(screen.getAllByText("72 in").length).toBeGreaterThan(0);
 
+    fireEvent.click(
+      screen.getByRole("button", { name: "Back to Finished Length" }),
+    );
     fireEvent.change(screen.getByPlaceholderText("Example: 72"), {
       target: { value: "73" },
     });
@@ -433,9 +475,7 @@ describe("Build a Hose view", () => {
     saveM04Length();
 
     expect(
-      screen.getByRole("heading", {
-        name: "Set Finished Overall Assembly Length",
-      }),
+      screen.getByRole("heading", { name: "Complete the technical inputs" }),
     ).toBeTruthy();
     expect(
       screen.queryByRole("heading", { name: "Set Double-Elbow Clocking" }),
@@ -445,6 +485,54 @@ describe("Build a Hose view", () => {
         "Orientation",
       ),
     ).toBeNull();
+  });
+
+  it("saves installed protection and canonical application inputs with length-based pricing", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({ candidates: compatibleCandidates() }),
+        ok: true,
+      }),
+    );
+    renderPage([publicHoseFixture()]);
+    await reachFinishedLengthStage();
+    saveM04Length();
+
+    expect(screen.getByText("Standard Export Packaging included")).toBeTruthy();
+    expect(
+      within(
+        screen.getByRole("group", { name: "1. Installed Protection" }),
+      ).queryByText("Standard Export Packaging included"),
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Nylon Protective Sleeving/ }),
+    );
+    fireEvent.change(screen.getByLabelText("Fluid medium"), {
+      target: { value: "petroleum_hydraulic_fluid" },
+    });
+    fireEvent.change(screen.getByLabelText("Maximum system working pressure"), {
+      target: { value: "3000" },
+    });
+    fireEvent.change(screen.getByLabelText("Minimum operating temperature"), {
+      target: { value: "-40" },
+    });
+    fireEvent.change(screen.getByLabelText("Maximum operating temperature"), {
+      target: { value: "212" },
+    });
+
+    const pricing = screen.getByRole("region", {
+      name: "Length-based reference pricing",
+    });
+    expect(within(pricing).getByText("$3.00")).toBeTruthy();
+    expect(within(pricing).getByText("$22.10")).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save Protection & Application" }),
+    );
+
+    expect(screen.getByText("Protection and application saved")).toBeTruthy();
+    expect(screen.getByText("Ready for the next step")).toBeTruthy();
+    expect(screen.getAllByText("Nylon Protective Sleeving")).toHaveLength(2);
   });
 
   it("routes an unclassified Hose End angle to technical review without assuming M08", async () => {
@@ -484,9 +572,7 @@ describe("Build a Hose view", () => {
       screen.queryByRole("heading", { name: "Set Double-Elbow Clocking" }),
     ).toBeNull();
     expect(
-      screen.getByRole("heading", {
-        name: "Set Finished Overall Assembly Length",
-      }),
+      screen.getByRole("heading", { name: "Complete the technical inputs" }),
     ).toBeTruthy();
   });
 
@@ -631,6 +717,9 @@ describe("Build a Hose view", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Back to Finished Length" }),
     );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Back to Finished Length" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Back to End B" }));
     fireEvent.click(
       await screen.findByRole("button", {
@@ -661,6 +750,9 @@ describe("Build a Hose view", () => {
     await reachFinishedLengthStage();
     saveM04Length();
 
+    fireEvent.click(
+      screen.getByRole("button", { name: "Back to Finished Length" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Back to End B" }));
     fireEvent.click(
       await screen.findByRole("button", {
@@ -684,6 +776,9 @@ describe("Build a Hose view", () => {
     await reachFinishedLengthStage();
     saveM04Length();
 
+    fireEvent.click(
+      screen.getByRole("button", { name: "Back to Finished Length" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Back to End B" }));
     fireEvent.click(screen.getByRole("button", { name: "Back to End A" }));
     fireEvent.click(

@@ -33,6 +33,7 @@ import {
   type FinishedAssemblyLengthSnapshot,
   type MeasurementSelectionSnapshot,
 } from "../../configurator/domain/finished-assembly-length";
+import { attachProtectionAndApplicationToDraft } from "../../configurator/domain/protection-and-application";
 import { createD1ConfiguratorReferenceRepository } from "../../configurator-reference/infrastructure/d1-configurator-reference-repository";
 import {
   groupCatalogFamilies,
@@ -45,6 +46,10 @@ import { CatalogMedia } from "../ui/catalog-media";
 import { ClockingStage } from "../ui/clocking-stage";
 import { CompatibleHoseEndStage } from "../ui/compatible-end-a-stage";
 import { FinishedLengthStage } from "../ui/finished-length-stage";
+import {
+  ProtectionApplicationStage,
+  type ProtectionApplicationSelection,
+} from "../ui/protection-application-stage";
 import { StorefrontHeader } from "../ui/storefront-header";
 import "../styles/catalog.css";
 import "../styles/clocking-preview.css";
@@ -121,6 +126,18 @@ export async function loader({ context, request }: Route.LoaderArgs) {
     referenceSnapshot?.release.id === hoses[0]?.releaseId
       ? referenceSnapshot.clockingConvention
       : null;
+  const installedProtections =
+    referenceSnapshot?.release.id === hoses[0]?.releaseId
+      ? referenceSnapshot.installedProtections
+      : [];
+  const installedProtectionRules =
+    referenceSnapshot?.release.id === hoses[0]?.releaseId
+      ? referenceSnapshot.installedProtectionRules
+      : [];
+  const assemblyEstimateSchedule =
+    referenceSnapshot?.release.id === hoses[0]?.releaseId
+      ? referenceSnapshot.assemblyEstimateSchedule
+      : null;
 
   let directSelection: DirectSelectionState = { kind: "none" };
   if (requestedSku) {
@@ -138,10 +155,13 @@ export async function loader({ context, request }: Route.LoaderArgs) {
   }
 
   return {
+    assemblyEstimateSchedule,
     directSelection,
     clockingConvention,
     families: groupCatalogFamilies(eligibleHoses),
     measurementMethods,
+    installedProtectionRules,
+    installedProtections,
     publishedHoseCount: hoses.length,
     releaseNumber: hoses[0]?.releaseNumber ?? null,
     requestedEndASku: requestedEndASku ?? null,
@@ -203,7 +223,8 @@ function temperatureLabel(item: PublicCatalogItem) {
 
 type BuildAHoseLoaderData = Awaited<ReturnType<typeof loader>>;
 
-type ConfiguratorStage = "hose" | "end-a" | "end-b" | "length" | "clocking";
+type ConfiguratorStage =
+  "hose" | "end-a" | "end-b" | "length" | "clocking" | "protection";
 
 function ConfiguredEndSummary({
   end,
@@ -290,6 +311,8 @@ export function BuildAHoseView({
     useState<FinishedAssemblyLengthSnapshot | null>(null);
   const [clockingSelection, setClockingSelection] =
     useState<ClockingDraftSnapshot | null>(null);
+  const [protectionApplicationSelection, setProtectionApplicationSelection] =
+    useState<ProtectionApplicationSelection | null>(null);
   const selectedFamily = loaderData.families.find(
     (family) => family.familyKey === selectedFamilyKey,
   );
@@ -314,14 +337,21 @@ export function BuildAHoseView({
     const withLength = finishedLength
       ? attachFinishedLengthToDraft(withMeasurement, finishedLength)
       : withMeasurement;
-    return clockingSelection
+    const withClocking = clockingSelection
       ? attachClockingToDraft(withLength, clockingSelection)
       : withLength;
+    return protectionApplicationSelection && withClocking.finishedLength
+      ? attachProtectionAndApplicationToDraft(
+          withClocking,
+          protectionApplicationSelection,
+        )
+      : withClocking;
   }, [
     clockingSelection,
     finishedLength,
     hoseDraft,
     measurementSelection,
+    protectionApplicationSelection,
     selectedEndA,
     selectedEndB,
   ]);
@@ -423,7 +453,9 @@ export function BuildAHoseView({
 
   function saveFinishedLength(length: FinishedAssemblyLengthSnapshot) {
     setFinishedLength(length);
+    setProtectionApplicationSelection(null);
     if (draft && requiresAssemblyClocking(draft)) setStage("clocking");
+    else setStage("protection");
   }
 
   function backToLength() {
@@ -433,7 +465,21 @@ export function BuildAHoseView({
   function saveClocking(selection: ClockingSelectionSnapshot) {
     if (!draft) return;
     const confirmed = confirmClockingForDraft(draft, selection);
-    if (confirmed) setClockingSelection(confirmed);
+    if (confirmed) {
+      setClockingSelection(confirmed);
+      setProtectionApplicationSelection(null);
+      setStage("protection");
+    }
+  }
+
+  function backFromProtection() {
+    setStage(clockingRequired ? "clocking" : "length");
+  }
+
+  function saveProtectionAndApplication(
+    selection: ProtectionApplicationSelection,
+  ) {
+    setProtectionApplicationSelection(selection);
   }
 
   const nextAction =
@@ -483,7 +529,8 @@ export function BuildAHoseView({
               (stage === "end-a" && index === 1) ||
               (stage === "end-b" && index === 2) ||
               (stage === "length" && index === 3) ||
-              (stage === "clocking" && label === "Orientation");
+              (stage === "clocking" && label === "Orientation") ||
+              (stage === "protection" && label === "Protection");
             return (
               <li aria-current={active ? "step" : undefined} key={label}>
                 <span>{index + 1}</span>
@@ -676,7 +723,7 @@ export function BuildAHoseView({
                       <LaterStagePreview showOrientation={clockingRequired} />
                     ) : null}
                   </>
-                ) : (
+                ) : stage === "clocking" ? (
                   <ClockingStage
                     convention={loaderData.clockingConvention}
                     onBack={backToLength}
@@ -684,7 +731,19 @@ export function BuildAHoseView({
                     onSave={saveClocking}
                     selection={clockingSelection}
                   />
-                )}
+                ) : draft?.finishedLength ? (
+                  <ProtectionApplicationStage
+                    draft={draft}
+                    installedProtections={loaderData.installedProtections}
+                    installedProtectionRules={
+                      loaderData.installedProtectionRules
+                    }
+                    onBack={backFromProtection}
+                    onSave={saveProtectionAndApplication}
+                    schedule={loaderData.assemblyEstimateSchedule}
+                    selection={protectionApplicationSelection}
+                  />
+                ) : null}
                 {clockingApplicability.status === "manual_review" ? (
                   <div className="length-inline-alert" role="alert">
                     <AlertTriangle aria-hidden="true" size={19} />
@@ -825,6 +884,44 @@ export function BuildAHoseView({
                           ? `Previous Clocking: ${draft.clocking.status === "specified" ? `${draft.clocking.targetDisplay}°` : "Not Sure"}. The selected hose ends changed, so this value is not valid until you confirm it again.`
                           : "View End A toward End B. End B is 000° at 6 o'clock; measure clockwise."}
                       </p>
+                    </section>
+                  ) : null}
+                  {draft?.installedProtection &&
+                  draft.applicationRequirements &&
+                  draft.lengthReferencePricing ? (
+                    <section className="configured-length-summary">
+                      <span className="eyebrow">
+                        Protection &amp; Application
+                      </span>
+                      <h3>{draft.installedProtection.publicName}</h3>
+                      <dl>
+                        <div>
+                          <dt>Assembly service</dt>
+                          <dd>
+                            {draft.lengthReferencePricing.assemblyServiceUsd ===
+                            null
+                              ? "Confirmed with quote"
+                              : `$${draft.lengthReferencePricing.assemblyServiceUsd.toFixed(2)}`}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Protection</dt>
+                          <dd>
+                            {draft.lengthReferencePricing.protectionUsd === null
+                              ? "Confirmed with quote"
+                              : `$${draft.lengthReferencePricing.protectionUsd.toFixed(2)}`}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Technical screening</dt>
+                          <dd>
+                            {draft.applicationRequirements
+                              .technicalReviewRequired
+                              ? "Technical Review Required"
+                              : "Within stated limits"}
+                          </dd>
+                        </div>
+                      </dl>
                     </section>
                   ) : null}
                   <p className="configurator-session-note">

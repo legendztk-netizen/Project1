@@ -168,6 +168,19 @@ function mutationFromForm(form: FormData) {
         currency: "USD",
         isNoAdditionalProtection,
         publicName: requiredText(form, "publicName"),
+        referenceBasePriceUsd:
+          code === "NONE" ? 0 : nullablePrice(form, "referenceBasePriceUsd"),
+        referenceInstallationPricePerStartedFootUsd:
+          code === "NONE"
+            ? 0
+            : nullablePrice(
+                form,
+                "referenceInstallationPricePerStartedFootUsd",
+              ),
+        referenceMaterialPricePerFootUsd:
+          code === "NONE"
+            ? 0
+            : nullablePrice(form, "referenceMaterialPricePerFootUsd"),
         referencePriceUsd:
           code === "NONE" ? 0 : nullablePrice(form, "referencePriceUsd"),
         specification: requiredText(form, "specification"),
@@ -196,6 +209,10 @@ function mutationFromForm(form: FormData) {
     return {
       entryKey: "DEFAULT",
       payload: {
+        assemblyServicePricePerStartedFootUsd: nullablePrice(
+          form,
+          "assemblyServicePricePerStartedFootUsd",
+        ),
         assemblyServicePriceUsd: nullablePrice(form, "assemblyServicePriceUsd"),
         currency: "USD",
         ferrulePriceSource: "catalog_sales_offer",
@@ -403,9 +420,10 @@ export default function CatalogReferenceData({
         <article>
           <span>Assembly service price</span>
           <strong>
-            {schedule?.assemblyServicePriceUsd === null || !schedule
+            {schedule?.assemblyServicePricePerStartedFootUsd === null ||
+            !schedule
               ? "Not supplied"
-              : `$${schedule.assemblyServicePriceUsd.toFixed(2)}`}
+              : `$${schedule.assemblyServicePricePerStartedFootUsd.toFixed(2)} / started ft`}
           </strong>
           <small>Missing price does not block publication</small>
         </article>
@@ -528,7 +546,7 @@ export default function CatalogReferenceData({
                 <th>Code</th>
                 <th>Customer option</th>
                 <th>Availability</th>
-                <th>Reference Price</th>
+                <th>Length-based reference price</th>
               </tr>
             </thead>
             <tbody>
@@ -538,9 +556,14 @@ export default function CatalogReferenceData({
                   <td>{option.publicName}</td>
                   <td>{option.availability}</td>
                   <td>
-                    {option.referencePriceUsd === null
-                      ? "Not supplied"
-                      : `$${option.referencePriceUsd.toFixed(2)}`}
+                    {option.isNoAdditionalProtection
+                      ? "$0.00"
+                      : option.referenceBasePriceUsd === null ||
+                          option.referenceMaterialPricePerFootUsd === null ||
+                          option.referenceInstallationPricePerStartedFootUsd ===
+                            null
+                        ? "Not supplied"
+                        : `$${option.referenceBasePriceUsd.toFixed(2)} + $${option.referenceMaterialPricePerFootUsd.toFixed(2)}/exact ft + $${option.referenceInstallationPricePerStartedFootUsd.toFixed(2)}/started ft`}
                   </td>
                 </tr>
               ))}
@@ -570,14 +593,31 @@ export default function CatalogReferenceData({
                 <option value="discontinued">Discontinued</option>
               </select>
             </Field>
-            <Field label="Reference Price USD (optional)">
+            <Field label="Base Price USD (optional)">
               <input
                 min="0"
-                name="referencePriceUsd"
+                name="referenceBasePriceUsd"
                 step="0.01"
                 type="number"
               />
             </Field>
+            <Field label="Material Price per exact ft USD (optional)">
+              <input
+                min="0"
+                name="referenceMaterialPricePerFootUsd"
+                step="0.01"
+                type="number"
+              />
+            </Field>
+            <Field label="Installation Price per started ft USD (optional)">
+              <input
+                min="0"
+                name="referenceInstallationPricePerStartedFootUsd"
+                step="0.01"
+                type="number"
+              />
+            </Field>
+            <input name="referencePriceUsd" type="hidden" value="" />
             <input
               name="isNoAdditionalProtection"
               type="hidden"
@@ -615,15 +655,22 @@ export default function CatalogReferenceData({
           intent="save_estimate_schedule"
           releaseId={snapshot.release.id}
         >
-          <Field label="Assembly service Reference Price USD (optional)">
+          <Field label="Assembly service per started ft USD (optional)">
             <input
-              defaultValue={schedule?.assemblyServicePriceUsd ?? ""}
+              defaultValue={
+                schedule?.assemblyServicePricePerStartedFootUsd ?? ""
+              }
               min="0"
-              name="assemblyServicePriceUsd"
+              name="assemblyServicePricePerStartedFootUsd"
               step="0.01"
               type="number"
             />
           </Field>
+          <input
+            name="assemblyServicePriceUsd"
+            type="hidden"
+            value={schedule?.assemblyServicePriceUsd ?? ""}
+          />
         </RegistryForm>
       </section>
     </main>

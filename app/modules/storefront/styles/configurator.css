@@ -374,6 +374,124 @@
   width: min(100%, 760px);
 }
 
+.protection-application-stage {
+  display: grid;
+  gap: 18px;
+}
+
+.export-packaging-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 20px;
+  color: #234b37;
+  background: #eef8f3;
+  border: 1px solid #badbca;
+}
+
+.export-packaging-notice p,
+.protection-price-preview p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.protection-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.protection-choice {
+  display: grid;
+  min-width: 0;
+  min-height: 132px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 16px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid #aeb8bf;
+  border-radius: 6px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.protection-choice[aria-pressed="true"] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.protection-choice span {
+  display: grid;
+  gap: 6px;
+}
+
+.protection-choice small {
+  color: var(--muted);
+  font-size: 0.69rem;
+  line-height: 1.4;
+}
+
+.application-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(130px, 0.34fr);
+  gap: 14px;
+}
+
+.application-field {
+  display: grid;
+  gap: 7px;
+  color: var(--ink);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.application-field-wide {
+  grid-column: 1 / -1;
+}
+
+.application-field input,
+.application-field select {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 12px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid #9eabb3;
+  border-radius: 4px;
+  font: inherit;
+}
+
+.protection-price-preview {
+  display: grid;
+  padding: 18px 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.protection-price-preview > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.8rem;
+}
+
+@media (max-width: 720px) {
+  .protection-choice-grid,
+  .application-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .application-field-wide {
+    grid-column: auto;
+  }
+}
+
 .button-with-icon {
   display: inline-flex;
   align-items: center;
