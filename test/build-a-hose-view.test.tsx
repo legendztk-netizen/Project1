@@ -25,13 +25,19 @@ import { compatibleEndAFixture } from "./fixtures/compatible-end-a";
 
 function renderPage(
   items: PublicCatalogItem[],
-  options: { requestedEndASku?: string | null } = {},
+  options: {
+    clockingConvention?: ClockingConvention | null;
+    requestedEndASku?: string | null;
+  } = {},
 ) {
   return render(
     <MemoryRouter initialEntries={["/build-a-hose"]}>
       <BuildAHoseView
         loaderData={{
-          clockingConvention: clockingConventionFixture(),
+          clockingConvention:
+            options.clockingConvention === undefined
+              ? clockingConventionFixture()
+              : options.clockingConvention,
           directSelection: { kind: "none" },
           families: groupCatalogFamilies(items),
           measurementMethods: measurementMethodsFixture(),
@@ -481,6 +487,39 @@ describe("Build a Hose view", () => {
       screen.getByRole("heading", {
         name: "Set Finished Overall Assembly Length",
       }),
+    ).toBeTruthy();
+  });
+
+  it("explains a fail-closed M08 convention instead of silently hiding Save", async () => {
+    const candidates = angledCandidates();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({ candidates }),
+        ok: true,
+      }),
+    );
+    renderPage([publicHoseFixture()], {
+      clockingConvention: {
+        ...clockingConventionFixture(),
+        standardToleranceDegrees: 5,
+      },
+    });
+    await reachFinishedLengthStageWithEnds(
+      /Select JIC 37° Female Swivel 90° Hose End/,
+    );
+
+    saveM04Length();
+
+    expect(screen.getByRole("alert").textContent).toContain(
+      "published tolerance is not the required ±3°",
+    );
+    expect(screen.queryByRole("group", { name: "Choose an angle" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save Clocking" })).toBeNull();
+    expect(
+      within(
+        screen.getByRole("region", { name: "Clocking actions" }),
+      ).getByRole("button", { name: "Back to Finished Length" }),
     ).toBeTruthy();
   });
 

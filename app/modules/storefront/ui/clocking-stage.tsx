@@ -11,6 +11,7 @@ import type { ClockingConvention } from "../../configurator-reference/domain/con
 import {
   selectClockingNotSure,
   specifyClocking,
+  standardClockingToleranceDegrees,
   type ClockingSelectionSnapshot,
 } from "../../configurator/domain/assembly-clocking";
 import { M08ClockingPreview } from "./m08-clocking-preview";
@@ -45,6 +46,11 @@ export function ClockingStage({
     evaluation.valid && evaluation.selection.status === "specified"
       ? evaluation.selection.targetDegrees
       : null;
+  const conventionError =
+    convention &&
+    convention.standardToleranceDegrees !== standardClockingToleranceDegrees
+      ? `Clocking Convention M08 is unavailable because its published tolerance is not the required ±${standardClockingToleranceDegrees}°.`
+      : null;
 
   function chooseAngle(value: number) {
     setNotSure(false);
@@ -70,11 +76,12 @@ export function ClockingStage({
         </div>
       </header>
 
-      {!convention ? (
+      {!convention || conventionError ? (
         <div className="length-inline-alert" role="alert">
           <AlertTriangle aria-hidden="true" size={19} />
           <p>
-            Clocking Convention M08 is unavailable for this catalog release.
+            {conventionError ??
+              "Clocking Convention M08 is unavailable for this catalog release."}
           </p>
         </div>
       ) : (
@@ -152,7 +159,10 @@ export function ClockingStage({
                 {notSure ? <Check aria-hidden="true" size={18} /> : null}
               </button>
 
-              {!notSure && rawAngle.trim() && !evaluation.valid ? (
+              {!conventionError &&
+              !notSure &&
+              rawAngle.trim() &&
+              !evaluation.valid ? (
                 <div className="length-inline-alert" role="alert">
                   <AlertTriangle aria-hidden="true" size={19} />
                   <p>{evaluation.error}</p>

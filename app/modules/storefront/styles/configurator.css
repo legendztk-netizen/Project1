@@ -1342,6 +1342,21 @@
 }
 
 @media (max-width: 480px) {
+  .clocking-stage {
+    padding-bottom: 58px;
+  }
+
+  .clocking-action-dock .configurator-action-dock-inner {
+    flex-direction: column;
+  }
+
+  .clocking-action-dock .button,
+  .clocking-action-dock .clocking-back {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
   .hose-series-grid,
   .hose-size-grid {
     grid-template-columns: 1fr;
