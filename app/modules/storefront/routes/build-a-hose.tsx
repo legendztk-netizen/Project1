@@ -370,6 +370,18 @@ export function BuildAHoseView({
     setFinishedLength(null);
   }
 
+  const nextAction =
+    stage === "hose" && draft
+      ? { label: "Continue to End A", onClick: continueToEndA }
+      : stage === "end-a" && draft?.endA
+        ? { label: "Continue to End B", onClick: continueToEndB }
+        : stage === "end-b" && draft?.endB
+          ? {
+              label: "Continue to Finished Length",
+              onClick: continueToLength,
+            }
+          : null;
+
   return (
     <div className="storefront-shell" data-surface="storefront">
       <StorefrontHeader />
@@ -444,293 +456,287 @@ export function BuildAHoseView({
             </Link>
           </section>
         ) : (
-          <div className="configurator-workspace">
-            <section className="configurator-controls">
-              {stage === "hose" ? (
-                <>
-                  <fieldset className="configurator-fieldset">
-                    <legend>1. Choose a Hose Series</legend>
-                    <p>Series determines construction and performance range.</p>
-                    <div className="hose-series-grid">
-                      {loaderData.families.map((family) => {
-                        const active = family.familyKey === selectedFamilyKey;
-                        const availableCount = family.variants.filter(
-                          (variant) => variant.canAddToQuote,
-                        ).length;
-                        const selection = hoseSelection(family.representative);
-                        return (
-                          <button
-                            aria-pressed={active}
-                            className="hose-series-choice"
-                            data-hose-series={family.familyKey}
-                            disabled={availableCount === 0}
-                            key={family.familyKey}
-                            onClick={() => chooseFamily(family.familyKey)}
-                            type="button"
-                          >
-                            <span>
-                              <strong>{family.familyName}</strong>
-                              <small>
-                                {selection
-                                  ? (selection.primaryStandard ??
-                                    selection.equivalentStandard ??
-                                    "Hydraulic hose")
-                                  : "Hydraulic hose"}
-                              </small>
-                            </span>
-                            <span className="hose-series-count">
-                              {availableCount === 1
-                                ? "1 size"
-                                : `${availableCount} sizes`}
-                            </span>
-                            {active ? (
-                              <Check aria-hidden="true" size={18} />
-                            ) : null}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </fieldset>
-
-                  {selectedFamily ? (
+          <>
+            <div className="configurator-workspace">
+              <section className="configurator-controls">
+                {stage === "hose" ? (
+                  <>
                     <fieldset className="configurator-fieldset">
-                      <legend>2. Choose Hose Inside Diameter</legend>
+                      <legend>1. Choose a Hose Series</legend>
                       <p>
-                        Only an exact available SKU can start the assembly
-                        draft.
+                        Series determines construction and performance range.
                       </p>
-                      <div className="hose-size-grid">
-                        {selectedFamily.variants.map((item) => {
-                          const selection = hoseSelection(item);
-                          const active = item.sku === selectedSku;
+                      <div className="hose-series-grid">
+                        {loaderData.families.map((family) => {
+                          const active = family.familyKey === selectedFamilyKey;
+                          const availableCount = family.variants.filter(
+                            (variant) => variant.canAddToQuote,
+                          ).length;
+                          const selection = hoseSelection(
+                            family.representative,
+                          );
                           return (
                             <button
-                              aria-label={`Select ${sizeLabel(item)}, ${selection ? `Dash ${selection.dash}` : item.sku}`}
                               aria-pressed={active}
-                              className="hose-size-choice"
-                              data-hose-sku={item.sku}
-                              disabled={!item.canAddToQuote}
-                              key={item.sku}
-                              onClick={() => chooseHose(item)}
+                              className="hose-series-choice"
+                              data-hose-series={family.familyKey}
+                              disabled={availableCount === 0}
+                              key={family.familyKey}
+                              onClick={() => chooseFamily(family.familyKey)}
                               type="button"
                             >
                               <span>
-                                <strong>{sizeLabel(item)}</strong>
+                                <strong>{family.familyName}</strong>
                                 <small>
                                   {selection
-                                    ? `Hose ID · Dash ${selection.dash}`
-                                    : item.sku}
+                                    ? (selection.primaryStandard ??
+                                      selection.equivalentStandard ??
+                                      "Hydraulic hose")
+                                    : "Hydraulic hose"}
                                 </small>
                               </span>
-                              {item.canAddToQuote ? (
-                                active ? (
-                                  <Check aria-hidden="true" size={18} />
-                                ) : null
-                              ) : (
-                                <small>Unavailable</small>
-                              )}
+                              <span className="hose-series-count">
+                                {availableCount === 1
+                                  ? "1 size"
+                                  : `${availableCount} sizes`}
+                              </span>
+                              {active ? (
+                                <Check aria-hidden="true" size={18} />
+                              ) : null}
                             </button>
                           );
                         })}
                       </div>
                     </fieldset>
-                  ) : (
-                    <div className="configurator-stage-prompt">
-                      <span>2</span>
-                      <p>Choose a series to see its exact hose sizes.</p>
-                    </div>
-                  )}
-                </>
-              ) : stage === "end-a" ? (
-                <CompatibleHoseEndStage
-                  endRole="A"
-                  hoseSku={hoseDraft?.hose.sku ?? ""}
-                  onBack={backToHose}
-                  onSelect={chooseEndA}
-                  releaseId={hoseDraft?.catalogRelease.id ?? ""}
-                  requestedEndSku={loaderData.requestedEndASku}
-                  selected={selectedEndA}
-                />
-              ) : stage === "end-b" ? (
-                <>
-                  <CompatibleHoseEndStage
-                    copyFromEndA={selectedEndA}
-                    endRole="B"
-                    hoseSku={hoseDraft?.hose.sku ?? ""}
-                    onBack={backToEndA}
-                    onSelect={chooseEndB}
-                    releaseId={hoseDraft?.catalogRelease.id ?? ""}
-                    requestedEndSku={null}
-                    selected={selectedEndB}
-                  />
-                  {draft?.endA && draft.endB ? <LaterStagePreview /> : null}
-                </>
-              ) : (
-                <>
-                  <FinishedLengthStage
-                    finishedLength={finishedLength}
-                    measurementMethods={loaderData.measurementMethods}
-                    measurementSelection={measurementSelection}
-                    onBack={backToEndB}
-                    onInvalidateLength={() => setFinishedLength(null)}
-                    onSaveLength={setFinishedLength}
-                    onSelectMeasurement={chooseMeasurement}
-                  />
-                  {finishedLength ? <LaterStagePreview /> : null}
-                </>
-              )}
-            </section>
 
-            <aside className="configurator-summary" aria-live="polite">
-              <div className="configurator-media">
-                {visualItem ? (
-                  <CatalogMedia item={visualItem} />
-                ) : (
-                  <div className="configurator-media-placeholder">
-                    <Layers3 aria-hidden="true" size={42} />
-                    <span>Select a hose series</span>
-                  </div>
-                )}
-              </div>
-              <div className="configurator-summary-copy">
-                <span className="eyebrow">Current selection</span>
-                <h2>{draft?.hose.familyName ?? "No hose selected"}</h2>
-                {selectedItem && draft ? (
+                    {selectedFamily ? (
+                      <fieldset className="configurator-fieldset">
+                        <legend>2. Choose Hose Inside Diameter</legend>
+                        <p>
+                          Only an exact available SKU can start the assembly
+                          draft.
+                        </p>
+                        <div className="hose-size-grid">
+                          {selectedFamily.variants.map((item) => {
+                            const selection = hoseSelection(item);
+                            const active = item.sku === selectedSku;
+                            return (
+                              <button
+                                aria-label={`Select ${sizeLabel(item)}, ${selection ? `Dash ${selection.dash}` : item.sku}`}
+                                aria-pressed={active}
+                                className="hose-size-choice"
+                                data-hose-sku={item.sku}
+                                disabled={!item.canAddToQuote}
+                                key={item.sku}
+                                onClick={() => chooseHose(item)}
+                                type="button"
+                              >
+                                <span>
+                                  <strong>{sizeLabel(item)}</strong>
+                                  <small>
+                                    {selection
+                                      ? `Hose ID · Dash ${selection.dash}`
+                                      : item.sku}
+                                  </small>
+                                </span>
+                                {item.canAddToQuote ? (
+                                  active ? (
+                                    <Check aria-hidden="true" size={18} />
+                                  ) : null
+                                ) : (
+                                  <small>Unavailable</small>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </fieldset>
+                    ) : (
+                      <div className="configurator-stage-prompt">
+                        <span>2</span>
+                        <p>Choose a series to see its exact hose sizes.</p>
+                      </div>
+                    )}
+                  </>
+                ) : stage === "end-a" ? (
+                  <CompatibleHoseEndStage
+                    endRole="A"
+                    hoseSku={hoseDraft?.hose.sku ?? ""}
+                    onBack={backToHose}
+                    onSelect={chooseEndA}
+                    releaseId={hoseDraft?.catalogRelease.id ?? ""}
+                    requestedEndSku={loaderData.requestedEndASku}
+                    selected={selectedEndA}
+                  />
+                ) : stage === "end-b" ? (
                   <>
-                    <p className="configurator-sku">SKU {draft.hose.sku}</p>
-                    <dl>
-                      <div>
-                        <dt>
-                          <Layers3 aria-hidden="true" size={17} /> Size
-                        </dt>
-                        <dd>{sizeLabel(selectedItem)}</dd>
-                      </div>
-                      <div>
-                        <dt>
-                          <Gauge aria-hidden="true" size={17} /> Working
-                          pressure
-                        </dt>
-                        <dd>{pressureLabel(selectedItem)}</dd>
-                      </div>
-                      <div>
-                        <dt>
-                          <Thermometer aria-hidden="true" size={17} />{" "}
-                          Temperature
-                        </dt>
-                        <dd>{temperatureLabel(selectedItem)}</dd>
-                      </div>
-                    </dl>
-                    {draft.endA ? (
-                      <ConfiguredEndSummary end={draft.endA} role="A" />
-                    ) : null}
-                    {draft.endB ? (
-                      <ConfiguredEndSummary end={draft.endB} role="B" />
-                    ) : null}
+                    <CompatibleHoseEndStage
+                      copyFromEndA={selectedEndA}
+                      endRole="B"
+                      hoseSku={hoseDraft?.hose.sku ?? ""}
+                      onBack={backToEndA}
+                      onSelect={chooseEndB}
+                      releaseId={hoseDraft?.catalogRelease.id ?? ""}
+                      requestedEndSku={null}
+                      selected={selectedEndB}
+                    />
+                    {draft?.endA && draft.endB ? <LaterStagePreview /> : null}
                   </>
                 ) : (
-                  <p className="configurator-summary-prompt">
-                    Select a series, then an exact inside diameter.
-                  </p>
+                  <>
+                    <FinishedLengthStage
+                      finishedLength={finishedLength}
+                      measurementMethods={loaderData.measurementMethods}
+                      measurementSelection={measurementSelection}
+                      onBack={backToEndB}
+                      onInvalidateLength={() => setFinishedLength(null)}
+                      onSaveLength={setFinishedLength}
+                      onSelectMeasurement={chooseMeasurement}
+                    />
+                    {finishedLength ? <LaterStagePreview /> : null}
+                  </>
                 )}
-                {draft && stage === "hose" ? (
-                  <p className="configurator-ready" role="status">
-                    <Check aria-hidden="true" size={17} />
-                    <span>
-                      <strong>Hose selection ready</strong>
-                      <small>End A is the next configuration step.</small>
-                    </span>
-                  </p>
-                ) : null}
-                {draft && stage === "hose" ? (
-                  <button
-                    className="button button-primary configurator-next"
-                    onClick={continueToEndA}
-                    type="button"
-                  >
-                    Continue to End A
-                    <ArrowRight aria-hidden="true" size={18} />
-                  </button>
-                ) : null}
-                {draft?.endA && stage === "end-a" ? (
-                  <p className="configurator-ready" role="status">
-                    <Check aria-hidden="true" size={17} />
-                    <span>
-                      <strong>End A selection ready</strong>
-                      <small>
-                        Exact Hose End and Ferrule saved in this draft.
-                      </small>
-                    </span>
-                  </p>
-                ) : null}
-                {draft?.endA && stage === "end-a" ? (
-                  <button
-                    className="button button-primary configurator-next"
-                    onClick={continueToEndB}
-                    type="button"
-                  >
-                    Continue to End B
-                    <ArrowRight aria-hidden="true" size={18} />
-                  </button>
-                ) : null}
-                {draft?.endB && stage === "end-b" ? (
-                  <p className="configurator-ready" role="status">
-                    <Check aria-hidden="true" size={17} />
-                    <span>
-                      <strong>Both hose ends are ready</strong>
-                      <small>
-                        End A and End B remain separate ordered selections.
-                      </small>
-                    </span>
-                  </p>
-                ) : null}
-                {draft?.endB && stage === "end-b" ? (
-                  <button
-                    className="button button-primary configurator-next"
-                    onClick={continueToLength}
-                    type="button"
-                  >
-                    Continue to Finished Length
-                    <ArrowRight aria-hidden="true" size={18} />
-                  </button>
-                ) : null}
-                {draft?.measurementSelection ? (
-                  <section className="configured-length-summary">
-                    <span className="eyebrow">Measurement</span>
-                    <h3>
-                      {draft.measurementSelection.state === "selected"
-                        ? `${draft.measurementSelection.method.code} · ${draft.measurementSelection.method.displayName}`
-                        : "Not Sure · Manual Technical Review"}
-                    </h3>
-                    {draft.finishedLength ? (
+              </section>
+
+              <aside className="configurator-summary" aria-live="polite">
+                <div className="configurator-media">
+                  {visualItem ? (
+                    <CatalogMedia item={visualItem} />
+                  ) : (
+                    <div className="configurator-media-placeholder">
+                      <Layers3 aria-hidden="true" size={42} />
+                      <span>Select a hose series</span>
+                    </div>
+                  )}
+                </div>
+                <div className="configurator-summary-copy">
+                  <span className="eyebrow">Current selection</span>
+                  <h2>{draft?.hose.familyName ?? "No hose selected"}</h2>
+                  {selectedItem && draft ? (
+                    <>
+                      <p className="configurator-sku">SKU {draft.hose.sku}</p>
                       <dl>
                         <div>
-                          <dt>Finished length</dt>
-                          <dd>
-                            {draft.finishedLength.originalValue}{" "}
-                            {draft.finishedLength.originalUnit}
-                          </dd>
+                          <dt>
+                            <Layers3 aria-hidden="true" size={17} /> Size
+                          </dt>
+                          <dd>{sizeLabel(selectedItem)}</dd>
                         </div>
                         <div>
-                          <dt>Exact conversion</dt>
-                          <dd>{draft.finishedLength.canonicalMm} mm</dd>
+                          <dt>
+                            <Gauge aria-hidden="true" size={17} /> Working
+                            pressure
+                          </dt>
+                          <dd>{pressureLabel(selectedItem)}</dd>
                         </div>
                         <div>
-                          <dt>SAE J517 tolerance</dt>
-                          <dd>{draft.finishedLength.tolerance.display}</dd>
+                          <dt>
+                            <Thermometer aria-hidden="true" size={17} />{" "}
+                            Temperature
+                          </dt>
+                          <dd>{temperatureLabel(selectedItem)}</dd>
                         </div>
                       </dl>
-                    ) : (
-                      <p>Finished length has not been saved.</p>
-                    )}
-                  </section>
-                ) : null}
-                <p className="configurator-session-note">
-                  This unfinished configuration is kept only in this page
-                  session and has not been added to your Quote List.
-                </p>
+                      {draft.endA ? (
+                        <ConfiguredEndSummary end={draft.endA} role="A" />
+                      ) : null}
+                      {draft.endB ? (
+                        <ConfiguredEndSummary end={draft.endB} role="B" />
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="configurator-summary-prompt">
+                      Select a series, then an exact inside diameter.
+                    </p>
+                  )}
+                  {draft && stage === "hose" ? (
+                    <p className="configurator-ready" role="status">
+                      <Check aria-hidden="true" size={17} />
+                      <span>
+                        <strong>Hose selection ready</strong>
+                        <small>End A is the next configuration step.</small>
+                      </span>
+                    </p>
+                  ) : null}
+                  {draft?.endA && stage === "end-a" ? (
+                    <p className="configurator-ready" role="status">
+                      <Check aria-hidden="true" size={17} />
+                      <span>
+                        <strong>End A selection ready</strong>
+                        <small>
+                          Exact Hose End and Ferrule saved in this draft.
+                        </small>
+                      </span>
+                    </p>
+                  ) : null}
+                  {draft?.endB && stage === "end-b" ? (
+                    <p className="configurator-ready" role="status">
+                      <Check aria-hidden="true" size={17} />
+                      <span>
+                        <strong>Both hose ends are ready</strong>
+                        <small>
+                          End A and End B remain separate ordered selections.
+                        </small>
+                      </span>
+                    </p>
+                  ) : null}
+                  {draft?.measurementSelection ? (
+                    <section className="configured-length-summary">
+                      <span className="eyebrow">Measurement</span>
+                      <h3>
+                        {draft.measurementSelection.state === "selected"
+                          ? `${draft.measurementSelection.method.code} · ${draft.measurementSelection.method.displayName}`
+                          : "Not Sure · Manual Technical Review"}
+                      </h3>
+                      {draft.finishedLength ? (
+                        <dl>
+                          <div>
+                            <dt>Finished length</dt>
+                            <dd>
+                              {draft.finishedLength.originalValue}{" "}
+                              {draft.finishedLength.originalUnit}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>Exact conversion</dt>
+                            <dd>{draft.finishedLength.canonicalMm} mm</dd>
+                          </div>
+                          <div>
+                            <dt>SAE J517 tolerance</dt>
+                            <dd>{draft.finishedLength.tolerance.display}</dd>
+                          </div>
+                        </dl>
+                      ) : (
+                        <p>Finished length has not been saved.</p>
+                      )}
+                    </section>
+                  ) : null}
+                  <p className="configurator-session-note">
+                    This unfinished configuration is kept only in this page
+                    session and has not been added to your Quote List.
+                  </p>
+                </div>
+              </aside>
+            </div>
+            {nextAction ? (
+              <div
+                aria-label="Continue configuration"
+                className="configurator-action-dock"
+                role="region"
+              >
+                <div className="configurator-action-dock-inner">
+                  <button
+                    className="button button-primary configurator-next"
+                    onClick={nextAction.onClick}
+                    type="button"
+                  >
+                    {nextAction.label}
+                    <ArrowRight aria-hidden="true" size={18} />
+                  </button>
+                </div>
               </div>
-            </aside>
-          </div>
+            ) : null}
+          </>
         )}
       </main>
     </div>

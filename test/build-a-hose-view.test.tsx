@@ -159,6 +159,11 @@ describe("Build a Hose view", () => {
     expect(
       screen.getByRole("button", { name: "Continue to End A" }),
     ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: "Continue to End A" })
+        .closest(".configurator-action-dock"),
+    ).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Select 1\/4 in/ }));
     expect(screen.getByText("SKU 601R1_002")).toBeTruthy();
@@ -327,6 +332,11 @@ describe("Build a Hose view", () => {
     });
     expect(screen.getByText("1828.8 mm")).toBeTruthy();
     expect(screen.getByText("± 1% (± 18.288 mm)")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("button", { name: "Save Finished Length" })
+        .closest(".configurator-action-dock"),
+    ).toBeTruthy();
     fireEvent.click(
       screen.getByRole("button", { name: "Save Finished Length" }),
     );

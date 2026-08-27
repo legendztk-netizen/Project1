@@ -1,7 +1,7 @@
 .configurator-page {
   max-width: 1480px;
   margin: 0 auto;
-  padding: 34px 32px 64px;
+  padding: 34px 32px 124px;
 }
 
 .configurator-heading {
@@ -340,11 +340,34 @@
 .configurator-next {
   display: flex;
   width: 100%;
-  min-height: 48px;
+  min-height: 52px;
   align-items: center;
   justify-content: center;
   gap: 9px;
-  margin-top: 14px;
+}
+
+.configurator-action-dock {
+  position: fixed;
+  z-index: 40;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 12px 24px max(12px, env(safe-area-inset-bottom));
+  background: rgb(255 255 255 / 94%);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -8px 24px rgb(20 31 38 / 10%);
+  backdrop-filter: blur(10px);
+}
+
+.configurator-action-dock-inner {
+  display: flex;
+  max-width: 1416px;
+  margin: 0 auto;
+  justify-content: center;
+}
+
+.configurator-action-dock .button {
+  width: min(100%, 760px);
 }
 
 .button-with-icon {
@@ -933,8 +956,7 @@
 
 .finished-length-save {
   width: 100%;
-  min-height: 48px;
-  margin-top: 14px;
+  min-height: 52px;
 }
 
 .configured-length-summary {
@@ -1025,7 +1047,12 @@
 
 @media (max-width: 760px) {
   .configurator-page {
-    padding: 24px 18px 48px;
+    padding: 24px 18px 116px;
+  }
+
+  .configurator-action-dock {
+    padding-right: 14px;
+    padding-left: 14px;
   }
 
   .configurator-heading {

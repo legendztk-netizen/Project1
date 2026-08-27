@@ -279,16 +279,24 @@ export function FinishedLengthStage({
                 </p>
               </div>
             )}
-            <button
-              className="button button-primary finished-length-save"
-              onClick={() => onSaveLength(evaluation.length)}
-              type="button"
+            <div
+              aria-label="Save finished length"
+              className="configurator-action-dock"
+              role="region"
             >
-              {measurementSelection?.state === "not_sure" ||
-              evaluation.length.path === "manual_review"
-                ? "Save for Manual Review"
-                : "Save Finished Length"}
-            </button>
+              <div className="configurator-action-dock-inner">
+                <button
+                  className="button button-primary finished-length-save"
+                  onClick={() => onSaveLength(evaluation.length)}
+                  type="button"
+                >
+                  {measurementSelection?.state === "not_sure" ||
+                  evaluation.length.path === "manual_review"
+                    ? "Save for Manual Review"
+                    : "Save Finished Length"}
+                </button>
+              </div>
+            </div>
           </div>
         ) : value.trim() && evaluation && !evaluation.valid ? (
           <div className="length-inline-alert" role="alert">
