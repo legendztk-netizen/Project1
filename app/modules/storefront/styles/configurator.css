@@ -56,6 +56,10 @@
   border: 1px solid var(--line);
 }
 
+.configurator-progress[data-has-clocking="true"] {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
 .configurator-progress li {
   display: flex;
   min-width: 0;
@@ -982,6 +986,198 @@
   margin-top: 12px;
 }
 
+.clocking-stage {
+  display: grid;
+  gap: 18px;
+}
+
+.clocking-stage-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 18px;
+  padding: 22px 24px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.clocking-action-dock .configurator-action-dock-inner {
+  gap: 12px;
+}
+
+.clocking-action-dock .clocking-back {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.clocking-stage-heading h2 {
+  margin: 4px 0;
+  font-size: 1.25rem;
+  letter-spacing: 0;
+}
+
+.clocking-stage-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.clocking-stage-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(380px, 1.1fr);
+  align-items: start;
+  gap: 18px;
+}
+
+.clocking-stage-controls {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+
+.clocking-instructions {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 17px 20px 17px 42px;
+  color: var(--ink);
+  background: #eef4f7;
+  border-left: 4px solid #1769aa;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.clocking-angle-fieldset {
+  padding: 19px;
+}
+
+.configurator-clocking-presets {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.configurator-clocking-presets button {
+  min-height: 43px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid #9eabb3;
+  border-radius: 5px;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.configurator-clocking-presets button:hover,
+.configurator-clocking-presets button[aria-pressed="true"] {
+  color: #fff;
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.configurator-clocking-input {
+  display: grid;
+  gap: 7px;
+  margin-top: 16px;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.configurator-clocking-input > span:nth-child(2) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 45px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  background: #fff;
+  border: 1px solid #9eabb3;
+  border-radius: 5px;
+}
+
+.configurator-clocking-input > span:nth-child(2):focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgb(220 47 37 / 12%);
+}
+
+.configurator-clocking-input input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.configurator-clocking-input strong,
+.configurator-clocking-input small,
+.clocking-not-sure small {
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+
+.clocking-not-sure {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 20px;
+  width: 100%;
+  min-height: 64px;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 11px 13px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px dashed #9eabb3;
+  border-radius: 5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.clocking-not-sure[aria-pressed="true"] {
+  border-color: #d78a18;
+  box-shadow: inset 0 0 0 1px #d78a18;
+}
+
+.clocking-not-sure > span {
+  display: grid;
+  gap: 3px;
+}
+
+.clocking-result {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px 13px;
+  color: #2e6650;
+  background: #eef8f3;
+  border: 1px solid #badbca;
+}
+
+.clocking-result.manual {
+  color: #714118;
+  background: #fff8e9;
+  border-color: #e3c899;
+}
+
+.clocking-result p {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.clocking-save {
+  width: 100%;
+  min-height: 52px;
+}
+
 .configurator-alert {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr);
@@ -1039,6 +1235,10 @@
     grid-template-columns: auto minmax(0, 1fr);
   }
 
+  .clocking-stage-layout {
+    grid-template-columns: 1fr;
+  }
+
   .finished-length-heading > a {
     grid-column: 2;
     justify-self: start;
@@ -1064,12 +1264,33 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .configurator-progress[data-has-clocking="true"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .configurator-progress li:nth-child(3) {
     border-right: 0;
   }
 
   .configurator-progress li:nth-child(-n + 3) {
     border-bottom: 1px solid var(--line);
+  }
+
+  .configurator-progress[data-has-clocking="true"] li:nth-child(odd) {
+    border-right: 1px solid var(--line);
+  }
+
+  .configurator-progress[data-has-clocking="true"] li:nth-child(even) {
+    border-right: 0;
+  }
+
+  .configurator-progress[data-has-clocking="true"] li:nth-child(-n + 6) {
+    border-bottom: 1px solid var(--line);
+  }
+
+  .configurator-progress[data-has-clocking="true"] li:last-child {
+    grid-column: 1 / -1;
+    border-right: 0;
   }
 
   .hose-series-grid,
@@ -1092,6 +1313,10 @@
   }
 
   .finished-length-heading {
+    grid-template-columns: 1fr;
+  }
+
+  .clocking-stage-heading {
     grid-template-columns: 1fr;
   }
 

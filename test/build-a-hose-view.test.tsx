@@ -15,7 +15,10 @@ import {
   groupCatalogFamilies,
   type PublicCatalogItem,
 } from "../app/modules/catalog/domain/public-catalog";
-import type { LengthMeasurementMethod } from "../app/modules/configurator-reference/domain/configurator-reference";
+import type {
+  ClockingConvention,
+  LengthMeasurementMethod,
+} from "../app/modules/configurator-reference/domain/configurator-reference";
 import { BuildAHoseView } from "../app/modules/storefront/routes/build-a-hose";
 import { publicHoseFixture } from "./fixtures/public-hose";
 import { compatibleEndAFixture } from "./fixtures/compatible-end-a";
@@ -28,6 +31,7 @@ function renderPage(
     <MemoryRouter initialEntries={["/build-a-hose"]}>
       <BuildAHoseView
         loaderData={{
+          clockingConvention: clockingConventionFixture(),
           directSelection: { kind: "none" },
           families: groupCatalogFamilies(items),
           measurementMethods: measurementMethodsFixture(),
@@ -38,6 +42,23 @@ function renderPage(
       />
     </MemoryRouter>,
   );
+}
+
+function clockingConventionFixture(): ClockingConvention {
+  return {
+    acceptedMaximumDegrees: 359,
+    acceptedMinimumDegrees: 0,
+    code: "M08",
+    measurementDirection: "clockwise",
+    notSureOutcome: "manual_review",
+    presets: [0, 45, 90, 135, 180, 225, 270, 315],
+    recordVersion: 2,
+    rendererVersion: "1.0.1",
+    standardToleranceDegrees: 3,
+    tighterToleranceOutcome: "manual_review",
+    viewDirection: "end_a_toward_end_b",
+    zeroReference: "end_b_at_6_oclock",
+  };
 }
 
 function measurementMethodsFixture(): LengthMeasurementMethod[] {
@@ -78,6 +99,25 @@ function compatibleCandidates() {
   ];
 }
 
+function angledCandidates() {
+  return [
+    compatibleEndAFixture({
+      aliases: ["FJX45-04-04W"],
+      angle: "45°",
+      compatibilityId: "COMP_0045",
+      displayName: "JIC 37° Female Swivel 45° Hose End",
+      hoseEndSku: "JIC45_F_SW_04_04",
+    }),
+    compatibleEndAFixture({
+      aliases: ["FJX90-04-04W"],
+      angle: "90°",
+      compatibilityId: "COMP_0090",
+      displayName: "JIC 37° Female Swivel 90° Hose End",
+      hoseEndSku: "JIC90_F_SW_04_04",
+    }),
+  ];
+}
+
 function chooseFixtureHose() {
   fireEvent.click(screen.getByRole("button", { name: /601R1 Hydraulic Hose/ }));
   fireEvent.click(screen.getByRole("button", { name: /Select 3\/16 in/ }));
@@ -95,6 +135,25 @@ async function reachFinishedLengthStage() {
   fireEvent.click(screen.getByRole("button", { name: "Continue to End B" }));
   await screen.findByRole("heading", { name: "Choose End B" });
   fireEvent.click(screen.getByRole("button", { name: "Use Same as End A" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Continue to Finished Length" }),
+  );
+}
+
+async function reachFinishedLengthStageWithEnds(
+  endAName: RegExp,
+  endBName?: RegExp,
+) {
+  chooseFixtureHose();
+  await screen.findByRole("heading", { name: "Choose End A" });
+  fireEvent.click(screen.getByRole("button", { name: endAName }));
+  fireEvent.click(screen.getByRole("button", { name: "Continue to End B" }));
+  await screen.findByRole("heading", { name: "Choose End B" });
+  if (endBName) {
+    fireEvent.click(screen.getByRole("button", { name: endBName }));
+  } else {
+    fireEvent.click(screen.getByRole("button", { name: "Use Same as End A" }));
+  }
   fireEvent.click(
     screen.getByRole("button", { name: "Continue to Finished Length" }),
   );
@@ -282,7 +341,7 @@ describe("Build a Hose view", () => {
     const remaining = screen.getByRole("region", {
       name: "Remaining configuration",
     });
-    expect(within(remaining).getAllByText("Not selected")).toHaveLength(3);
+    expect(within(remaining).getAllByText("Not selected")).toHaveLength(2);
     expect(within(remaining).queryByText(/M0[1-8]/)).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Back to End A" }));
@@ -348,6 +407,207 @@ describe("Build a Hose view", () => {
       target: { value: "73" },
     });
     expect(screen.queryByText("72 in")).toBeNull();
+  });
+
+  it("omits Clocking when fewer than two selected ends are angled", async () => {
+    const candidates = [compatibleEndAFixture(), ...angledCandidates()];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({ candidates }),
+        ok: true,
+      }),
+    );
+    renderPage([publicHoseFixture()]);
+    await reachFinishedLengthStageWithEnds(
+      /Select JIC 37° Female Swivel 0° Straight Hose End/,
+      /Select JIC 37° Female Swivel 90° Hose End/,
+    );
+
+    saveM04Length();
+
+    expect(
+      screen.getByRole("heading", {
+        name: "Set Finished Overall Assembly Length",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("heading", { name: "Set Double-Elbow Clocking" }),
+    ).toBeNull();
+    expect(
+      within(screen.getByRole("list", { name: "Assembly steps" })).queryByText(
+        "Orientation",
+      ),
+    ).toBeNull();
+  });
+
+  it("routes an unclassified Hose End angle to technical review without assuming M08", async () => {
+    const candidates = [
+      compatibleEndAFixture({
+        angle: "Other",
+        displayName: "JIC 37° Female Swivel Unclassified Angle Hose End",
+        hoseEndSku: "JIC_OTHER_F_SW_04_04",
+      }),
+      ...angledCandidates(),
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({ candidates }),
+        ok: true,
+      }),
+    );
+    renderPage([publicHoseFixture()]);
+    await reachFinishedLengthStageWithEnds(
+      /Select JIC 37° Female Swivel Unclassified Angle Hose End/,
+      /Select JIC 37° Female Swivel 90° Hose End/,
+    );
+
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Orientation Technical Review Required",
+    );
+    expect(
+      within(screen.getByRole("list", { name: "Assembly steps" })).queryByText(
+        "Orientation",
+      ),
+    ).toBeNull();
+
+    saveM04Length();
+
+    expect(
+      screen.queryByRole("heading", { name: "Set Double-Elbow Clocking" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("heading", {
+        name: "Set Finished Overall Assembly Length",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("requires explicit Clocking for two angled ends and renders M08 deterministically", async () => {
+    const candidates = angledCandidates();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({ candidates }),
+        ok: true,
+      }),
+    );
+    renderPage([publicHoseFixture()]);
+    await reachFinishedLengthStageWithEnds(
+      /Select JIC 37° Female Swivel 90° Hose End/,
+    );
+
+    saveM04Length();
+
+    expect(
+      screen.getByRole("heading", { name: "Set Double-Elbow Clocking" }),
+    ).toBeTruthy();
+    expect(screen.getByText("Orientation")).toBeTruthy();
+    expect(
+      screen.getByRole("img", {
+        name: /Double-elbow Clocking angle not selected/,
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Save Clocking" })).toBeNull();
+    expect(screen.getByText("Not to scale")).toBeTruthy();
+    expect(
+      screen.getByText("View the assembly from End A toward End B."),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "090°" }));
+
+    expect(
+      screen.getByRole("img", {
+        name: /Double-elbow Clocking 090 degrees/,
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText("090° Clocking")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save Clocking" }));
+    expect(screen.getByText("090° · ±3°")).toBeTruthy();
+  });
+
+  it("validates Clocking boundaries and never turns Not Sure into an angle", async () => {
+    const candidates = angledCandidates();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({ candidates }),
+        ok: true,
+      }),
+    );
+    renderPage([publicHoseFixture()]);
+    await reachFinishedLengthStageWithEnds(
+      /Select JIC 37° Female Swivel 45° Hose End/,
+    );
+    saveM04Length();
+
+    const input = screen.getByPlaceholderText("000–359");
+    fireEvent.change(input, { target: { value: "360" } });
+    expect(screen.getByRole("alert").textContent).toContain(
+      "whole degree from 000 through 359",
+    );
+    expect(screen.queryByRole("button", { name: "Save Clocking" })).toBeNull();
+
+    fireEvent.change(input, { target: { value: "359" } });
+    expect(screen.getByText("359° Clocking")).toBeTruthy();
+    expect(
+      screen.getByRole("img", { name: /Double-elbow Clocking 359 degrees/ }),
+    ).toBeTruthy();
+
+    fireEvent.change(input, { target: { value: "000" } });
+    expect(screen.getByText("000° Clocking")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /Not Sure/ }));
+    expect(screen.getByText("Manual Technical Review Required")).toBeTruthy();
+    expect(
+      screen.getByRole("img", {
+        name: /Double-elbow Clocking angle not selected/,
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText("000° Clocking")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save for Manual Review" }),
+    );
+    expect(screen.getByText("Not Sure · Manual Technical Review")).toBeTruthy();
+  });
+
+  it("retains saved Clocking as invalid after an upstream Hose End change", async () => {
+    const candidates = [compatibleEndAFixture(), ...angledCandidates()];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({ candidates }),
+        ok: true,
+      }),
+    );
+    renderPage([publicHoseFixture()]);
+    await reachFinishedLengthStageWithEnds(
+      /Select JIC 37° Female Swivel 90° Hose End/,
+    );
+    saveM04Length();
+    fireEvent.click(screen.getByRole("button", { name: "090°" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save Clocking" }));
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Back to Finished Length" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Back to End B" }));
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /Select JIC 37° Female Swivel 0° Straight Hose End/,
+      }),
+    );
+
+    expect(
+      screen.getByText("Retained selection · Reconfirmation required"),
+    ).toBeTruthy();
+    expect(screen.getByText(/Previous Clocking: 090°/)).toBeTruthy();
+    expect(
+      within(screen.getByRole("list", { name: "Assembly steps" })).queryByText(
+        "Orientation",
+      ),
+    ).toBeNull();
   });
 
   it("preserves method and length when End B changes", async () => {

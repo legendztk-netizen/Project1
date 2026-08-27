@@ -4,6 +4,7 @@ import type {
   FinishedAssemblyLengthSnapshot,
   MeasurementSelectionSnapshot,
 } from "./finished-assembly-length";
+import type { ClockingDraftSnapshot } from "./assembly-clocking";
 
 interface ConfiguredHoseEnd {
   compatibilityId: string;
@@ -41,6 +42,7 @@ export interface HoseConfigurationDraft {
   };
   endA?: ConfiguredHoseEnd;
   endB?: ConfiguredHoseEnd;
+  clocking?: ClockingDraftSnapshot;
   finishedLength?: FinishedAssemblyLengthSnapshot;
   measurementSelection?: MeasurementSelectionSnapshot;
 }

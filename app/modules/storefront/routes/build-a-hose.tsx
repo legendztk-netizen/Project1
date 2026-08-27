@@ -11,6 +11,14 @@ import { Link } from "react-router";
 
 import type { Route } from "./+types/build-a-hose";
 import {
+  attachClockingToDraft,
+  confirmClockingForDraft,
+  evaluateAssemblyClockingApplicability,
+  requiresAssemblyClocking,
+  type ClockingDraftSnapshot,
+  type ClockingSelectionSnapshot,
+} from "../../configurator/domain/assembly-clocking";
+import {
   attachEndAToDraft,
   attachEndBToDraft,
   type CompatibleHoseEndCandidate,
@@ -34,10 +42,12 @@ import {
 import { createD1PublicCatalogRepository } from "../../catalog/infrastructure/d1-public-catalog-repository";
 import { hoseSizeLabel } from "../domain/variant-label";
 import { CatalogMedia } from "../ui/catalog-media";
+import { ClockingStage } from "../ui/clocking-stage";
 import { CompatibleHoseEndStage } from "../ui/compatible-end-a-stage";
 import { FinishedLengthStage } from "../ui/finished-length-stage";
 import { StorefrontHeader } from "../ui/storefront-header";
 import "../styles/catalog.css";
+import "../styles/clocking-preview.css";
 import "../styles/configurator.css";
 import { cloudflareContext } from "#workers/context";
 
@@ -107,6 +117,10 @@ export async function loader({ context, request }: Route.LoaderArgs) {
           left.code.localeCompare(right.code),
         )
       : [];
+  const clockingConvention =
+    referenceSnapshot?.release.id === hoses[0]?.releaseId
+      ? referenceSnapshot.clockingConvention
+      : null;
 
   let directSelection: DirectSelectionState = { kind: "none" };
   if (requestedSku) {
@@ -125,6 +139,7 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 
   return {
     directSelection,
+    clockingConvention,
     families: groupCatalogFamilies(eligibleHoses),
     measurementMethods,
     publishedHoseCount: hoses.length,
@@ -188,7 +203,7 @@ function temperatureLabel(item: PublicCatalogItem) {
 
 type BuildAHoseLoaderData = Awaited<ReturnType<typeof loader>>;
 
-type ConfiguratorStage = "hose" | "end-a" | "end-b" | "length";
+type ConfiguratorStage = "hose" | "end-a" | "end-b" | "length" | "clocking";
 
 function ConfiguredEndSummary({
   end,
@@ -228,7 +243,7 @@ function ConfiguredEndSummary({
   );
 }
 
-function LaterStagePreview() {
+function LaterStagePreview({ showOrientation }: { showOrientation: boolean }) {
   return (
     <section
       className="later-stage-preview"
@@ -240,7 +255,11 @@ function LaterStagePreview() {
         <p>No measurement method or option has been selected automatically.</p>
       </header>
       <div>
-        {["Orientation", "Protection", "Application"].map((label) => (
+        {[
+          ...(showOrientation ? ["Orientation"] : []),
+          "Protection",
+          "Application",
+        ].map((label) => (
           <article key={label}>
             <strong>{label}</strong>
             <span>Not selected</span>
@@ -269,6 +288,8 @@ export function BuildAHoseView({
     useState<MeasurementSelectionSnapshot | null>(null);
   const [finishedLength, setFinishedLength] =
     useState<FinishedAssemblyLengthSnapshot | null>(null);
+  const [clockingSelection, setClockingSelection] =
+    useState<ClockingDraftSnapshot | null>(null);
   const selectedFamily = loaderData.families.find(
     (family) => family.familyKey === selectedFamilyKey,
   );
@@ -290,16 +311,24 @@ export function BuildAHoseView({
     const withMeasurement = measurementSelection
       ? attachMeasurementSelectionToDraft(withEndB, measurementSelection)
       : withEndB;
-    return finishedLength
+    const withLength = finishedLength
       ? attachFinishedLengthToDraft(withMeasurement, finishedLength)
       : withMeasurement;
+    return clockingSelection
+      ? attachClockingToDraft(withLength, clockingSelection)
+      : withLength;
   }, [
+    clockingSelection,
     finishedLength,
     hoseDraft,
     measurementSelection,
     selectedEndA,
     selectedEndB,
   ]);
+  const clockingApplicability = draft
+    ? evaluateAssemblyClockingApplicability(draft)
+    : { status: "not_applicable" as const };
+  const clockingRequired = clockingApplicability.status === "required";
   const hasSelectableHose = loaderData.families.some((family) =>
     family.variants.some((variant) => variant.canAddToQuote),
   );
@@ -312,7 +341,14 @@ export function BuildAHoseView({
     if (stage !== "hose") window.scrollTo({ behavior: "auto", top: 0 });
   }, [stage]);
 
+  function retainClockingForReconfirmation() {
+    setClockingSelection((current) =>
+      current ? { ...current, validation: "retained_invalid" } : null,
+    );
+  }
+
   function chooseFamily(familyKey: string) {
+    if (familyKey !== selectedFamilyKey) retainClockingForReconfirmation();
     setSelectedFamilyKey(familyKey);
     setSelectedSku(null);
     setSelectedEndA(null);
@@ -323,6 +359,7 @@ export function BuildAHoseView({
 
   function chooseHose(item: PublicCatalogItem) {
     if (!item.canAddToQuote) return;
+    if (item.sku !== selectedSku) retainClockingForReconfirmation();
     setSelectedSku(item.sku);
     setSelectedEndA(null);
     setSelectedEndB(null);
@@ -349,10 +386,24 @@ export function BuildAHoseView({
   }
 
   function chooseEndA(candidate: CompatibleHoseEndCandidate) {
+    if (
+      selectedEndA &&
+      (candidate.hoseEndSku !== selectedEndA.hoseEndSku ||
+        candidate.angle !== selectedEndA.angle)
+    ) {
+      retainClockingForReconfirmation();
+    }
     setSelectedEndA(candidate);
   }
 
   function chooseEndB(candidate: CompatibleHoseEndCandidate) {
+    if (
+      selectedEndB &&
+      (candidate.hoseEndSku !== selectedEndB.hoseEndSku ||
+        candidate.angle !== selectedEndB.angle)
+    ) {
+      retainClockingForReconfirmation();
+    }
     setSelectedEndB(candidate);
   }
 
@@ -368,6 +419,21 @@ export function BuildAHoseView({
   function chooseMeasurement(selection: MeasurementSelectionSnapshot) {
     setMeasurementSelection(selection);
     setFinishedLength(null);
+  }
+
+  function saveFinishedLength(length: FinishedAssemblyLengthSnapshot) {
+    setFinishedLength(length);
+    if (draft && requiresAssemblyClocking(draft)) setStage("clocking");
+  }
+
+  function backToLength() {
+    setStage("length");
+  }
+
+  function saveClocking(selection: ClockingSelectionSnapshot) {
+    if (!draft) return;
+    const confirmed = confirmClockingForDraft(draft, selection);
+    if (confirmed) setClockingSelection(confirmed);
   }
 
   const nextAction =
@@ -398,22 +464,33 @@ export function BuildAHoseView({
           </div>
         </header>
 
-        <ol className="configurator-progress" aria-label="Assembly steps">
-          {["Hose", "End A", "End B", "Length", "Protection", "Review"].map(
-            (label, index) => {
-              const active =
-                (stage === "hose" && index === 0) ||
-                (stage === "end-a" && index === 1) ||
-                (stage === "end-b" && index === 2) ||
-                (stage === "length" && index === 3);
-              return (
-                <li aria-current={active ? "step" : undefined} key={label}>
-                  <span>{index + 1}</span>
-                  <strong>{label}</strong>
-                </li>
-              );
-            },
-          )}
+        <ol
+          className="configurator-progress"
+          data-has-clocking={clockingRequired}
+          aria-label="Assembly steps"
+        >
+          {[
+            "Hose",
+            "End A",
+            "End B",
+            "Length",
+            ...(clockingRequired ? ["Orientation"] : []),
+            "Protection",
+            "Review",
+          ].map((label, index) => {
+            const active =
+              (stage === "hose" && index === 0) ||
+              (stage === "end-a" && index === 1) ||
+              (stage === "end-b" && index === 2) ||
+              (stage === "length" && index === 3) ||
+              (stage === "clocking" && label === "Orientation");
+            return (
+              <li aria-current={active ? "step" : undefined} key={label}>
+                <span>{index + 1}</span>
+                <strong>{label}</strong>
+              </li>
+            );
+          })}
         </ol>
 
         {directCopy && loaderData.directSelection.kind !== "none" ? (
@@ -580,9 +657,11 @@ export function BuildAHoseView({
                       requestedEndSku={null}
                       selected={selectedEndB}
                     />
-                    {draft?.endA && draft.endB ? <LaterStagePreview /> : null}
+                    {draft?.endA && draft.endB ? (
+                      <LaterStagePreview showOrientation={clockingRequired} />
+                    ) : null}
                   </>
-                ) : (
+                ) : stage === "length" ? (
                   <>
                     <FinishedLengthStage
                       finishedLength={finishedLength}
@@ -590,12 +669,32 @@ export function BuildAHoseView({
                       measurementSelection={measurementSelection}
                       onBack={backToEndB}
                       onInvalidateLength={() => setFinishedLength(null)}
-                      onSaveLength={setFinishedLength}
+                      onSaveLength={saveFinishedLength}
                       onSelectMeasurement={chooseMeasurement}
                     />
-                    {finishedLength ? <LaterStagePreview /> : null}
+                    {finishedLength ? (
+                      <LaterStagePreview showOrientation={clockingRequired} />
+                    ) : null}
                   </>
+                ) : (
+                  <ClockingStage
+                    convention={loaderData.clockingConvention}
+                    onBack={backToLength}
+                    onInvalidate={() => setClockingSelection(null)}
+                    onSave={saveClocking}
+                    selection={clockingSelection}
+                  />
                 )}
+                {clockingApplicability.status === "manual_review" ? (
+                  <div className="length-inline-alert" role="alert">
+                    <AlertTriangle aria-hidden="true" size={19} />
+                    <p>
+                      <strong>Orientation Technical Review Required</strong>
+                      One selected Hose End has an unclassified angle. No M08
+                      angle is assumed or requested automatically.
+                    </p>
+                  </div>
+                ) : null}
               </section>
 
               <aside className="configurator-summary" aria-live="polite">
@@ -709,6 +808,23 @@ export function BuildAHoseView({
                       ) : (
                         <p>Finished length has not been saved.</p>
                       )}
+                    </section>
+                  ) : null}
+                  {draft?.clocking ? (
+                    <section className="configured-length-summary">
+                      <span className="eyebrow">M08 Clocking</span>
+                      <h3>
+                        {draft.clocking.validation === "retained_invalid"
+                          ? "Retained selection · Reconfirmation required"
+                          : draft.clocking.status === "specified"
+                            ? `${draft.clocking.targetDisplay}° · ±${draft.clocking.standardToleranceDegrees}°`
+                            : "Not Sure · Manual Technical Review"}
+                      </h3>
+                      <p>
+                        {draft.clocking.validation === "retained_invalid"
+                          ? `Previous Clocking: ${draft.clocking.status === "specified" ? `${draft.clocking.targetDisplay}°` : "Not Sure"}. The selected hose ends changed, so this value is not valid until you confirm it again.`
+                          : "View End A toward End B. End B is 000° at 6 o'clock; measure clockwise."}
+                      </p>
                     </section>
                   ) : null}
                   <p className="configurator-session-note">
