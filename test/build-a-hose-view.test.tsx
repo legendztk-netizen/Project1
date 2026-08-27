@@ -15,6 +15,7 @@ import {
   groupCatalogFamilies,
   type PublicCatalogItem,
 } from "../app/modules/catalog/domain/public-catalog";
+import type { LengthMeasurementMethod } from "../app/modules/configurator-reference/domain/configurator-reference";
 import { BuildAHoseView } from "../app/modules/storefront/routes/build-a-hose";
 import { publicHoseFixture } from "./fixtures/public-hose";
 import { compatibleEndAFixture } from "./fixtures/compatible-end-a";
@@ -29,6 +30,7 @@ function renderPage(
         loaderData={{
           directSelection: { kind: "none" },
           families: groupCatalogFamilies(items),
+          measurementMethods: measurementMethodsFixture(),
           publishedHoseCount: items.length,
           releaseNumber: items[0]?.releaseNumber ?? null,
           requestedEndASku: options.requestedEndASku ?? null,
@@ -36,6 +38,21 @@ function renderPage(
       />
     </MemoryRouter>,
   );
+}
+
+function measurementMethodsFixture(): LengthMeasurementMethod[] {
+  return Array.from({ length: 7 }, (_, index) => {
+    const code = `M0${index + 1}` as LengthMeasurementMethod["code"];
+    return {
+      code,
+      diagramAssetKey: `${code}-diagram.png`,
+      diagramAssetVersion: "diagram-1.0.1",
+      displayName: `${code} measurement`,
+      endpointRule: `${code} endpoint rule`,
+      overlayVersion: "1.0.1",
+      recordVersion: 2,
+    };
+  });
 }
 
 function compatibleCandidates() {
@@ -65,6 +82,30 @@ function chooseFixtureHose() {
   fireEvent.click(screen.getByRole("button", { name: /601R1 Hydraulic Hose/ }));
   fireEvent.click(screen.getByRole("button", { name: /Select 3\/16 in/ }));
   fireEvent.click(screen.getByRole("button", { name: "Continue to End A" }));
+}
+
+async function reachFinishedLengthStage() {
+  chooseFixtureHose();
+  await screen.findByRole("heading", { name: "Choose End A" });
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: /Select JIC 37° Female Swivel 0° Straight Hose End/,
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Continue to End B" }));
+  await screen.findByRole("heading", { name: "Choose End B" });
+  fireEvent.click(screen.getByRole("button", { name: "Use Same as End A" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Continue to Finished Length" }),
+  );
+}
+
+function saveM04Length(value = "72") {
+  fireEvent.click(screen.getByRole("button", { name: /M04 M04 measurement/ }));
+  fireEvent.change(screen.getByPlaceholderText("Example: 72"), {
+    target: { value },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save Finished Length" }));
 }
 
 afterEach(() => {
@@ -236,12 +277,141 @@ describe("Build a Hose view", () => {
     const remaining = screen.getByRole("region", {
       name: "Remaining configuration",
     });
-    expect(within(remaining).getAllByText("Not selected")).toHaveLength(4);
+    expect(within(remaining).getAllByText("Not selected")).toHaveLength(3);
     expect(within(remaining).queryByText(/M0[1-8]/)).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Back to End A" }));
     expect(screen.getByRole("heading", { name: "Choose End A" })).toBeTruthy();
     expect(screen.getByRole("region", { name: "Selected End B" })).toBeTruthy();
+  });
+
+  it("requires an explicit measurement method before accepting finished length", async () => {
+    const candidates = compatibleCandidates();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({ candidates }),
+        ok: true,
+      }),
+    );
+    renderPage([publicHoseFixture()]);
+    await reachFinishedLengthStage();
+
+    expect(
+      screen.getByRole("heading", {
+        name: "Set Finished Overall Assembly Length",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getAllByRole("link", { name: "Measurement Guide" })
+        .at(-1)
+        ?.getAttribute("href"),
+    ).toBe("/assembly-measurement-guide");
+    const lengthGroup = screen.getByRole("group", {
+      name: "2. Enter Finished Length",
+    }) as HTMLFieldSetElement;
+    expect(lengthGroup.disabled).toBe(true);
+    expect(
+      screen
+        .getByRole("button", { name: /M04 M04 measurement/ })
+        .getAttribute("aria-pressed"),
+    ).toBe("false");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /M04 M04 measurement/ }),
+    );
+    expect(lengthGroup.disabled).toBe(false);
+    fireEvent.change(screen.getByPlaceholderText("Example: 72"), {
+      target: { value: "72" },
+    });
+    expect(screen.getByText("1828.8 mm")).toBeTruthy();
+    expect(screen.getByText("± 1% (± 18.288 mm)")).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save Finished Length" }),
+    );
+    const summary = screen.getByText("M04 · M04 measurement").parentElement;
+    expect(summary).toBeTruthy();
+    expect(screen.getAllByText("72 in").length).toBeGreaterThan(0);
+
+    fireEvent.change(screen.getByPlaceholderText("Example: 72"), {
+      target: { value: "73" },
+    });
+    expect(screen.queryByText("72 in")).toBeNull();
+  });
+
+  it("preserves method and length when End B changes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({ candidates: compatibleCandidates() }),
+        ok: true,
+      }),
+    );
+    renderPage([publicHoseFixture()]);
+    await reachFinishedLengthStage();
+    saveM04Length();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to End B" }));
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /Select NPTF Male Fixed Straight Hose End/,
+      }),
+    );
+
+    expect(screen.getByText("M04 · M04 measurement")).toBeTruthy();
+    expect(screen.getByText("72 in")).toBeTruthy();
+  });
+
+  it("preserves End B, method, and length when End A changes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({ candidates: compatibleCandidates() }),
+        ok: true,
+      }),
+    );
+    renderPage([publicHoseFixture()]);
+    await reachFinishedLengthStage();
+    saveM04Length();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to End B" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to End A" }));
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /Select NPTF Male Fixed Straight Hose End/,
+      }),
+    );
+
+    expect(screen.getByRole("region", { name: "Selected End B" })).toBeTruthy();
+    expect(screen.getByText("M04 · M04 measurement")).toBeTruthy();
+    expect(screen.getByText("72 in")).toBeTruthy();
+  });
+
+  it("stores Not Sure without assigning an M-code or diagram", async () => {
+    const [candidate] = compatibleCandidates();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({ candidates: [candidate] }),
+        ok: true,
+      }),
+    );
+    renderPage([publicHoseFixture()]);
+    await reachFinishedLengthStage();
+    fireEvent.click(screen.getByRole("button", { name: /Not Sure/ }));
+    fireEvent.change(screen.getByPlaceholderText("Example: 72"), {
+      target: { value: "24" },
+    });
+
+    expect(screen.getByText("Manual Technical Review Required")).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save for Manual Review" }),
+    );
+    expect(screen.getByText("Not Sure · Manual Technical Review")).toBeTruthy();
+    expect(
+      screen.getByText("Not Sure · Manual Technical Review").textContent,
+    ).not.toMatch(/M0[1-7]/);
   });
 
   it("does not offer Same as End A when the exact SKU is unavailable", async () => {

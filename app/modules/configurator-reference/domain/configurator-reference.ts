@@ -17,6 +17,7 @@ export interface HoseEndEndpointAssignment {
 export interface LengthMeasurementMethod {
   code: MeasurementMethodCode;
   diagramAssetKey: string;
+  diagramAssetVersion: string;
   displayName: string;
   endpointRule: string;
   overlayVersion: string;

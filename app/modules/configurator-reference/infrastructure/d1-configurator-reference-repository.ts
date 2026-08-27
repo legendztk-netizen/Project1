@@ -67,6 +67,13 @@ function nullableStringField(value: Record<string, unknown>, key: string) {
   return field;
 }
 
+function optionalStringField(
+  value: Record<string, unknown>,
+  key: string,
+): string | null {
+  return value[key] === undefined ? null : stringField(value, key);
+}
+
 function numberField(value: Record<string, unknown>, key: string) {
   const field = value[key];
   if (typeof field !== "number" || !Number.isFinite(field)) {
@@ -159,9 +166,21 @@ function measurementMethod(row: RegistryRow): LengthMeasurementMethod {
   if (row.entry_key !== code) {
     throw new Error("Measurement Method key does not match its code");
   }
+  const storedDiagramAssetKey = stringField(value, "diagramAssetKey");
+  const storedDiagramAssetVersion = optionalStringField(
+    value,
+    "diagramAssetVersion",
+  );
   return {
     code,
-    diagramAssetKey: stringField(value, "diagramAssetKey"),
+    // Releases created before migration 0014 used the ImageGen manifest's
+    // provisional .png names. The committed guide assets are the reviewed
+    // .jpg files, so this adapter keeps those immutable releases readable.
+    diagramAssetKey:
+      storedDiagramAssetVersion === null
+        ? storedDiagramAssetKey.replace(/\.png$/u, ".jpg")
+        : storedDiagramAssetKey,
+    diagramAssetVersion: storedDiagramAssetVersion ?? "1.0.1-draft",
     displayName: stringField(value, "displayName"),
     endpointRule: stringField(value, "endpointRule"),
     overlayVersion: stringField(value, "overlayVersion"),

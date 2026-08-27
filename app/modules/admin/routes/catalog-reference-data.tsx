@@ -91,6 +91,7 @@ function mutationFromForm(form: FormData) {
       payload: {
         code,
         diagramAssetKey: requiredText(form, "diagramAssetKey"),
+        diagramAssetVersion: requiredText(form, "diagramAssetVersion"),
         displayName: requiredText(form, "displayName"),
         endpointRule: requiredText(form, "endpointRule"),
         overlayVersion: requiredText(form, "overlayVersion"),
@@ -426,6 +427,7 @@ export default function CatalogReferenceData({
                 <th>Method</th>
                 <th>Name</th>
                 <th>Diagram</th>
+                <th>Asset version</th>
                 <th>Version</th>
               </tr>
             </thead>
@@ -435,6 +437,7 @@ export default function CatalogReferenceData({
                   <td>{method.code}</td>
                   <td>{method.displayName}</td>
                   <td>{method.diagramAssetKey}</td>
+                  <td>{method.diagramAssetVersion}</td>
                   <td>v{method.recordVersion}</td>
                 </tr>
               ))}
@@ -462,6 +465,9 @@ export default function CatalogReferenceData({
             </Field>
             <Field label="Diagram asset key">
               <input name="diagramAssetKey" required />
+            </Field>
+            <Field label="Diagram asset version">
+              <input name="diagramAssetVersion" required />
             </Field>
             <Field label="Overlay version">
               <input name="overlayVersion" required />

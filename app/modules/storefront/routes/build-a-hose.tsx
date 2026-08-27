@@ -20,6 +20,13 @@ import {
   type HoseConfigurationDraft,
 } from "../../configurator/domain/hose-configuration-draft";
 import {
+  attachFinishedLengthToDraft,
+  attachMeasurementSelectionToDraft,
+  type FinishedAssemblyLengthSnapshot,
+  type MeasurementSelectionSnapshot,
+} from "../../configurator/domain/finished-assembly-length";
+import { createD1ConfiguratorReferenceRepository } from "../../configurator-reference/infrastructure/d1-configurator-reference-repository";
+import {
   groupCatalogFamilies,
   type PublicCatalogItem,
   type PublicVariantSelection,
@@ -28,6 +35,7 @@ import { createD1PublicCatalogRepository } from "../../catalog/infrastructure/d1
 import { hoseSizeLabel } from "../domain/variant-label";
 import { CatalogMedia } from "../ui/catalog-media";
 import { CompatibleHoseEndStage } from "../ui/compatible-end-a-stage";
+import { FinishedLengthStage } from "../ui/finished-length-stage";
 import { StorefrontHeader } from "../ui/storefront-header";
 import "../styles/catalog.css";
 import "../styles/configurator.css";
@@ -79,6 +87,7 @@ function directSelectionCopy(
 export async function loader({ context, request }: Route.LoaderArgs) {
   const { env } = context.get(cloudflareContext);
   const repository = createD1PublicCatalogRepository(env.DB);
+  const referenceRepository = createD1ConfiguratorReferenceRepository(env.DB);
   const result = await repository.browse({ category: "hydraulic-hose" });
   const hoses = result.items.filter((item) => item.productType === "hose");
   const eligibleHoses = hoses.filter(
@@ -91,6 +100,13 @@ export async function loader({ context, request }: Route.LoaderArgs) {
   const requested = requestedSku
     ? hoses.find((item) => item.sku === requestedSku)
     : null;
+  const referenceSnapshot = await referenceRepository.findActiveSnapshot();
+  const measurementMethods =
+    referenceSnapshot?.release.id === hoses[0]?.releaseId
+      ? [...referenceSnapshot.measurementMethods].sort((left, right) =>
+          left.code.localeCompare(right.code),
+        )
+      : [];
 
   let directSelection: DirectSelectionState = { kind: "none" };
   if (requestedSku) {
@@ -110,6 +126,7 @@ export async function loader({ context, request }: Route.LoaderArgs) {
   return {
     directSelection,
     families: groupCatalogFamilies(eligibleHoses),
+    measurementMethods,
     publishedHoseCount: hoses.length,
     releaseNumber: hoses[0]?.releaseNumber ?? null,
     requestedEndASku: requestedEndASku ?? null,
@@ -171,7 +188,7 @@ function temperatureLabel(item: PublicCatalogItem) {
 
 type BuildAHoseLoaderData = Awaited<ReturnType<typeof loader>>;
 
-type ConfiguratorStage = "hose" | "end-a" | "end-b";
+type ConfiguratorStage = "hose" | "end-a" | "end-b" | "length";
 
 function ConfiguredEndSummary({
   end,
@@ -223,14 +240,12 @@ function LaterStagePreview() {
         <p>No measurement method or option has been selected automatically.</p>
       </header>
       <div>
-        {["Measurement method", "Orientation", "Protection", "Application"].map(
-          (label) => (
-            <article key={label}>
-              <strong>{label}</strong>
-              <span>Not selected</span>
-            </article>
-          ),
-        )}
+        {["Orientation", "Protection", "Application"].map((label) => (
+          <article key={label}>
+            <strong>{label}</strong>
+            <span>Not selected</span>
+          </article>
+        ))}
       </div>
     </section>
   );
@@ -250,6 +265,10 @@ export function BuildAHoseView({
     useState<CompatibleHoseEndCandidate | null>(null);
   const [selectedEndB, setSelectedEndB] =
     useState<CompatibleHoseEndCandidate | null>(null);
+  const [measurementSelection, setMeasurementSelection] =
+    useState<MeasurementSelectionSnapshot | null>(null);
+  const [finishedLength, setFinishedLength] =
+    useState<FinishedAssemblyLengthSnapshot | null>(null);
   const selectedFamily = loaderData.families.find(
     (family) => family.familyKey === selectedFamilyKey,
   );
@@ -265,8 +284,22 @@ export function BuildAHoseView({
     const withEndA = selectedEndA
       ? attachEndAToDraft(hoseDraft, selectedEndA)
       : hoseDraft;
-    return selectedEndB ? attachEndBToDraft(withEndA, selectedEndB) : withEndA;
-  }, [hoseDraft, selectedEndA, selectedEndB]);
+    const withEndB = selectedEndB
+      ? attachEndBToDraft(withEndA, selectedEndB)
+      : withEndA;
+    const withMeasurement = measurementSelection
+      ? attachMeasurementSelectionToDraft(withEndB, measurementSelection)
+      : withEndB;
+    return finishedLength
+      ? attachFinishedLengthToDraft(withMeasurement, finishedLength)
+      : withMeasurement;
+  }, [
+    finishedLength,
+    hoseDraft,
+    measurementSelection,
+    selectedEndA,
+    selectedEndB,
+  ]);
   const hasSelectableHose = loaderData.families.some((family) =>
     family.variants.some((variant) => variant.canAddToQuote),
   );
@@ -284,6 +317,8 @@ export function BuildAHoseView({
     setSelectedSku(null);
     setSelectedEndA(null);
     setSelectedEndB(null);
+    setMeasurementSelection(null);
+    setFinishedLength(null);
   }
 
   function chooseHose(item: PublicCatalogItem) {
@@ -291,6 +326,8 @@ export function BuildAHoseView({
     setSelectedSku(item.sku);
     setSelectedEndA(null);
     setSelectedEndB(null);
+    setMeasurementSelection(null);
+    setFinishedLength(null);
   }
 
   function continueToEndA() {
@@ -309,6 +346,28 @@ export function BuildAHoseView({
 
   function backToEndA() {
     setStage("end-a");
+  }
+
+  function chooseEndA(candidate: CompatibleHoseEndCandidate) {
+    setSelectedEndA(candidate);
+  }
+
+  function chooseEndB(candidate: CompatibleHoseEndCandidate) {
+    setSelectedEndB(candidate);
+  }
+
+  function continueToLength() {
+    if (!draft?.endA || !draft.endB) return;
+    setStage("length");
+  }
+
+  function backToEndB() {
+    setStage("end-b");
+  }
+
+  function chooseMeasurement(selection: MeasurementSelectionSnapshot) {
+    setMeasurementSelection(selection);
+    setFinishedLength(null);
   }
 
   return (
@@ -333,7 +392,8 @@ export function BuildAHoseView({
               const active =
                 (stage === "hose" && index === 0) ||
                 (stage === "end-a" && index === 1) ||
-                (stage === "end-b" && index === 2);
+                (stage === "end-b" && index === 2) ||
+                (stage === "length" && index === 3);
               return (
                 <li aria-current={active ? "step" : undefined} key={label}>
                   <span>{index + 1}</span>
@@ -486,24 +546,37 @@ export function BuildAHoseView({
                   endRole="A"
                   hoseSku={hoseDraft?.hose.sku ?? ""}
                   onBack={backToHose}
-                  onSelect={setSelectedEndA}
+                  onSelect={chooseEndA}
                   releaseId={hoseDraft?.catalogRelease.id ?? ""}
                   requestedEndSku={loaderData.requestedEndASku}
                   selected={selectedEndA}
                 />
-              ) : (
+              ) : stage === "end-b" ? (
                 <>
                   <CompatibleHoseEndStage
                     copyFromEndA={selectedEndA}
                     endRole="B"
                     hoseSku={hoseDraft?.hose.sku ?? ""}
                     onBack={backToEndA}
-                    onSelect={setSelectedEndB}
+                    onSelect={chooseEndB}
                     releaseId={hoseDraft?.catalogRelease.id ?? ""}
                     requestedEndSku={null}
                     selected={selectedEndB}
                   />
                   {draft?.endA && draft.endB ? <LaterStagePreview /> : null}
+                </>
+              ) : (
+                <>
+                  <FinishedLengthStage
+                    finishedLength={finishedLength}
+                    measurementMethods={loaderData.measurementMethods}
+                    measurementSelection={measurementSelection}
+                    onBack={backToEndB}
+                    onInvalidateLength={() => setFinishedLength(null)}
+                    onSaveLength={setFinishedLength}
+                    onSelectMeasurement={chooseMeasurement}
+                  />
+                  {finishedLength ? <LaterStagePreview /> : null}
                 </>
               )}
             </section>
@@ -609,6 +682,47 @@ export function BuildAHoseView({
                       </small>
                     </span>
                   </p>
+                ) : null}
+                {draft?.endB && stage === "end-b" ? (
+                  <button
+                    className="button button-primary configurator-next"
+                    onClick={continueToLength}
+                    type="button"
+                  >
+                    Continue to Finished Length
+                    <ArrowRight aria-hidden="true" size={18} />
+                  </button>
+                ) : null}
+                {draft?.measurementSelection ? (
+                  <section className="configured-length-summary">
+                    <span className="eyebrow">Measurement</span>
+                    <h3>
+                      {draft.measurementSelection.state === "selected"
+                        ? `${draft.measurementSelection.method.code} · ${draft.measurementSelection.method.displayName}`
+                        : "Not Sure · Manual Technical Review"}
+                    </h3>
+                    {draft.finishedLength ? (
+                      <dl>
+                        <div>
+                          <dt>Finished length</dt>
+                          <dd>
+                            {draft.finishedLength.originalValue}{" "}
+                            {draft.finishedLength.originalUnit}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Exact conversion</dt>
+                          <dd>{draft.finishedLength.canonicalMm} mm</dd>
+                        </div>
+                        <div>
+                          <dt>SAE J517 tolerance</dt>
+                          <dd>{draft.finishedLength.tolerance.display}</dd>
+                        </div>
+                      </dl>
+                    ) : (
+                      <p>Finished length has not been saved.</p>
+                    )}
+                  </section>
                 ) : null}
                 <p className="configurator-session-note">
                   This unfinished configuration is kept only in this page

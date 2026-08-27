@@ -1,5 +1,9 @@
 import type { PublicCatalogItem } from "../../catalog/domain/public-catalog";
 import type { CompatibleHoseEndCandidate } from "./compatible-end-a";
+import type {
+  FinishedAssemblyLengthSnapshot,
+  MeasurementSelectionSnapshot,
+} from "./finished-assembly-length";
 
 interface ConfiguredHoseEnd {
   compatibilityId: string;
@@ -37,6 +41,8 @@ export interface HoseConfigurationDraft {
   };
   endA?: ConfiguredHoseEnd;
   endB?: ConfiguredHoseEnd;
+  finishedLength?: FinishedAssemblyLengthSnapshot;
+  measurementSelection?: MeasurementSelectionSnapshot;
 }
 
 export function createHoseConfigurationDraft(

@@ -87,6 +87,7 @@ const snapshot: ConfiguratorReferenceSnapshot = {
     {
       code: "M04",
       diagramAssetKey: "M04-straight-to-90-elbow.png",
+      diagramAssetVersion: "diagram-1.0.1-draft",
       displayName: "Straight to 90 degree elbow",
       endpointRule: "straight end to elbow centerline intersection",
       overlayVersion: "1.0.1-draft",

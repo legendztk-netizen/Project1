@@ -367,7 +367,10 @@ describe("real local D1 migration lifecycle", () => {
   it("adds registry seeds only to pre-existing draft releases during an upgrade", () => {
     const fixture = createD1Fixture();
     const registryMigration = "0013_configurator_reference_registries.sql";
+    const diagramVersionMigration =
+      "0014_version_measurement_diagram_assets.sql";
     rmSync(join(fixture.directory, "migrations", registryMigration));
+    rmSync(join(fixture.directory, "migrations", diagramVersionMigration));
     const preRegistryMigration = applyMigrations(fixture);
     expect(
       preRegistryMigration.status,
@@ -396,6 +399,10 @@ describe("real local D1 migration lifecycle", () => {
     copyFileSync(
       join(projectRoot, "migrations", registryMigration),
       join(fixture.directory, "migrations", registryMigration),
+    );
+    copyFileSync(
+      join(projectRoot, "migrations", diagramVersionMigration),
+      join(fixture.directory, "migrations", diagramVersionMigration),
     );
     const registryUpgrade = applyMigrations(fixture);
     expect(
