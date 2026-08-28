@@ -98,6 +98,17 @@
   background: var(--accent);
 }
 
+.configurator-progress li > button {
+  padding: 8px 0;
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+  font: inherit;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+
 .configurator-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.65fr);
@@ -822,14 +833,286 @@
   font-size: 0.8rem;
 }
 
+.assembly-review-stage {
+  display: grid;
+  gap: 18px;
+}
+
+.assembly-review-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 20px;
+  color: #234b37;
+  background: #eef8f3;
+  border: 1px solid #badbca;
+}
+
+.assembly-review-stage[data-review-outcome="technical_review"]
+  .assembly-review-status,
+.assembly-review-stage[data-review-outcome="manual_quote"]
+  .assembly-review-status {
+  color: #74451f;
+  background: #fff7eb;
+  border-color: #e5c79d;
+}
+
+.assembly-review-stage[data-review-outcome="blocked"] .assembly-review-status {
+  color: #8d2b24;
+  background: #fff0ee;
+  border-color: #e6b3ae;
+}
+
+.assembly-review-status div {
+  display: grid;
+  gap: 4px;
+}
+
+.assembly-review-status p,
+.assembly-review-support p,
+.assembly-review-issues p,
+.assembly-review-empty-flags {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+
+.assembly-review-section {
+  padding: 22px 24px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.assembly-review-section > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.assembly-review-section h3 {
+  margin: 4px 0 0;
+  font-size: 1rem;
+  letter-spacing: 0;
+}
+
+.assembly-component-order,
+.assembly-review-issues {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.assembly-component-order li,
+.assembly-review-issues li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.assembly-component-order li:last-child,
+.assembly-review-issues li:last-child {
+  border-bottom: 0;
+}
+
+.assembly-component-order li > span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  color: #fff;
+  background: #596a73;
+  border-radius: 50%;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.assembly-component-order li > div,
+.assembly-review-issues li > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.assembly-component-order small,
+.assembly-component-order em {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-style: normal;
+}
+
+.assembly-component-order em {
+  color: #35664e;
+  font-weight: 700;
+}
+
+.assembly-component-order li > button,
+.assembly-review-specs button {
+  padding: 6px 0;
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.assembly-review-specs,
+.assembly-review-trace dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 22px;
+  margin: 0;
+}
+
+.assembly-review-specs > div,
+.assembly-review-trace dl > div {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.assembly-review-specs dt,
+.assembly-review-trace dt {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.assembly-review-specs dd,
+.assembly-review-trace dd {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  font-size: 0.76rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.assembly-review-specs dd small {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.assembly-review-issues li {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.assembly-review-issues .button {
+  min-height: 38px;
+  padding: 0 12px;
+  font-size: 0.68rem;
+}
+
+.assembly-review-empty-flags {
+  padding-top: 16px;
+}
+
+.assembly-review-quantity {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 130px;
+  align-items: center;
+  gap: 6px 16px;
+  padding: 20px 24px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.assembly-review-quantity input {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 12px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid #9eabb3;
+  border-radius: 4px;
+  font: inherit;
+}
+
+.assembly-review-quantity input[aria-invalid="true"] {
+  border-color: #b43b31;
+}
+
+.assembly-review-quantity small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 500;
+}
+
+.assembly-review-support {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 20px;
+  color: #74451f;
+  background: #fff7eb;
+  border: 1px solid #e5c79d;
+}
+
+.single-end-manual-note {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  color: #74451f;
+  background: #fff7eb;
+  border: 1px solid #e5c79d;
+  border-radius: 6px;
+}
+
+.single-end-manual-note svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.single-end-manual-note p {
+  margin: 0;
+}
+
+.assembly-review-support strong {
+  color: #74451f;
+}
+
 @media (max-width: 720px) {
   .protection-choice-grid,
-  .application-form-grid {
+  .application-form-grid,
+  .assembly-review-specs,
+  .assembly-review-trace dl {
     grid-template-columns: 1fr;
   }
 
   .application-field-wide {
     grid-column: auto;
+  }
+
+  .assembly-review-section > header,
+  .assembly-component-order li,
+  .assembly-review-issues li {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .assembly-review-section > header {
+    flex-direction: column;
+  }
+
+  .assembly-review-quantity {
+    grid-template-columns: 1fr;
   }
 }
 

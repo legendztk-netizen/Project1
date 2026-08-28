@@ -67,6 +67,7 @@ function completeDraft() {
       exactLengthFeet: 6,
       missingInputs: [],
       protectionUsd: 22.1,
+      scheduleRecordVersion: 2,
       startedFeet: 6,
     },
     measurementSelection: {
@@ -361,6 +362,85 @@ describe("assembly draft validation", () => {
           code: "clocking_unknown_end_angle",
           kind: "technical_review",
           owner: "clocking",
+        }),
+      ]),
+    );
+  });
+
+  it("separates exceeded operating limits from uncertain application data", () => {
+    const { draft } = completeDraft();
+    const exceededDraft: HoseConfigurationDraft = {
+      ...draft,
+      applicationRequirements: {
+        fluidMedium: "petroleum_hydraulic_fluid",
+        maximumOperatingTemperature: {
+          canonicalC: "120",
+          originalUnit: "C",
+          originalValue: "120",
+        },
+        maximumWorkingPressure: {
+          canonicalBar: "300",
+          originalUnit: "bar",
+          originalValue: "300",
+        },
+        minimumOperatingTemperature: {
+          canonicalC: "-40",
+          originalUnit: "C",
+          originalValue: "-40",
+        },
+        reviewReasons: [
+          "component_pressure_limit_exceeded",
+          "hose_temperature_limit_exceeded",
+        ],
+        technicalReviewRequired: true,
+      },
+    };
+    const exceededProvenance = provenanceFor(exceededDraft);
+    if (exceededProvenance.protection) {
+      exceededProvenance.protection.applicationCode =
+        "petroleum_hydraulic_fluid";
+    }
+
+    const exceeded = validateAssemblyDraft(
+      exceededDraft,
+      exceededProvenance,
+      contextFor(publicHoseFixture()),
+    );
+    expect(exceeded.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "operating_conditions_component_pressure_limit_exceeded",
+          kind: "manual_path",
+        }),
+        expect.objectContaining({
+          code: "operating_conditions_hose_temperature_limit_exceeded",
+          kind: "manual_path",
+        }),
+      ]),
+    );
+
+    const uncertainDraft: HoseConfigurationDraft = {
+      ...exceededDraft,
+      applicationRequirements: {
+        ...exceededDraft.applicationRequirements!,
+        fluidMedium: "not_sure",
+        reviewReasons: ["fluid_medium_uncertain"],
+      },
+    };
+    const uncertainProvenance = provenanceFor(uncertainDraft);
+    if (uncertainProvenance.protection) {
+      uncertainProvenance.protection.applicationCode = "not_sure";
+    }
+    const uncertain = validateAssemblyDraft(
+      uncertainDraft,
+      uncertainProvenance,
+      contextFor(publicHoseFixture()),
+    );
+    expect(uncertain.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "operating_conditions_fluid_medium_uncertain",
+          kind: "technical_review",
         }),
       ]),
     );

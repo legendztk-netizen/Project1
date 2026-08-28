@@ -53,6 +53,7 @@ describe("protection and application requirements", () => {
       exactLengthFeet: 2.5,
       missingInputs: [],
       protectionUsd: 14.38,
+      scheduleRecordVersion: 2,
       startedFeet: 3,
     });
   });
@@ -87,6 +88,7 @@ describe("protection and application requirements", () => {
     expect(fromInches).toMatchObject({
       assemblyServiceUsd: 0.5,
       protectionUsd: 10.13,
+      scheduleRecordVersion: 2,
       startedFeet: 1,
     });
   });

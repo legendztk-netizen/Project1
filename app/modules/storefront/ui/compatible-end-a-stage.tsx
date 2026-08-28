@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, Search } from "lucide-react";
+import { AlertTriangle, Check, Search, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -209,6 +209,17 @@ export function CompatibleHoseEndStage({
           </p>
         </div>
       </header>
+
+      {endRole === "B" ? (
+        <aside className="single-end-manual-note">
+          <Wrench aria-hidden="true" size={20} />
+          <p>
+            <strong>Need a single-ended assembly?</strong> Single-ended builds
+            are outside this guided configurator. Contact our team for a Manual
+            Assembly Quote.
+          </p>
+        </aside>
+      ) : null}
 
       {loadState.kind === "loading" ? (
         <div className="configurator-stage-prompt" role="status">

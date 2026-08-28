@@ -51,6 +51,7 @@ export interface AssemblyLengthReferencePricing {
   exactLengthFeet: number;
   missingInputs: Array<"assembly_service" | "installed_protection">;
   protectionUsd: number | null;
+  scheduleRecordVersion: number | null;
   startedFeet: number;
 }
 
@@ -221,6 +222,7 @@ export function calculateAssemblyLengthReferencePricing(input: {
                 0) *
                 startedFeet,
           ),
+    scheduleRecordVersion: input.schedule?.recordVersion ?? null,
     startedFeet,
   };
 }

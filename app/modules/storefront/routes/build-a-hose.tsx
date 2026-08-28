@@ -34,6 +34,7 @@ import {
   attachEndBToDraft,
   type CompatibleHoseEndCandidate,
 } from "../../configurator/domain/compatible-end-a";
+import { evaluateAssemblyReview } from "../../configurator/domain/assembly-review";
 import { createHoseConfigurationDraft } from "../../configurator/domain/hose-configuration-draft";
 import {
   attachFinishedLengthToDraft,
@@ -56,6 +57,7 @@ import { ClockingStage } from "../ui/clocking-stage";
 import { CompatibleHoseEndStage } from "../ui/compatible-end-a-stage";
 import { FinishedLengthStage } from "../ui/finished-length-stage";
 import { LiveAssemblyPreview } from "../ui/live-assembly-preview";
+import { AssemblyReviewStage } from "../ui/assembly-review-stage";
 import {
   ProtectionApplicationStage,
   type ProtectionApplicationSelection,
@@ -206,7 +208,7 @@ function hoseSelection(item: PublicCatalogItem): PublicHoseSelection | null {
 type BuildAHoseLoaderData = Awaited<ReturnType<typeof loader>>;
 
 type ConfiguratorStage =
-  "hose" | "end-a" | "end-b" | "length" | "clocking" | "protection";
+  "hose" | "end-a" | "end-b" | "length" | "clocking" | "protection" | "review";
 
 const validationKindLabel: Record<DraftValidationIssue["kind"], string> = {
   manual_path: "Manual review",
@@ -308,6 +310,8 @@ export function BuildAHoseView({
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
   const [protectionApplicationSelection, setProtectionApplicationSelection] =
     useState<ProtectionApplicationSelection | null>(null);
+  const [quantityInput, setQuantityInput] = useState("1");
+  const [reviewVisited, setReviewVisited] = useState(false);
   const [selectionProvenance, setSelectionProvenance] =
     useState<DraftSelectionProvenance>({});
   const [compatibleCandidateSnapshot, setCompatibleCandidateSnapshot] =
@@ -443,6 +447,17 @@ export function BuildAHoseView({
       loaderData.measurementMethods,
       selectionProvenance,
     ],
+  );
+  const reviewResult = useMemo(
+    () =>
+      draft
+        ? evaluateAssemblyReview({
+            draft,
+            quantityInput,
+            validation: draftValidation,
+          })
+        : null,
+    [draft, draftValidation, quantityInput],
   );
   const hasSelectableHose = loaderData.families.some((family) =>
     family.variants.some((variant) => variant.canAddToQuote),
@@ -590,6 +605,16 @@ export function BuildAHoseView({
       ...current,
       protection: protectionBasis,
     }));
+    setReviewVisited(true);
+    setStage("review");
+  }
+
+  function editFromReview(owner: DraftValidationIssue["owner"]) {
+    if (owner === "clocking" && !clockingRequired) {
+      setClockingSelection(null);
+      return;
+    }
+    setStage(owner);
   }
 
   const receiveCompatibleCandidates = useMemo(
@@ -662,11 +687,18 @@ export function BuildAHoseView({
               (stage === "end-b" && index === 2) ||
               (stage === "length" && index === 3) ||
               (stage === "clocking" && label === "Orientation") ||
-              (stage === "protection" && label === "Protection");
+              (stage === "protection" && label === "Protection") ||
+              (stage === "review" && label === "Review");
             return (
               <li aria-current={active ? "step" : undefined} key={label}>
                 <span>{index + 1}</span>
-                <strong>{label}</strong>
+                {label === "Review" && reviewVisited && stage !== "review" ? (
+                  <button onClick={() => setStage("review")} type="button">
+                    Return to Review
+                  </button>
+                ) : (
+                  <strong>{label}</strong>
+                )}
               </li>
             );
           })}
@@ -685,7 +717,9 @@ export function BuildAHoseView({
           </div>
         ) : null}
 
-        <DraftValidationNotice issues={draftValidation.issues} />
+        {stage !== "review" ? (
+          <DraftValidationNotice issues={draftValidation.issues} />
+        ) : null}
 
         {loaderData.publishedHoseCount === 0 ? (
           <section className="configurator-empty">
@@ -865,7 +899,7 @@ export function BuildAHoseView({
                     onSave={saveClocking}
                     selection={clockingSelection}
                   />
-                ) : draft?.finishedLength ? (
+                ) : stage === "protection" && draft?.finishedLength ? (
                   <ProtectionApplicationStage
                     draft={draft}
                     installedProtections={loaderData.installedProtections}
@@ -876,6 +910,16 @@ export function BuildAHoseView({
                     onSave={saveProtectionAndApplication}
                     schedule={loaderData.assemblyEstimateSchedule}
                     selection={protectionApplicationSelection}
+                  />
+                ) : stage === "review" && draft && reviewResult ? (
+                  <AssemblyReviewStage
+                    draft={draft}
+                    onBack={() => setStage("protection")}
+                    onEdit={editFromReview}
+                    onQuantityChange={setQuantityInput}
+                    quantityInput={quantityInput}
+                    result={reviewResult}
+                    validationIssues={draftValidation.issues}
                   />
                 ) : null}
                 {clockingApplicability.status === "manual_review" ? (

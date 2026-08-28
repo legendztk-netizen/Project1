@@ -20,6 +20,7 @@ import type {
   FinishedLengthManualReviewReason,
   MeasurementSelectionSnapshot,
 } from "./finished-assembly-length";
+import type { ApplicationReviewReason } from "./protection-and-application";
 
 export type DraftValidationOwner =
   "hose" | "end-a" | "end-b" | "length" | "clocking" | "protection";
@@ -240,6 +241,29 @@ const lengthReviewMessage: Record<FinishedLengthManualReviewReason, string> = {
     "A tighter-than-standard finished-length tolerance was requested.",
 };
 
+const applicationReviewMessage: Record<ApplicationReviewReason, string> = {
+  component_limits_unavailable:
+    "A selected Hose End has no published working-pressure limit and requires Technical Review.",
+  component_pressure_limit_exceeded:
+    "The stated system pressure exceeds a selected Hose End limit and requires a Manual Assembly Quote.",
+  fluid_medium_uncertain:
+    "The stated fluid medium is Other or Not Sure and requires Technical Review.",
+  hose_pressure_limit_unavailable:
+    "The selected Hose has no published working-pressure limit and requires Technical Review.",
+  hose_pressure_limit_exceeded:
+    "The stated system pressure exceeds the selected Hose limit and requires a Manual Assembly Quote.",
+  hose_temperature_limit_unavailable:
+    "The selected Hose has no published temperature range and requires Technical Review.",
+  hose_temperature_limit_exceeded:
+    "The stated operating temperature exceeds the selected Hose range and requires a Manual Assembly Quote.",
+};
+
+const manualApplicationReviewReasons = new Set<ApplicationReviewReason>([
+  "component_pressure_limit_exceeded",
+  "hose_pressure_limit_exceeded",
+  "hose_temperature_limit_exceeded",
+]);
+
 function currentMeasurementMethod(
   draft: HoseConfigurationDraft,
   methods: LengthMeasurementMethod[],
@@ -382,7 +406,7 @@ export function validateAssemblyDraft(
   } else if (draft.measurementSelection?.state === "not_sure") {
     add({
       code: "measurement_method_not_sure",
-      kind: "manual_path",
+      kind: "technical_review",
       message:
         "Measurement Method is Not Sure and remains assigned to manual technical review.",
       owner: "length",
@@ -524,14 +548,17 @@ export function validateAssemblyDraft(
   }
 
   if (draft.applicationRequirements?.technicalReviewRequired) {
-    add({
-      code: "operating_conditions_technical_review",
-      kind: "technical_review",
-      message:
-        "The supplied Operating Conditions remain assigned to Technical Review.",
-      owner: "protection",
-      retainedValue: draft.applicationRequirements.fluidMedium,
-    });
+    for (const reason of draft.applicationRequirements.reviewReasons) {
+      add({
+        code: `operating_conditions_${reason}`,
+        kind: manualApplicationReviewReasons.has(reason)
+          ? "manual_path"
+          : "technical_review",
+        message: applicationReviewMessage[reason],
+        owner: "protection",
+        retainedValue: draft.applicationRequirements.fluidMedium,
+      });
+    }
   }
 
   issues.sort(

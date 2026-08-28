@@ -209,7 +209,18 @@ function saveM04Length(value = "72") {
   fireEvent.change(screen.getByPlaceholderText("Example: 72"), {
     target: { value },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Save Finished Length" }));
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: /Save (Finished Length|for Manual Review)/,
+    }),
+  );
+}
+
+function saveNylonProtection() {
+  fireEvent.click(
+    screen.getByRole("button", { name: /Nylon Protective Sleeving/ }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Save Protection" }));
 }
 
 afterEach(() => {
@@ -327,8 +338,8 @@ describe("Build a Hose view", () => {
       }),
     );
     expect(screen.getByText("End A selection ready")).toBeTruthy();
-    expect(screen.getByText("601R1_1WB_003")).toBeTruthy();
-    expect(screen.getByText(/not customer-selectable/)).toBeTruthy();
+    expect(screen.getByText("Matched ferrule included")).toBeTruthy();
+    expect(screen.queryByText("601R1_1WB_003")).toBeNull();
     expect(
       screen.getByRole("button", { name: "Continue to End B" }),
     ).toBeTruthy();
@@ -366,6 +377,8 @@ describe("Build a Hose view", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continue to End B" }));
 
     await screen.findByRole("heading", { name: "Choose End B" });
+    expect(screen.getByText("Need a single-ended assembly?")).toBeTruthy();
+    expect(screen.getByText(/outside this guided configurator/)).toBeTruthy();
     fireEvent.click(
       screen.getByRole("button", {
         name: /Select NPTF Male Fixed Straight Hose End/,
@@ -375,9 +388,11 @@ describe("Build a Hose view", () => {
     const endA = screen.getByRole("region", { name: "Selected End A" });
     const endB = screen.getByRole("region", { name: "Selected End B" });
     expect(within(endA).getByText("SKU JIC_F_SW_04_04")).toBeTruthy();
-    expect(within(endA).getByText("601R1_1WB_002")).toBeTruthy();
+    expect(within(endA).getByText("Matched ferrule included")).toBeTruthy();
     expect(within(endB).getByText("SKU NPT_M_FX_04_04")).toBeTruthy();
-    expect(within(endB).getByText("601R1_1WB_003")).toBeTruthy();
+    expect(within(endB).getByText("Matched ferrule included")).toBeTruthy();
+    expect(screen.queryByText("601R1_1WB_002")).toBeNull();
+    expect(screen.queryByText("601R1_1WB_003")).toBeNull();
     expect(screen.getByText("Both hose ends are ready")).toBeTruthy();
   });
 
@@ -551,9 +566,13 @@ describe("Build a Hose view", () => {
     expect(within(pricing).getByText("$22.10")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Save Protection" }));
 
-    expect(screen.getByText("Protection saved")).toBeTruthy();
-    expect(screen.getByText("Ready for the next step")).toBeTruthy();
-    expect(screen.getAllByText("Nylon Protective Sleeving")).toHaveLength(2);
+    expect(
+      screen.getByRole("heading", { name: "Review Your Assembly" }),
+    ).toBeTruthy();
+    expect(screen.getByText("Technical Review Required")).toBeTruthy();
+    expect(
+      screen.getAllByText("Nylon Protective Sleeving").length,
+    ).toBeGreaterThan(0);
   });
 
   it("saves installed protection without optional operating conditions", async () => {
@@ -580,12 +599,95 @@ describe("Build a Hose view", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Save Protection" }));
 
-    expect(screen.getByText("Protection saved")).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { name: "Review Your Assembly" }),
+    ).toBeTruthy();
     expect(
       screen.getAllByText("Operating conditions not provided (optional)")
         .length,
     ).toBeGreaterThan(0);
-    expect(screen.getAllByText("Nylon Protective Sleeving")).toHaveLength(2);
+    expect(
+      screen.getAllByText("Nylon Protective Sleeving").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("reviews ordered components, versions, length and quantity without creating a Quote List line", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({ candidates: compatibleCandidates() }),
+        ok: true,
+      }),
+    );
+    renderPage([publicHoseFixture()]);
+    await reachFinishedLengthStage();
+    saveM04Length();
+    saveNylonProtection();
+
+    const review = screen.getByRole("region", { name: "Assembly review" });
+    expect(within(review).getByText("Technical Review Required")).toBeTruthy();
+    expect(within(review).getByText("601R1 Hydraulic Hose")).toBeTruthy();
+    expect(
+      within(review).getAllByText("Matched ferrule included"),
+    ).toHaveLength(2);
+    expect(screen.queryByText("601R1_1WB_002")).toBeNull();
+    expect(within(review).getByText(/M04 · M04 measurement/)).toBeTruthy();
+    expect(within(review).getByText("72 in")).toBeTruthy();
+    expect(within(review).getByText(/1828.8 mm/)).toBeTruthy();
+    expect(within(review).getByText("± 1% (± 18.288 mm)")).toBeTruthy();
+    expect(within(review).getByText("Assembly estimate schedule")).toBeTruthy();
+    expect(within(review).getByText("v2")).toBeTruthy();
+    expect(
+      (within(review).getByLabelText("Assembly quantity") as HTMLInputElement)
+        .value,
+    ).toBe("1");
+    expect(screen.queryByRole("button", { name: /Add to Quote/ })).toBeNull();
+  });
+
+  it("blocks an invalid quantity and preserves the draft through linked corrections", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({ candidates: compatibleCandidates() }),
+        ok: true,
+      }),
+    );
+    renderPage([publicHoseFixture()]);
+    await reachFinishedLengthStage();
+    saveM04Length();
+    saveNylonProtection();
+
+    fireEvent.change(screen.getByLabelText("Assembly quantity"), {
+      target: { value: "1.5" },
+    });
+    expect(screen.getByText("Configuration Blocked")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain("whole number");
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit End B" }));
+    expect(screen.getByRole("heading", { name: "Choose End B" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Return to Review" }));
+    expect(screen.getAllByText("72 in").length).toBeGreaterThan(0);
+    expect(
+      (screen.getByLabelText("Assembly quantity") as HTMLInputElement).value,
+    ).toBe("1.5");
+  });
+
+  it("explains unsupported length as a Manual Assembly Quote Request", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({ candidates: compatibleCandidates() }),
+        ok: true,
+      }),
+    );
+    renderPage([publicHoseFixture()]);
+    await reachFinishedLengthStage();
+    saveM04Length("601");
+    saveNylonProtection();
+
+    expect(screen.getByText("Manual Assembly Quote Request")).toBeTruthy();
+    expect(screen.getAllByText(/over 50 ft/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/contact our team/i).length).toBeGreaterThan(0);
   });
 
   it("routes an unclassified Hose End angle to technical review without assuming M08", async () => {
@@ -789,6 +891,29 @@ describe("Build a Hose view", () => {
         "Orientation",
       ),
     ).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continue to Finished Length" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save Finished Length" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /No additional installed protection/,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save Protection" }));
+
+    expect(screen.getByText("Configuration Blocked")).toBeTruthy();
+    expect(screen.getAllByText(/Clocking is retained/).length).toBeGreaterThan(
+      0,
+    );
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Edit Clocking" })[0],
+    );
+    expect(screen.queryAllByText(/Clocking is retained/)).toHaveLength(0);
+    expect(screen.getByText("Technical Review Required")).toBeTruthy();
   });
 
   it("preserves method and length when End B changes", async () => {
@@ -873,6 +998,7 @@ describe("Build a Hose view", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Save Protection" }));
 
+    fireEvent.click(screen.getByRole("button", { name: "Back to Protection" }));
     fireEvent.click(
       screen.getByRole("button", { name: "Back to Finished Length" }),
     );
@@ -988,6 +1114,7 @@ describe("Build a Hose view", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Save Protection" }));
 
+    fireEvent.click(screen.getByRole("button", { name: "Back to Protection" }));
     fireEvent.click(
       screen.getByRole("button", { name: "Back to Finished Length" }),
     );
