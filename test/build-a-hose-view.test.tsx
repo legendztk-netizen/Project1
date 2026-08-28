@@ -332,6 +332,17 @@ describe("Build a Hose view", () => {
     expect(
       screen.getByRole("button", { name: "Continue to End B" }),
     ).toBeTruthy();
+    const actions = screen.getByRole("region", {
+      name: "Configuration actions",
+    });
+    const actionButtons = within(actions).getAllByRole("button");
+    expect(actionButtons[0]).toBe(
+      screen.getByRole("button", { name: "Back to Hose" }),
+    );
+    expect(actionButtons[1]).toBe(
+      screen.getByRole("button", { name: "Continue to End B" }),
+    );
+    expect(actionButtons[0].classList.contains("configurator-back")).toBe(true);
   });
 
   it("stores different End A and End B selections with their own compatibility", async () => {
@@ -1130,9 +1141,7 @@ describe("Build a Hose view", () => {
     );
     expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Choose another Hose" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Back to Hose" }));
     expect(
       screen.getByRole("group", { name: "1. Choose a Hose Series" }),
     ).toBeTruthy();

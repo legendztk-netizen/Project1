@@ -170,13 +170,6 @@ export function ProtectionApplicationStage({
   return (
     <section className="protection-application-stage">
       <header className="end-a-stage-heading">
-        <button
-          className="button button-secondary button-with-icon"
-          onClick={onBack}
-          type="button"
-        >
-          <ArrowLeft aria-hidden="true" size={17} /> Back to Finished Length
-        </button>
         <div>
           <span className="eyebrow">Installed protection</span>
           <h2>Choose installed protection</h2>
@@ -379,6 +372,20 @@ export function ProtectionApplicationStage({
         role="region"
       >
         <div className="configurator-action-dock-inner">
+          <button
+            aria-label="Back to Finished Length"
+            className="button button-secondary button-with-icon configurator-back"
+            onClick={onBack}
+            type="button"
+          >
+            <ArrowLeft aria-hidden="true" size={17} />
+            <span className="configurator-back-label">
+              Back to Finished Length
+            </span>
+            <span aria-hidden="true" className="configurator-back-label-short">
+              Back
+            </span>
+          </button>
           <button
             className="button button-primary configurator-next"
             onClick={save}

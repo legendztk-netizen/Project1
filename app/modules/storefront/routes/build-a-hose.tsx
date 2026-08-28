@@ -1,4 +1,10 @@
-import { AlertTriangle, ArrowRight, Check, Layers3 } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  Layers3,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 
@@ -613,6 +619,12 @@ export function BuildAHoseView({
               onClick: continueToLength,
             }
           : null;
+  const backAction =
+    stage === "end-a"
+      ? { label: "Back to Hose", onClick: backToHose }
+      : stage === "end-b"
+        ? { label: "Back to End A", onClick: backToEndA }
+        : null;
 
   return (
     <div className="storefront-shell" data-surface="storefront">
@@ -808,7 +820,6 @@ export function BuildAHoseView({
                   <CompatibleHoseEndStage
                     endRole="A"
                     hoseSku={hoseDraft?.hose.sku ?? ""}
-                    onBack={backToHose}
                     onCandidatesLoaded={receiveCompatibleCandidates}
                     onSelect={chooseEndA}
                     releaseId={hoseDraft?.catalogRelease.id ?? ""}
@@ -821,7 +832,6 @@ export function BuildAHoseView({
                       copyFromEndA={selectedEndA}
                       endRole="B"
                       hoseSku={hoseDraft?.hose.sku ?? ""}
-                      onBack={backToEndA}
                       onCandidatesLoaded={receiveCompatibleCandidates}
                       onSelect={chooseEndB}
                       releaseId={hoseDraft?.catalogRelease.id ?? ""}
@@ -970,21 +980,42 @@ export function BuildAHoseView({
                 </div>
               </aside>
             </div>
-            {nextAction ? (
+            {nextAction || backAction ? (
               <div
-                aria-label="Continue configuration"
+                aria-label="Configuration actions"
                 className="configurator-action-dock"
                 role="region"
               >
                 <div className="configurator-action-dock-inner">
-                  <button
-                    className="button button-primary configurator-next"
-                    onClick={nextAction.onClick}
-                    type="button"
-                  >
-                    {nextAction.label}
-                    <ArrowRight aria-hidden="true" size={18} />
-                  </button>
+                  {backAction ? (
+                    <button
+                      aria-label={backAction.label}
+                      className="button button-secondary button-with-icon configurator-back"
+                      onClick={backAction.onClick}
+                      type="button"
+                    >
+                      <ArrowLeft aria-hidden="true" size={18} />
+                      <span className="configurator-back-label">
+                        {backAction.label}
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        className="configurator-back-label-short"
+                      >
+                        Back
+                      </span>
+                    </button>
+                  ) : null}
+                  {nextAction ? (
+                    <button
+                      className="button button-primary configurator-next"
+                      onClick={nextAction.onClick}
+                      type="button"
+                    >
+                      {nextAction.label}
+                      <ArrowRight aria-hidden="true" size={18} />
+                    </button>
+                  ) : null}
                 </div>
               </div>
             ) : null}

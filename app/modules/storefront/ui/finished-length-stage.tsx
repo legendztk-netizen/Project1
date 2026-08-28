@@ -81,14 +81,6 @@ export function FinishedLengthStage({
   return (
     <section className="finished-length-stage" aria-labelledby="length-heading">
       <header className="finished-length-heading">
-        <button
-          className="button button-secondary button-with-icon"
-          onClick={onBack}
-          type="button"
-        >
-          <ArrowLeft aria-hidden="true" size={17} />
-          Back to End B
-        </button>
         <div>
           <span className="eyebrow">Step 4</span>
           <h2 id="length-heading">Set Finished Overall Assembly Length</h2>
@@ -279,24 +271,6 @@ export function FinishedLengthStage({
                 </p>
               </div>
             )}
-            <div
-              aria-label="Save finished length"
-              className="configurator-action-dock"
-              role="region"
-            >
-              <div className="configurator-action-dock-inner">
-                <button
-                  className="button button-primary finished-length-save"
-                  onClick={() => onSaveLength(evaluation.length)}
-                  type="button"
-                >
-                  {measurementSelection?.state === "not_sure" ||
-                  evaluation.length.path === "manual_review"
-                    ? "Save for Manual Review"
-                    : "Save Finished Length"}
-                </button>
-              </div>
-            </div>
           </div>
         ) : value.trim() && evaluation && !evaluation.valid ? (
           <div className="length-inline-alert" role="alert">
@@ -305,6 +279,38 @@ export function FinishedLengthStage({
           </div>
         ) : null}
       </fieldset>
+      <div
+        aria-label="Finished length actions"
+        className="configurator-action-dock"
+        role="region"
+      >
+        <div className="configurator-action-dock-inner">
+          <button
+            aria-label="Back to End B"
+            className="button button-secondary button-with-icon configurator-back"
+            onClick={onBack}
+            type="button"
+          >
+            <ArrowLeft aria-hidden="true" size={17} />
+            <span className="configurator-back-label">Back to End B</span>
+            <span aria-hidden="true" className="configurator-back-label-short">
+              Back
+            </span>
+          </button>
+          {evaluation?.valid ? (
+            <button
+              className="button button-primary finished-length-save"
+              onClick={() => onSaveLength(evaluation.length)}
+              type="button"
+            >
+              {measurementSelection?.state === "not_sure" ||
+              evaluation.length.path === "manual_review"
+                ? "Save for Manual Review"
+                : "Save Finished Length"}
+            </button>
+          ) : null}
+        </div>
+      </div>
     </section>
   );
 }

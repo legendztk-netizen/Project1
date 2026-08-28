@@ -207,12 +207,18 @@ export function ClockingStage({
       >
         <div className="configurator-action-dock-inner">
           <button
-            className="button button-secondary button-with-icon clocking-back"
+            aria-label="Back to Finished Length"
+            className="button button-secondary button-with-icon configurator-back"
             onClick={onBack}
             type="button"
           >
             <ArrowLeft aria-hidden="true" size={17} />
-            Back to Finished Length
+            <span className="configurator-back-label">
+              Back to Finished Length
+            </span>
+            <span aria-hidden="true" className="configurator-back-label-short">
+              Back
+            </span>
           </button>
           {evaluation.valid ? (
             <button

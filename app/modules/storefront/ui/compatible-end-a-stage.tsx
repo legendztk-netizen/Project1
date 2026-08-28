@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, Check, Search } from "lucide-react";
+import { AlertTriangle, Check, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -86,7 +86,6 @@ export function CompatibleHoseEndStage({
   copyFromEndA = null,
   endRole,
   hoseSku,
-  onBack,
   onCandidatesLoaded,
   onSelect,
   releaseId,
@@ -96,7 +95,6 @@ export function CompatibleHoseEndStage({
   copyFromEndA?: CompatibleHoseEndCandidate | null;
   endRole: "A" | "B";
   hoseSku: string;
-  onBack: () => void;
   onCandidatesLoaded?: (snapshot: {
     candidates: CompatibleHoseEndCandidate[];
     hoseSku: string;
@@ -110,14 +108,10 @@ export function CompatibleHoseEndStage({
   const stageCopy =
     endRole === "A"
       ? {
-          backLabel: "Back to Hose",
-          emptyBackLabel: "Choose another Hose",
           returnTarget: "Hose",
           stepNumber: 2,
         }
       : {
-          backLabel: "Back to End A",
-          emptyBackLabel: "Back to End A",
           returnTarget: "End A",
           stepNumber: 3,
         };
@@ -205,14 +199,6 @@ export function CompatibleHoseEndStage({
       aria-labelledby={`end-${endRole.toLowerCase()}-heading`}
     >
       <header className="end-a-stage-heading">
-        <button
-          className="button button-secondary button-with-icon"
-          onClick={onBack}
-          type="button"
-        >
-          <ArrowLeft aria-hidden="true" size={18} />
-          {stageCopy.backLabel}
-        </button>
         <div>
           <span className="eyebrow">Step {stageCopy.stepNumber}</span>
           <h2 id={`end-${endRole.toLowerCase()}-heading`}>
@@ -258,14 +244,6 @@ export function CompatibleHoseEndStage({
               manual quote can be used when the required combination is not
               listed.
             </p>
-            <button
-              className="button button-secondary button-with-icon"
-              onClick={onBack}
-              type="button"
-            >
-              <ArrowLeft aria-hidden="true" size={18} />
-              {stageCopy.emptyBackLabel}
-            </button>
           </div>
         </>
       ) : (

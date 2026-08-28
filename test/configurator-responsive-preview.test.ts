@@ -13,16 +13,20 @@ describe("configurator live preview responsive contract", () => {
     expect(stylesheet).not.toContain("vector-effect: non-scaling-stroke");
   });
 
-  it("uses a separate mobile preview control and reserves Clocking dock space", () => {
+  it("uses a separate mobile preview control above the shared action dock", () => {
     expect(stylesheet).toContain("@media (max-width: 760px)");
     expect(stylesheet).toContain(
       '.configurator-summary[data-mobile-open="true"]',
     );
     expect(stylesheet).toContain(
-      '.mobile-assembly-preview-toggle[data-current-stage="clocking"]',
+      "bottom: calc(82px + env(safe-area-inset-bottom))",
     );
+    expect(stylesheet).toContain("bottom: 148px");
     expect(stylesheet).toContain(
-      '.configurator-summary[data-current-stage="clocking"]',
+      ".configurator-action-dock .configurator-back",
+    );
+    expect(stylesheet).not.toContain(
+      '.mobile-assembly-preview-toggle[data-current-stage="clocking"]',
     );
   });
 });
