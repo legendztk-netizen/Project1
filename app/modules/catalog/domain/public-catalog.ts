@@ -107,12 +107,17 @@ export function interfaceGroup(value: string | null) {
   if (!value) return null;
   const standard = value.toUpperCase();
   if (standard.includes("JIC")) return "JIC 37°";
-  if (standard.includes("NPT")) return "NPT / NPTF";
+  if (standard.includes("NPT") || standard.includes("NPSM")) {
+    return "NPT / NPTF";
+  }
   if (standard.includes("ORFS")) return "ORFS";
   if (standard.includes("BSPP") || standard.includes("BSPT")) {
     return "BSPP / BSPT";
   }
   if (standard.includes("ORB")) return "SAE ORB";
+  if (standard.includes("CODE 61") || standard.includes("SAE FLANGE")) {
+    return "SAE Flange";
+  }
   return value;
 }
 

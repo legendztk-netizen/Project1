@@ -14,6 +14,7 @@ interface CompatibleHoseEndRow {
   ferrule_series: string;
   ferrule_skive_requirement: string;
   ferrule_sku: string;
+  fitting_series: string;
   gender: string;
   hose_end_sku: string;
   hose_tail_dash: string;
@@ -22,6 +23,32 @@ interface CompatibleHoseEndRow {
   sealing_form: string;
   swivel_form: string;
   thread: string;
+}
+
+function hoseEndLengthClass(fittingSeries: string) {
+  const code = fittingSeries.trim().split(/\s+/, 1)[0]?.toUpperCase();
+  if (code === "FJX90L" || code === "FFX90L") {
+    return "Long";
+  }
+  if (code === "FJX90M" || code === "FFX90M") {
+    return "Medium";
+  }
+  return null;
+}
+
+function hoseEndInterface(row: CompatibleHoseEndRow) {
+  const seriesCode = row.fitting_series
+    .trim()
+    .split(/\s+/, 1)[0]
+    ?.toUpperCase();
+  if (
+    seriesCode === "FPX" ||
+    row.connection_standard.toUpperCase().includes("NPSM")
+  ) {
+    return "NPSM";
+  }
+  if (seriesCode?.startsWith("C61")) return "SAE Code 61";
+  return row.interface_family;
 }
 
 function nullableNumber(value: number | string | null) {
@@ -35,10 +62,14 @@ function nullableNumber(value: number | string | null) {
 export function compatibleHoseEndCandidateFromRow(
   row: CompatibleHoseEndRow,
 ): CompatibleHoseEndCandidate {
-  const group = interfaceGroup(row.interface_family) ?? row.interface_family;
+  const customerInterface = hoseEndInterface(row);
+  const lengthClass = hoseEndLengthClass(row.fitting_series);
+  const group = interfaceGroup(customerInterface) ?? customerInterface;
   return {
     aliases: [
       row.competitor_part_number,
+      row.fitting_series,
+      row.interface_family,
       row.connection_standard,
       row.thread,
       row.connection_dash,
@@ -50,12 +81,15 @@ export function compatibleHoseEndCandidateFromRow(
     connectionDash: normalizeDashSize(row.connection_dash),
     connectionStandard: row.connection_standard,
     displayName: [
-      row.interface_family,
-      row.gender,
+      customerInterface,
+      row.gender === "N/A" ? null : row.gender,
       row.swivel_form,
       row.angle,
+      lengthClass,
       "Hose End",
-    ].join(" "),
+    ]
+      .filter(Boolean)
+      .join(" "),
     ferrule: {
       hoseConstruction: row.ferrule_hose_construction,
       hoseTailDash: normalizeDashSize(row.ferrule_hose_tail_dash),
@@ -66,7 +100,7 @@ export function compatibleHoseEndCandidateFromRow(
     gender: row.gender,
     hoseEndSku: row.hose_end_sku,
     hoseTailDash: normalizeDashSize(row.hose_tail_dash),
-    interfaceFamily: row.interface_family,
+    interfaceFamily: customerInterface,
     interfaceGroup: group,
     maximumWorkingBar: nullableNumber(row.max_working_bar),
     sealingForm: row.sealing_form,
@@ -78,7 +112,7 @@ export function compatibleHoseEndCandidateFromRow(
 const compatibleHoseEndSql = `
   SELECT c.compatibility_id, c.hose_end_sku, c.ferrule_sku,
          c.assembly_working_bar,
-         e.competitor_part_number, e.interface_family,
+         e.competitor_part_number, e.fitting_series, e.interface_family,
          e.connection_standard, e.gender, e.swivel_form, e.angle,
          e.sealing_form, e.thread, e.connection_dash, e.hose_tail_dash,
          e.max_working_bar,

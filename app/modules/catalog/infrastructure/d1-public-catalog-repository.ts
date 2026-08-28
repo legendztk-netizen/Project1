@@ -43,6 +43,7 @@ interface PublicCatalogRow {
   ferrule_material: string | null;
   ferrule_series: string | null;
   fluid_compatibility: string | null;
+  fitting_series: string | null;
   gender: string | null;
   hex_1_mm: number | null;
   hex_2_mm: number | null;
@@ -116,6 +117,25 @@ function compactSpecs(entries: Array<[string, unknown]>): PublicCatalogSpec[] {
   );
 }
 
+function hoseEndLengthClass(fittingSeries: string | null) {
+  const code = fittingSeries?.trim().split(/\s+/, 1)[0]?.toUpperCase();
+  if (code === "FJX90L" || code === "FFX90L") return "Long";
+  if (code === "FJX90M" || code === "FFX90M") return "Medium";
+  return null;
+}
+
+function hoseEndInterface(row: PublicCatalogRow) {
+  const seriesCode = row.fitting_series
+    ?.trim()
+    .split(/\s+/, 1)[0]
+    ?.toUpperCase();
+  if (seriesCode === "FPX" || row.connection_standard?.includes("NPSM")) {
+    return "NPSM";
+  }
+  if (seriesCode?.startsWith("C61")) return "SAE Code 61";
+  return row.interface_family ?? "Hose End";
+}
+
 function buildPublicCatalogPresentation(row: PublicCatalogRow) {
   if (row.product_type === "hose") {
     const series = row.hose_series ?? row.sku.split("_")[0];
@@ -165,18 +185,22 @@ function buildPublicCatalogPresentation(row: PublicCatalogRow) {
     };
   }
   if (row.product_type === "hose_end") {
-    const exactInterface = row.interface_family ?? "Hose End";
+    const exactInterface = hoseEndInterface(row);
+    const lengthClass = hoseEndLengthClass(row.fitting_series);
+    const displayGender = row.gender === "N/A" ? null : row.gender;
     const familyName = [
       exactInterface,
-      row.gender,
+      displayGender,
       row.swivel_form,
       row.angle,
+      lengthClass,
       "Hose End",
     ]
       .filter(Boolean)
       .join(" ");
     return {
       aliases: [
+        row.fitting_series,
         row.connection_standard,
         row.competitor_part_number,
         row.sealing_form,
@@ -186,13 +210,19 @@ function buildPublicCatalogPresentation(row: PublicCatalogRow) {
       ],
       displayName: `${familyName} ${row.connection_dash ?? ""} x ${row.hose_tail_dash ?? ""}`,
       familyKey: slug(
-        [exactInterface, row.gender, row.swivel_form, row.angle]
+        [exactInterface, displayGender, row.swivel_form, row.angle, lengthClass]
           .filter(Boolean)
           .join("-"),
       ),
       familyName,
       interface: exactInterface,
-      mediaKey: [exactInterface, row.gender, row.swivel_form, row.angle]
+      mediaKey: [
+        exactInterface,
+        displayGender,
+        row.swivel_form,
+        row.angle,
+        lengthClass,
+      ]
         .filter(Boolean)
         .join("-"),
       specs: compactSpecs([
@@ -205,6 +235,7 @@ function buildPublicCatalogPresentation(row: PublicCatalogRow) {
         ["Gender", row.gender],
         ["Form", row.swivel_form],
         ["Angle", row.angle],
+        ["Length profile", lengthClass],
         ["Material", row.hose_end_material],
         ["Coating", row.hose_end_coating],
         [
@@ -465,7 +496,7 @@ const publicCatalogSql = `
          h.temp_max_c AS hose_temp_max_c, h.tube_material,
          h.reinforcement, h.cover_material, h.cover_color, h.cover_finish,
          h.fluid_compatibility,
-         e.competitor_part_number, e.interface_family,
+         e.fitting_series, e.competitor_part_number, e.interface_family,
          e.connection_standard, e.gender,
          e.swivel_form, e.angle, e.sealing_form, e.thread,
          e.connection_dash, e.hose_tail_dash,

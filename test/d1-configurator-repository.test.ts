@@ -17,6 +17,7 @@ const row = {
   ferrule_series: "601R1",
   ferrule_skive_requirement: "Other",
   ferrule_sku: "601R1_1WB_002",
+  fitting_series: "FJX",
   gender: "Female",
   hose_end_sku: "JIC_F_SW_04_04",
   hose_tail_dash: "04",
@@ -56,6 +57,50 @@ describe("D1 configurator repository", () => {
     });
   });
 
+  it("keeps NPSM, Code 61, and long or medium 90 degree ends distinct", () => {
+    expect(
+      compatibleHoseEndCandidateFromRow({
+        ...row,
+        connection_standard: "NPSM / ASME B1.20.1",
+        fitting_series: "FPX",
+        interface_family: "NPT",
+      }),
+    ).toMatchObject({
+      displayName: "NPSM Female Swivel 0° Straight Hose End",
+      interfaceFamily: "NPSM",
+      interfaceGroup: "NPT / NPTF",
+    });
+
+    expect(
+      compatibleHoseEndCandidateFromRow({
+        ...row,
+        fitting_series: "C6190",
+        gender: "N/A",
+        interface_family: "SAE Flange",
+      }),
+    ).toMatchObject({
+      displayName: "SAE Code 61 Swivel 0° Straight Hose End",
+      interfaceFamily: "SAE Code 61",
+      interfaceGroup: "SAE Flange",
+    });
+
+    expect(
+      compatibleHoseEndCandidateFromRow({
+        ...row,
+        angle: "90°",
+        fitting_series: "FJX90L",
+      }).displayName,
+    ).toBe("JIC 37° Female Swivel 90° Long Hose End");
+    expect(
+      compatibleHoseEndCandidateFromRow({
+        ...row,
+        angle: "90°",
+        fitting_series: "FFX90M",
+        interface_family: "ORFS",
+      }).displayName,
+    ).toBe("ORFS Female Swivel 90° Medium Hose End");
+  });
+
   it("queries only exact eligible tuples and all three available components", async () => {
     const all = vi.fn().mockResolvedValue({ results: [row] });
     const bind = vi.fn().mockReturnValue({ all });
@@ -77,6 +122,7 @@ describe("D1 configurator repository", () => {
     expect(sql).toContain("c.rfq_eligibility = 'Eligible'");
     expect(sql).toContain("c.assembly_working_bar");
     expect(sql).toContain("e.max_working_bar");
+    expect(sql).toContain("e.fitting_series");
     expect(sql).toContain("catalog_hose_ends e");
     expect(sql).toContain("catalog_ferrules f");
     expect(

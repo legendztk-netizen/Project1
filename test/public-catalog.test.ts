@@ -23,6 +23,7 @@ function hoseEnd(overrides: Record<string, unknown> = {}) {
     dash: null,
     equivalent_standard: null,
     ferrule_series: null,
+    fitting_series: null,
     fluid_compatibility: null,
     gender: "Female",
     hose_construction: null,
@@ -106,8 +107,49 @@ describe("public catalog read model", () => {
   it("uses customer interface groups without collapsing exact standards", () => {
     expect(interfaceGroup("JIC")).toBe("JIC 37°");
     expect(interfaceGroup("NPTF")).toBe("NPT / NPTF");
+    expect(interfaceGroup("NPSM")).toBe("NPT / NPTF");
     expect(interfaceGroup("BSPP")).toBe("BSPP / BSPT");
     expect(interfaceGroup("BSPT")).toBe("BSPP / BSPT");
+    expect(interfaceGroup("SAE Code 61")).toBe("SAE Flange");
+  });
+
+  it("keeps standard, long, and medium 90-degree hose ends as separate families", () => {
+    const variants = [
+      hoseEnd({ angle: "90°", sku: "JIC90_F_SW_10_10" }),
+      hoseEnd({
+        angle: "90°",
+        fitting_series: "FJX90L Hydraulax R1 reference (Long)",
+        sku: "JIC90L_F_SW_10_10",
+      }),
+      hoseEnd({
+        angle: "90°",
+        fitting_series: "FJX90M Hydraulax R1 reference (Medium)",
+        sku: "JIC90M_F_SW_10_10",
+      }),
+    ];
+
+    expect(groupCatalogFamilies(variants)).toHaveLength(3);
+    expect(variants.map((variant) => variant.mediaKey)).toEqual([
+      "JIC-Female-Swivel-90°",
+      "JIC-Female-Swivel-90°-Long",
+      "JIC-Female-Swivel-90°-Medium",
+    ]);
+  });
+
+  it("presents FPX products as NPSM without changing their imported standard", () => {
+    const item = hoseEnd({
+      connection_standard: "NPSM / ASME B1.20.1",
+      fitting_series: "FPX Hydraulax R1 reference",
+      interface_family: "NPT",
+      sku: "NPSM_F_SW_12_12",
+    });
+
+    expect(item.familyName).toContain("NPSM Female Swivel");
+    expect(item.interfaceGroup).toBe("NPT / NPTF");
+    expect(item.specs).toContainEqual({
+      label: "Connection standard",
+      value: "NPSM / ASME B1.20.1",
+    });
   });
 
   it("keeps grouped interface labels separate from exact product families", () => {

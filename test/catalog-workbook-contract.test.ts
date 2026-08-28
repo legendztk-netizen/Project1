@@ -45,15 +45,15 @@ describe("01-07 catalog workbook contract", () => {
       hoseSeries: ["601R1", "601R2", "EN1SC", "EN2SC", "EN4SH", "EN4SP"],
     });
     expect(result.draft?.hoseVariants).toHaveLength(61);
-    expect(result.draft?.hoseEnds).toHaveLength(200);
+    expect(result.draft?.hoseEnds).toHaveLength(329);
     expect(result.draft?.ferrules).toHaveLength(61);
-    expect(result.draft?.compatibilities).toHaveLength(1081);
+    expect(result.draft?.compatibilities).toHaveLength(1210);
     expect(result.draft?.adapterFamilies).toHaveLength(17);
     expect(result.draft?.adapters).toHaveLength(136);
     expect(result.draft?.quickCouplers).toHaveLength(57);
-    expect(result.draft?.salesOffers).toHaveLength(515);
-    expect(result.draft?.costBases).toHaveLength(515);
-    expect(result.draft?.skus).toHaveLength(515);
+    expect(result.draft?.salesOffers).toHaveLength(644);
+    expect(result.draft?.costBases).toHaveLength(644);
+    expect(result.draft?.skus).toHaveLength(644);
 
     const hoseEnd = result.draft?.hoseEnds.find(
       (row) => row.sku === "ORFS90_F_SW_20_16",
@@ -68,6 +68,61 @@ describe("01-07 catalog workbook contract", () => {
       swivelForm: "Swivel",
       thread: "1-11/16-12 UN",
     });
+
+    expect(result.draft?.hoseEnds).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fittingSeries: "MPX Hydraulax R1 reference",
+          interfaceFamily: "NPTF",
+          sku: "NPT_M_SW_08_10",
+        }),
+        expect.objectContaining({
+          connectionStandard: "NPSM / ASME B1.20.1",
+          fittingSeries: "FPX Hydraulax R1 reference",
+          sku: "NPSM_F_SW_12_12",
+        }),
+        expect.objectContaining({
+          fittingSeries: "MB Hydraulax R1 reference",
+          sku: "ORB_M_FX_10_10",
+        }),
+        expect.objectContaining({
+          fittingSeries: "MBX Hydraulax R1 reference",
+          sku: "ORB_M_SW_12_12",
+        }),
+        expect.objectContaining({
+          fittingSeries: "MBX90 Hydraulax R1 reference",
+          sku: "ORB90_M_SW_10_10",
+        }),
+        expect.objectContaining({
+          fittingSeries: "C61 Hydraulax R1 reference",
+          sku: "C61_N_FX_12_12",
+        }),
+        expect.objectContaining({
+          fittingSeries: "C6145 Hydraulax R1 reference",
+          sku: "C6145_N_FX_12_12",
+        }),
+        expect.objectContaining({
+          fittingSeries: "C6190 Hydraulax R1 reference",
+          sku: "C6190_N_FX_12_12",
+        }),
+        expect.objectContaining({
+          fittingSeries: "FJX90L Hydraulax R1 reference (Long)",
+          sku: "JIC90L_F_SW_10_10",
+        }),
+        expect.objectContaining({
+          fittingSeries: "FJX90M Hydraulax R1 reference (Medium)",
+          sku: "JIC90M_F_SW_10_10",
+        }),
+        expect.objectContaining({
+          fittingSeries: "FFX90L Hydraulax R1 reference (Long)",
+          sku: "ORFS90L_F_SW_10_10",
+        }),
+        expect.objectContaining({
+          fittingSeries: "FFX90M Hydraulax R1 reference (Medium)",
+          sku: "ORFS90M_F_SW_10_10",
+        }),
+      ]),
+    );
 
     const compatibility = result.draft?.compatibilities[0];
     expect(compatibility).toMatchObject({
