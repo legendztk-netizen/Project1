@@ -1,11 +1,4 @@
-import {
-  AlertTriangle,
-  ArrowRight,
-  Check,
-  Gauge,
-  Layers3,
-  Thermometer,
-} from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, Layers3 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 
@@ -35,10 +28,7 @@ import {
   attachEndBToDraft,
   type CompatibleHoseEndCandidate,
 } from "../../configurator/domain/compatible-end-a";
-import {
-  createHoseConfigurationDraft,
-  type HoseConfigurationDraft,
-} from "../../configurator/domain/hose-configuration-draft";
+import { createHoseConfigurationDraft } from "../../configurator/domain/hose-configuration-draft";
 import {
   attachFinishedLengthToDraft,
   attachMeasurementSelectionToDraft,
@@ -59,6 +49,7 @@ import { CatalogMedia } from "../ui/catalog-media";
 import { ClockingStage } from "../ui/clocking-stage";
 import { CompatibleHoseEndStage } from "../ui/compatible-end-a-stage";
 import { FinishedLengthStage } from "../ui/finished-length-stage";
+import { LiveAssemblyPreview } from "../ui/live-assembly-preview";
 import {
   ProtectionApplicationStage,
   type ProtectionApplicationSelection,
@@ -206,34 +197,6 @@ function hoseSelection(item: PublicCatalogItem): PublicHoseSelection | null {
   return selection?.kind === "hose" ? selection : null;
 }
 
-function pressureLabel(item: PublicCatalogItem) {
-  const selection = hoseSelection(item);
-  if (!selection) return "Confirmed during review";
-  const label = [
-    selection.performance.workingPsi
-      ? `${selection.performance.workingPsi} psi`
-      : null,
-    selection.performance.workingBar
-      ? `${selection.performance.workingBar} bar`
-      : null,
-  ]
-    .filter(Boolean)
-    .join(" / ");
-  return label || "Confirmed during review";
-}
-
-function temperatureLabel(item: PublicCatalogItem) {
-  const selection = hoseSelection(item);
-  if (
-    !selection ||
-    selection.performance.temperatureMinC === null ||
-    selection.performance.temperatureMaxC === null
-  ) {
-    return "Confirmed during review";
-  }
-  return `${selection.performance.temperatureMinC}°C to ${selection.performance.temperatureMaxC}°C`;
-}
-
 type BuildAHoseLoaderData = Awaited<ReturnType<typeof loader>>;
 
 type ConfiguratorStage =
@@ -287,44 +250,6 @@ function DraftValidationNotice({ issues }: { issues: DraftValidationIssue[] }) {
   );
 }
 
-function ConfiguredEndSummary({
-  end,
-  role,
-}: {
-  end: NonNullable<HoseConfigurationDraft["endA"]>;
-  role: "A" | "B";
-}) {
-  return (
-    <section className="end-a-summary" aria-label={`Selected End ${role}`}>
-      <span className="eyebrow">End {role}</span>
-      <h3>{end.hoseEnd.displayName}</h3>
-      <p>SKU {end.hoseEnd.sku}</p>
-      <dl>
-        <div>
-          <dt>Thread</dt>
-          <dd>{end.hoseEnd.thread}</dd>
-        </div>
-        <div>
-          <dt>Exact standard</dt>
-          <dd>{end.hoseEnd.connectionStandard}</dd>
-        </div>
-        <div>
-          <dt>Seal</dt>
-          <dd>{end.hoseEnd.sealingForm}</dd>
-        </div>
-        <div>
-          <dt>Derived ferrule</dt>
-          <dd>{end.ferrule.sku}</dd>
-        </div>
-      </dl>
-      <p className="end-a-ferrule-note">
-        The ferrule is resolved automatically from exact compatibility data and
-        is not customer-selectable.
-      </p>
-    </section>
-  );
-}
-
 function LaterStagePreview({ showOrientation }: { showOrientation: boolean }) {
   return (
     <section
@@ -374,6 +299,7 @@ export function BuildAHoseView({
     useState<FinishedAssemblyLengthSnapshot | null>(null);
   const [clockingSelection, setClockingSelection] =
     useState<ClockingDraftSnapshot | null>(null);
+  const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
   const [protectionApplicationSelection, setProtectionApplicationSelection] =
     useState<ProtectionApplicationSelection | null>(null);
   const [selectionProvenance, setSelectionProvenance] =
@@ -954,57 +880,54 @@ export function BuildAHoseView({
                 ) : null}
               </section>
 
-              <aside className="configurator-summary" aria-live="polite">
-                <div className="configurator-media">
-                  {visualItem ? (
-                    <CatalogMedia item={visualItem} />
-                  ) : (
-                    <div className="configurator-media-placeholder">
-                      <Layers3 aria-hidden="true" size={42} />
-                      <span>Select a hose series</span>
-                    </div>
-                  )}
-                </div>
+              {draft ? (
+                <button
+                  aria-controls="live-assembly-summary"
+                  aria-expanded={mobilePreviewOpen}
+                  className="mobile-assembly-preview-toggle"
+                  data-current-stage={stage}
+                  onClick={() => setMobilePreviewOpen((open) => !open)}
+                  type="button"
+                >
+                  <Layers3 aria-hidden="true" size={18} />
+                  {mobilePreviewOpen
+                    ? "Close assembly preview"
+                    : "View assembly preview"}
+                </button>
+              ) : null}
+              <aside
+                className="configurator-summary"
+                data-current-stage={stage}
+                data-mobile-open={mobilePreviewOpen ? "true" : "false"}
+                id="live-assembly-summary"
+              >
+                {draft ? (
+                  <LiveAssemblyPreview
+                    draft={draft}
+                    issues={draftValidation.issues}
+                  />
+                ) : (
+                  <div className="configurator-media">
+                    {visualItem ? (
+                      <CatalogMedia item={visualItem} />
+                    ) : (
+                      <div className="configurator-media-placeholder">
+                        <Layers3 aria-hidden="true" size={42} />
+                        <span>Select a hose series</span>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="configurator-summary-copy">
-                  <span className="eyebrow">Current selection</span>
-                  <h2>{draft?.hose.familyName ?? "No hose selected"}</h2>
-                  {selectedItem && draft ? (
+                  {!draft ? (
                     <>
-                      <p className="configurator-sku">SKU {draft.hose.sku}</p>
-                      <dl>
-                        <div>
-                          <dt>
-                            <Layers3 aria-hidden="true" size={17} /> Size
-                          </dt>
-                          <dd>{sizeLabel(selectedItem)}</dd>
-                        </div>
-                        <div>
-                          <dt>
-                            <Gauge aria-hidden="true" size={17} /> Working
-                            pressure
-                          </dt>
-                          <dd>{pressureLabel(selectedItem)}</dd>
-                        </div>
-                        <div>
-                          <dt>
-                            <Thermometer aria-hidden="true" size={17} />{" "}
-                            Temperature
-                          </dt>
-                          <dd>{temperatureLabel(selectedItem)}</dd>
-                        </div>
-                      </dl>
-                      {draft.endA ? (
-                        <ConfiguredEndSummary end={draft.endA} role="A" />
-                      ) : null}
-                      {draft.endB ? (
-                        <ConfiguredEndSummary end={draft.endB} role="B" />
-                      ) : null}
+                      <span className="eyebrow">Current selection</span>
+                      <h2>No hose selected</h2>
+                      <p className="configurator-summary-prompt">
+                        Select a series, then an exact inside diameter.
+                      </p>
                     </>
-                  ) : (
-                    <p className="configurator-summary-prompt">
-                      Select a series, then an exact inside diameter.
-                    </p>
-                  )}
+                  ) : null}
                   {draft && stage === "hose" ? (
                     <p className="configurator-ready" role="status">
                       <Check aria-hidden="true" size={17} />
@@ -1039,91 +962,6 @@ export function BuildAHoseView({
                         </small>
                       </span>
                     </p>
-                  ) : null}
-                  {draft?.measurementSelection ? (
-                    <section className="configured-length-summary">
-                      <span className="eyebrow">Measurement</span>
-                      <h3>
-                        {draft.measurementSelection.state === "selected"
-                          ? `${draft.measurementSelection.method.code} · ${draft.measurementSelection.method.displayName}`
-                          : "Not Sure · Manual Technical Review"}
-                      </h3>
-                      {draft.finishedLength ? (
-                        <dl>
-                          <div>
-                            <dt>Finished length</dt>
-                            <dd>
-                              {draft.finishedLength.originalValue}{" "}
-                              {draft.finishedLength.originalUnit}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt>Exact conversion</dt>
-                            <dd>{draft.finishedLength.canonicalMm} mm</dd>
-                          </div>
-                          <div>
-                            <dt>SAE J517 tolerance</dt>
-                            <dd>{draft.finishedLength.tolerance.display}</dd>
-                          </div>
-                        </dl>
-                      ) : (
-                        <p>Finished length has not been saved.</p>
-                      )}
-                    </section>
-                  ) : null}
-                  {draft?.clocking ? (
-                    <section className="configured-length-summary">
-                      <span className="eyebrow">M08 Clocking</span>
-                      <h3>
-                        {draft.clocking.validation === "retained_invalid"
-                          ? "Retained selection · Reconfirmation required"
-                          : draft.clocking.status === "specified"
-                            ? `${draft.clocking.targetDisplay}° · ±${draft.clocking.standardToleranceDegrees}°`
-                            : "Not Sure · Manual Technical Review"}
-                      </h3>
-                      <p>
-                        {draft.clocking.validation === "retained_invalid"
-                          ? `Previous Clocking: ${draft.clocking.status === "specified" ? `${draft.clocking.targetDisplay}°` : "Not Sure"}. The selected hose ends changed, so this value is not valid until you confirm it again.`
-                          : "View End A toward End B. End B is 000° at 6 o'clock; measure clockwise."}
-                      </p>
-                    </section>
-                  ) : null}
-                  {draft?.installedProtection &&
-                  draft.lengthReferencePricing ? (
-                    <section className="configured-length-summary">
-                      <span className="eyebrow">Installed Protection</span>
-                      <h3>{draft.installedProtection.publicName}</h3>
-                      <dl>
-                        <div>
-                          <dt>Assembly service</dt>
-                          <dd>
-                            {draft.lengthReferencePricing.assemblyServiceUsd ===
-                            null
-                              ? "Confirmed with quote"
-                              : `$${draft.lengthReferencePricing.assemblyServiceUsd.toFixed(2)}`}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>Protection</dt>
-                          <dd>
-                            {draft.lengthReferencePricing.protectionUsd === null
-                              ? "Confirmed with quote"
-                              : `$${draft.lengthReferencePricing.protectionUsd.toFixed(2)}`}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>Technical screening</dt>
-                          <dd>
-                            {!draft.applicationRequirements
-                              ? "Operating conditions not provided (optional)"
-                              : draft.applicationRequirements
-                                    .technicalReviewRequired
-                                ? "Technical Review Required"
-                                : "Within stated limits"}
-                          </dd>
-                        </div>
-                      </dl>
-                    </section>
                   ) : null}
                   <p className="configurator-session-note">
                     This unfinished configuration is kept only in this page

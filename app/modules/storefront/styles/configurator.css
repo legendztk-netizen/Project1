@@ -239,9 +239,256 @@
   position: sticky;
   top: 18px;
   min-width: 0;
-  overflow: hidden;
+  max-height: calc(100vh - 36px);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overflow-x: hidden;
   background: var(--surface);
   border: 1px solid var(--line);
+}
+
+.live-assembly-preview {
+  min-width: 0;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+}
+
+.assembly-schematic-frame {
+  position: relative;
+  margin: 0;
+  overflow: hidden;
+  background: #edf1f2;
+  border-bottom: 1px solid var(--line);
+}
+
+.assembly-schematic-frame figcaption {
+  position: absolute;
+  right: 12px;
+  bottom: 9px;
+  padding: 3px 6px;
+  color: #4e5c65;
+  background: rgb(255 255 255 / 86%);
+  border: 1px solid #c5cdd2;
+  font-size: 0.58rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.assembly-schematic {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 960 / 350;
+  font-family: inherit;
+}
+
+.assembly-hose-shadow {
+  stroke: #aab3b8;
+  stroke-linecap: round;
+  stroke-width: 70;
+}
+
+.assembly-hose {
+  stroke: #1e262c;
+  stroke-linecap: round;
+  stroke-width: 58;
+}
+
+.assembly-protection {
+  stroke: url("#assembly-protection-pattern");
+  stroke-linecap: round;
+  stroke-width: 64;
+}
+
+#assembly-protection-pattern path {
+  stroke: #d5a11e;
+  stroke-width: 4;
+}
+
+.assembly-end path {
+  fill: none;
+  stroke-linecap: square;
+  stroke-linejoin: round;
+  stroke-width: 42;
+}
+
+.assembly-end circle {
+  fill: #fff;
+  stroke-width: 12;
+}
+
+.assembly-end text {
+  font-size: 24px;
+  font-weight: 850;
+}
+
+.assembly-end-a path,
+.assembly-end-a circle {
+  stroke: #c6332b;
+}
+
+.assembly-end-a text {
+  fill: #9f251f;
+}
+
+.assembly-end-b path,
+.assembly-end-b circle {
+  stroke: #1769aa;
+}
+
+.assembly-end-b text {
+  fill: #115587;
+}
+
+.assembly-end-label {
+  font-size: 20px !important;
+  letter-spacing: 0;
+}
+
+.assembly-length-callout line {
+  stroke: #3d4a52;
+  stroke-width: 3;
+}
+
+.assembly-length-callout path {
+  fill: #3d4a52;
+}
+
+.assembly-length-callout text {
+  fill: #17222b;
+  font-size: 21px;
+  font-weight: 800;
+}
+
+.assembly-hose-label {
+  fill: #fff;
+  font-size: 21px;
+  font-weight: 850;
+}
+
+.assembly-protection-label {
+  fill: #5f4310;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.assembly-preview-clocking {
+  display: grid;
+  grid-template-columns: 1fr;
+  background: #f7f9fa;
+  border-bottom: 1px solid var(--line);
+}
+
+.assembly-preview-clocking > header {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.assembly-preview-clocking > header span {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.assembly-preview-clocking > header strong {
+  color: #1769aa;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.assembly-preview-clocking .clocking-diagram-frame {
+  border: 0;
+}
+
+.assembly-preview-clocking .clocking-diagram {
+  min-height: 0;
+}
+
+.assembly-preview-clocking .clocking-diagram-frame figcaption {
+  display: none;
+}
+
+.assembly-live-specification {
+  padding: 20px;
+}
+
+.assembly-live-specification h3 {
+  margin: 4px 0 0;
+  font-size: 1rem;
+  letter-spacing: 0;
+}
+
+.configurator-summary .assembly-live-specification dl {
+  margin: 16px 0 0;
+}
+
+.configurator-summary .assembly-live-specification dl > div {
+  display: grid;
+  grid-template-columns: minmax(86px, 0.65fr) minmax(0, 1.35fr);
+  gap: 14px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  font-size: 0.69rem;
+}
+
+.configurator-summary .assembly-live-specification dt {
+  color: var(--muted);
+  font-weight: 750;
+}
+
+.configurator-summary .assembly-live-specification dd {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 800;
+  text-align: right;
+}
+
+.configurator-summary .assembly-live-specification dd small {
+  color: var(--muted);
+  font-size: 0.58rem;
+  font-weight: 650;
+}
+
+.assembly-review-flags {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  color: #6c421c;
+  background: #fff8e9;
+  border-left: 4px solid #d78a18;
+  font-size: 0.65rem;
+}
+
+.assembly-review-flags > span {
+  color: #2e6650;
+}
+
+.assembly-review-flags ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 17px;
+}
+
+.assembly-review-flags li > span {
+  display: block;
+  font-size: 0.56rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.mobile-assembly-preview-toggle {
+  display: none;
 }
 
 .configurator-media {
@@ -1470,6 +1717,13 @@
     position: static;
     display: grid;
     grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.2fr);
+    max-height: none;
+    overflow: visible;
+  }
+
+  .live-assembly-preview {
+    border-right: 1px solid var(--line);
+    border-bottom: 0;
   }
 
   .configurator-media {
@@ -1497,7 +1751,7 @@
 
 @media (max-width: 760px) {
   .configurator-page {
-    padding: 24px 18px 116px;
+    padding: 24px 18px 174px;
   }
 
   .configurator-action-dock {
@@ -1549,7 +1803,44 @@
   }
 
   .configurator-summary {
+    position: fixed;
+    z-index: 55;
+    top: max(12px, env(safe-area-inset-top));
+    right: 12px;
+    bottom: 148px;
+    left: 12px;
+    display: none;
+    max-height: none;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    box-shadow: 0 18px 60px rgb(15 27 35 / 28%);
+  }
+
+  .configurator-summary[data-mobile-open="true"] {
     display: block;
+  }
+
+  .mobile-assembly-preview-toggle {
+    position: fixed;
+    z-index: 60;
+    right: 14px;
+    bottom: calc(82px + env(safe-area-inset-bottom));
+    left: 14px;
+    display: flex;
+    min-height: 48px;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: #fff;
+    background: #283942;
+    border: 1px solid #17242b;
+    box-shadow: 0 8px 24px rgb(20 31 38 / 18%);
+    font-weight: 800;
+  }
+
+  .live-assembly-preview {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
   }
 
   .end-a-stage-heading {
@@ -1592,6 +1883,27 @@
 }
 
 @media (max-width: 480px) {
+  .mobile-assembly-preview-toggle[data-current-stage="clocking"] {
+    bottom: calc(150px + env(safe-area-inset-bottom));
+  }
+
+  .configurator-summary[data-current-stage="clocking"] {
+    bottom: 216px;
+  }
+
+  .assembly-live-specification {
+    padding: 18px 16px;
+  }
+
+  .configurator-summary .assembly-live-specification dl > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .configurator-summary .assembly-live-specification dd {
+    text-align: left;
+  }
+
   .clocking-stage {
     padding-bottom: 58px;
   }

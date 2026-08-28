@@ -258,6 +258,17 @@ describe("Build a Hose view", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Select 3\/16 in/ }));
     expect(screen.getByText("SKU 601R1_001")).toBeTruthy();
+    const previewToggle = screen.getByRole("button", {
+      name: "View assembly preview",
+    });
+    const preview = document.getElementById("live-assembly-summary");
+    expect(previewToggle.getAttribute("aria-expanded")).toBe("false");
+    expect(preview?.getAttribute("data-mobile-open")).toBe("false");
+    fireEvent.click(previewToggle);
+    expect(
+      screen.getByRole("button", { name: "Close assembly preview" }),
+    ).toBeTruthy();
+    expect(preview?.getAttribute("data-mobile-open")).toBe("true");
     expect(screen.getByText("3626 psi / 250 bar")).toBeTruthy();
     expect(screen.getByText("Hose selection ready")).toBeTruthy();
     expect(
