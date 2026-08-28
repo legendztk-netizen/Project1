@@ -22,6 +22,7 @@ export interface CompatibleHoseEndCandidate {
   interfaceFamily: string;
   interfaceGroup: string;
   maximumWorkingBar: number | null;
+  mediaKey: string;
   sealingForm: string;
   swivelForm: string;
   thread: string;
@@ -103,6 +104,7 @@ function configuredEnd(candidate: CompatibleHoseEndCandidate) {
       interfaceFamily: candidate.interfaceFamily,
       interfaceGroup: candidate.interfaceGroup,
       maximumWorkingBar: candidate.maximumWorkingBar,
+      mediaKey: candidate.mediaKey,
       sealingForm: candidate.sealingForm,
       sku: candidate.hoseEndSku,
       swivelForm: candidate.swivelForm,

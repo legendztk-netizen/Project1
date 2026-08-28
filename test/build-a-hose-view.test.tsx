@@ -137,6 +137,7 @@ function compatibleCandidates() {
       hoseEndSku: "NPT_M_FX_04_04",
       interfaceFamily: "NPTF",
       interfaceGroup: "NPT / NPTF",
+      mediaKey: "NPTF-Male-Fixed-0° Straight",
       sealingForm: "Tapered thread",
       swivelForm: "Fixed",
       thread: "1/4-18 NPTF",
@@ -630,6 +631,20 @@ describe("Build a Hose view", () => {
     expect(
       within(review).getAllByText("Matched ferrule included"),
     ).toHaveLength(2);
+    expect(
+      within(review)
+        .getByRole("img", {
+          name: "End A: JIC 37° Female Swivel 0° Straight Hose End",
+        })
+        .getAttribute("src"),
+    ).toBe("/images/catalog/hose-ends/jic-female-swivel-straight.jpg");
+    expect(
+      within(review)
+        .getByRole("img", {
+          name: "End B: JIC 37° Female Swivel 0° Straight Hose End",
+        })
+        .getAttribute("src"),
+    ).toBe("/images/catalog/hose-ends/jic-female-swivel-straight.jpg");
     expect(screen.queryByText("601R1_1WB_002")).toBeNull();
     expect(within(review).getByText(/M04 · M04 measurement/)).toBeTruthy();
     expect(within(review).getByText("72 in")).toBeTruthy();

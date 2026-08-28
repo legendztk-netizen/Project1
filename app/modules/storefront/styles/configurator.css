@@ -911,11 +911,15 @@
 .assembly-component-order li,
 .assembly-review-issues li {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) 112px auto;
   align-items: center;
   gap: 14px;
   padding: 16px 0;
   border-bottom: 1px solid var(--line);
+}
+
+.assembly-component-order li:first-child {
+  grid-template-columns: auto minmax(0, 1fr);
 }
 
 .assembly-component-order li:last-child,
@@ -935,11 +939,39 @@
   font-weight: 900;
 }
 
-.assembly-component-order li > div,
+.assembly-component-details,
 .assembly-review-issues li > div {
   display: grid;
   min-width: 0;
   gap: 4px;
+}
+
+.assembly-component-thumbnail {
+  display: grid;
+  width: 112px;
+  aspect-ratio: 4 / 3;
+  place-items: center;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--line);
+}
+
+.assembly-component-thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.assembly-component-thumbnail-fallback {
+  gap: 4px;
+  padding: 8px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.assembly-component-thumbnail-fallback span {
+  font-size: 0.58rem;
+  font-weight: 700;
 }
 
 .assembly-component-order small,
@@ -1101,10 +1133,21 @@
   }
 
   .assembly-review-section > header,
-  .assembly-component-order li,
   .assembly-review-issues li {
     align-items: stretch;
     grid-template-columns: 1fr;
+  }
+
+  .assembly-component-order li,
+  .assembly-component-order li:first-child {
+    align-items: center;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .assembly-component-thumbnail,
+  .assembly-component-order li > button {
+    grid-column: 2;
+    justify-self: start;
   }
 
   .assembly-review-section > header {

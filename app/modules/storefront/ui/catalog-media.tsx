@@ -33,13 +33,18 @@ const hoseEndMedia: Record<string, string> = {
   "SAE Code 61-Fixed-90°": "code-61-90.jpg",
 };
 
+export function hoseEndMediaPath(mediaKey: string | null | undefined) {
+  if (!mediaKey) return null;
+  const filename = hoseEndMedia[mediaKey];
+  return filename ? `/images/catalog/hose-ends/${filename}` : null;
+}
+
 export function catalogMediaPath(item: PublicCatalogItem) {
   if (item.productType === "hose" && item.mediaKey) {
     return `/images/catalog/hose/${item.mediaKey}-structure.jpg`;
   }
   if (item.productType === "hose_end" && item.mediaKey) {
-    const filename = hoseEndMedia[item.mediaKey];
-    return filename ? `/images/catalog/hose-ends/${filename}` : null;
+    return hoseEndMediaPath(item.mediaKey);
   }
   return null;
 }

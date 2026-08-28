@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   ClipboardList,
+  ImageOff,
   Wrench,
 } from "lucide-react";
 
@@ -12,6 +13,9 @@ import type {
 } from "../../configurator/domain/assembly-draft-validation";
 import type { AssemblyReviewResult } from "../../configurator/domain/assembly-review";
 import type { HoseConfigurationDraft } from "../../configurator/domain/hose-configuration-draft";
+import { hoseEndMediaPath } from "./catalog-media";
+
+type ConfiguredEnd = NonNullable<HoseConfigurationDraft["endA"]>;
 
 const outcomeCopy: Record<
   AssemblyReviewResult["outcome"],
@@ -84,6 +88,32 @@ function applicationLabel(draft: HoseConfigurationDraft) {
     `${application.maximumWorkingPressure.originalValue} ${application.maximumWorkingPressure.originalUnit}`,
     `${application.minimumOperatingTemperature.originalValue}–${application.maximumOperatingTemperature.originalValue} °${application.minimumOperatingTemperature.originalUnit}`,
   ].join(" · ");
+}
+
+function SelectedEndThumbnail({
+  end,
+  position,
+}: {
+  end: ConfiguredEnd | undefined;
+  position: "End A" | "End B";
+}) {
+  const path = hoseEndMediaPath(end?.hoseEnd.mediaKey);
+  if (!end || !path) {
+    return (
+      <div
+        aria-label={`${position} technical image pending`}
+        className="assembly-component-thumbnail assembly-component-thumbnail-fallback"
+      >
+        <ImageOff aria-hidden="true" size={22} />
+        <span>Image pending</span>
+      </div>
+    );
+  }
+  return (
+    <div className="assembly-component-thumbnail">
+      <img alt={`${position}: ${end.hoseEnd.displayName}`} src={path} />
+    </div>
+  );
 }
 
 function ReviewIssue({
@@ -177,33 +207,35 @@ export function AssemblyReviewStage({
         <ol className="assembly-component-order">
           <li>
             <span>1</span>
-            <div>
+            <div className="assembly-component-details">
               <strong>{draft.hose.familyName}</strong>
               <small>SKU {draft.hose.sku}</small>
             </div>
           </li>
           <li>
             <span>2</span>
-            <div>
+            <div className="assembly-component-details">
               <strong>
                 {draft.endA?.hoseEnd.displayName ?? "End A missing"}
               </strong>
               <small>SKU {draft.endA?.hoseEnd.sku ?? "Not selected"}</small>
               {draft.endA ? <em>Matched ferrule included</em> : null}
             </div>
+            <SelectedEndThumbnail end={draft.endA} position="End A" />
             <button onClick={() => onEdit("end-a")} type="button">
               Edit End A
             </button>
           </li>
           <li>
             <span>3</span>
-            <div>
+            <div className="assembly-component-details">
               <strong>
                 {draft.endB?.hoseEnd.displayName ?? "End B missing"}
               </strong>
               <small>SKU {draft.endB?.hoseEnd.sku ?? "Not selected"}</small>
               {draft.endB ? <em>Matched ferrule included</em> : null}
             </div>
+            <SelectedEndThumbnail end={draft.endB} position="End B" />
             <button onClick={() => onEdit("end-b")} type="button">
               Edit End B
             </button>

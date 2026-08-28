@@ -103,6 +103,15 @@ export function compatibleHoseEndCandidateFromRow(
     interfaceFamily: customerInterface,
     interfaceGroup: group,
     maximumWorkingBar: nullableNumber(row.max_working_bar),
+    mediaKey: [
+      customerInterface,
+      row.gender === "N/A" ? null : row.gender,
+      row.swivel_form,
+      row.angle,
+      lengthClass,
+    ]
+      .filter(Boolean)
+      .join("-"),
     sealingForm: row.sealing_form,
     swivelForm: row.swivel_form,
     thread: row.thread,

@@ -40,6 +40,7 @@ describe("D1 configurator repository", () => {
       interfaceFamily: "JIC 37°",
       interfaceGroup: "JIC 37°",
       maximumWorkingBar: 300,
+      mediaKey: "JIC 37°-Female-Swivel-0° Straight",
       thread: "7/16-20 UNF",
     });
   });
