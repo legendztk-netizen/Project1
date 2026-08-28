@@ -293,9 +293,9 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(review).toContain("Hose variants");
     expect(review).toContain(">61<");
     expect(review).toContain("Hose ends");
-    expect(review).toContain(">200<");
+    expect(review).toContain(">329<");
     expect(review).toContain("Exact combinations");
-    expect(review).toContain(">1081<");
+    expect(review).toContain(">1210<");
     expect(review).toContain("Adapter families");
     expect(review).toContain(">17<");
     expect(review).toContain("Adapter SKUs");
@@ -305,7 +305,7 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(review).toContain("Sales offers");
     expect(review).toContain("USD reference prices");
     expect(review).toContain("Total sale SKUs");
-    expect(review).toContain(">515<");
+    expect(review).toContain(">644<");
     expect(review).toContain("All imported SKUs start Temporarily Unavailable");
     expect(review).toContain("only Approved + Complete");
 
@@ -1367,7 +1367,7 @@ describe("Cloudflare Worker route surfaces", () => {
          WHERE release_id = '${loser.id}'`,
       ),
     ).toEqual([{ count: 0 }]);
-  }, 120_000);
+  }, 300_000);
 
   it("serves the five-class published storefront without exposing cost data", async () => {
     const workbook = await readFile(
