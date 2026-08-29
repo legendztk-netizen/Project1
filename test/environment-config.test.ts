@@ -85,6 +85,26 @@ describe("environment configuration contract", () => {
     ).toBe(true);
   });
 
+  it("does not advertise Queue or Cron handlers that the Worker does not export", () => {
+    const wrangler = readJson("wrangler.jsonc") as {
+      env: Record<
+        "preview" | "production",
+        { queues?: { consumers?: unknown[] }; triggers?: unknown }
+      >;
+      queues?: { consumers?: unknown[] };
+      triggers?: unknown;
+    };
+
+    for (const definition of [
+      wrangler,
+      wrangler.env.preview,
+      wrangler.env.production,
+    ]) {
+      expect(definition.queues?.consumers).toBeUndefined();
+      expect(definition.triggers).toBeUndefined();
+    }
+  });
+
   it.each(["local", "preview", "production"])(
     "keeps Wrangler %s aligned with the shared contract",
     (environment) => {
