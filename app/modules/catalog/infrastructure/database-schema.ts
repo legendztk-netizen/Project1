@@ -676,3 +676,94 @@ export const adminAuditEvents = sqliteTable(
     index("admin_audit_events_occurred_at_idx").on(table.occurredAt),
   ],
 );
+
+export const pendingConfigurationDrafts = sqliteTable(
+  "pending_configuration_drafts",
+  {
+    id: text("id").primaryKey(),
+    saveIdentity: text("save_identity").notNull(),
+    email: text("email").notNull(),
+    catalogReleaseId: text("catalog_release_id")
+      .notNull()
+      .references(() => catalogReleases.id),
+    snapshotJson: text("snapshot_json").notNull(),
+    versionSnapshotJson: text("version_snapshot_json").notNull(),
+    status: text("status").notNull(),
+    verificationTokenHash: text("verification_token_hash").notNull(),
+    verificationExpiresAt: text("verification_expires_at").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    verifiedAt: text("verified_at"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    check(
+      "pending_configuration_status",
+      sql`${table.status} in ('pending_verification', 'verified')`,
+    ),
+    check(
+      "pending_configuration_email_lowercase",
+      sql`${table.email} = lower(${table.email})`,
+    ),
+    check(
+      "pending_configuration_snapshot_json",
+      sql`json_valid(${table.snapshotJson})`,
+    ),
+    check(
+      "pending_configuration_version_json",
+      sql`json_valid(${table.versionSnapshotJson})`,
+    ),
+    uniqueIndex("pending_configuration_drafts_identity_uq").on(
+      table.saveIdentity,
+    ),
+    uniqueIndex("pending_configuration_drafts_token_uq").on(
+      table.verificationTokenHash,
+    ),
+    index("pending_configuration_drafts_expiry_idx").on(table.expiresAt),
+  ],
+);
+
+export const pendingConfigurationEmailEffects = sqliteTable(
+  "pending_configuration_email_effects",
+  {
+    id: text("id").primaryKey(),
+    pendingConfigurationId: text("pending_configuration_id")
+      .notNull()
+      .references(() => pendingConfigurationDrafts.id, { onDelete: "cascade" }),
+    status: text("status").notNull(),
+    sentAt: text("sent_at"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    check(
+      "pending_configuration_email_effect_status",
+      sql`${table.status} in ('pending', 'dispatching', 'queued', 'sent')`,
+    ),
+    uniqueIndex("pending_configuration_email_effects_draft_uq").on(
+      table.pendingConfigurationId,
+    ),
+    index("pending_configuration_email_effects_status_idx").on(
+      table.status,
+      table.updatedAt,
+    ),
+  ],
+);
+
+export const pendingConfigurationSaveLimits = sqliteTable(
+  "pending_configuration_save_limits",
+  {
+    scopeKey: text("scope_key").primaryKey(),
+    attemptCount: integer("attempt_count").notNull().default(1),
+    windowExpiresAt: text("window_expires_at").notNull(),
+  },
+  (table) => [
+    check(
+      "pending_configuration_save_limit_positive",
+      sql`${table.attemptCount} > 0`,
+    ),
+    index("pending_configuration_save_limits_expiry_idx").on(
+      table.windowExpiresAt,
+    ),
+  ],
+);

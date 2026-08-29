@@ -43,7 +43,17 @@
         "binding": "ASYNC_JOBS",
         "queue": "hydraulic-hose-async-jobs-local"
       }
+    ],
+    "consumers": [
+      {
+        "queue": "hydraulic-hose-async-jobs-local",
+        "max_batch_size": 10,
+        "max_retries": 3
+      }
     ]
+  },
+  "triggers": {
+    "crons": ["17 3 * * *"]
   },
   "env": {
     "preview": {
@@ -84,7 +94,17 @@
             "binding": "ASYNC_JOBS",
             "queue": "hydraulic-hose-async-jobs-preview"
           }
+        ],
+        "consumers": [
+          {
+            "queue": "hydraulic-hose-async-jobs-preview",
+            "max_batch_size": 10,
+            "max_retries": 3
+          }
         ]
+      },
+      "triggers": {
+        "crons": ["17 3 * * *"]
       }
     },
     "production": {
@@ -128,7 +148,17 @@
             "binding": "ASYNC_JOBS",
             "queue": "hydraulic-hose-async-jobs-production"
           }
+        ],
+        "consumers": [
+          {
+            "queue": "hydraulic-hose-async-jobs-production",
+            "max_batch_size": 10,
+            "max_retries": 3
+          }
         ]
+      },
+      "triggers": {
+        "crons": ["17 3 * * *"]
       }
     }
   }

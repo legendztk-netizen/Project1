@@ -4,6 +4,8 @@ import {
   ArrowRight,
   Check,
   Layers3,
+  Mail,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { data, Link, useNavigate } from "react-router";
@@ -446,6 +448,13 @@ export function BuildAHoseView({
     error: string | null;
     pending: boolean;
   }>({ error: null, pending: false });
+  const [emailSaveOpen, setEmailSaveOpen] = useState(false);
+  const [emailInput, setEmailInput] = useState("");
+  const [emailSaveCommand, setEmailSaveCommand] = useState<{
+    error: string | null;
+    pending: boolean;
+    savedFingerprint: string | null;
+  }>({ error: null, pending: false, savedFingerprint: null });
   const [selectionProvenance, setSelectionProvenance] =
     useState<DraftSelectionProvenance>(
       savedDraft
@@ -598,6 +607,16 @@ export function BuildAHoseView({
           })
         : null,
     [draft, draftValidation, quantityInput],
+  );
+  const pendingSnapshotFingerprint = useMemo(
+    () =>
+      draft
+        ? JSON.stringify({
+            configuration: draft,
+            pageState: { quantityInput, selectionProvenance, stage },
+          })
+        : "",
+    [draft, quantityInput, selectionProvenance, stage],
   );
   const hasSelectableHose = loaderData.families.some((family) =>
     family.variants.some((variant) => variant.canAddToQuote),
@@ -794,6 +813,57 @@ export function BuildAHoseView({
         error:
           "The assembly could not be added. Check your connection and try again.",
         pending: false,
+      });
+    }
+  }
+
+  async function saveDraftByEmail(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!draft || emailSaveCommand.pending) return;
+    setEmailSaveCommand((current) => ({
+      ...current,
+      error: null,
+      pending: true,
+    }));
+    const form = new FormData();
+    form.set("email", emailInput);
+    form.set("configuration", JSON.stringify(draft));
+    form.set(
+      "pageState",
+      JSON.stringify({ quantityInput, selectionProvenance, stage }),
+    );
+    try {
+      const response = await fetch("/api/configurator/save-draft", {
+        body: form,
+        method: "POST",
+      });
+      const result = (await response.json()) as {
+        email?: string;
+        error: string | null;
+        ok: boolean;
+      };
+      if (!response.ok || !result.ok) {
+        setEmailSaveCommand({
+          error:
+            result.error ??
+            "The verification email could not be started. Try again.",
+          pending: false,
+          savedFingerprint: null,
+        });
+        return;
+      }
+      setEmailSaveCommand({
+        error: null,
+        pending: false,
+        savedFingerprint: pendingSnapshotFingerprint,
+      });
+      setEmailSaveOpen(false);
+    } catch {
+      setEmailSaveCommand({
+        error:
+          "The verification email could not be started. Check your connection and try again.",
+        pending: false,
+        savedFingerprint: null,
       });
     }
   }
@@ -1254,6 +1324,101 @@ export function BuildAHoseView({
                     This unfinished configuration is kept only in this page
                     session and has not been added to your Quote List.
                   </p>
+                  {draft ? (
+                    <section
+                      aria-label="Save unfinished configuration"
+                      className="pending-email-save"
+                    >
+                      {emailSaveCommand.savedFingerprint ===
+                      pendingSnapshotFingerprint ? (
+                        <div
+                          className="pending-email-save-success"
+                          role="status"
+                        >
+                          <Check aria-hidden="true" size={18} />
+                          <div>
+                            <strong>Verification email sent</strong>
+                            <p>
+                              Verify the email to keep this exact draft pending
+                              for 30 days.
+                            </p>
+                          </div>
+                        </div>
+                      ) : emailSaveOpen ? (
+                        <form onSubmit={saveDraftByEmail}>
+                          <div className="pending-email-save-heading">
+                            <div>
+                              <strong>
+                                Save this unfinished configuration
+                              </strong>
+                              <p>
+                                We will send one verification email. This does
+                                not create an account or add to your Quote List.
+                              </p>
+                            </div>
+                            <button
+                              aria-label="Cancel email save"
+                              className="icon-button"
+                              disabled={emailSaveCommand.pending}
+                              onClick={() => {
+                                setEmailSaveOpen(false);
+                                setEmailSaveCommand((current) => ({
+                                  ...current,
+                                  error: null,
+                                }));
+                              }}
+                              type="button"
+                            >
+                              <X aria-hidden="true" size={18} />
+                            </button>
+                          </div>
+                          <label htmlFor="pending-configuration-email">
+                            Email address
+                          </label>
+                          <div className="pending-email-save-controls">
+                            <input
+                              autoComplete="email"
+                              id="pending-configuration-email"
+                              onChange={(event) =>
+                                setEmailInput(event.currentTarget.value)
+                              }
+                              placeholder="you@example.com"
+                              required
+                              type="email"
+                              value={emailInput}
+                            />
+                            <button
+                              className="button button-secondary"
+                              disabled={emailSaveCommand.pending}
+                              type="submit"
+                            >
+                              <Mail aria-hidden="true" size={17} />
+                              {emailSaveCommand.pending
+                                ? "Saving..."
+                                : "Send verification"}
+                            </button>
+                          </div>
+                          {emailSaveCommand.error ? (
+                            <p
+                              className="pending-email-save-error"
+                              role="alert"
+                            >
+                              {emailSaveCommand.error}
+                            </p>
+                          ) : null}
+                        </form>
+                      ) : (
+                        <button
+                          className="button button-secondary pending-email-save-trigger"
+                          onClick={() => setEmailSaveOpen(true)}
+                          type="button"
+                        >
+                          <Mail aria-hidden="true" size={17} />
+                          Save by email
+                        </button>
+                      )}
+                    </section>
+                  ) : null}
                 </div>
               </aside>
             </div>

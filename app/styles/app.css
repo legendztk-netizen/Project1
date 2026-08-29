@@ -1439,6 +1439,29 @@ a {
   color: var(--muted);
 }
 
+.email-verification-page {
+  display: grid;
+  width: min(100% - 40px, 620px);
+  min-height: calc(100vh - 68px);
+  align-content: center;
+  justify-items: start;
+  margin: 0 auto;
+  padding: 48px 0;
+}
+
+.email-verification-page h1 {
+  margin: 16px 0 8px;
+  font-size: 2rem;
+  letter-spacing: 0;
+}
+
+.email-verification-page p {
+  max-width: 560px;
+  margin: 0 0 24px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
 @media (max-width: 980px) {
   .storefront-header {
     grid-template-columns: 1fr auto;

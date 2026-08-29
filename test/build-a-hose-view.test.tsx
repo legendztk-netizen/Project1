@@ -232,6 +232,87 @@ afterEach(() => {
 });
 
 describe("Build a Hose view", () => {
+  it("does not present an in-flight email save as cancellable", async () => {
+    let finishRequest: ((value: unknown) => void) | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise((resolve) => {
+            finishRequest = resolve;
+          }),
+      ),
+    );
+    renderPage([publicHoseFixture()]);
+    fireEvent.click(
+      screen.getByRole("button", { name: /601R1 Hydraulic Hose/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Select 3\/16 in/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save by email" }));
+    fireEvent.change(screen.getByLabelText("Email address"), {
+      target: { value: "buyer@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send verification" }));
+
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Cancel email save",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    finishRequest?.({
+      json: async () => ({ email: "buyer@example.com", error: null, ok: true }),
+      ok: true,
+    });
+    expect(await screen.findByText("Verification email sent")).toBeTruthy();
+  });
+
+  it("saves the exact in-page draft by email and keeps it after a failed attempt", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        json: async () => ({ error: "Email service unavailable", ok: false }),
+        ok: false,
+      })
+      .mockResolvedValueOnce({
+        json: async () => ({
+          email: "buyer@example.com",
+          error: null,
+          ok: true,
+        }),
+        ok: true,
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage([publicHoseFixture()]);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /601R1 Hydraulic Hose/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Select 3\/16 in/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save by email" }));
+    fireEvent.change(screen.getByLabelText("Email address"), {
+      target: { value: "buyer@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send verification" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Email service unavailable",
+    );
+    expect(screen.getByText("SKU 601R1_001")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Send verification" }));
+    expect(await screen.findByText("Verification email sent")).toBeTruthy();
+    const submitted = fetchMock.mock.calls[1]?.[1]?.body as FormData;
+    expect(JSON.parse(String(submitted.get("configuration")))).toMatchObject({
+      catalogRelease: { id: "release-002", number: "CAT-002" },
+      hose: { sku: "601R1_001" },
+    });
+    expect(JSON.parse(String(submitted.get("pageState")))).toMatchObject({
+      quantityInput: "1",
+      stage: "hose",
+    });
+  });
+
   it("hydrates a page-session draft only after exact series and size clicks", () => {
     const first = publicHoseFixture();
     const firstSelection = first.variantSelection;
