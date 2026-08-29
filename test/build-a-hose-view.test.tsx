@@ -19,6 +19,7 @@ import type {
   ClockingConvention,
   LengthMeasurementMethod,
 } from "../app/modules/configurator-reference/domain/configurator-reference";
+import { createHoseConfigurationDraft } from "../app/modules/configurator/domain/hose-configuration-draft";
 import { BuildAHoseView } from "../app/modules/storefront/routes/build-a-hose";
 import { publicHoseFixture } from "./fixtures/public-hose";
 import { compatibleEndAFixture } from "./fixtures/compatible-end-a";
@@ -27,6 +28,9 @@ function renderPage(
   items: PublicCatalogItem[],
   options: {
     clockingConvention?: ClockingConvention | null;
+    quoteLineContext?: Parameters<
+      typeof BuildAHoseView
+    >[0]["loaderData"]["quoteLineContext"];
     requestedEndASku?: string | null;
   } = {},
 ) {
@@ -83,7 +87,7 @@ function renderPage(
               ],
               measurementMethods: measurementMethodsFixture(),
               publishedHoseCount: items.length,
-              quoteLineContext: null,
+              quoteLineContext: options.quoteLineContext ?? null,
               quoteLineError: null,
               releaseNumber: items[0]?.releaseNumber ?? null,
               requestedEndASku: options.requestedEndASku ?? null,
@@ -102,6 +106,59 @@ function renderPage(
     { initialEntries: ["/build-a-hose"] },
   );
   return { router, ...render(<RouterProvider router={router} />) };
+}
+
+function configuredQuoteLineContextFixture(item: PublicCatalogItem) {
+  const configuration = createHoseConfigurationDraft(item);
+  if (!configuration) throw new Error("Expected a selectable hose fixture");
+  return {
+    line: {
+      category: "hydraulic-hose" as const,
+      configuredAssembly: {
+        currentIssue: null,
+        estimateBasis: {
+          assemblyServiceUsd: null,
+          basis: "versioned_reference_inputs" as const,
+          catalogReleaseId: item.releaseId,
+          currency: "USD" as const,
+          ferruleAPriceUsd: null,
+          ferruleBPriceUsd: null,
+          finishedOverallLengthFeet: 2,
+          hoseCutLengthFeet: null,
+          hoseEndAPriceUsd: null,
+          hoseEndBPriceUsd: null,
+          hosePricePerFootUsd: null,
+          protectionRecordVersion: 1,
+          protectionUsd: null,
+          scheduleRecordVersion: 1,
+        },
+        snapshot: {
+          configuration,
+          review: { issues: [], outcome: "ready" as const },
+          sourceCatalogRelease: {
+            id: item.releaseId,
+            number: item.releaseNumber,
+          },
+        },
+        unitEstimateAmount: null,
+      },
+      currency: "USD",
+      currentEstimateAmount: null,
+      cuttingLabelingFeeAmount: null,
+      cuttingLabelingFeeRate: null,
+      displayName: `${item.familyName} Assembly`,
+      estimatedMerchandiseAmount: null,
+      id: "configured-line-1",
+      lengthOrder: null,
+      lineKind: "configured_assembly" as const,
+      quantity: 1,
+      referenceUnitPrice: null,
+      salesUnit: "assembly",
+      sku: item.sku,
+      updatedAt: "2026-08-29T00:00:00.000Z",
+    },
+    mode: "edit" as const,
+  };
 }
 
 function clockingConventionFixture(): ClockingConvention {
@@ -271,6 +328,35 @@ describe("Build a Hose view", () => {
     expect(dialog.textContent).toContain(
       "Choose a specific hose size before using Email Save.",
     );
+  });
+
+  it("warns when editing a Quote Line and only the hose series has changed", async () => {
+    const original = publicHoseFixture();
+    if (original.variantSelection?.kind !== "hose") {
+      throw new Error("Expected a hose variant fixture");
+    }
+    const otherSeries = publicHoseFixture({
+      familyKey: "601r2",
+      familyName: "601R2 Hydraulic Hose",
+      sku: "601R2_001",
+      variantSelection: {
+        ...original.variantSelection,
+        hoseSeries: "601R2",
+      },
+    });
+    renderPage([original, otherSeries], {
+      quoteLineContext: configuredQuoteLineContextFixture(original),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Edit Hose" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /601R2 Hydraulic Hose/ }),
+    );
+
+    fireEvent.click(screen.getByRole("link", { name: "Products" }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Leave this configuration?" }),
+    ).toBeTruthy();
   });
 
   it("warns before website navigation and preserves the exact draft when staying", async () => {

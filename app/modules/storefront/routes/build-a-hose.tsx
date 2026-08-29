@@ -662,8 +662,9 @@ export function BuildAHoseView({
   const hasUnsavedDraft =
     loaderData.quoteLineContext?.mode === "edit"
       ? Boolean(
-          draft &&
-          currentManagedDraftFingerprint !== originalManagedDraftFingerprint,
+          selectedFamilyKey !== savedDraft?.hose.familyKey ||
+          (draft &&
+            currentManagedDraftFingerprint !== originalManagedDraftFingerprint),
         )
       : Boolean(selectedFamilyKey || draft);
   const navigationBlocker = useBlocker(
