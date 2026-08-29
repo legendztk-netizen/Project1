@@ -7,9 +7,6 @@ import { join } from "node:path";
 import * as XLSX from "@e965/xlsx";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { pendingConfigurationVerificationToken } from "../../app/modules/configurator/domain/pending-configuration-save";
-import { quoteSessionSigningKey } from "../../workers/session-secrets";
-
 const host = "127.0.0.1";
 let port: number;
 let origin: string;
@@ -2890,145 +2887,23 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(productText).not.toContain("costBasis");
   }, 120_000);
 
-  it("stores one pending Email Save snapshot outside the Quote List and verifies it", async () => {
-    const [active] = runLocalD1<{ id: string; release_number: string }>(
-      `SELECT id, release_number FROM catalog_releases
-       WHERE status = 'published' ORDER BY published_at DESC LIMIT 1`,
+  it("does not expose standalone email draft persistence", async () => {
+    const saveResponse = await fetch(`${origin}/api/configurator/save-draft`, {
+      body: new FormData(),
+      method: "POST",
+    });
+    expect(saveResponse.status).toBe(404);
+
+    const verificationResponse = await fetch(
+      `${origin}/verify-configuration-email?token=obsolete`,
     );
-    expect(active).toBeTruthy();
-    const configuration = {
-      catalogRelease: {
-        id: active?.id,
-        number: active?.release_number,
-      },
-      hose: {
-        dash: "-3",
-        equivalentStandard: "EN 853 1SN",
-        familyKey: "601r1",
-        familyName: "601R1 Hydraulic Hose",
-        mediaKey: "601R1",
-        nominalIdIn: 0.1875,
-        performance: {
-          temperatureMaxC: 100,
-          temperatureMinC: -40,
-          workingBar: 250,
-          workingPsi: 3626,
-        },
-        primaryStandard: "SAE 100 R1AT",
-        reinforcement: "Single wire braid",
-        series: "601R1",
-        sku: "601R1_001",
-      },
-    };
-    const pageState = {
-      quantityInput: "1",
-      selectionProvenance: {},
-      stage: "hose",
-    };
-    const quoteLinesBefore = runLocalD1<{ count: number }>(
-      "SELECT COUNT(*) AS count FROM anonymous_quote_lines",
-    )[0]?.count;
-
-    async function save(email: string) {
-      const form = new FormData();
-      form.set("configuration", JSON.stringify(configuration));
-      form.set("email", email);
-      form.set("pageState", JSON.stringify(pageState));
-      return fetch(`${origin}/api/configurator/save-draft`, {
-        body: form,
-        method: "POST",
-      });
-    }
-
-    const firstResponse = await save("Buyer@Example.com");
-    expect(firstResponse.status).toBe(200);
-    await expect(firstResponse.json()).resolves.toMatchObject({
-      alreadySaved: false,
-      email: "buyer@example.com",
-      ok: true,
-    });
-    const repeatedResponse = await save("buyer@example.com");
-    expect(repeatedResponse.status).toBe(200);
-    await expect(repeatedResponse.json()).resolves.toMatchObject({
-      alreadySaved: true,
-      ok: true,
-    });
-
-    const pending = runLocalD1<{
-      count: number;
-      id: string;
-      save_identity: string;
-      snapshot_json: string;
-    }>(
-      `SELECT COUNT(*) AS count, id, save_identity, snapshot_json
-       FROM pending_configuration_drafts
-       WHERE email = 'buyer@example.com'`,
-    )[0];
-    expect(pending?.count).toBe(1);
-    expect(JSON.parse(pending?.snapshot_json ?? "{}")).toEqual({
-      configuration,
-      pageState,
-    });
-    expect(
-      runLocalD1<{ count: number }>(
-        "SELECT COUNT(*) AS count FROM pending_configuration_email_effects",
-      ),
-    ).toEqual([{ count: 1 }]);
-    expect(
-      runLocalD1<{ count: number }>(
-        "SELECT COUNT(*) AS count FROM anonymous_quote_lines",
-      )[0]?.count,
-    ).toBe(quoteLinesBefore);
+    expect(verificationResponse.status).toBe(404);
     expect(
       runLocalD1<{ name: string }>(
-        "SELECT name FROM pragma_table_info('pending_configuration_drafts') WHERE name = 'verification_token'",
+        `SELECT name FROM sqlite_master
+         WHERE type = 'table' AND name LIKE 'pending_configuration_%'`,
       ),
     ).toEqual([]);
-
-    const verificationToken = await pendingConfigurationVerificationToken(
-      pending?.save_identity ?? "",
-      quoteSessionSigningKey({ APP_ENV: "local" } as CloudflareBindings),
-    );
-    runLocalD1(
-      `UPDATE pending_configuration_drafts
-       SET verification_expires_at = '2026-01-01T00:00:00.000Z'
-       WHERE id = '${pending?.id ?? "missing"}';
-       UPDATE pending_configuration_email_effects
-       SET status = 'sent', sent_at = '2026-01-01T00:00:00.000Z'
-       WHERE pending_configuration_id = '${pending?.id ?? "missing"}'`,
-    );
-    const renewedResponse = await save("buyer@example.com");
-    expect(renewedResponse.status).toBe(200);
-    await expect(renewedResponse.json()).resolves.toMatchObject({
-      alreadySaved: true,
-      ok: true,
-    });
-    expect(
-      runLocalD1<{ expired: number }>(
-        `SELECT verification_expires_at = '2026-01-01T00:00:00.000Z' AS expired
-         FROM pending_configuration_drafts
-         WHERE id = '${pending?.id ?? "missing"}'`,
-      ),
-    ).toEqual([{ expired: 0 }]);
-    const verificationResponse = await fetch(
-      `${origin}/verify-configuration-email?token=${encodeURIComponent(verificationToken)}`,
-    );
-    expect(verificationResponse.status).toBe(200);
-    expect(await verificationResponse.text()).toContain("Email verified");
-    expect(
-      runLocalD1<{ status: string }>(
-        `SELECT status FROM pending_configuration_drafts
-         WHERE email = 'buyer@example.com'`,
-      ),
-    ).toEqual([{ status: "verified" }]);
-
-    const invalidResponse = await save("invalid-email");
-    expect(invalidResponse.status).toBe(422);
-    expect(
-      runLocalD1<{ count: number }>(
-        "SELECT COUNT(*) AS count FROM pending_configuration_drafts",
-      ),
-    ).toEqual([{ count: 1 }]);
   }, 30_000);
 
   it("keeps a blocking workbook error out of draft releases", async () => {

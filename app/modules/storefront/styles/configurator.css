@@ -633,18 +633,6 @@
   margin: 12px 0 0;
 }
 
-.pending-email-save {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
-}
-
-.pending-email-save form,
-.pending-email-save-success {
-  display: grid;
-  gap: 12px;
-}
-
 .unsaved-draft-backdrop {
   position: fixed;
   z-index: 100;
@@ -690,53 +678,9 @@
   line-height: 1.5;
 }
 
-.unsaved-draft-dialog form {
-  display: grid;
-  gap: 9px;
-}
-
-.unsaved-draft-dialog label {
-  font-size: 0.76rem;
-  font-weight: 800;
-}
-
-.unsaved-draft-dialog input {
-  min-height: 48px;
-  padding: 0 13px;
-  border: 1px solid #9ca9b1;
-  border-radius: 4px;
-  font: inherit;
-}
-
-.unsaved-draft-dialog form > small {
+.unsaved-draft-dialog > small {
   color: var(--muted);
   font-size: 0.7rem;
-  line-height: 1.45;
-}
-
-.unsaved-draft-saved {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 13px;
-  color: var(--success);
-  background: #eef8f3;
-  border: 1px solid #badbca;
-}
-
-.unsaved-draft-saved div {
-  display: grid;
-  gap: 3px;
-}
-
-.unsaved-draft-saved small {
-  color: #456759;
-  line-height: 1.45;
-}
-
-.unsaved-draft-error {
-  color: #a5231b;
-  font-size: 0.72rem;
   line-height: 1.45;
 }
 
@@ -747,96 +691,10 @@
   margin-top: 8px;
 }
 
-.unsaved-draft-actions .button-primary {
-  grid-column: 1 / -1;
-}
-
 .unsaved-draft-discard {
   color: #9e251d;
   background: #fff;
   border: 1px solid #d8aaa6;
-}
-
-.pending-email-save-heading,
-.pending-email-save-success {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.pending-email-save-heading strong,
-.pending-email-save-success strong {
-  font-size: 0.78rem;
-}
-
-.pending-email-save-heading p,
-.pending-email-save-success p {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 0.68rem;
-  line-height: 1.45;
-}
-
-.pending-email-save label {
-  font-size: 0.7rem;
-  font-weight: 800;
-}
-
-.pending-email-save-controls {
-  display: grid;
-  gap: 8px;
-}
-
-.pending-email-save-controls input {
-  width: 100%;
-  min-height: 42px;
-  padding: 0 12px;
-  border: 1px solid #9cabb2;
-  border-radius: 4px;
-  font: inherit;
-}
-
-.pending-email-save-controls .button,
-.pending-email-save-trigger {
-  display: inline-flex;
-  min-height: 42px;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-}
-
-.pending-email-save-trigger {
-  width: 100%;
-}
-
-.pending-email-save-heading .icon-button {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
-  place-items: center;
-  padding: 0;
-  color: var(--ink);
-  background: transparent;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.pending-email-save-error {
-  margin: 0;
-  color: #a5231b;
-  font-size: 0.68rem;
-  line-height: 1.45;
-}
-
-.pending-email-save-success {
-  justify-content: flex-start;
-  padding: 12px;
-  color: var(--success);
-  background: #eef8f3;
-  border: 1px solid #badbca;
 }
 
 .configurator-next {
@@ -2373,10 +2231,6 @@
 
   .unsaved-draft-actions {
     grid-template-columns: 1fr;
-  }
-
-  .unsaved-draft-actions .button-primary {
-    grid-column: auto;
   }
 
   .configurator-action-dock {

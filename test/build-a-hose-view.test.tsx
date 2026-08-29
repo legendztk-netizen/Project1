@@ -313,7 +313,7 @@ describe("Build a Hose view", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("warns after a hose series selection but waits for a size before offering Email Save", async () => {
+  it("warns after a hose series selection without offering anonymous persistence", async () => {
     renderPage([publicHoseFixture()]);
     fireEvent.click(
       screen.getByRole("button", { name: /601R1 Hydraulic Hose/ }),
@@ -326,7 +326,10 @@ describe("Build a Hose view", () => {
     });
     expect(within(dialog).queryByLabelText("Email address")).toBeNull();
     expect(dialog.textContent).toContain(
-      "Choose a specific hose size before using Email Save.",
+      "Saving this draft will become available through account registration.",
+    );
+    expect(dialog.textContent).toContain(
+      "It is not stored against an email address alone.",
     );
   });
 
@@ -414,50 +417,17 @@ describe("Build a Hose view", () => {
     const discard = within(dialog).getByRole("button", {
       name: "Leave and Discard",
     });
-    const email = within(dialog).getByLabelText("Email address");
     expect(document.activeElement).toBe(stay);
     discard.focus();
     fireEvent.keyDown(document, { key: "Tab" });
-    expect(document.activeElement).toBe(email);
+    expect(document.activeElement).toBe(stay);
 
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByText("SKU 601R1_001")).toBeTruthy();
   });
 
-  it("exposes Email Save only after an email is entered and preserves the draft after failure", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        json: async () => ({ error: "Email service unavailable", ok: false }),
-        ok: false,
-      }),
-    );
-    renderPage([publicHoseFixture()]);
-    fireEvent.click(
-      screen.getByRole("button", { name: /601R1 Hydraulic Hose/ }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: /Select 3\/16 in/ }));
-    fireEvent.click(screen.getByRole("link", { name: "Quote List" }));
-
-    const dialog = await screen.findByRole("dialog", {
-      name: "Leave this configuration?",
-    });
-    fireEvent.change(within(dialog).getByLabelText("Email address"), {
-      target: { value: "buyer@example.com" },
-    });
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Save by Email" }),
-    );
-
-    expect((await within(dialog).findByRole("alert")).textContent).toContain(
-      "Email service unavailable",
-    );
-    expect(screen.getByText("SKU 601R1_001")).toBeTruthy();
-    expect(screen.getByRole("dialog")).toBeTruthy();
-  });
-
-  it("does not submit Email Save when the email is empty", async () => {
+  it("never posts an unfinished configuration from the exit warning", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     renderPage([publicHoseFixture()]);
@@ -467,15 +437,13 @@ describe("Build a Hose view", () => {
     fireEvent.click(screen.getByRole("button", { name: /Select 3\/16 in/ }));
     fireEvent.click(screen.getByRole("link", { name: "Products" }));
 
-    const email = within(
-      await screen.findByRole("dialog", { name: "Leave this configuration?" }),
-    ).getByLabelText("Email address");
-    const form = email.closest("form");
-    expect(form).toBeTruthy();
-    fireEvent.submit(form!);
+    const dialog = await screen.findByRole("dialog", {
+      name: "Leave this configuration?",
+    });
 
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(within(dialog).queryByRole("textbox")).toBeNull();
+    expect(within(dialog).getAllByRole("button")).toHaveLength(2);
   });
 
   it("discards the in-page draft and completes the blocked navigation", async () => {
@@ -512,87 +480,6 @@ describe("Build a Hose view", () => {
     window.dispatchEvent(draftEvent);
     expect(draftEvent.defaultPrevented).toBe(true);
     expect(screen.queryByRole("dialog")).toBeNull();
-  });
-
-  it("does not present an in-flight email save as cancellable", async () => {
-    let finishRequest: ((value: unknown) => void) | undefined;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(
-        () =>
-          new Promise((resolve) => {
-            finishRequest = resolve;
-          }),
-      ),
-    );
-    renderPage([publicHoseFixture()]);
-    fireEvent.click(
-      screen.getByRole("button", { name: /601R1 Hydraulic Hose/ }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: /Select 3\/16 in/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Save by email" }));
-    fireEvent.change(screen.getByLabelText("Email address"), {
-      target: { value: "buyer@example.com" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Send verification" }));
-
-    expect(
-      (
-        screen.getByRole("button", {
-          name: "Cancel email save",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(true);
-    finishRequest?.({
-      json: async () => ({ email: "buyer@example.com", error: null, ok: true }),
-      ok: true,
-    });
-    expect(await screen.findByText("Verification email sent")).toBeTruthy();
-  });
-
-  it("saves the exact in-page draft by email and keeps it after a failed attempt", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        json: async () => ({ error: "Email service unavailable", ok: false }),
-        ok: false,
-      })
-      .mockResolvedValueOnce({
-        json: async () => ({
-          email: "buyer@example.com",
-          error: null,
-          ok: true,
-        }),
-        ok: true,
-      });
-    vi.stubGlobal("fetch", fetchMock);
-    renderPage([publicHoseFixture()]);
-
-    fireEvent.click(
-      screen.getByRole("button", { name: /601R1 Hydraulic Hose/ }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: /Select 3\/16 in/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Save by email" }));
-    fireEvent.change(screen.getByLabelText("Email address"), {
-      target: { value: "buyer@example.com" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Send verification" }));
-
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "Email service unavailable",
-    );
-    expect(screen.getByText("SKU 601R1_001")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Send verification" }));
-    expect(await screen.findByText("Verification email sent")).toBeTruthy();
-    const submitted = fetchMock.mock.calls[1]?.[1]?.body as FormData;
-    expect(JSON.parse(String(submitted.get("configuration")))).toMatchObject({
-      catalogRelease: { id: "release-002", number: "CAT-002" },
-      hose: { sku: "601R1_001" },
-    });
-    expect(JSON.parse(String(submitted.get("pageState")))).toMatchObject({
-      quantityInput: "1",
-      stage: "hose",
-    });
   });
 
   it("hydrates a page-session draft only after exact series and size clicks", () => {

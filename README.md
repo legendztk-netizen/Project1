@@ -10,8 +10,8 @@ The initial skeleton exposes three deliberately separate surfaces:
 - `/api/catalog/products/:sku` - public active-release product resource
 - `/quote-list` - server-side anonymous Quote List for Standard Products and
   Length-Based Hose
-- `/build-a-hose` - guided hose assembly configurator with responsive preview,
-  draft exit protection, and Email Save handoff
+- `/build-a-hose` - guided hose assembly configurator with responsive preview
+  and draft exit protection
 - `/admin` - Admin Backoffice shell
 - `/admin/catalog/import` - authorized seven-worksheet catalog import and review
 - `/admin/catalog/review` - authorized draft product review and bulk Supply Availability changes

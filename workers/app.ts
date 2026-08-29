@@ -12,9 +12,6 @@ import {
   validateRuntimeEnvironment,
 } from "./environment";
 import { createHealthResponse } from "./health";
-import type { PendingConfigurationEmailMessage } from "../app/modules/configurator/application/pending-configuration-save-service";
-import { createD1PendingConfigurationRepository } from "../app/modules/configurator/infrastructure/d1-pending-configuration-repository";
-import { deliverPendingConfigurationVerification } from "../app/modules/configurator/infrastructure/pending-configuration-email";
 
 const requestHandler = createRequestHandler(
   () => import("virtual:react-router/server-build"),
@@ -45,43 +42,5 @@ export default {
     routerContext.set(cloudflareContext, { adminIdentity, env, runtime, ctx });
 
     return requestHandler(request, routerContext);
-  },
-
-  async queue(batch, env) {
-    const repository = createD1PendingConfigurationRepository(env.DB);
-    for (const message of batch.messages) {
-      const payload = message.body as PendingConfigurationEmailMessage;
-      if (payload?.type !== "pending_configuration_verification") {
-        message.ack();
-        continue;
-      }
-      const effect = await repository.findEmailEffect(payload.effectId);
-      if (!effect || effect.status === "sent") {
-        message.ack();
-        continue;
-      }
-      const now = new Date().toISOString();
-      const claimed = await repository.claimEmailDelivery(
-        payload.effectId,
-        now,
-      );
-      if (!claimed) {
-        message.retry();
-        continue;
-      }
-      try {
-        await deliverPendingConfigurationVerification(env, payload);
-        await repository.markEmailEffectSent(payload.effectId, now);
-        message.ack();
-      } catch {
-        await repository.releaseEmailDelivery(payload.effectId, now);
-        message.retry();
-      }
-    }
-  },
-
-  async scheduled(_controller, env, ctx) {
-    const repository = createD1PendingConfigurationRepository(env.DB);
-    ctx.waitUntil(repository.deleteExpired(new Date().toISOString()));
   },
 } satisfies ExportedHandler<ApplicationBindings>;

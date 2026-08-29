@@ -24,14 +24,6 @@ export default [
     "api/configurator/quote-assembly",
     "modules/storefront/routes/configurator-add-assembly-resource.ts",
   ),
-  route(
-    "api/configurator/save-draft",
-    "modules/storefront/routes/configurator-save-draft-resource.ts",
-  ),
-  route(
-    "verify-configuration-email",
-    "modules/storefront/routes/verify-configuration-email.tsx",
-  ),
   route("quote-list", "modules/storefront/routes/anonymous-quote-list.tsx"),
   route(
     "assembly-measurement-guide",
