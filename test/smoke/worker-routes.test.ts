@@ -1608,10 +1608,12 @@ describe("Cloudflare Worker route surfaces", () => {
       draftValue: unknown,
       quantity: number,
       cookie?: string,
+      replaceLineId?: string,
     ) => {
       const form = new FormData();
       form.set("draft", JSON.stringify(draftValue));
       form.set("quantity", String(quantity));
+      if (replaceLineId) form.set("replaceLineId", replaceLineId);
       return fetch(`${origin}/api/configurator/quote-assembly`, {
         body: form,
         headers: cookie ? { cookie } : undefined,
@@ -1813,6 +1815,227 @@ describe("Cloudflare Worker route surfaces", () => {
       quantity: 3,
     });
 
+    const configuredBeforeEdit = runLocalD1<{
+      configured_snapshot_json: string;
+      id: string;
+      quantity: number;
+    }>(
+      `SELECT id, quantity, configured_snapshot_json
+       FROM anonymous_quote_lines
+       WHERE session_id = '${configuredSessionId}'
+         AND line_kind = 'configured_assembly'
+       ORDER BY quantity DESC`,
+    );
+    const separateConfiguredLine = configuredBeforeEdit.find((line) => {
+      const snapshot = JSON.parse(line.configured_snapshot_json) as {
+        configuration?: { finishedLength?: { originalValue?: string } };
+      };
+      return snapshot.configuration?.finishedLength?.originalValue === "30";
+    });
+    expect(separateConfiguredLine).toBeDefined();
+
+    const editDraftResponse = await fetch(
+      `${origin}/build-a-hose?mode=edit&quoteLine=${separateConfiguredLine?.id}`,
+      { headers: { cookie: configuredCookie } },
+    );
+    const editDraftPage = await editDraftResponse.text();
+    expect(editDraftPage).toContain("Editing Quote List assembly");
+    expect(editDraftPage).toContain("Save Changes");
+    expect(editDraftPage).toContain("Changes remain isolated");
+    expect(editDraftPage).toContain('href="/quote-list"');
+    expect(editDraftResponse.headers.get("set-cookie")).toContain(
+      "hs_quote_session=",
+    );
+    await fetch(`${origin}/quote-list`, {
+      headers: { cookie: configuredCookie },
+    });
+    expect(
+      runLocalD1<{
+        configured_snapshot_json: string;
+        quantity: number;
+      }>(
+        `SELECT quantity, configured_snapshot_json
+         FROM anonymous_quote_lines
+         WHERE id = '${separateConfiguredLine?.id ?? ""}'`,
+      ),
+    ).toEqual([
+      {
+        configured_snapshot_json:
+          separateConfiguredLine?.configured_snapshot_json,
+        quantity: separateConfiguredLine?.quantity,
+      },
+    ]);
+    const duplicateDraftPage = await (
+      await fetch(
+        `${origin}/build-a-hose?mode=duplicate&quoteLine=${separateConfiguredLine?.id}`,
+        { headers: { cookie: configuredCookie } },
+      )
+    ).text();
+    expect(duplicateDraftPage).toContain("Duplicating Quote List assembly");
+    expect(duplicateDraftPage).toContain("Add Duplicate to Quote");
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM anonymous_quote_lines
+         WHERE session_id = '${configuredSessionId}'
+           AND line_kind = 'configured_assembly'`,
+      ),
+    ).toEqual([{ count: 2 }]);
+
+    const saveDuplicate = await addConfiguredAssembly(
+      assemblyDraft("30"),
+      1,
+      configuredCookie,
+    );
+    expect(saveDuplicate.status, await saveDuplicate.text()).toBe(200);
+    expect(
+      runLocalD1<{ quantity: number }>(
+        `SELECT quantity FROM anonymous_quote_lines
+         WHERE id = '${separateConfiguredLine?.id ?? ""}'`,
+      ),
+    ).toEqual([{ quantity: 2 }]);
+
+    const saveEditedConfiguration = await addConfiguredAssembly(
+      assemblyDraft("36"),
+      1,
+      configuredCookie,
+      separateConfiguredLine?.id,
+    );
+    expect(
+      saveEditedConfiguration.status,
+      await saveEditedConfiguration.text(),
+    ).toBe(200);
+    const configuredAfterSave = runLocalD1<{
+      configured_snapshot_json: string;
+      id: string;
+      quantity: number;
+    }>(
+      `SELECT id, quantity, configured_snapshot_json
+       FROM anonymous_quote_lines
+       WHERE session_id = '${configuredSessionId}'
+         AND line_kind = 'configured_assembly'
+       ORDER BY quantity DESC`,
+    );
+    const editedConfiguredLine = configuredAfterSave.find((line) => {
+      const snapshot = JSON.parse(line.configured_snapshot_json) as {
+        configuration?: { finishedLength?: { originalValue?: string } };
+      };
+      return snapshot.configuration?.finishedLength?.originalValue === "36";
+    });
+    expect(editedConfiguredLine).toMatchObject({ quantity: 1 });
+    expect(
+      configuredAfterSave.some((line) =>
+        line.configured_snapshot_json.includes('"originalValue":"30"'),
+      ),
+    ).toBe(false);
+
+    const mergeEditedConfiguration = await addConfiguredAssembly(
+      assemblyDraft("24"),
+      1,
+      configuredCookie,
+      editedConfiguredLine?.id,
+    );
+    expect(
+      mergeEditedConfiguration.status,
+      await mergeEditedConfiguration.text(),
+    ).toBe(200);
+    const [mergedConfiguredLine] = runLocalD1<{
+      id: string;
+      quantity: number;
+    }>(
+      `SELECT id, quantity FROM anonymous_quote_lines
+       WHERE session_id = '${configuredSessionId}'
+         AND line_kind = 'configured_assembly'`,
+    );
+    expect(mergedConfiguredLine).toMatchObject({ quantity: 4 });
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM anonymous_quote_lines
+         WHERE session_id = '${configuredSessionId}'
+           AND line_kind = 'configured_assembly'`,
+      ),
+    ).toEqual([{ count: 1 }]);
+
+    const configuredQuantity = new FormData();
+    configuredQuantity.set("intent", "update-configured-assembly");
+    configuredQuantity.set("lineId", mergedConfiguredLine?.id ?? "");
+    configuredQuantity.set("quantity", "2");
+    const configuredQuantityResponse = await fetch(`${origin}/quote-list`, {
+      body: configuredQuantity,
+      headers: { cookie: configuredCookie },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(configuredQuantityResponse.status).toBe(302);
+    expect(
+      runLocalD1<{ quantity: number }>(
+        `SELECT quantity FROM anonymous_quote_lines
+         WHERE id = '${mergedConfiguredLine?.id ?? ""}'`,
+      ),
+    ).toEqual([{ quantity: 2 }]);
+
+    const updateConfiguredQuantity = async (quantity: string) => {
+      const form = new FormData();
+      form.set("intent", "update-configured-assembly");
+      form.set("lineId", mergedConfiguredLine?.id ?? "");
+      form.set("quantity", quantity);
+      return fetch(`${origin}/quote-list`, {
+        body: form,
+        headers: { cookie: configuredCookie },
+        method: "POST",
+        redirect: "manual",
+      });
+    };
+    expect((await updateConfiguredQuantity("0")).status).toBe(409);
+    expect((await updateConfiguredQuantity("9999")).status).toBe(302);
+    expect((await updateConfiguredQuantity("10000")).status).toBe(409);
+    expect(
+      runLocalD1<{ quantity: number }>(
+        `SELECT quantity FROM anonymous_quote_lines
+         WHERE id = '${mergedConfiguredLine?.id ?? ""}'`,
+      ),
+    ).toEqual([{ quantity: 9999 }]);
+    expect((await updateConfiguredQuantity("2")).status).toBe(302);
+
+    const mixedStandard = new FormData();
+    mixedStandard.set("intent", "add");
+    mixedStandard.set("sku", "ADP_ST_JIC_M_02_NPT_M_02");
+    mixedStandard.set("quantity", "1");
+    const mixedStandardResponse = await fetch(`${origin}/quote-list`, {
+      body: mixedStandard,
+      headers: { cookie: configuredCookie },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(mixedStandardResponse.status).toBe(302);
+
+    const mixedLengthBasedHose = new FormData();
+    mixedLengthBasedHose.set("intent", "add-length-hose");
+    mixedLengthBasedHose.set("sku", "601R1_001");
+    mixedLengthBasedHose.set("lengthPerPiece", "5");
+    mixedLengthBasedHose.set("lengthUnit", "ft");
+    mixedLengthBasedHose.set("pieceCount", "1");
+    const mixedLengthBasedHoseResponse = await fetch(
+      `${origin}/catalog/hydraulic-hose/601r1?sku=601R1_001`,
+      {
+        body: mixedLengthBasedHose,
+        headers: { cookie: configuredCookie },
+        method: "POST",
+        redirect: "manual",
+      },
+    );
+    expect(mixedLengthBasedHoseResponse.status).toBe(302);
+    expect(
+      runLocalD1<{ line_kind: string }>(
+        `SELECT line_kind FROM anonymous_quote_lines
+         WHERE session_id = '${configuredSessionId}'
+         ORDER BY line_kind`,
+      ),
+    ).toEqual([
+      { line_kind: "configured_assembly" },
+      { line_kind: "length_based_hose" },
+      { line_kind: "standard" },
+    ]);
+
     const [countsBeforeCatalogFailure] = runLocalD1<{
       lines: number;
       sessions: number;
@@ -1831,6 +2054,19 @@ describe("Cloudflare Worker route surfaces", () => {
       1,
     );
     expect(changedCatalogAdd.status).toBe(409);
+    const changedCatalogEdit = await addConfiguredAssembly(
+      assemblyDraft("36"),
+      2,
+      configuredCookie,
+      mergedConfiguredLine?.id,
+    );
+    expect(changedCatalogEdit.status).toBe(409);
+    expect(
+      runLocalD1<{ quantity: number }>(
+        `SELECT quantity FROM anonymous_quote_lines
+         WHERE id = '${mergedConfiguredLine?.id ?? ""}'`,
+      ),
+    ).toEqual([{ quantity: 2 }]);
     const [countsAfterCatalogFailure] = runLocalD1<{
       lines: number;
       sessions: number;
@@ -1840,11 +2076,95 @@ describe("Cloudflare Worker route surfaces", () => {
          (SELECT COUNT(*) FROM anonymous_quote_lines) AS lines`,
     );
     expect(countsAfterCatalogFailure).toEqual(countsBeforeCatalogFailure);
+    const staleConfiguredQuoteList = await (
+      await fetch(`${origin}/quote-list`, {
+        headers: { cookie: configuredCookie },
+      })
+    ).text();
+    expect(staleConfiguredQuoteList).toContain(
+      "This saved configuration no longer matches the current catalog",
+    );
+    expect(staleConfiguredQuoteList).toContain("Edit Configuration");
+    expect(staleConfiguredQuoteList).toContain("Duplicate and Edit");
+    const staleConfiguredEdit = await (
+      await fetch(
+        `${origin}/build-a-hose?mode=edit&quoteLine=${mergedConfiguredLine?.id}`,
+        { headers: { cookie: configuredCookie } },
+      )
+    ).text();
+    expect(staleConfiguredEdit).toContain(
+      "This saved configuration no longer matches the current catalog",
+    );
+    expect(staleConfiguredEdit).toContain("Configuration Trace");
+    expect(staleConfiguredEdit).toContain(`<dd>${draft.release_number}</dd>`);
+    expect(
+      runLocalD1<{ configured_snapshot_json: string; quantity: number }>(
+        `SELECT configured_snapshot_json, quantity
+         FROM anonymous_quote_lines
+         WHERE id = '${mergedConfiguredLine?.id ?? ""}'`,
+      ),
+    ).toEqual([
+      {
+        configured_snapshot_json: configuredBeforeEdit.find(
+          (line) => line.id !== separateConfiguredLine?.id,
+        )?.configured_snapshot_json,
+        quantity: 2,
+      },
+    ]);
     runLocalD1(
       `UPDATE catalog_active_release
        SET release_id = '${draft.id}', version = version + 1
        WHERE singleton = 1`,
     );
+
+    runLocalD1(
+      `UPDATE anonymous_quote_lines
+       SET configured_snapshot_json = json_set(
+         configured_snapshot_json,
+         '$.configuration.lengthReferencePricing.scheduleRecordVersion',
+         ${(estimateScheduleVersion ?? 1) - 1}
+       )
+       WHERE id = '${mergedConfiguredLine?.id ?? ""}'`,
+    );
+    const changedReferenceEdit = await (
+      await fetch(
+        `${origin}/build-a-hose?mode=edit&quoteLine=${mergedConfiguredLine?.id}`,
+        { headers: { cookie: configuredCookie } },
+      )
+    ).text();
+    expect(changedReferenceEdit).toContain(
+      "Installed Protection and its estimate are retained, but an upstream selection or price schedule changed.",
+    );
+    expect(changedReferenceEdit).toMatch(
+      /<button[^>]*disabled=""[^>]*>\s*Save Changes\s*<\/button>/,
+    );
+    runLocalD1(
+      `UPDATE anonymous_quote_lines
+       SET configured_snapshot_json = json_set(
+         configured_snapshot_json,
+         '$.configuration.lengthReferencePricing.scheduleRecordVersion',
+         ${estimateScheduleVersion ?? 1}
+       )
+       WHERE id = '${mergedConfiguredLine?.id ?? ""}'`,
+    );
+
+    const removeConfigured = new FormData();
+    removeConfigured.set("intent", "remove");
+    removeConfigured.set("lineId", mergedConfiguredLine?.id ?? "");
+    const removeConfiguredResponse = await fetch(`${origin}/quote-list`, {
+      body: removeConfigured,
+      headers: { cookie: configuredCookie },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(removeConfiguredResponse.status).toBe(302);
+    expect(
+      runLocalD1<{ line_kind: string }>(
+        `SELECT line_kind FROM anonymous_quote_lines
+         WHERE session_id = '${configuredSessionId}'
+         ORDER BY line_kind`,
+      ),
+    ).toEqual([{ line_kind: "length_based_hose" }, { line_kind: "standard" }]);
 
     const search = await (await fetch(`${origin}/?q=9%2F16-18+UNF`)).text();
     expect(search).toContain("JIC 37° Female Swivel 0° Straight Hose End");

@@ -81,6 +81,8 @@ function renderPage(
           ],
           measurementMethods: measurementMethodsFixture(),
           publishedHoseCount: items.length,
+          quoteLineContext: null,
+          quoteLineError: null,
           releaseNumber: items[0]?.releaseNumber ?? null,
           requestedEndASku: options.requestedEndASku ?? null,
         }}

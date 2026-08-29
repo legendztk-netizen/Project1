@@ -6,7 +6,7 @@ import {
   Layers3,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { data, Link, useNavigate } from "react-router";
 
 import type { Route } from "./+types/build-a-hose";
 import {
@@ -35,7 +35,10 @@ import {
   type CompatibleHoseEndCandidate,
 } from "../../configurator/domain/compatible-end-a";
 import { evaluateAssemblyReview } from "../../configurator/domain/assembly-review";
-import { createHoseConfigurationDraft } from "../../configurator/domain/hose-configuration-draft";
+import {
+  createHoseConfigurationDraft,
+  type HoseConfigurationDraft,
+} from "../../configurator/domain/hose-configuration-draft";
 import {
   attachFinishedLengthToDraft,
   attachMeasurementSelectionToDraft,
@@ -50,6 +53,8 @@ import {
   type PublicVariantSelection,
 } from "../../catalog/domain/public-catalog";
 import { createD1PublicCatalogRepository } from "../../catalog/infrastructure/d1-public-catalog-repository";
+import { createAnonymousQuoteListService } from "../../quote-list/application/anonymous-quote-list-service";
+import { QuoteListCommandRejected } from "../../quote-list/domain/anonymous-quote-list";
 import { hoseSizeLabel } from "../domain/variant-label";
 import { fetchCompatibleHoseEndCandidates } from "../infrastructure/compatible-hose-end-client";
 import { CatalogMedia } from "../ui/catalog-media";
@@ -113,6 +118,7 @@ function directSelectionCopy(
 
 export async function loader({ context, request }: Route.LoaderArgs) {
   const { env } = context.get(cloudflareContext);
+  const url = new URL(request.url);
   const repository = createD1PublicCatalogRepository(env.DB);
   const referenceRepository = createD1ConfiguratorReferenceRepository(env.DB);
   const result = await repository.browse({ category: "hydraulic-hose" });
@@ -120,34 +126,39 @@ export async function loader({ context, request }: Route.LoaderArgs) {
   const eligibleHoses = hoses.filter(
     (item) => item.rfqEligibility === "Eligible",
   );
-  const requestedSku = new URL(request.url).searchParams.get("hose")?.trim();
-  const requestedEndASku = new URL(request.url).searchParams
-    .get("endA")
-    ?.trim();
+  const requestedSku = url.searchParams.get("hose")?.trim();
+  const requestedEndASku = url.searchParams.get("endA")?.trim();
+  const requestedQuoteLineId = url.searchParams.get("quoteLine")?.trim();
+  const requestedQuoteMode = url.searchParams.get("mode")?.trim();
   const requested = requestedSku
     ? hoses.find((item) => item.sku === requestedSku)
     : null;
   const referenceSnapshot = await referenceRepository.findActiveSnapshot();
+  const hasMatchingReferenceSnapshot = Boolean(
+    referenceSnapshot &&
+    hoses[0] &&
+    referenceSnapshot.release.id === hoses[0].releaseId,
+  );
   const measurementMethods =
-    referenceSnapshot?.release.id === hoses[0]?.releaseId
+    hasMatchingReferenceSnapshot && referenceSnapshot
       ? [...referenceSnapshot.measurementMethods].sort((left, right) =>
           left.code.localeCompare(right.code),
         )
       : [];
   const clockingConvention =
-    referenceSnapshot?.release.id === hoses[0]?.releaseId
+    hasMatchingReferenceSnapshot && referenceSnapshot
       ? referenceSnapshot.clockingConvention
       : null;
   const installedProtections =
-    referenceSnapshot?.release.id === hoses[0]?.releaseId
+    hasMatchingReferenceSnapshot && referenceSnapshot
       ? referenceSnapshot.installedProtections
       : [];
   const installedProtectionRules =
-    referenceSnapshot?.release.id === hoses[0]?.releaseId
+    hasMatchingReferenceSnapshot && referenceSnapshot
       ? referenceSnapshot.installedProtectionRules
       : [];
   const assemblyEstimateSchedule =
-    referenceSnapshot?.release.id === hoses[0]?.releaseId
+    hasMatchingReferenceSnapshot && referenceSnapshot
       ? referenceSnapshot.assemblyEstimateSchedule
       : null;
 
@@ -166,18 +177,53 @@ export async function loader({ context, request }: Route.LoaderArgs) {
     }
   }
 
-  return {
-    assemblyEstimateSchedule,
-    directSelection,
-    clockingConvention,
-    families: groupCatalogFamilies(eligibleHoses),
-    measurementMethods,
-    installedProtectionRules,
-    installedProtections,
-    publishedHoseCount: hoses.length,
-    releaseNumber: hoses[0]?.releaseNumber ?? null,
-    requestedEndASku: requestedEndASku ?? null,
-  };
+  let quoteLineContext: {
+    line: Awaited<
+      ReturnType<
+        ReturnType<
+          typeof createAnonymousQuoteListService
+        >["configuredAssemblyDraft"]
+      >
+    >["line"];
+    mode: "duplicate" | "edit";
+  } | null = null;
+  let quoteLineError: string | null = null;
+  let quoteLineSetCookie: string | null = null;
+  if (
+    requestedQuoteLineId &&
+    (requestedQuoteMode === "edit" || requestedQuoteMode === "duplicate")
+  ) {
+    try {
+      const saved = await createAnonymousQuoteListService(
+        env,
+      ).configuredAssemblyDraft(request, requestedQuoteLineId);
+      quoteLineContext = { line: saved.line, mode: requestedQuoteMode };
+      quoteLineSetCookie = saved.setCookie;
+    } catch (error) {
+      if (!(error instanceof QuoteListCommandRejected)) throw error;
+      quoteLineError = error.message;
+    }
+  }
+
+  const headers = new Headers();
+  if (quoteLineSetCookie) headers.set("Set-Cookie", quoteLineSetCookie);
+  return data(
+    {
+      assemblyEstimateSchedule,
+      directSelection,
+      clockingConvention,
+      families: groupCatalogFamilies(eligibleHoses),
+      measurementMethods,
+      installedProtectionRules,
+      installedProtections,
+      publishedHoseCount: hoses.length,
+      quoteLineContext,
+      quoteLineError,
+      releaseNumber: hoses[0]?.releaseNumber ?? null,
+      requestedEndASku: requestedEndASku ?? null,
+    },
+    { headers },
+  );
 }
 
 export function meta() {
@@ -205,7 +251,62 @@ function hoseSelection(item: PublicCatalogItem): PublicHoseSelection | null {
   return selection?.kind === "hose" ? selection : null;
 }
 
-type BuildAHoseLoaderData = Awaited<ReturnType<typeof loader>>;
+type BuildAHoseLoaderData = Route.ComponentProps["loaderData"];
+
+type ConfiguredEnd = NonNullable<HoseConfigurationDraft["endA"]>;
+
+function candidateFromConfiguredEnd(
+  end: ConfiguredEnd | undefined,
+): CompatibleHoseEndCandidate | null {
+  if (!end) return null;
+  return {
+    ...end.hoseEnd,
+    assemblyWorkingBar: end.assemblyWorkingBar,
+    compatibilityId: end.compatibilityId,
+    ferrule: { ...end.ferrule },
+    hoseEndSku: end.hoseEnd.sku,
+  };
+}
+
+function hoseOnlyDraft(draft: HoseConfigurationDraft): HoseConfigurationDraft {
+  return {
+    catalogRelease: { ...draft.catalogRelease },
+    hose: {
+      ...draft.hose,
+      performance: { ...draft.hose.performance },
+    },
+  };
+}
+
+function restoredProvenance(
+  draft: HoseConfigurationDraft,
+  schedule: BuildAHoseLoaderData["assemblyEstimateSchedule"],
+): DraftSelectionProvenance {
+  const hoseBasis = captureHoseSelectionBasis(draft);
+  const assemblyBasis = captureAssemblySelectionBasis(draft);
+  const protectionBasis = captureProtectionSelectionBasis(draft, schedule);
+  const savedScheduleRecordVersion =
+    draft.lengthReferencePricing?.scheduleRecordVersion ?? null;
+  return {
+    endA: draft.endA ? hoseBasis : undefined,
+    endB: draft.endB ? hoseBasis : undefined,
+    finishedLength:
+      assemblyBasis && draft.measurementSelection && draft.finishedLength
+        ? {
+            ...assemblyBasis,
+            measurement: captureMeasurementSelectionBasis(
+              draft.measurementSelection,
+            ),
+          }
+        : undefined,
+    protection: protectionBasis
+      ? {
+          ...protectionBasis,
+          scheduleRecordVersion: savedScheduleRecordVersion,
+        }
+      : undefined,
+  };
+}
 
 type ConfiguratorStage =
   "hose" | "end-a" | "end-b" | "length" | "clocking" | "protection" | "review";
@@ -291,34 +392,66 @@ export function BuildAHoseView({
   loaderData: BuildAHoseLoaderData;
 }) {
   const navigate = useNavigate();
-  const [stage, setStage] = useState<ConfiguratorStage>("hose");
-  const [selectedFamilyKey, setSelectedFamilyKey] = useState<string | null>(
-    null,
+  const savedLine = loaderData.quoteLineContext?.line ?? null;
+  const savedDraft = savedLine?.configuredAssembly.snapshot.configuration;
+  const [stage, setStage] = useState<ConfiguratorStage>(
+    savedDraft ? "review" : "hose",
   );
-  const [selectedSku, setSelectedSku] = useState<string | null>(null);
+  const [selectedFamilyKey, setSelectedFamilyKey] = useState<string | null>(
+    savedDraft?.hose.familyKey ?? null,
+  );
+  const [selectedSku, setSelectedSku] = useState<string | null>(
+    savedDraft?.hose.sku ?? null,
+  );
   const [retainedHoseItem, setRetainedHoseItem] =
     useState<PublicCatalogItem | null>(null);
+  const [retainedHoseDraft, setRetainedHoseDraft] =
+    useState<HoseConfigurationDraft | null>(
+      savedDraft ? hoseOnlyDraft(savedDraft) : null,
+    );
   const [selectedEndA, setSelectedEndA] =
-    useState<CompatibleHoseEndCandidate | null>(null);
+    useState<CompatibleHoseEndCandidate | null>(
+      candidateFromConfiguredEnd(savedDraft?.endA),
+    );
   const [selectedEndB, setSelectedEndB] =
-    useState<CompatibleHoseEndCandidate | null>(null);
+    useState<CompatibleHoseEndCandidate | null>(
+      candidateFromConfiguredEnd(savedDraft?.endB),
+    );
   const [measurementSelection, setMeasurementSelection] =
-    useState<MeasurementSelectionSnapshot | null>(null);
+    useState<MeasurementSelectionSnapshot | null>(
+      savedDraft?.measurementSelection ?? null,
+    );
   const [finishedLength, setFinishedLength] =
-    useState<FinishedAssemblyLengthSnapshot | null>(null);
+    useState<FinishedAssemblyLengthSnapshot | null>(
+      savedDraft?.finishedLength ?? null,
+    );
   const [clockingSelection, setClockingSelection] =
-    useState<ClockingDraftSnapshot | null>(null);
+    useState<ClockingDraftSnapshot | null>(savedDraft?.clocking ?? null);
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
   const [protectionApplicationSelection, setProtectionApplicationSelection] =
-    useState<ProtectionApplicationSelection | null>(null);
-  const [quantityInput, setQuantityInput] = useState("1");
-  const [reviewVisited, setReviewVisited] = useState(false);
+    useState<ProtectionApplicationSelection | null>(
+      savedDraft?.installedProtection && savedDraft.lengthReferencePricing
+        ? {
+            application: savedDraft.applicationRequirements ?? null,
+            pricing: savedDraft.lengthReferencePricing,
+            protection: savedDraft.installedProtection,
+          }
+        : null,
+    );
+  const [quantityInput, setQuantityInput] = useState(
+    String(savedLine?.quantity ?? 1),
+  );
+  const [reviewVisited, setReviewVisited] = useState(Boolean(savedDraft));
   const [quoteCommand, setQuoteCommand] = useState<{
     error: string | null;
     pending: boolean;
   }>({ error: null, pending: false });
   const [selectionProvenance, setSelectionProvenance] =
-    useState<DraftSelectionProvenance>({});
+    useState<DraftSelectionProvenance>(
+      savedDraft
+        ? restoredProvenance(savedDraft, loaderData.assemblyEstimateSchedule)
+        : {},
+    );
   const [compatibleCandidateSnapshot, setCompatibleCandidateSnapshot] =
     useState<CompatibleCandidateSnapshot | null>(null);
   const [compatibilityCheckFailure, setCompatibilityCheckFailure] = useState<
@@ -336,8 +469,10 @@ export function BuildAHoseView({
   );
   const selectedItem = currentSelectedItem ?? retainedHoseItem;
   const hoseDraft = useMemo(
-    () => (selectedItem ? createHoseConfigurationDraft(selectedItem) : null),
-    [selectedItem],
+    () =>
+      retainedHoseDraft ??
+      (selectedItem ? createHoseConfigurationDraft(selectedItem) : null),
+    [retainedHoseDraft, selectedItem],
   );
   const currentHoseBasis = hoseDraft
     ? captureHoseSelectionBasis(hoseDraft)
@@ -491,6 +626,7 @@ export function BuildAHoseView({
     if (item.sku !== selectedSku) retainClockingForReconfirmation();
     setSelectedSku(item.sku);
     setRetainedHoseItem(item);
+    setRetainedHoseDraft(null);
   }
 
   function continueToEndA() {
@@ -631,6 +767,9 @@ export function BuildAHoseView({
     form.set("intent", "add-configured-assembly");
     form.set("draft", JSON.stringify(draft));
     form.set("quantity", quantityInput);
+    if (loaderData.quoteLineContext?.mode === "edit") {
+      form.set("replaceLineId", loaderData.quoteLineContext.line.id);
+    }
     try {
       const response = await fetch("/api/configurator/quote-assembly", {
         body: form,
@@ -709,6 +848,43 @@ export function BuildAHoseView({
           </div>
         </header>
 
+        {loaderData.quoteLineContext ? (
+          <section className="configurator-edit-context" role="status">
+            <div>
+              <span className="eyebrow">
+                {loaderData.quoteLineContext.mode === "edit"
+                  ? "Editing Quote List assembly"
+                  : "Duplicating Quote List assembly"}
+              </span>
+              <strong>
+                {loaderData.quoteLineContext.mode === "edit"
+                  ? "Changes remain isolated until you select Save Changes."
+                  : "The original line stays unchanged until you add this copy."}
+              </strong>
+              {loaderData.quoteLineContext.line.configuredAssembly
+                .currentIssue ? (
+                <p>
+                  {
+                    loaderData.quoteLineContext.line.configuredAssembly
+                      .currentIssue
+                  }
+                </p>
+              ) : null}
+            </div>
+            <Link className="button button-secondary" to="/quote-list">
+              Cancel
+            </Link>
+          </section>
+        ) : loaderData.quoteLineError ? (
+          <div className="configurator-alert" role="alert">
+            <AlertTriangle aria-hidden="true" size={20} />
+            <div>
+              <strong>Saved configuration unavailable</strong>
+              <p>{loaderData.quoteLineError}</p>
+            </div>
+          </div>
+        ) : null}
+
         <ol
           className="configurator-progress"
           data-has-clocking={clockingRequired}
@@ -763,7 +939,7 @@ export function BuildAHoseView({
           <DraftValidationNotice issues={draftValidation.issues} />
         ) : null}
 
-        {loaderData.publishedHoseCount === 0 ? (
+        {!savedDraft && loaderData.publishedHoseCount === 0 ? (
           <section className="configurator-empty">
             <Layers3 aria-hidden="true" size={30} />
             <h2>No published hydraulic hoses</h2>
@@ -775,7 +951,7 @@ export function BuildAHoseView({
               Browse hydraulic hose
             </Link>
           </section>
-        ) : !hasSelectableHose ? (
+        ) : !savedDraft && !hasSelectableHose ? (
           <section className="configurator-empty">
             <AlertTriangle aria-hidden="true" size={30} />
             <h2>Hose configuration is temporarily unavailable</h2>
@@ -955,6 +1131,13 @@ export function BuildAHoseView({
                   />
                 ) : stage === "review" && draft && reviewResult ? (
                   <AssemblyReviewStage
+                    actionLabel={
+                      loaderData.quoteLineContext?.mode === "edit"
+                        ? "Save Changes"
+                        : loaderData.quoteLineContext?.mode === "duplicate"
+                          ? "Add Duplicate to Quote"
+                          : undefined
+                    }
                     addError={quoteCommand.error}
                     draft={draft}
                     isAdding={quoteCommand.pending}
@@ -962,6 +1145,11 @@ export function BuildAHoseView({
                     onBack={() => setStage("protection")}
                     onEdit={editFromReview}
                     onQuantityChange={setQuantityInput}
+                    pendingLabel={
+                      loaderData.quoteLineContext?.mode === "edit"
+                        ? "Saving Changes..."
+                        : undefined
+                    }
                     quantityInput={quantityInput}
                     result={reviewResult}
                     validationIssues={draftValidation.issues}

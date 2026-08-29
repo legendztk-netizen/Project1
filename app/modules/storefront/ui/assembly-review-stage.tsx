@@ -141,6 +141,7 @@ function ReviewIssue({
 }
 
 export function AssemblyReviewStage({
+  actionLabel = "Add Assembly to Quote",
   addError,
   draft,
   isAdding,
@@ -148,10 +149,12 @@ export function AssemblyReviewStage({
   onBack,
   onEdit,
   onQuantityChange,
+  pendingLabel = "Checking Assembly...",
   quantityInput,
   result,
   validationIssues,
 }: {
+  actionLabel?: string;
   addError: string | null;
   draft: HoseConfigurationDraft;
   isAdding: boolean;
@@ -159,6 +162,7 @@ export function AssemblyReviewStage({
   onBack: () => void;
   onEdit: (owner: DraftValidationOwner) => void;
   onQuantityChange: (value: string) => void;
+  pendingLabel?: string;
   quantityInput: string;
   result: AssemblyReviewResult;
   validationIssues: DraftValidationIssue[];
@@ -457,7 +461,7 @@ export function AssemblyReviewStage({
             onClick={onAdd}
             type="button"
           >
-            {isAdding ? "Checking Assembly..." : "Add Assembly to Quote"}
+            {isAdding ? pendingLabel : actionLabel}
           </button>
         </div>
       </div>

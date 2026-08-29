@@ -34,9 +34,17 @@ export async function action({ context, request }: Route.ActionArgs) {
   }
   const { env } = context.get(cloudflareContext);
   try {
-    const result = await createAnonymousQuoteListService(
-      env,
-    ).addConfiguredAssembly(request, draft, quantity);
+    const service = createAnonymousQuoteListService(env);
+    const replaceLineId = form.get("replaceLineId");
+    const result =
+      typeof replaceLineId === "string" && replaceLineId.trim() !== ""
+        ? await service.replaceConfiguredAssembly(
+            request,
+            replaceLineId.trim(),
+            draft,
+            quantity,
+          )
+        : await service.addConfiguredAssembly(request, draft, quantity);
     const headers = new Headers();
     if (result.setCookie) headers.set("Set-Cookie", result.setCookie);
     return Response.json({ error: null, ok: true }, { headers });

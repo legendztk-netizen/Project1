@@ -1,7 +1,9 @@
 import {
   AlertCircle,
   ArrowLeft,
+  Copy,
   FileText,
+  Pencil,
   RefreshCw,
   Trash2,
 } from "lucide-react";
@@ -9,12 +11,14 @@ import { Form, Link, data, redirect, useNavigation } from "react-router";
 
 import type { Route } from "./+types/anonymous-quote-list";
 import { createAnonymousQuoteListService } from "../../quote-list/application/anonymous-quote-list-service";
+import type { DashSize } from "../../catalog/domain/dash-size";
 import { QuoteListCommandRejected } from "../../quote-list/domain/anonymous-quote-list";
 import {
   maximumStandardProductQuantity,
   parseStandardProductQuantity,
 } from "../../quote-list/domain/anonymous-quote-session";
 import { StorefrontHeader } from "../ui/storefront-header";
+import { hoseSizeLabel } from "../domain/variant-label";
 import "../styles/quote-list.css";
 import { cloudflareContext } from "#workers/context";
 
@@ -110,6 +114,24 @@ export async function action({ context, request }: Route.ActionArgs) {
       });
     }
 
+    if (intent === "update-configured-assembly") {
+      const quantity = parseStandardProductQuantity(form.get("quantity"));
+      if (quantity === null) {
+        throw new QuoteListCommandRejected(
+          "Quantity must be a whole number from 1 to 9,999.",
+          "INVALID_QUANTITY",
+        );
+      }
+      const result = await service.updateConfiguredAssemblyQuantity(
+        request,
+        textValue(form, "lineId"),
+        quantity,
+      );
+      return redirect("/quote-list", {
+        headers: responseHeaders(result.setCookie),
+      });
+    }
+
     if (intent === "remove") {
       const result = await service.remove(request, textValue(form, "lineId"));
       return redirect("/quote-list", {
@@ -140,6 +162,18 @@ function merchandiseEstimate(
     return line.currentEstimateAmount;
   }
   return lineSubtotal(line.quantity, line.referenceUnitPrice);
+}
+
+function configuredHoseSize(
+  line: Extract<
+    Route.ComponentProps["loaderData"]["lines"][number],
+    { lineKind: "configured_assembly" }
+  >,
+) {
+  const hose = line.configuredAssembly.snapshot.configuration.hose;
+  const dash =
+    hose.dash && /^-\d+$/u.test(hose.dash) ? (hose.dash as DashSize) : null;
+  return hoseSizeLabel(hose.nominalIdIn, dash) ?? "Not available";
 }
 
 export default function AnonymousQuoteList({
@@ -224,40 +258,84 @@ export default function AnonymousQuoteList({
                         </p>
                       ) : null}
                       {line.lineKind === "configured_assembly" ? (
-                        <dl className="quote-configured-assembly-specs">
-                          <div>
-                            <dt>End A</dt>
-                            <dd>
-                              {line.configuredAssembly.snapshot.configuration
-                                .endA?.hoseEnd.displayName ?? "Not available"}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt>End B</dt>
-                            <dd>
-                              {line.configuredAssembly.snapshot.configuration
-                                .endB?.hoseEnd.displayName ?? "Not available"}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt>Finished length</dt>
-                            <dd>
-                              {line.configuredAssembly.snapshot.configuration
-                                .finishedLength?.originalValue ?? ""}{" "}
-                              {line.configuredAssembly.snapshot.configuration
-                                .finishedLength?.originalUnit ?? ""}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt>Review</dt>
-                            <dd>
-                              {line.configuredAssembly.snapshot.review
-                                .outcome === "technical_review"
-                                ? "Technical review included"
-                                : "Configuration complete"}
-                            </dd>
-                          </div>
-                        </dl>
+                        <>
+                          <dl className="quote-configured-assembly-specs">
+                            <div>
+                              <dt>Hose size</dt>
+                              <dd>{configuredHoseSize(line)}</dd>
+                            </div>
+                            <div>
+                              <dt>End A</dt>
+                              <dd>
+                                {line.configuredAssembly.snapshot.configuration
+                                  .endA?.hoseEnd.displayName ?? "Not available"}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>End B</dt>
+                              <dd>
+                                {line.configuredAssembly.snapshot.configuration
+                                  .endB?.hoseEnd.displayName ?? "Not available"}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Finished length</dt>
+                              <dd>
+                                {line.configuredAssembly.snapshot.configuration
+                                  .finishedLength?.originalValue ?? ""}{" "}
+                                {line.configuredAssembly.snapshot.configuration
+                                  .finishedLength?.originalUnit ?? ""}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Measurement</dt>
+                              <dd>
+                                {line.configuredAssembly.snapshot.configuration
+                                  .measurementSelection?.state === "selected"
+                                  ? `${line.configuredAssembly.snapshot.configuration.measurementSelection.method.code} · ${line.configuredAssembly.snapshot.configuration.measurementSelection.method.displayName}`
+                                  : "Not Sure · Technical review included"}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Clocking</dt>
+                              <dd>
+                                {line.configuredAssembly.snapshot.configuration
+                                  .clocking?.status === "specified"
+                                  ? `${line.configuredAssembly.snapshot.configuration.clocking.targetDisplay}° · ±${line.configuredAssembly.snapshot.configuration.clocking.standardToleranceDegrees}°`
+                                  : line.configuredAssembly.snapshot
+                                        .configuration.clocking
+                                    ? "Not Sure · Technical review included"
+                                    : "Not applicable"}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Protection</dt>
+                              <dd>
+                                {line.configuredAssembly.snapshot.configuration
+                                  .installedProtection?.publicName ??
+                                  "Not available"}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Review</dt>
+                              <dd>
+                                {line.configuredAssembly.snapshot.review
+                                  .outcome === "technical_review"
+                                  ? "Technical review included"
+                                  : "Configuration complete"}
+                              </dd>
+                            </div>
+                          </dl>
+                          {line.configuredAssembly.currentIssue ? (
+                            <p
+                              className="quote-configured-current-issue"
+                              role="status"
+                            >
+                              <AlertCircle aria-hidden="true" size={17} />
+                              {line.configuredAssembly.currentIssue}
+                            </p>
+                          ) : null}
+                        </>
                       ) : null}
                     </div>
                     <div className="quote-line-price">
@@ -348,9 +426,60 @@ export default function AnonymousQuoteList({
                           ) : null}
                         </Form>
                       ) : (
-                        <p className="quote-configured-quantity">
-                          Quantity <strong>{line.quantity}</strong>
-                        </p>
+                        <>
+                          <Form method="post">
+                            <input
+                              name="intent"
+                              type="hidden"
+                              value="update-configured-assembly"
+                            />
+                            <input
+                              name="lineId"
+                              type="hidden"
+                              value={line.id}
+                            />
+                            <label htmlFor={`quantity-${line.id}`}>
+                              Quantity
+                            </label>
+                            <div>
+                              <input
+                                defaultValue={line.quantity}
+                                disabled={busy}
+                                id={`quantity-${line.id}`}
+                                max={maximumStandardProductQuantity}
+                                min="1"
+                                name="quantity"
+                                required
+                                step="1"
+                                type="number"
+                              />
+                              <button
+                                className="button button-secondary"
+                                disabled={busy}
+                                title="Update quantity"
+                                type="submit"
+                              >
+                                <RefreshCw size={17} /> Update
+                              </button>
+                            </div>
+                          </Form>
+                          <div className="quote-configured-edit-actions">
+                            <Link
+                              className="button button-secondary"
+                              to={`/build-a-hose?mode=edit&quoteLine=${encodeURIComponent(line.id)}`}
+                            >
+                              <Pencil aria-hidden="true" size={17} /> Edit
+                              Configuration
+                            </Link>
+                            <Link
+                              className="button button-secondary"
+                              to={`/build-a-hose?mode=duplicate&quoteLine=${encodeURIComponent(line.id)}`}
+                            >
+                              <Copy aria-hidden="true" size={17} /> Duplicate
+                              and Edit
+                            </Link>
+                          </div>
+                        </>
                       )}
                       <Form method="post">
                         <input name="intent" type="hidden" value="remove" />

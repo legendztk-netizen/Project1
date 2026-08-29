@@ -285,6 +285,34 @@
   margin: 0;
 }
 
+.quote-configured-current-issue {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  color: #7a321f;
+  background: #fff5e9;
+  border: 1px solid #e8b78b;
+  border-radius: 5px;
+  line-height: 1.45;
+}
+
+.quote-configured-current-issue svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.quote-configured-edit-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.quote-configured-edit-actions .button {
+  justify-content: flex-start;
+  width: 100%;
+}
+
 @media (max-width: 640px) {
   .quote-configured-assembly-specs {
     grid-template-columns: 1fr;

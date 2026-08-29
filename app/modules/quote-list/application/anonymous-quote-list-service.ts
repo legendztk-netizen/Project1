@@ -19,6 +19,9 @@ import { prepareConfiguredAssembly } from "./prepare-configured-assembly";
 import type { ApplicationBindings } from "#workers/environment";
 import { quoteSessionSigningKey } from "#workers/session-secrets";
 
+const savedConfigurationChangedMessage =
+  "This saved configuration no longer matches the current catalog or reference data. Its original selections are retained for review.";
+
 function standardProductError(product: PublicCatalogItem | null) {
   if (!product || !product.canAddToQuote || !product.offer) {
     return new QuoteListCommandRejected(
@@ -164,6 +167,33 @@ export function createAnonymousQuoteListService(
     throw error;
   }
 
+  async function revalidateConfiguredLinesForDisplay(
+    lines: Awaited<ReturnType<typeof quoteList.listLines>>,
+  ) {
+    return Promise.all(
+      lines.map(async (line) => {
+        if (line.lineKind !== "configured_assembly") return line;
+        try {
+          await prepareConfiguredAssembly({
+            database: env.DB,
+            draft: line.configuredAssembly.snapshot.configuration,
+            quantity: line.quantity,
+          });
+          return line;
+        } catch (error) {
+          if (!(error instanceof QuoteListCommandRejected)) throw error;
+          return {
+            ...line,
+            configuredAssembly: {
+              ...line.configuredAssembly,
+              currentIssue: savedConfigurationChangedMessage,
+            },
+          };
+        }
+      }),
+    );
+  }
+
   return {
     async addConfiguredAssembly(
       request: Request,
@@ -194,6 +224,99 @@ export function createAnonymousQuoteListService(
         if (!lineId) {
           throw new QuoteListCommandRejected(
             "Catalog or configuration reference data changed while the assembly was being added. Review it and try again.",
+            "CONFIGURATION_INVALID",
+          );
+        }
+      } catch (error) {
+        if (error instanceof QuoteListCommandRejected) throw error;
+        translateQuantityConstraint(error);
+      }
+      return { setCookie: await cookie(session.id, current.date) };
+    },
+
+    async configuredAssemblyDraft(request: Request, lineId: string) {
+      const session = await existingSession(request);
+      if (!session) {
+        throw new QuoteListCommandRejected(
+          "That configured assembly is not available in this Quote List.",
+          "LINE_NOT_FOUND",
+        );
+      }
+      const current = time();
+      const touched = await quoteList.touchSession(
+        session.id,
+        current.now,
+        current.expiresAt,
+      );
+      if (!touched) {
+        throw new QuoteListCommandRejected(
+          "That configured assembly is not available in this Quote List.",
+          "LINE_NOT_FOUND",
+        );
+      }
+      const storedLine = await quoteList.findDetailedLine(session.id, lineId);
+      if (!storedLine || storedLine.lineKind !== "configured_assembly") {
+        throw new QuoteListCommandRejected(
+          "That configured assembly is not available in this Quote List.",
+          "LINE_NOT_FOUND",
+        );
+      }
+      const [line] = await revalidateConfiguredLinesForDisplay([storedLine]);
+      if (!line || line.lineKind !== "configured_assembly") {
+        throw new QuoteListCommandRejected(
+          "That configured assembly is not available in this Quote List.",
+          "LINE_NOT_FOUND",
+        );
+      }
+      return {
+        line,
+        setCookie: await cookie(session.id, current.date),
+      };
+    },
+
+    async replaceConfiguredAssembly(
+      request: Request,
+      lineId: string,
+      draft: unknown,
+      quantity: number,
+    ) {
+      const session = await existingSession(request);
+      if (!session) {
+        throw new QuoteListCommandRejected(
+          "The assembly being edited no longer exists.",
+          "LINE_NOT_FOUND",
+        );
+      }
+      const source = await quoteList.findLine(session.id, lineId);
+      if (!source || source.lineKind !== "configured_assembly") {
+        throw new QuoteListCommandRejected(
+          "The assembly being edited no longer exists.",
+          "LINE_NOT_FOUND",
+        );
+      }
+      const prepared = await prepareConfiguredAssembly({
+        database: env.DB,
+        draft,
+        quantity,
+      });
+      const current = time();
+      try {
+        const replacementId = await quoteList.replaceConfiguredAssemblyLine({
+          estimateBasis: prepared.estimateBasis,
+          expiresAt: current.expiresAt,
+          lineId,
+          lineIdentity: prepared.lineIdentity,
+          newLineId: generateId(),
+          now: current.now,
+          product: prepared.hoseProduct,
+          quantity: prepared.quantity,
+          sessionId: session.id,
+          snapshot: prepared.snapshot,
+          unitEstimateAmount: prepared.unitEstimateAmount,
+        });
+        if (!replacementId) {
+          throw new QuoteListCommandRejected(
+            "The catalog changed while this assembly was being saved. The original Quote List line was not changed.",
             "CONFIGURATION_INVALID",
           );
         }
@@ -291,7 +414,9 @@ export function createAnonymousQuoteListService(
       );
       if (!touched) return { lines: [], setCookie: null };
       return {
-        lines: await quoteList.listLines(session.id),
+        lines: await revalidateConfiguredLinesForDisplay(
+          await quoteList.listLines(session.id),
+        ),
         setCookie: await cookie(session.id, current.date),
       };
     },
@@ -340,6 +465,40 @@ export function createAnonymousQuoteListService(
         sessionId: session.id,
       });
       if (!updated) throw await catalogChanged(line.sku);
+      return { setCookie: await cookie(session.id, current.date) };
+    },
+
+    async updateConfiguredAssemblyQuantity(
+      request: Request,
+      lineId: string,
+      quantity: number,
+    ) {
+      const { created, session } = await ensureSession(request);
+      const current = time();
+      if (created) {
+        throw new QuoteListCommandRejected(
+          "That configured assembly no longer exists.",
+          "LINE_NOT_FOUND",
+        );
+      }
+      try {
+        const updated = await quoteList.updateConfiguredAssemblyQuantity({
+          expiresAt: current.expiresAt,
+          lineId,
+          now: current.now,
+          quantity,
+          sessionId: session.id,
+        });
+        if (!updated) {
+          throw new QuoteListCommandRejected(
+            "That configured assembly no longer exists.",
+            "LINE_NOT_FOUND",
+          );
+        }
+      } catch (error) {
+        if (error instanceof QuoteListCommandRejected) throw error;
+        translateQuantityConstraint(error);
+      }
       return { setCookie: await cookie(session.id, current.date) };
     },
 

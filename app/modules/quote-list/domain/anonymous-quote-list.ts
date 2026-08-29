@@ -4,7 +4,7 @@ import type {
   ConfiguredAssemblySnapshot,
 } from "./configured-assembly-quote";
 
-interface AnonymousQuoteLineBase {
+export interface AnonymousQuoteLineBase {
   category: CatalogFamilyId;
   currency: string;
   displayName: string;
@@ -42,6 +42,7 @@ export type AnonymousQuoteLine = AnonymousQuoteLineBase &
       }
     | {
         configuredAssembly: {
+          currentIssue: string | null;
           estimateBasis: ConfiguredAssemblyEstimateBasis;
           snapshot: ConfiguredAssemblySnapshot;
           unitEstimateAmount: number | null;
