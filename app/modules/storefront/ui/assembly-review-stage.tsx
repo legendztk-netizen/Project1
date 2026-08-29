@@ -141,7 +141,10 @@ function ReviewIssue({
 }
 
 export function AssemblyReviewStage({
+  addError,
   draft,
+  isAdding,
+  onAdd,
   onBack,
   onEdit,
   onQuantityChange,
@@ -149,7 +152,10 @@ export function AssemblyReviewStage({
   result,
   validationIssues,
 }: {
+  addError: string | null;
   draft: HoseConfigurationDraft;
+  isAdding: boolean;
+  onAdd: () => void;
   onBack: () => void;
   onEdit: (owner: DraftValidationOwner) => void;
   onQuantityChange: (value: string) => void;
@@ -406,6 +412,16 @@ export function AssemblyReviewStage({
         </div>
       ) : null}
 
+      {addError ? (
+        <div className="length-inline-alert" role="alert">
+          <AlertTriangle aria-hidden="true" size={19} />
+          <p>
+            <strong>Assembly not added</strong>
+            {addError}
+          </p>
+        </div>
+      ) : null}
+
       {result.outcome === "manual_quote" ? (
         <div className="assembly-review-support">
           <Wrench aria-hidden="true" size={20} />
@@ -434,6 +450,14 @@ export function AssemblyReviewStage({
             <span aria-hidden="true" className="configurator-back-label-short">
               Back
             </span>
+          </button>
+          <button
+            className="button button-primary configurator-next"
+            disabled={!result.canAddConfiguredLine || isAdding}
+            onClick={onAdd}
+            type="button"
+          >
+            {isAdding ? "Checking Assembly..." : "Add Assembly to Quote"}
           </button>
         </div>
       </div>

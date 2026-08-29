@@ -6,7 +6,7 @@ import {
   Layers3,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 
 import type { Route } from "./+types/build-a-hose";
 import {
@@ -290,6 +290,7 @@ export function BuildAHoseView({
 }: {
   loaderData: BuildAHoseLoaderData;
 }) {
+  const navigate = useNavigate();
   const [stage, setStage] = useState<ConfiguratorStage>("hose");
   const [selectedFamilyKey, setSelectedFamilyKey] = useState<string | null>(
     null,
@@ -312,6 +313,10 @@ export function BuildAHoseView({
     useState<ProtectionApplicationSelection | null>(null);
   const [quantityInput, setQuantityInput] = useState("1");
   const [reviewVisited, setReviewVisited] = useState(false);
+  const [quoteCommand, setQuoteCommand] = useState<{
+    error: string | null;
+    pending: boolean;
+  }>({ error: null, pending: false });
   const [selectionProvenance, setSelectionProvenance] =
     useState<DraftSelectionProvenance>({});
   const [compatibleCandidateSnapshot, setCompatibleCandidateSnapshot] =
@@ -617,6 +622,43 @@ export function BuildAHoseView({
     setStage(owner);
   }
 
+  async function addAssemblyToQuote() {
+    if (!draft || !reviewResult?.canAddConfiguredLine || quoteCommand.pending) {
+      return;
+    }
+    setQuoteCommand({ error: null, pending: true });
+    const form = new FormData();
+    form.set("intent", "add-configured-assembly");
+    form.set("draft", JSON.stringify(draft));
+    form.set("quantity", quantityInput);
+    try {
+      const response = await fetch("/api/configurator/quote-assembly", {
+        body: form,
+        method: "POST",
+      });
+      const result = (await response.json()) as {
+        error: string | null;
+        ok: boolean;
+      };
+      if (!response.ok || !result.ok) {
+        setQuoteCommand({
+          error:
+            result.error ??
+            "The assembly could not be added. Review it and try again.",
+          pending: false,
+        });
+        return;
+      }
+      navigate("/quote-list");
+    } catch {
+      setQuoteCommand({
+        error:
+          "The assembly could not be added. Check your connection and try again.",
+        pending: false,
+      });
+    }
+  }
+
   const receiveCompatibleCandidates = useMemo(
     () => (snapshot: CompatibleCandidateSnapshot) => {
       setCompatibleCandidateSnapshot(snapshot);
@@ -913,7 +955,10 @@ export function BuildAHoseView({
                   />
                 ) : stage === "review" && draft && reviewResult ? (
                   <AssemblyReviewStage
+                    addError={quoteCommand.error}
                     draft={draft}
+                    isAdding={quoteCommand.pending}
+                    onAdd={addAssemblyToQuote}
                     onBack={() => setStage("protection")}
                     onEdit={editFromReview}
                     onQuantityChange={setQuantityInput}

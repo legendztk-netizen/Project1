@@ -259,3 +259,34 @@
     width: 100%;
   }
 }
+.quote-configured-assembly-specs {
+  display: grid;
+  gap: 8px 24px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 18px 0 0;
+}
+
+.quote-configured-assembly-specs div {
+  min-width: 0;
+}
+
+.quote-configured-assembly-specs dt {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.quote-configured-assembly-specs dd {
+  margin: 3px 0 0;
+}
+
+.quote-configured-quantity {
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .quote-configured-assembly-specs {
+    grid-template-columns: 1fr;
+  }
+}

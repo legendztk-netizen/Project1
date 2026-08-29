@@ -612,7 +612,7 @@ describe("Build a Hose view", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("reviews ordered components, versions, length and quantity without creating a Quote List line", async () => {
+  it("reviews ordered components, versions and exposes the configured Quote List command", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -631,6 +631,11 @@ describe("Build a Hose view", () => {
     expect(
       within(review).getAllByText("Matched ferrule included"),
     ).toHaveLength(2);
+    expect(
+      within(review)
+        .getByRole("button", { name: "Add Assembly to Quote" })
+        .hasAttribute("disabled"),
+    ).toBe(false);
     expect(
       within(review)
         .getByRole("img", {

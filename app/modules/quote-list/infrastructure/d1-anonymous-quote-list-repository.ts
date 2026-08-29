@@ -4,6 +4,10 @@ import type {
   AnonymousQuoteSession,
 } from "../domain/anonymous-quote-list";
 import type {
+  ConfiguredAssemblyEstimateBasis,
+  ConfiguredAssemblySnapshot,
+} from "../domain/configured-assembly-quote";
+import type {
   LengthBasedHoseOrder,
   calculateLengthBasedHoseEstimate,
 } from "../domain/length-based-hose";
@@ -17,6 +21,9 @@ interface QuoteLineRow {
   category: AnonymousQuoteLine["category"];
   currency: string;
   current_estimate_amount: number | null;
+  configured_estimate_inputs_json: string | null;
+  configured_snapshot_json: string | null;
+  configured_unit_estimate_amount: number | null;
   cutting_labeling_fee_amount: number | null;
   cutting_labeling_fee_rate: number | null;
   display_name: string;
@@ -57,6 +64,33 @@ function lineFromRow(row: QuoteLineRow): AnonymousQuoteLine {
       estimatedMerchandiseAmount: null,
       lengthOrder: null,
       lineKind: "standard",
+    };
+  }
+
+  if (row.line_kind === "configured_assembly") {
+    if (
+      row.configured_snapshot_json === null ||
+      row.configured_estimate_inputs_json === null
+    ) {
+      throw new Error(`Invalid configured assembly Quote List line: ${row.id}`);
+    }
+    return {
+      ...common,
+      configuredAssembly: {
+        estimateBasis: JSON.parse(
+          row.configured_estimate_inputs_json,
+        ) as ConfiguredAssemblyEstimateBasis,
+        snapshot: JSON.parse(
+          row.configured_snapshot_json,
+        ) as ConfiguredAssemblySnapshot,
+        unitEstimateAmount: row.configured_unit_estimate_amount,
+      },
+      currentEstimateAmount: row.current_estimate_amount,
+      cuttingLabelingFeeAmount: null,
+      cuttingLabelingFeeRate: null,
+      estimatedMerchandiseAmount: null,
+      lengthOrder: null,
+      lineKind: "configured_assembly",
     };
   }
 
@@ -116,6 +150,73 @@ const activeLengthBasedHoseGuard = `
     AND LOWER(COALESCE(o.quantity_input_mode, '')) LIKE '%length%'
 `;
 
+const activeConfiguredAssemblyGuard = `
+  ${activeQuotedProductGuard}
+    AND s.product_type = 'hose'
+    AND EXISTS (
+      SELECT 1
+      FROM catalog_compatibilities c
+      INNER JOIN catalog_skus es
+        ON es.import_id = c.import_id AND es.sku = c.hose_end_sku
+      INNER JOIN catalog_skus fs
+        ON fs.import_id = c.import_id AND fs.sku = c.ferrule_sku
+      WHERE c.import_id = r.source_import_id
+        AND c.compatibility_id = ? AND c.hose_sku = s.sku
+        AND c.hose_end_sku = ? AND c.ferrule_sku = ?
+        AND c.catalog_publication_status = 'Published'
+        AND c.rfq_eligibility = 'Eligible'
+        AND es.catalog_publication_status = 'Published'
+        AND es.rfq_eligibility = 'Eligible'
+        AND es.supply_availability = 'available_for_quote'
+        AND fs.catalog_publication_status = 'Published'
+        AND fs.rfq_eligibility = 'Eligible'
+        AND fs.supply_availability = 'available_for_quote'
+    )
+    AND EXISTS (
+      SELECT 1
+      FROM catalog_compatibilities c
+      INNER JOIN catalog_skus es
+        ON es.import_id = c.import_id AND es.sku = c.hose_end_sku
+      INNER JOIN catalog_skus fs
+        ON fs.import_id = c.import_id AND fs.sku = c.ferrule_sku
+      WHERE c.import_id = r.source_import_id
+        AND c.compatibility_id = ? AND c.hose_sku = s.sku
+        AND c.hose_end_sku = ? AND c.ferrule_sku = ?
+        AND c.catalog_publication_status = 'Published'
+        AND c.rfq_eligibility = 'Eligible'
+        AND es.catalog_publication_status = 'Published'
+        AND es.rfq_eligibility = 'Eligible'
+        AND es.supply_availability = 'available_for_quote'
+        AND fs.catalog_publication_status = 'Published'
+        AND fs.rfq_eligibility = 'Eligible'
+        AND fs.supply_availability = 'available_for_quote'
+    )
+    AND EXISTS (
+      SELECT 1 FROM catalog_configurator_registry_entries e
+      WHERE e.release_id = r.id AND e.registry_type = 'installed_protection'
+        AND e.entry_key = ? AND e.record_version = ?
+    )
+    AND EXISTS (
+      SELECT 1 FROM catalog_configurator_registry_entries e
+      WHERE e.release_id = r.id AND e.registry_type = 'assembly_estimate_schedule'
+        AND e.entry_key = 'DEFAULT' AND e.record_version = ?
+    )
+    AND (
+      ? IS NULL OR EXISTS (
+        SELECT 1 FROM catalog_configurator_registry_entries e
+        WHERE e.release_id = r.id AND e.registry_type = 'measurement_method'
+          AND e.entry_key = ? AND e.record_version = ?
+      )
+    )
+    AND (
+      ? IS NULL OR EXISTS (
+        SELECT 1 FROM catalog_configurator_registry_entries e
+        WHERE e.release_id = r.id AND e.registry_type = 'clocking_convention'
+          AND e.entry_key = 'M08' AND e.record_version = ?
+      )
+    )
+`;
+
 export function createD1AnonymousQuoteListRepository(database: D1Database) {
   function touchSessionStatement(
     sessionId: string,
@@ -146,6 +247,152 @@ export function createD1AnonymousQuoteListRepository(database: D1Database) {
   }
 
   return {
+    async addConfiguredAssemblyLine(input: {
+      createSession: boolean;
+      estimateBasis: ConfiguredAssemblyEstimateBasis;
+      expiresAt: string;
+      lineId: string;
+      lineIdentity: string;
+      now: string;
+      product: PublicCatalogItem;
+      quantity: number;
+      sessionId: string;
+      snapshot: ConfiguredAssemblySnapshot;
+      unitEstimateAmount: number | null;
+    }) {
+      const configuration = input.snapshot.configuration;
+      const endA = configuration.endA;
+      const endB = configuration.endB;
+      const protection = configuration.installedProtection;
+      const scheduleVersion = input.estimateBasis.scheduleRecordVersion;
+      if (!endA || !endB || !protection) return null;
+      const measurement =
+        configuration.measurementSelection?.state === "selected"
+          ? configuration.measurementSelection.method
+          : null;
+      const clockingVersion =
+        configuration.clocking?.convention.recordVersion ?? null;
+      const guardBindings = [
+        input.product.releaseId,
+        input.product.sku,
+        endA.compatibilityId,
+        endA.hoseEnd.sku,
+        endA.ferrule.sku,
+        endB.compatibilityId,
+        endB.hoseEnd.sku,
+        endB.ferrule.sku,
+        protection.code,
+        protection.recordVersion,
+        scheduleVersion,
+        measurement?.code ?? null,
+        measurement?.code ?? null,
+        measurement?.recordVersion ?? null,
+        clockingVersion,
+        clockingVersion,
+      ];
+      const totalEstimate =
+        input.unitEstimateAmount === null
+          ? null
+          : Math.round(
+              (input.unitEstimateAmount * input.quantity + Number.EPSILON) *
+                100,
+            ) / 100;
+      const statements: D1PreparedStatement[] = [];
+      if (input.createSession) {
+        statements.push(
+          database
+            .prepare(
+              `INSERT INTO anonymous_quote_sessions
+                 (id, created_at, last_activity_at, expires_at)
+               SELECT ?, ?, ?, ?
+               WHERE EXISTS (${activeConfiguredAssemblyGuard})`,
+            )
+            .bind(
+              input.sessionId,
+              input.now,
+              input.now,
+              input.expiresAt,
+              ...guardBindings,
+            ),
+        );
+      }
+      const lineResultIndex = statements.length;
+      statements.push(
+        database
+          .prepare(
+            `INSERT INTO anonymous_quote_lines (
+               id, session_id, line_identity, sku, catalog_release_id,
+               display_name, category, line_kind, quantity, sales_unit,
+               currency, reference_unit_price, current_estimate_amount,
+               configured_snapshot_json, configured_estimate_inputs_json,
+               configured_unit_estimate_amount, created_at, updated_at
+             )
+             SELECT ?, ?, ?, ?, ?, ?, 'hydraulic-hose', 'configured_assembly',
+                    ?, 'each', 'USD', NULL, ?, ?, ?, ?, ?, ?
+             WHERE EXISTS (${activeConfiguredAssemblyGuard})
+               AND EXISTS (
+                 SELECT 1 FROM anonymous_quote_sessions
+                 WHERE id = ? AND expires_at > ?
+               )
+             ON CONFLICT(session_id, line_identity) DO UPDATE SET
+               quantity = anonymous_quote_lines.quantity + excluded.quantity,
+               current_estimate_amount = CASE
+                 WHEN excluded.configured_unit_estimate_amount IS NULL THEN NULL
+                 ELSE ROUND(
+                   excluded.configured_unit_estimate_amount *
+                   (anonymous_quote_lines.quantity + excluded.quantity), 2
+                 )
+               END,
+               configured_snapshot_json = excluded.configured_snapshot_json,
+               configured_estimate_inputs_json = excluded.configured_estimate_inputs_json,
+               configured_unit_estimate_amount = excluded.configured_unit_estimate_amount,
+               updated_at = excluded.updated_at
+             RETURNING id`,
+          )
+          .bind(
+            input.lineId,
+            input.sessionId,
+            input.lineIdentity,
+            input.product.sku,
+            input.product.releaseId,
+            `${input.product.familyName} Assembly`,
+            input.quantity,
+            totalEstimate,
+            JSON.stringify(input.snapshot),
+            JSON.stringify(input.estimateBasis),
+            input.unitEstimateAmount,
+            input.now,
+            input.now,
+            ...guardBindings,
+            input.sessionId,
+            input.now,
+          ),
+      );
+      const sessionResultIndex = statements.length;
+      statements.push(
+        database
+          .prepare(
+            `UPDATE anonymous_quote_sessions
+             SET last_activity_at = ?, expires_at = ?
+             WHERE id = ? AND expires_at > ?
+               AND EXISTS (${activeConfiguredAssemblyGuard})
+             RETURNING id`,
+          )
+          .bind(
+            input.now,
+            input.expiresAt,
+            input.sessionId,
+            input.now,
+            ...guardBindings,
+          ),
+      );
+      const results = await database.batch<{ id: string }>(statements);
+      const lineResult = results[lineResultIndex];
+      const sessionResult = results[sessionResultIndex];
+      const lineId = lineResult?.results[0]?.id;
+      return lineId && sessionResult?.results[0]?.id ? lineId : null;
+    },
+
     async addStandardLine(input: {
       expiresAt: string;
       lineId: string;
@@ -369,6 +616,8 @@ export function createD1AnonymousQuoteListRepository(database: D1Database) {
                   normalized_length_ft, piece_count, total_footage,
                   cutting_labeling_fee_rate, cutting_labeling_fee_amount,
                   estimated_merchandise_amount, current_estimate_amount,
+                  configured_snapshot_json, configured_estimate_inputs_json,
+                  configured_unit_estimate_amount,
                   updated_at
            FROM anonymous_quote_lines
            WHERE session_id = ?

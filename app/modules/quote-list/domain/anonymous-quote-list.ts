@@ -1,4 +1,8 @@
 import type { CatalogFamilyId } from "../../catalog/domain/catalog-family";
+import type {
+  ConfiguredAssemblyEstimateBasis,
+  ConfiguredAssemblySnapshot,
+} from "./configured-assembly-quote";
 
 interface AnonymousQuoteLineBase {
   category: CatalogFamilyId;
@@ -36,6 +40,19 @@ export type AnonymousQuoteLine = AnonymousQuoteLineBase &
         };
         lineKind: "length_based_hose";
       }
+    | {
+        configuredAssembly: {
+          estimateBasis: ConfiguredAssemblyEstimateBasis;
+          snapshot: ConfiguredAssemblySnapshot;
+          unitEstimateAmount: number | null;
+        };
+        currentEstimateAmount: number | null;
+        cuttingLabelingFeeAmount: null;
+        cuttingLabelingFeeRate: null;
+        estimatedMerchandiseAmount: null;
+        lengthOrder: null;
+        lineKind: "configured_assembly";
+      }
   );
 
 export interface AnonymousQuoteSession {
@@ -51,7 +68,8 @@ export class QuoteListCommandRejected extends Error {
       | "LENGTH_BASED_HOSE_REQUIRED"
       | "LINE_NOT_FOUND"
       | "PRODUCT_NOT_AVAILABLE"
-      | "STANDARD_PRODUCT_REQUIRED",
+      | "STANDARD_PRODUCT_REQUIRED"
+      | "CONFIGURATION_INVALID",
   ) {
     super(message);
     this.name = "QuoteListCommandRejected";

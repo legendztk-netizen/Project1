@@ -15,6 +15,7 @@ import {
   type LengthBasedHoseOrder,
 } from "../domain/length-based-hose";
 import { createD1AnonymousQuoteListRepository } from "../infrastructure/d1-anonymous-quote-list-repository";
+import { prepareConfiguredAssembly } from "./prepare-configured-assembly";
 import type { ApplicationBindings } from "#workers/environment";
 import { quoteSessionSigningKey } from "#workers/session-secrets";
 
@@ -104,6 +105,19 @@ export function createAnonymousQuoteListService(
     return { created: true, session };
   }
 
+  async function configuredAssemblySession(request: Request) {
+    const existing = await existingSession(request);
+    if (existing) return { created: false, session: existing };
+    const current = time();
+    return {
+      created: true,
+      session: {
+        expiresAt: current.expiresAt,
+        id: generateId(),
+      } satisfies AnonymousQuoteSession,
+    };
+  }
+
   async function requireProduct(sku: string) {
     const product = await catalog.findItem(sku);
     const rejection = standardProductError(product);
@@ -151,6 +165,45 @@ export function createAnonymousQuoteListService(
   }
 
   return {
+    async addConfiguredAssembly(
+      request: Request,
+      draft: unknown,
+      quantity: number,
+    ) {
+      const prepared = await prepareConfiguredAssembly({
+        database: env.DB,
+        draft,
+        quantity,
+      });
+      const { created, session } = await configuredAssemblySession(request);
+      const current = time();
+      try {
+        const lineId = await quoteList.addConfiguredAssemblyLine({
+          estimateBasis: prepared.estimateBasis,
+          createSession: created,
+          expiresAt: current.expiresAt,
+          lineId: generateId(),
+          lineIdentity: prepared.lineIdentity,
+          now: current.now,
+          product: prepared.hoseProduct,
+          quantity: prepared.quantity,
+          sessionId: session.id,
+          snapshot: prepared.snapshot,
+          unitEstimateAmount: prepared.unitEstimateAmount,
+        });
+        if (!lineId) {
+          throw new QuoteListCommandRejected(
+            "Catalog or configuration reference data changed while the assembly was being added. Review it and try again.",
+            "CONFIGURATION_INVALID",
+          );
+        }
+      } catch (error) {
+        if (error instanceof QuoteListCommandRejected) throw error;
+        translateQuantityConstraint(error);
+      }
+      return { setCookie: await cookie(session.id, current.date) };
+    },
+
     async add(request: Request, sku: string, quantity: number) {
       const product = await requireProduct(sku);
       const { session } = await ensureSession(request);

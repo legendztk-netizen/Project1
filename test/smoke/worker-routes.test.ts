@@ -1392,8 +1392,8 @@ describe("Cloudflare Worker route surfaces", () => {
     ).searchParams.get("import");
     expect(importId).toBeTruthy();
 
-    const [draft] = runLocalD1<{ id: string }>(
-      `SELECT id FROM catalog_releases
+    const [draft] = runLocalD1<{ id: string; release_number: string }>(
+      `SELECT id, release_number FROM catalog_releases
        WHERE source_import_id = '${importId}' AND status = 'draft'`,
     );
     const [active] = runLocalD1<{
@@ -1541,6 +1541,310 @@ describe("Cloudflare Worker route surfaces", () => {
          (SELECT COUNT(*) FROM anonymous_quote_lines) AS lines`,
     );
     expect(draftWritesAfter).toEqual(draftWritesBefore);
+
+    const registryRows = runLocalD1<{
+      entry_key: string;
+      record_version: number;
+      registry_type: string;
+    }>(
+      `SELECT registry_type, entry_key, record_version
+       FROM catalog_configurator_registry_entries
+       WHERE release_id = '${draft.id}'
+         AND (
+           (registry_type = 'measurement_method' AND entry_key = 'M02') OR
+           (registry_type = 'installed_protection' AND entry_key = 'NONE') OR
+           (registry_type = 'assembly_estimate_schedule' AND entry_key = 'DEFAULT')
+         )`,
+    );
+    const registryVersion = (type: string, key: string) =>
+      registryRows.find(
+        (row) => row.registry_type === type && row.entry_key === key,
+      )?.record_version;
+    const measurementVersion = registryVersion("measurement_method", "M02");
+    const protectionVersion = registryVersion("installed_protection", "NONE");
+    const estimateScheduleVersion = registryVersion(
+      "assembly_estimate_schedule",
+      "DEFAULT",
+    );
+    expect(measurementVersion).toBeTypeOf("number");
+    expect(protectionVersion).toBeTypeOf("number");
+    expect(estimateScheduleVersion).toBeTypeOf("number");
+
+    const assemblyDraft = (length: string) => ({
+      catalogRelease: { id: draft.id },
+      endA: {
+        compatibilityId: "COMP_0011",
+        ferrule: { sku: "601R1_1WB_002" },
+        hoseEnd: { sku: "JIC_F_SW_04_04" },
+      },
+      endB: {
+        compatibilityId: "COMP_0011",
+        ferrule: { sku: "601R1_1WB_002" },
+        hoseEnd: { sku: "JIC_F_SW_04_04" },
+      },
+      finishedLength: {
+        originalUnit: "in",
+        originalValue: length,
+        requestedTighterTolerance: false,
+        tolerance: {
+          scheduleCode: "SAE_J517_ASSEMBLY_LENGTH",
+          scheduleVersion: "1.0.0",
+        },
+      },
+      hose: { sku: "601R1_002" },
+      installedProtection: {
+        code: "NONE",
+        recordVersion: protectionVersion,
+      },
+      lengthReferencePricing: {
+        scheduleRecordVersion: estimateScheduleVersion,
+      },
+      measurementSelection: {
+        method: { code: "M02", recordVersion: measurementVersion },
+        state: "selected",
+      },
+    });
+    const addConfiguredAssembly = (
+      draftValue: unknown,
+      quantity: number,
+      cookie?: string,
+    ) => {
+      const form = new FormData();
+      form.set("draft", JSON.stringify(draftValue));
+      form.set("quantity", String(quantity));
+      return fetch(`${origin}/api/configurator/quote-assembly`, {
+        body: form,
+        headers: cookie ? { cookie } : undefined,
+        method: "POST",
+      });
+    };
+
+    const configuredAdd = await addConfiguredAssembly(assemblyDraft("24"), 1);
+    expect(configuredAdd.status, await configuredAdd.text()).toBe(200);
+    const configuredCookie = cookieHeader(configuredAdd);
+    const configuredSessionId = sessionIdFromCookie(configuredCookie);
+    const [configuredLine] = runLocalD1<{
+      configured_estimate_inputs_json: string;
+      configured_snapshot_json: string;
+      configured_unit_estimate_amount: number | null;
+      id: string;
+      line_kind: string;
+      quantity: number;
+    }>(
+      `SELECT id, line_kind, quantity, configured_snapshot_json,
+              configured_estimate_inputs_json,
+              configured_unit_estimate_amount
+       FROM anonymous_quote_lines
+       WHERE session_id = '${configuredSessionId}'`,
+    );
+    expect(configuredLine).toMatchObject({
+      configured_unit_estimate_amount: null,
+      line_kind: "configured_assembly",
+      quantity: 1,
+    });
+    const configuredSnapshot = JSON.parse(
+      configuredLine?.configured_snapshot_json ?? "{}",
+    ) as {
+      configuration?: {
+        endA?: {
+          compatibilityId?: string;
+          ferrule?: { sku?: string };
+          hoseEnd?: { sku?: string };
+        };
+        endB?: {
+          compatibilityId?: string;
+          ferrule?: { sku?: string };
+          hoseEnd?: { sku?: string };
+        };
+        finishedLength?: {
+          originalValue?: string;
+          tolerance?: { scheduleVersion?: string };
+        };
+        hose?: { sku?: string };
+        installedProtection?: { code?: string; recordVersion?: number };
+        measurementSelection?: {
+          diagram?: { assetVersion?: string; overlayVersion?: string };
+          method?: { code?: string; recordVersion?: number };
+        };
+      };
+      review?: { issues?: unknown[]; outcome?: string };
+      sourceCatalogRelease?: { id?: string };
+    };
+    expect(configuredSnapshot.configuration).toMatchObject({
+      endA: {
+        compatibilityId: "COMP_0011",
+        ferrule: { sku: "601R1_1WB_002" },
+        hoseEnd: { sku: "JIC_F_SW_04_04" },
+      },
+      endB: {
+        compatibilityId: "COMP_0011",
+        ferrule: { sku: "601R1_1WB_002" },
+        hoseEnd: { sku: "JIC_F_SW_04_04" },
+      },
+      finishedLength: {
+        originalValue: "24",
+        tolerance: { scheduleVersion: "1.0.0" },
+      },
+      hose: { sku: "601R1_002" },
+      installedProtection: {
+        code: "NONE",
+        recordVersion: protectionVersion,
+      },
+      measurementSelection: {
+        diagram: {
+          assetVersion: expect.any(String),
+          overlayVersion: expect.any(String),
+        },
+        method: { code: "M02", recordVersion: measurementVersion },
+      },
+    });
+    expect(configuredSnapshot.configuration).not.toHaveProperty("clocking");
+    expect(configuredSnapshot.configuration).not.toHaveProperty(
+      "applicationRequirements",
+    );
+    expect(configuredSnapshot.review).toMatchObject({
+      issues: expect.any(Array),
+      outcome: "technical_review",
+    });
+    expect(configuredSnapshot.sourceCatalogRelease).toEqual({
+      id: draft.id,
+      number: draft.release_number,
+    });
+    expect(
+      JSON.parse(configuredLine?.configured_estimate_inputs_json ?? "{}"),
+    ).toMatchObject({
+      basis: "versioned_reference_inputs",
+      hoseCutLengthFeet: null,
+      protectionRecordVersion: protectionVersion,
+      scheduleRecordVersion: estimateScheduleVersion,
+    });
+
+    const staleToleranceDraft = assemblyDraft("24");
+    staleToleranceDraft.finishedLength.tolerance.scheduleVersion = "0.9.0";
+    const [countsBeforeStaleReference] = runLocalD1<{
+      lines: number;
+      sessions: number;
+    }>(
+      `SELECT
+         (SELECT COUNT(*) FROM anonymous_quote_sessions) AS sessions,
+         (SELECT COUNT(*) FROM anonymous_quote_lines) AS lines`,
+    );
+    const staleToleranceAdd = await addConfiguredAssembly(
+      staleToleranceDraft,
+      1,
+    );
+    expect(staleToleranceAdd.status).toBe(409);
+    const malformedStateDraft = assemblyDraft("24");
+    malformedStateDraft.measurementSelection.state = "invalid";
+    const malformedStateAdd = await addConfiguredAssembly(
+      malformedStateDraft,
+      1,
+    );
+    expect(malformedStateAdd.status).toBe(409);
+    const [countsAfterStaleReference] = runLocalD1<{
+      lines: number;
+      sessions: number;
+    }>(
+      `SELECT
+         (SELECT COUNT(*) FROM anonymous_quote_sessions) AS sessions,
+         (SELECT COUNT(*) FROM anonymous_quote_lines) AS lines`,
+    );
+    expect(countsAfterStaleReference).toEqual(countsBeforeStaleReference);
+
+    const configuredMerge = await addConfiguredAssembly(
+      assemblyDraft("24"),
+      2,
+      configuredCookie,
+    );
+    expect(configuredMerge.status, await configuredMerge.text()).toBe(200);
+    const configuredSeparate = await addConfiguredAssembly(
+      assemblyDraft("30"),
+      1,
+      configuredCookie,
+    );
+    expect(configuredSeparate.status, await configuredSeparate.text()).toBe(
+      200,
+    );
+    expect(
+      runLocalD1<{ quantity: number }>(
+        `SELECT quantity FROM anonymous_quote_lines
+         WHERE session_id = '${configuredSessionId}'
+           AND line_kind = 'configured_assembly'
+         ORDER BY quantity DESC`,
+      ),
+    ).toEqual([{ quantity: 3 }, { quantity: 1 }]);
+
+    const configuredQuoteList = await (
+      await fetch(`${origin}/quote-list`, {
+        headers: { cookie: configuredCookie },
+      })
+    ).text();
+    expect(configuredQuoteList).toContain("Price confirmed with quote");
+    expect(configuredQuoteList).toContain("JIC_F_SW_04_04");
+
+    runLocalD1(
+      `UPDATE anonymous_quote_sessions
+       SET last_activity_at = '2026-01-01T00:00:00.000Z'
+       WHERE id = '${configuredSessionId}'`,
+    );
+    const [sessionBeforeFailure] = runLocalD1<{
+      last_activity_at: string;
+    }>(
+      `SELECT last_activity_at FROM anonymous_quote_sessions
+       WHERE id = '${configuredSessionId}'`,
+    );
+    const configuredOverflow = await addConfiguredAssembly(
+      assemblyDraft("24"),
+      9999,
+      configuredCookie,
+    );
+    expect(configuredOverflow.status).toBe(409);
+    const [configuredAfterFailure] = runLocalD1<{
+      last_activity_at: string;
+      quantity: number;
+    }>(
+      `SELECT l.quantity, s.last_activity_at
+       FROM anonymous_quote_lines l
+       INNER JOIN anonymous_quote_sessions s ON s.id = l.session_id
+       WHERE l.id = '${configuredLine?.id ?? ""}'`,
+    );
+    expect(configuredAfterFailure).toEqual({
+      last_activity_at: sessionBeforeFailure?.last_activity_at,
+      quantity: 3,
+    });
+
+    const [countsBeforeCatalogFailure] = runLocalD1<{
+      lines: number;
+      sessions: number;
+    }>(
+      `SELECT
+         (SELECT COUNT(*) FROM anonymous_quote_sessions) AS sessions,
+         (SELECT COUNT(*) FROM anonymous_quote_lines) AS lines`,
+    );
+    runLocalD1(
+      `UPDATE catalog_active_release
+       SET release_id = '${active.release_id}', version = version + 1
+       WHERE singleton = 1`,
+    );
+    const changedCatalogAdd = await addConfiguredAssembly(
+      assemblyDraft("24"),
+      1,
+    );
+    expect(changedCatalogAdd.status).toBe(409);
+    const [countsAfterCatalogFailure] = runLocalD1<{
+      lines: number;
+      sessions: number;
+    }>(
+      `SELECT
+         (SELECT COUNT(*) FROM anonymous_quote_sessions) AS sessions,
+         (SELECT COUNT(*) FROM anonymous_quote_lines) AS lines`,
+    );
+    expect(countsAfterCatalogFailure).toEqual(countsBeforeCatalogFailure);
+    runLocalD1(
+      `UPDATE catalog_active_release
+       SET release_id = '${draft.id}', version = version + 1
+       WHERE singleton = 1`,
+    );
 
     const search = await (await fetch(`${origin}/?q=9%2F16-18+UNF`)).text();
     expect(search).toContain("JIC 37° Female Swivel 0° Straight Hose End");

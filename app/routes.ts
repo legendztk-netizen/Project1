@@ -20,6 +20,10 @@ export default [
     "api/configurator/compatible-end-a",
     "modules/storefront/routes/configurator-compatible-end-a-resource.ts",
   ),
+  route(
+    "api/configurator/quote-assembly",
+    "modules/storefront/routes/configurator-add-assembly-resource.ts",
+  ),
   route("quote-list", "modules/storefront/routes/anonymous-quote-list.tsx"),
   route(
     "assembly-measurement-guide",

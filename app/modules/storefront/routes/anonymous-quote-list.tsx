@@ -133,9 +133,13 @@ function lineSubtotal(quantity: number, referenceUnitPrice: number | null) {
 function merchandiseEstimate(
   line: Route.ComponentProps["loaderData"]["lines"][number],
 ) {
-  return line.lineKind === "length_based_hose"
-    ? line.estimatedMerchandiseAmount
-    : lineSubtotal(line.quantity, line.referenceUnitPrice);
+  if (line.lineKind === "length_based_hose") {
+    return line.estimatedMerchandiseAmount;
+  }
+  if (line.lineKind === "configured_assembly") {
+    return line.currentEstimateAmount;
+  }
+  return lineSubtotal(line.quantity, line.referenceUnitPrice);
 }
 
 export default function AnonymousQuoteList({
@@ -153,7 +157,7 @@ export default function AnonymousQuoteList({
     0,
   );
   const hasUnpricedLine = loaderData.lines.some(
-    (line) => line.referenceUnitPrice == null,
+    (line) => merchandiseEstimate(line) == null,
   );
 
   return (
@@ -219,18 +223,60 @@ export default function AnonymousQuoteList({
                           </span>
                         </p>
                       ) : null}
+                      {line.lineKind === "configured_assembly" ? (
+                        <dl className="quote-configured-assembly-specs">
+                          <div>
+                            <dt>End A</dt>
+                            <dd>
+                              {line.configuredAssembly.snapshot.configuration
+                                .endA?.hoseEnd.displayName ?? "Not available"}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>End B</dt>
+                            <dd>
+                              {line.configuredAssembly.snapshot.configuration
+                                .endB?.hoseEnd.displayName ?? "Not available"}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>Finished length</dt>
+                            <dd>
+                              {line.configuredAssembly.snapshot.configuration
+                                .finishedLength?.originalValue ?? ""}{" "}
+                              {line.configuredAssembly.snapshot.configuration
+                                .finishedLength?.originalUnit ?? ""}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>Review</dt>
+                            <dd>
+                              {line.configuredAssembly.snapshot.review
+                                .outcome === "technical_review"
+                                ? "Technical review included"
+                                : "Configuration complete"}
+                            </dd>
+                          </div>
+                        </dl>
+                      ) : null}
                     </div>
                     <div className="quote-line-price">
                       <span>Merchandise estimate</span>
                       <strong>
                         {subtotal == null
-                          ? "Price on quote"
+                          ? line.lineKind === "configured_assembly"
+                            ? "Price confirmed with quote"
+                            : "Price on quote"
                           : `${line.currency} ${subtotal.toFixed(2)}`}
                       </strong>
                       <small>
-                        {line.referenceUnitPrice == null
-                          ? "No reference unit price"
-                          : `${line.currency} ${line.referenceUnitPrice.toFixed(2)} / ${line.salesUnit}`}
+                        {line.lineKind === "configured_assembly"
+                          ? line.configuredAssembly.unitEstimateAmount === null
+                            ? "Reference inputs are incomplete"
+                            : `${line.currency} ${line.configuredAssembly.unitEstimateAmount.toFixed(2)} / assembly`
+                          : line.referenceUnitPrice == null
+                            ? "No reference unit price"
+                            : `${line.currency} ${line.referenceUnitPrice.toFixed(2)} / ${line.salesUnit}`}
                       </small>
                       {line.cuttingLabelingFeeAmount !== null &&
                       line.cuttingLabelingFeeAmount > 0 ? (
@@ -241,65 +287,71 @@ export default function AnonymousQuoteList({
                       ) : null}
                     </div>
                     <div className="quote-line-actions">
-                      <Form method="post">
-                        <input
-                          name="intent"
-                          type="hidden"
-                          value={
-                            line.lineKind === "length_based_hose"
-                              ? "update-length-hose"
-                              : "update"
-                          }
-                        />
-                        <input name="lineId" type="hidden" value={line.id} />
-                        <label htmlFor={`quantity-${line.id}`}>
-                          {line.lineKind === "length_based_hose"
-                            ? "Number of pieces"
-                            : "Quantity"}
-                        </label>
-                        <div>
+                      {line.lineKind !== "configured_assembly" ? (
+                        <Form method="post">
                           <input
-                            aria-describedby={
-                              pieceCountError
-                                ? `quantity-error-${line.id}`
-                                : undefined
-                            }
-                            aria-invalid={Boolean(pieceCountError)}
-                            defaultValue={
-                              line.lengthOrder?.pieceCount ?? line.quantity
-                            }
-                            disabled={busy}
-                            id={`quantity-${line.id}`}
-                            max={maximumStandardProductQuantity}
-                            min="1"
-                            name={
+                            name="intent"
+                            type="hidden"
+                            value={
                               line.lineKind === "length_based_hose"
-                                ? "pieceCount"
-                                : "quantity"
+                                ? "update-length-hose"
+                                : "update"
                             }
-                            required
-                            step="1"
-                            type="number"
                           />
-                          <button
-                            className="button button-secondary"
-                            disabled={busy}
-                            title="Update quantity"
-                            type="submit"
-                          >
-                            <RefreshCw size={17} /> Update
-                          </button>
-                        </div>
-                        {pieceCountError ? (
-                          <small
-                            className="quote-line-field-error"
-                            id={`quantity-error-${line.id}`}
-                            role="alert"
-                          >
-                            {pieceCountError}
-                          </small>
-                        ) : null}
-                      </Form>
+                          <input name="lineId" type="hidden" value={line.id} />
+                          <label htmlFor={`quantity-${line.id}`}>
+                            {line.lineKind === "length_based_hose"
+                              ? "Number of pieces"
+                              : "Quantity"}
+                          </label>
+                          <div>
+                            <input
+                              aria-describedby={
+                                pieceCountError
+                                  ? `quantity-error-${line.id}`
+                                  : undefined
+                              }
+                              aria-invalid={Boolean(pieceCountError)}
+                              defaultValue={
+                                line.lengthOrder?.pieceCount ?? line.quantity
+                              }
+                              disabled={busy}
+                              id={`quantity-${line.id}`}
+                              max={maximumStandardProductQuantity}
+                              min="1"
+                              name={
+                                line.lineKind === "length_based_hose"
+                                  ? "pieceCount"
+                                  : "quantity"
+                              }
+                              required
+                              step="1"
+                              type="number"
+                            />
+                            <button
+                              className="button button-secondary"
+                              disabled={busy}
+                              title="Update quantity"
+                              type="submit"
+                            >
+                              <RefreshCw size={17} /> Update
+                            </button>
+                          </div>
+                          {pieceCountError ? (
+                            <small
+                              className="quote-line-field-error"
+                              id={`quantity-error-${line.id}`}
+                              role="alert"
+                            >
+                              {pieceCountError}
+                            </small>
+                          ) : null}
+                        </Form>
+                      ) : (
+                        <p className="quote-configured-quantity">
+                          Quantity <strong>{line.quantity}</strong>
+                        </p>
+                      )}
                       <Form method="post">
                         <input name="intent" type="hidden" value="remove" />
                         <input name="lineId" type="hidden" value={line.id} />
