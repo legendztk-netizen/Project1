@@ -7,8 +7,14 @@ import {
   Mail,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { data, Link, useNavigate } from "react-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  data,
+  Link,
+  useBeforeUnload,
+  useBlocker,
+  useNavigate,
+} from "react-router";
 
 import type { Route } from "./+types/build-a-hose";
 import {
@@ -70,6 +76,7 @@ import {
   type ProtectionApplicationSelection,
 } from "../ui/protection-application-stage";
 import { StorefrontHeader } from "../ui/storefront-header";
+import { UnsavedDraftExitDialog } from "../ui/unsaved-draft-exit-dialog";
 import "../styles/catalog.css";
 import "../styles/clocking-preview.css";
 import "../styles/configurator.css";
@@ -280,6 +287,27 @@ function hoseOnlyDraft(draft: HoseConfigurationDraft): HoseConfigurationDraft {
   };
 }
 
+function sortedJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortedJsonValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, sortedJsonValue(entry)]),
+    );
+  }
+  return value;
+}
+
+function managedDraftFingerprint(
+  draft: HoseConfigurationDraft,
+  quantityInput: string,
+) {
+  return JSON.stringify(
+    sortedJsonValue({ configuration: draft, quantityInput }),
+  );
+}
+
 function restoredProvenance(
   draft: HoseConfigurationDraft,
   schedule: BuildAHoseLoaderData["assemblyEstimateSchedule"],
@@ -334,6 +362,7 @@ function DraftValidationNotice({ issues }: { issues: DraftValidationIssue[] }) {
   return (
     <section
       aria-label="Configuration validation issues"
+      aria-live="polite"
       className="draft-validation-notice"
     >
       <header>
@@ -455,6 +484,7 @@ export function BuildAHoseView({
     pending: boolean;
     savedFingerprint: string | null;
   }>({ error: null, pending: false, savedFingerprint: null });
+  const allowNavigationRef = useRef(false);
   const [selectionProvenance, setSelectionProvenance] =
     useState<DraftSelectionProvenance>(
       savedDraft
@@ -617,6 +647,40 @@ export function BuildAHoseView({
           })
         : "",
     [draft, quantityInput, selectionProvenance, stage],
+  );
+  const currentManagedDraftFingerprint = useMemo(
+    () => (draft ? managedDraftFingerprint(draft, quantityInput) : null),
+    [draft, quantityInput],
+  );
+  const originalManagedDraftFingerprint = useMemo(
+    () =>
+      savedDraft
+        ? managedDraftFingerprint(savedDraft, String(savedLine?.quantity ?? 1))
+        : null,
+    [savedDraft, savedLine?.quantity],
+  );
+  const hasUnsavedDraft = Boolean(
+    draft &&
+    (loaderData.quoteLineContext?.mode !== "edit" ||
+      currentManagedDraftFingerprint !== originalManagedDraftFingerprint),
+  );
+  const navigationBlocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      hasUnsavedDraft &&
+      !allowNavigationRef.current &&
+      (currentLocation.pathname !== nextLocation.pathname ||
+        currentLocation.search !== nextLocation.search ||
+        currentLocation.hash !== nextLocation.hash),
+  );
+  useBeforeUnload(
+    useCallback(
+      (event) => {
+        if (!hasUnsavedDraft || allowNavigationRef.current) return;
+        event.preventDefault();
+        event.returnValue = "";
+      },
+      [hasUnsavedDraft],
+    ),
   );
   const hasSelectableHose = loaderData.families.some((family) =>
     family.variants.some((variant) => variant.canAddToQuote),
@@ -807,6 +871,7 @@ export function BuildAHoseView({
         });
         return;
       }
+      allowNavigationRef.current = true;
       navigate("/quote-list");
     } catch {
       setQuoteCommand({
@@ -815,6 +880,37 @@ export function BuildAHoseView({
         pending: false,
       });
     }
+  }
+
+  function discardInPageDraftAndLeave() {
+    if (navigationBlocker.state !== "blocked") return;
+    allowNavigationRef.current = true;
+    setSelectedFamilyKey(null);
+    setSelectedSku(null);
+    setRetainedHoseItem(null);
+    setRetainedHoseDraft(null);
+    setSelectedEndA(null);
+    setSelectedEndB(null);
+    setMeasurementSelection(null);
+    setFinishedLength(null);
+    setClockingSelection(null);
+    setProtectionApplicationSelection(null);
+    setSelectionProvenance({});
+    setCompatibleCandidateSnapshot(null);
+    setCompatibilityCheckFailure(null);
+    setQuantityInput("1");
+    setReviewVisited(false);
+    setStage("hose");
+    navigationBlocker.proceed();
+  }
+
+  const stayOnConfigurator = useCallback(() => {
+    if (navigationBlocker.state === "blocked") navigationBlocker.reset();
+  }, [navigationBlocker]);
+
+  function changeEmailInput(value: string) {
+    setEmailInput(value);
+    setEmailSaveCommand((current) => ({ ...current, error: null }));
   }
 
   async function saveDraftByEmail(event: React.FormEvent<HTMLFormElement>) {
@@ -1380,7 +1476,7 @@ export function BuildAHoseView({
                               autoComplete="email"
                               id="pending-configuration-email"
                               onChange={(event) =>
-                                setEmailInput(event.currentTarget.value)
+                                changeEmailInput(event.currentTarget.value)
                               }
                               placeholder="you@example.com"
                               required
@@ -1429,41 +1525,57 @@ export function BuildAHoseView({
                 role="region"
               >
                 <div className="configurator-action-dock-inner">
-                  {backAction ? (
-                    <button
-                      aria-label={backAction.label}
-                      className="button button-secondary button-with-icon configurator-back"
-                      onClick={backAction.onClick}
-                      type="button"
-                    >
-                      <ArrowLeft aria-hidden="true" size={18} />
-                      <span className="configurator-back-label">
-                        {backAction.label}
-                      </span>
-                      <span
-                        aria-hidden="true"
-                        className="configurator-back-label-short"
+                  <div className="configurator-action-dock-buttons">
+                    {backAction ? (
+                      <button
+                        aria-label={backAction.label}
+                        className="button button-secondary button-with-icon configurator-back"
+                        onClick={backAction.onClick}
+                        type="button"
                       >
-                        Back
-                      </span>
-                    </button>
-                  ) : null}
-                  {nextAction ? (
-                    <button
-                      className="button button-primary configurator-next"
-                      onClick={nextAction.onClick}
-                      type="button"
-                    >
-                      {nextAction.label}
-                      <ArrowRight aria-hidden="true" size={18} />
-                    </button>
-                  ) : null}
+                        <ArrowLeft aria-hidden="true" size={18} />
+                        <span className="configurator-back-label">
+                          {backAction.label}
+                        </span>
+                        <span
+                          aria-hidden="true"
+                          className="configurator-back-label-short"
+                        >
+                          Back
+                        </span>
+                      </button>
+                    ) : null}
+                    {nextAction ? (
+                      <button
+                        className="button button-primary configurator-next"
+                        onClick={nextAction.onClick}
+                        type="button"
+                      >
+                        {nextAction.label}
+                        <ArrowRight aria-hidden="true" size={18} />
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             ) : null}
           </>
         )}
       </main>
+      {navigationBlocker.state === "blocked" ? (
+        <UnsavedDraftExitDialog
+          email={emailInput}
+          error={emailSaveCommand.error}
+          isSaved={
+            emailSaveCommand.savedFingerprint === pendingSnapshotFingerprint
+          }
+          isSaving={emailSaveCommand.pending}
+          onEmailChange={changeEmailInput}
+          onLeave={discardInPageDraftAndLeave}
+          onSave={saveDraftByEmail}
+          onStay={stayOnConfigurator}
+        />
+      ) : null}
     </div>
   );
 }

@@ -10,6 +10,8 @@ describe("configurator live preview responsive contract", () => {
   it("keeps a stable scalable schematic on desktop", () => {
     expect(stylesheet).toContain("aspect-ratio: 960 / 350");
     expect(stylesheet).toContain("max-height: calc(100vh - 36px)");
+    expect(stylesheet).toContain("@media (min-width: 1061px)");
+    expect(stylesheet).toContain("grid-template-columns: minmax(0, 1.35fr)");
     expect(stylesheet).not.toContain("vector-effect: non-scaling-stroke");
   });
 
@@ -28,5 +30,13 @@ describe("configurator live preview responsive contract", () => {
     expect(stylesheet).not.toContain(
       '.mobile-assembly-preview-toggle[data-current-stage="clocking"]',
     );
+  });
+
+  it("keeps the exit warning above preview and action controls at every width", () => {
+    expect(stylesheet).toContain(".unsaved-draft-backdrop {");
+    expect(stylesheet).toContain("z-index: 100");
+    expect(stylesheet).toContain("max-height: calc(100vh - 48px)");
+    expect(stylesheet).toContain("max-height: calc(100vh - 24px)");
+    expect(stylesheet).toContain(".unsaved-draft-actions");
   });
 });

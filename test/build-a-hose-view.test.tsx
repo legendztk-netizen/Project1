@@ -9,7 +9,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter } from "react-router";
+import { createMemoryRouter, RouterProvider } from "react-router";
 
 import {
   groupCatalogFamilies,
@@ -30,65 +30,78 @@ function renderPage(
     requestedEndASku?: string | null;
   } = {},
 ) {
-  return render(
-    <MemoryRouter initialEntries={["/build-a-hose"]}>
-      <BuildAHoseView
-        loaderData={{
-          assemblyEstimateSchedule: {
-            assemblyServicePricePerStartedFootUsd: 0.5,
-            assemblyServicePriceUsd: null,
-            currency: "USD",
-            ferrulePriceSource: "catalog_sales_offer",
-            hoseEndPriceSource: "catalog_sales_offer",
-            hosePriceSource: "catalog_sales_offer_per_ft",
-            protectionPriceSource: "installed_protection_registry",
-            recordVersion: 2,
-          },
-          clockingConvention:
-            options.clockingConvention === undefined
-              ? clockingConventionFixture()
-              : options.clockingConvention,
-          directSelection: { kind: "none" },
-          families: groupCatalogFamilies(items),
-          installedProtectionRules: [],
-          installedProtections: [
-            {
-              availability: "available",
-              code: "NONE",
-              currency: "USD",
-              isNoAdditionalProtection: true,
-              publicName: "No additional installed protection",
-              recordVersion: 2,
-              referenceBasePriceUsd: 0,
-              referenceInstallationPricePerStartedFootUsd: 0,
-              referenceMaterialPricePerFootUsd: 0,
-              referencePriceUsd: 0,
-              specification: "No additional installed sleeve or guard",
-            },
-            {
-              availability: "available",
-              code: "NYLON",
-              currency: "USD",
-              isNoAdditionalProtection: false,
-              publicName: "Nylon Protective Sleeving",
-              recordVersion: 2,
-              referenceBasePriceUsd: 8,
-              referenceInstallationPricePerStartedFootUsd: 1,
-              referenceMaterialPricePerFootUsd: 1.35,
-              referencePriceUsd: null,
-              specification: "Abrasion-resistant nylon sleeve",
-            },
-          ],
-          measurementMethods: measurementMethodsFixture(),
-          publishedHoseCount: items.length,
-          quoteLineContext: null,
-          quoteLineError: null,
-          releaseNumber: items[0]?.releaseNumber ?? null,
-          requestedEndASku: options.requestedEndASku ?? null,
-        }}
-      />
-    </MemoryRouter>,
+  const router = createMemoryRouter(
+    [
+      {
+        element: (
+          <BuildAHoseView
+            loaderData={{
+              assemblyEstimateSchedule: {
+                assemblyServicePricePerStartedFootUsd: 0.5,
+                assemblyServicePriceUsd: null,
+                currency: "USD",
+                ferrulePriceSource: "catalog_sales_offer",
+                hoseEndPriceSource: "catalog_sales_offer",
+                hosePriceSource: "catalog_sales_offer_per_ft",
+                protectionPriceSource: "installed_protection_registry",
+                recordVersion: 2,
+              },
+              clockingConvention:
+                options.clockingConvention === undefined
+                  ? clockingConventionFixture()
+                  : options.clockingConvention,
+              directSelection: { kind: "none" },
+              families: groupCatalogFamilies(items),
+              installedProtectionRules: [],
+              installedProtections: [
+                {
+                  availability: "available",
+                  code: "NONE",
+                  currency: "USD",
+                  isNoAdditionalProtection: true,
+                  publicName: "No additional installed protection",
+                  recordVersion: 2,
+                  referenceBasePriceUsd: 0,
+                  referenceInstallationPricePerStartedFootUsd: 0,
+                  referenceMaterialPricePerFootUsd: 0,
+                  referencePriceUsd: 0,
+                  specification: "No additional installed sleeve or guard",
+                },
+                {
+                  availability: "available",
+                  code: "NYLON",
+                  currency: "USD",
+                  isNoAdditionalProtection: false,
+                  publicName: "Nylon Protective Sleeving",
+                  recordVersion: 2,
+                  referenceBasePriceUsd: 8,
+                  referenceInstallationPricePerStartedFootUsd: 1,
+                  referenceMaterialPricePerFootUsd: 1.35,
+                  referencePriceUsd: null,
+                  specification: "Abrasion-resistant nylon sleeve",
+                },
+              ],
+              measurementMethods: measurementMethodsFixture(),
+              publishedHoseCount: items.length,
+              quoteLineContext: null,
+              quoteLineError: null,
+              releaseNumber: items[0]?.releaseNumber ?? null,
+              requestedEndASku: options.requestedEndASku ?? null,
+            }}
+          />
+        ),
+        path: "/build-a-hose",
+      },
+      { element: <h1>Products destination</h1>, path: "/" },
+      { element: <h1>Quote List destination</h1>, path: "/quote-list" },
+      {
+        element: <h1>Measurement Guide destination</h1>,
+        path: "/assembly-measurement-guide",
+      },
+    ],
+    { initialEntries: ["/build-a-hose"] },
   );
+  return { router, ...render(<RouterProvider router={router} />) };
 }
 
 function clockingConventionFixture(): ClockingConvention {
@@ -232,6 +245,151 @@ afterEach(() => {
 });
 
 describe("Build a Hose view", () => {
+  it("allows an empty configurator to leave without a warning", async () => {
+    renderPage([publicHoseFixture()]);
+
+    fireEvent.click(screen.getByRole("link", { name: "Products" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Products destination" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("warns before website navigation and preserves the exact draft when staying", async () => {
+    renderPage([publicHoseFixture()]);
+    fireEvent.click(
+      screen.getByRole("button", { name: /601R1 Hydraulic Hose/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Select 3\/16 in/ }));
+
+    fireEvent.click(screen.getByRole("link", { name: "Products" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Leave this configuration?",
+    });
+    expect(dialog.textContent).toContain(
+      "Your selected configuration will be lost when you leave.",
+    );
+    expect(
+      within(dialog).getByRole("button", { name: "Stay and Continue" }),
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByRole("button", { name: "Leave and Discard" }),
+    ).toBeTruthy();
+    expect(
+      within(dialog).queryByRole("button", { name: "Save by Email" }),
+    ).toBeNull();
+    expect(document.activeElement).toBe(
+      within(dialog).getByRole("button", { name: "Stay and Continue" }),
+    );
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Stay and Continue" }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByText("SKU 601R1_001")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Continue to End A" }),
+    ).toBeTruthy();
+  });
+
+  it("keeps focus inside the warning and treats Escape as Stay", async () => {
+    renderPage([publicHoseFixture()]);
+    fireEvent.click(
+      screen.getByRole("button", { name: /601R1 Hydraulic Hose/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Select 3\/16 in/ }));
+    fireEvent.click(screen.getByRole("link", { name: "Products" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Leave this configuration?",
+    });
+    const stay = within(dialog).getByRole("button", {
+      name: "Stay and Continue",
+    });
+    const discard = within(dialog).getByRole("button", {
+      name: "Leave and Discard",
+    });
+    const email = within(dialog).getByLabelText("Email address");
+    expect(document.activeElement).toBe(stay);
+    discard.focus();
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(document.activeElement).toBe(email);
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByText("SKU 601R1_001")).toBeTruthy();
+  });
+
+  it("exposes Email Save only after an email is entered and preserves the draft after failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({ error: "Email service unavailable", ok: false }),
+        ok: false,
+      }),
+    );
+    renderPage([publicHoseFixture()]);
+    fireEvent.click(
+      screen.getByRole("button", { name: /601R1 Hydraulic Hose/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Select 3\/16 in/ }));
+    fireEvent.click(screen.getByRole("link", { name: "Quote List" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Leave this configuration?",
+    });
+    fireEvent.change(within(dialog).getByLabelText("Email address"), {
+      target: { value: "buyer@example.com" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Save by Email" }),
+    );
+
+    expect((await within(dialog).findByRole("alert")).textContent).toContain(
+      "Email service unavailable",
+    );
+    expect(screen.getByText("SKU 601R1_001")).toBeTruthy();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("discards the in-page draft and completes the blocked navigation", async () => {
+    renderPage([publicHoseFixture()]);
+    fireEvent.click(
+      screen.getByRole("button", { name: /601R1 Hydraulic Hose/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Select 3\/16 in/ }));
+    fireEvent.click(screen.getByRole("link", { name: "Products" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Leave this configuration?",
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Leave and Discard" }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Products destination" }),
+    ).toBeTruthy();
+  });
+
+  it("registers only a native beforeunload warning for an unfinished draft", () => {
+    renderPage([publicHoseFixture()]);
+    const emptyEvent = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(emptyEvent);
+    expect(emptyEvent.defaultPrevented).toBe(false);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /601R1 Hydraulic Hose/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Select 3\/16 in/ }));
+    const draftEvent = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(draftEvent);
+    expect(draftEvent.defaultPrevented).toBe(true);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("does not present an in-flight email save as cancellable", async () => {
     let finishRequest: ((value: unknown) => void) | undefined;
     vi.stubGlobal(

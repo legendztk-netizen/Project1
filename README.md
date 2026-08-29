@@ -10,6 +10,8 @@ The initial skeleton exposes three deliberately separate surfaces:
 - `/api/catalog/products/:sku` - public active-release product resource
 - `/quote-list` - server-side anonymous Quote List for Standard Products and
   Length-Based Hose
+- `/build-a-hose` - guided hose assembly configurator with responsive preview,
+  draft exit protection, and Email Save handoff
 - `/admin` - Admin Backoffice shell
 - `/admin/catalog/import` - authorized seven-worksheet catalog import and review
 - `/admin/catalog/review` - authorized draft product review and bulk Supply Availability changes
@@ -52,7 +54,8 @@ commands, atomic Catalog Release publication, audit output, active-release
 isolation, five-class Storefront search and family routing, availability-driven
 Add to Quote commands, anonymous Quote List lifecycle and revalidation,
 Length-Based Hose input validation, merge rules, fee snapshots and line
-editing, public Cost Basis exclusion, and health routes through HTTP. `test:d1`
+editing, configurator responsive flow and unfinished-draft exit handling,
+public Cost Basis exclusion, and health routes through HTTP. `test:d1`
 uses persistent local D1 instances rather than a database mock.
 
 ## Environment commands
