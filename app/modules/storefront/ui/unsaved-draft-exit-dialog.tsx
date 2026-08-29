@@ -2,6 +2,7 @@ import { Mail, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, type FormEvent } from "react";
 
 interface UnsavedDraftExitDialogProps {
+  canSaveByEmail: boolean;
   email: string;
   error: string | null;
   isSaved: boolean;
@@ -13,6 +14,7 @@ interface UnsavedDraftExitDialogProps {
 }
 
 export function UnsavedDraftExitDialog({
+  canSaveByEmail,
   email,
   error,
   isSaved,
@@ -27,7 +29,8 @@ export function UnsavedDraftExitDialog({
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const isSavingRef = useRef(isSaving);
   const onStayRef = useRef(onStay);
-  const canOfferEmailSave = email.trim().length > 0 && !isSaved;
+  const canOfferEmailSave =
+    canSaveByEmail && email.trim().length > 0 && !isSaved;
 
   useEffect(() => {
     isSavingRef.current = isSaving;
@@ -107,7 +110,7 @@ export function UnsavedDraftExitDialog({
                 </small>
               </div>
             </div>
-          ) : (
+          ) : canSaveByEmail ? (
             <>
               <label htmlFor="exit-save-email">Email address</label>
               <input
@@ -115,6 +118,7 @@ export function UnsavedDraftExitDialog({
                 id="exit-save-email"
                 onChange={(event) => onEmailChange(event.currentTarget.value)}
                 placeholder="you@example.com"
+                required
                 type="email"
                 value={email}
               />
@@ -124,6 +128,11 @@ export function UnsavedDraftExitDialog({
                 Quote List.
               </small>
             </>
+          ) : (
+            <small>
+              Choose a specific hose size before using Email Save. You can stay
+              here or discard this series selection.
+            </small>
           )}
           {error ? (
             <p className="unsaved-draft-error" role="alert">

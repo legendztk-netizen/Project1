@@ -443,26 +443,33 @@ export function AssemblyReviewStage({
         role="region"
       >
         <div className="configurator-action-dock-inner">
-          <button
-            aria-label="Back to Protection"
-            className="button button-secondary button-with-icon configurator-back"
-            onClick={onBack}
-            type="button"
-          >
-            <ArrowLeft aria-hidden="true" size={17} />
-            <span className="configurator-back-label">Back to Protection</span>
-            <span aria-hidden="true" className="configurator-back-label-short">
-              Back
-            </span>
-          </button>
-          <button
-            className="button button-primary configurator-next"
-            disabled={!result.canAddConfiguredLine || isAdding}
-            onClick={onAdd}
-            type="button"
-          >
-            {isAdding ? pendingLabel : actionLabel}
-          </button>
+          <div className="configurator-action-dock-buttons">
+            <button
+              aria-label="Back to Protection"
+              className="button button-secondary button-with-icon configurator-back"
+              onClick={onBack}
+              type="button"
+            >
+              <ArrowLeft aria-hidden="true" size={17} />
+              <span className="configurator-back-label">
+                Back to Protection
+              </span>
+              <span
+                aria-hidden="true"
+                className="configurator-back-label-short"
+              >
+                Back
+              </span>
+            </button>
+            <button
+              className="button button-primary configurator-next"
+              disabled={!result.canAddConfiguredLine || isAdding}
+              onClick={onAdd}
+              type="button"
+            >
+              {isAdding ? pendingLabel : actionLabel}
+            </button>
+          </div>
         </div>
       </div>
     </section>

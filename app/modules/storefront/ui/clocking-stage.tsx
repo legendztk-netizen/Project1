@@ -206,31 +206,36 @@ export function ClockingStage({
         role="region"
       >
         <div className="configurator-action-dock-inner">
-          <button
-            aria-label="Back to Finished Length"
-            className="button button-secondary button-with-icon configurator-back"
-            onClick={onBack}
-            type="button"
-          >
-            <ArrowLeft aria-hidden="true" size={17} />
-            <span className="configurator-back-label">
-              Back to Finished Length
-            </span>
-            <span aria-hidden="true" className="configurator-back-label-short">
-              Back
-            </span>
-          </button>
-          {evaluation.valid ? (
+          <div className="configurator-action-dock-buttons">
             <button
-              className="button button-primary clocking-save"
-              onClick={() => onSave(evaluation.selection)}
+              aria-label="Back to Finished Length"
+              className="button button-secondary button-with-icon configurator-back"
+              onClick={onBack}
               type="button"
             >
-              {evaluation.selection.status === "not_sure"
-                ? "Save for Manual Review"
-                : "Save Clocking"}
+              <ArrowLeft aria-hidden="true" size={17} />
+              <span className="configurator-back-label">
+                Back to Finished Length
+              </span>
+              <span
+                aria-hidden="true"
+                className="configurator-back-label-short"
+              >
+                Back
+              </span>
             </button>
-          ) : null}
+            {evaluation.valid ? (
+              <button
+                className="button button-primary clocking-save"
+                onClick={() => onSave(evaluation.selection)}
+                type="button"
+              >
+                {evaluation.selection.status === "not_sure"
+                  ? "Save for Manual Review"
+                  : "Save Clocking"}
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
     </section>

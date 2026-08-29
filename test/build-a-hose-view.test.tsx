@@ -256,6 +256,23 @@ describe("Build a Hose view", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("warns after a hose series selection but waits for a size before offering Email Save", async () => {
+    renderPage([publicHoseFixture()]);
+    fireEvent.click(
+      screen.getByRole("button", { name: /601R1 Hydraulic Hose/ }),
+    );
+
+    fireEvent.click(screen.getByRole("link", { name: "Products" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Leave this configuration?",
+    });
+    expect(within(dialog).queryByLabelText("Email address")).toBeNull();
+    expect(dialog.textContent).toContain(
+      "Choose a specific hose size before using Email Save.",
+    );
+  });
+
   it("warns before website navigation and preserves the exact draft when staying", async () => {
     renderPage([publicHoseFixture()]);
     fireEvent.click(
@@ -351,6 +368,27 @@ describe("Build a Hose view", () => {
       "Email service unavailable",
     );
     expect(screen.getByText("SKU 601R1_001")).toBeTruthy();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("does not submit Email Save when the email is empty", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage([publicHoseFixture()]);
+    fireEvent.click(
+      screen.getByRole("button", { name: /601R1 Hydraulic Hose/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Select 3\/16 in/ }));
+    fireEvent.click(screen.getByRole("link", { name: "Products" }));
+
+    const email = within(
+      await screen.findByRole("dialog", { name: "Leave this configuration?" }),
+    ).getByLabelText("Email address");
+    const form = email.closest("form");
+    expect(form).toBeTruthy();
+    fireEvent.submit(form!);
+
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 

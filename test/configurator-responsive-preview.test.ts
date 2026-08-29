@@ -5,6 +5,13 @@ const stylesheet = readFileSync(
   new URL("../app/modules/storefront/styles/configurator.css", import.meta.url),
   "utf8",
 );
+const dockSourcePaths = [
+  "../app/modules/storefront/routes/build-a-hose.tsx",
+  "../app/modules/storefront/ui/assembly-review-stage.tsx",
+  "../app/modules/storefront/ui/clocking-stage.tsx",
+  "../app/modules/storefront/ui/finished-length-stage.tsx",
+  "../app/modules/storefront/ui/protection-application-stage.tsx",
+];
 
 describe("configurator live preview responsive contract", () => {
   it("keeps a stable scalable schematic on desktop", () => {
@@ -30,6 +37,13 @@ describe("configurator live preview responsive contract", () => {
     expect(stylesheet).not.toContain(
       '.mobile-assembly-preview-toggle[data-current-stage="clocking"]',
     );
+  });
+
+  it("keeps every fixed action dock inside the interactive desktop column", () => {
+    for (const sourcePath of dockSourcePaths) {
+      const source = readFileSync(new URL(sourcePath, import.meta.url), "utf8");
+      expect(source).toContain('className="configurator-action-dock-buttons"');
+    }
   });
 
   it("keeps the exit warning above preview and action controls at every width", () => {

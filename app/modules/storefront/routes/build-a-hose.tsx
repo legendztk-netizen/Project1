@@ -659,11 +659,13 @@ export function BuildAHoseView({
         : null,
     [savedDraft, savedLine?.quantity],
   );
-  const hasUnsavedDraft = Boolean(
-    draft &&
-    (loaderData.quoteLineContext?.mode !== "edit" ||
-      currentManagedDraftFingerprint !== originalManagedDraftFingerprint),
-  );
+  const hasUnsavedDraft =
+    loaderData.quoteLineContext?.mode === "edit"
+      ? Boolean(
+          draft &&
+          currentManagedDraftFingerprint !== originalManagedDraftFingerprint,
+        )
+      : Boolean(selectedFamilyKey || draft);
   const navigationBlocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       hasUnsavedDraft &&
@@ -915,7 +917,7 @@ export function BuildAHoseView({
 
   async function saveDraftByEmail(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!draft || emailSaveCommand.pending) return;
+    if (!draft || !emailInput.trim() || emailSaveCommand.pending) return;
     setEmailSaveCommand((current) => ({
       ...current,
       error: null,
@@ -1564,6 +1566,7 @@ export function BuildAHoseView({
       </main>
       {navigationBlocker.state === "blocked" ? (
         <UnsavedDraftExitDialog
+          canSaveByEmail={Boolean(draft)}
           email={emailInput}
           error={emailSaveCommand.error}
           isSaved={

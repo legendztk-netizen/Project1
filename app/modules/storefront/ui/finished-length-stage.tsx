@@ -285,30 +285,35 @@ export function FinishedLengthStage({
         role="region"
       >
         <div className="configurator-action-dock-inner">
-          <button
-            aria-label="Back to End B"
-            className="button button-secondary button-with-icon configurator-back"
-            onClick={onBack}
-            type="button"
-          >
-            <ArrowLeft aria-hidden="true" size={17} />
-            <span className="configurator-back-label">Back to End B</span>
-            <span aria-hidden="true" className="configurator-back-label-short">
-              Back
-            </span>
-          </button>
-          {evaluation?.valid ? (
+          <div className="configurator-action-dock-buttons">
             <button
-              className="button button-primary finished-length-save"
-              onClick={() => onSaveLength(evaluation.length)}
+              aria-label="Back to End B"
+              className="button button-secondary button-with-icon configurator-back"
+              onClick={onBack}
               type="button"
             >
-              {measurementSelection?.state === "not_sure" ||
-              evaluation.length.path === "manual_review"
-                ? "Save for Manual Review"
-                : "Save Finished Length"}
+              <ArrowLeft aria-hidden="true" size={17} />
+              <span className="configurator-back-label">Back to End B</span>
+              <span
+                aria-hidden="true"
+                className="configurator-back-label-short"
+              >
+                Back
+              </span>
             </button>
-          ) : null}
+            {evaluation?.valid ? (
+              <button
+                className="button button-primary finished-length-save"
+                onClick={() => onSaveLength(evaluation.length)}
+                type="button"
+              >
+                {measurementSelection?.state === "not_sure" ||
+                evaluation.length.path === "manual_review"
+                  ? "Save for Manual Review"
+                  : "Save Finished Length"}
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
     </section>
