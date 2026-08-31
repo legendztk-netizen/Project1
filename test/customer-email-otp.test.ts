@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createCustomerIdentityService } from "../app/modules/customer-identity/application/customer-identity-service";
 import {
@@ -118,6 +118,33 @@ describe("customer email OTP", () => {
       }),
     ).rejects.toThrow("mail provider unavailable");
     expect(calls).toEqual(["create", "deliver", "discard"]);
+  });
+
+  it("returns the local preview without logging the OTP secret", async () => {
+    const repository = {
+      activateDeliveredChallenge: async () => undefined,
+      countRecentRequests: async () => ({ email: 0, ip: 0 }),
+      createChallenge: async () => undefined,
+      discardUndeliveredChallenge: async () => undefined,
+      latestRequest: async () => null,
+    } as unknown as ReturnType<typeof createD1CustomerIdentityRepository>;
+    const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      const service = createCustomerIdentityService(
+        { APP_ENV: "local", EMAIL_DELIVERY_MODE: "stub" } as never,
+        { otp: () => "654321", repository },
+      );
+      await expect(
+        service.requestOtp({
+          email: "customer@example.com",
+          purpose: "register",
+          request: new Request("http://storefront.localhost/register"),
+        }),
+      ).resolves.toMatchObject({ localPreviewCode: "654321" });
+      expect(consoleInfo).not.toHaveBeenCalled();
+    } finally {
+      consoleInfo.mockRestore();
+    }
   });
 });
 

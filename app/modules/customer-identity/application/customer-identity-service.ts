@@ -40,6 +40,7 @@ import {
 import {
   createD1CustomerIdentityRepository,
   OtpChallengeRequestRejected,
+  type PasswordAttemptKind,
   PasswordAttemptRejected,
 } from "../infrastructure/d1-customer-identity-repository";
 
@@ -86,14 +87,6 @@ async function deliverOtp(input: {
   purpose: EmailOtpPurpose;
 }) {
   if (input.env.EMAIL_DELIVERY_MODE === "stub") {
-    console.info(
-      JSON.stringify({
-        code: input.code,
-        purpose: input.purpose,
-        to: input.email,
-        type: "customer-email-otp-stub",
-      }),
-    );
     return;
   }
 
@@ -141,6 +134,10 @@ export function createCustomerIdentityService(
     return token ? digestCustomerSessionToken(token, secret) : null;
   }
 
+  function digestIdentityValue(purpose: string, value: string) {
+    return digestCustomerSessionToken(`${purpose}\u0000${value}`, secret);
+  }
+
   async function readSession(request: Request) {
     const digest = await sessionDigestFromRequest(request);
     if (!digest) return null;
@@ -178,9 +175,9 @@ export function createCustomerIdentityService(
       );
     }
 
-    const ipDigest = await digestCustomerSessionToken(
+    const ipDigest = await digestIdentityValue(
+      "otp-request-ip",
       requestIp(input.request, env.APP_ENV),
-      secret,
     );
     const recent = await repository.countRecentRequests({
       email,
@@ -305,16 +302,46 @@ export function createCustomerIdentityService(
   }
 
   async function passwordAttemptDigests(input: {
+    attemptKind: PasswordAttemptKind;
     email: string;
     request: Request;
   }) {
     return {
-      emailDigest: await digestCustomerSessionToken(input.email, secret),
-      ipDigest: await digestCustomerSessionToken(
+      emailDigest: await digestIdentityValue(
+        `${input.attemptKind}-email`,
+        input.email,
+      ),
+      ipDigest: await digestIdentityValue(
+        `${input.attemptKind}-ip`,
         requestIp(input.request, env.APP_ENV),
-        secret,
       ),
     };
+  }
+
+  async function reservePasswordAttempt(input: {
+    attemptKind: PasswordAttemptKind;
+    email: string;
+    id: string;
+    instant: Date;
+    request: Request;
+  }) {
+    const digests = await passwordAttemptDigests(input);
+    try {
+      await repository.reservePasswordAttempt({
+        attemptKind: input.attemptKind,
+        createdAt: input.instant.toISOString(),
+        id: input.id,
+        ...digests,
+      });
+    } catch (error) {
+      if (!(error instanceof PasswordAttemptRejected)) throw error;
+      throw new CustomerIdentityError(
+        input.attemptKind === "password_login"
+          ? "Too many sign-in attempts. Try again later or use an email code."
+          : "Too many password changes. Try again later.",
+        "RATE_LIMITED",
+      );
+    }
   }
 
   async function normalizedNewPassword(password: string) {
@@ -431,23 +458,13 @@ export function createCustomerIdentityService(
       if (!email) throw passwordFailure();
       const attemptId = crypto.randomUUID();
       const instant = now();
-      const digests = await passwordAttemptDigests({
+      await reservePasswordAttempt({
+        attemptKind: "password_login",
         email,
+        id: attemptId,
+        instant,
         request: input.request,
       });
-      try {
-        await repository.reservePasswordAttempt({
-          createdAt: instant.toISOString(),
-          id: attemptId,
-          ...digests,
-        });
-      } catch (error) {
-        if (!(error instanceof PasswordAttemptRejected)) throw error;
-        throw new CustomerIdentityError(
-          "Too many sign-in attempts. Try again later or use an email code.",
-          "RATE_LIMITED",
-        );
-      }
       const credential = await repository.findPasswordCredentialByEmail(email);
       const valid = await verifyCustomerPassword(
         input.password,
@@ -489,26 +506,20 @@ export function createCustomerIdentityService(
       if (!credential) throw passwordFailure();
       const attemptId = crypto.randomUUID();
       const instant = now();
-      const digests = await passwordAttemptDigests({
+      await reservePasswordAttempt({
+        attemptKind: "password_change",
         email: profile.email,
+        id: attemptId,
+        instant,
         request: input.request,
       });
-      try {
-        await repository.reservePasswordAttempt({
-          createdAt: instant.toISOString(),
-          id: attemptId,
-          ...digests,
-        });
-      } catch (error) {
-        if (!(error instanceof PasswordAttemptRejected)) throw error;
-        throw new CustomerIdentityError(
-          "Too many password attempts. Try again later or use an email code.",
-          "RATE_LIMITED",
-        );
-      }
       if (!(await verifyCustomerPassword(input.currentPassword, credential))) {
         throw passwordFailure();
       }
+      await repository.markPasswordAttemptSucceeded(
+        attemptId,
+        instant.toISOString(),
+      );
       const password = await normalizedNewPassword(input.newPassword);
       const token = generateCustomerSessionToken();
       const replaced = await repository.replacePasswordAndRotateSessions({
@@ -520,10 +531,6 @@ export function createCustomerIdentityService(
         tokenDigest: await digestCustomerSessionToken(token, secret),
       });
       if (!replaced) throw passwordFailure();
-      await repository.markPasswordAttemptSucceeded(
-        attemptId,
-        instant.toISOString(),
-      );
       return {
         setCookie: createCustomerSessionCookie({
           now: instant,
@@ -585,7 +592,7 @@ export function createCustomerIdentityService(
         expiresAt: addSeconds(instant, passwordAuthorizationLifetimeSeconds),
         now: instant.toISOString(),
         scope: input.scope,
-        tokenDigest: await digestCustomerSessionToken(token, secret),
+        tokenDigest: await digestIdentityValue("password-authorization", token),
       });
       if (!authorization) throw genericOtpFailure();
       return {
@@ -602,7 +609,7 @@ export function createCustomerIdentityService(
       if (!token) return null;
       return repository.findPasswordAuthorization({
         now: now().toISOString(),
-        tokenDigest: await digestCustomerSessionToken(token, secret),
+        tokenDigest: await digestIdentityValue("password-authorization", token),
       });
     },
 
@@ -614,9 +621,9 @@ export function createCustomerIdentityService(
       const authorization = authorizationToken
         ? await repository.findPasswordAuthorization({
             now: now().toISOString(),
-            tokenDigest: await digestCustomerSessionToken(
+            tokenDigest: await digestIdentityValue(
+              "password-authorization",
               authorizationToken,
-              secret,
             ),
           })
         : null;
@@ -628,6 +635,14 @@ export function createCustomerIdentityService(
       }
       const password = await normalizedNewPassword(input.newPassword);
       const instant = now();
+      const attemptId = crypto.randomUUID();
+      await reservePasswordAttempt({
+        attemptKind: authorization.scope,
+        email: authorization.email,
+        id: attemptId,
+        instant,
+        request: input.request,
+      });
       const token = generateCustomerSessionToken();
       const replaced = await repository.replacePasswordWithAuthorization({
         authorizationId: authorization.id,
@@ -644,6 +659,10 @@ export function createCustomerIdentityService(
           "INVALID_AUTHORIZATION",
         );
       }
+      await repository.markPasswordAttemptSucceeded(
+        attemptId,
+        instant.toISOString(),
+      );
       return {
         setCookie: createCustomerSessionCookie({
           now: instant,

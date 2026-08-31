@@ -30,6 +30,41 @@ export interface PasswordCredentialRow extends PasswordCredentialHash {
   profileId: string;
 }
 
+interface PasswordCredentialDatabaseRow {
+  algorithm: PasswordCredentialHash["algorithm"];
+  derived_key: string;
+  email_display: string;
+  hash_bytes: 32;
+  normalization: "NFC";
+  profile_id: string;
+  salt: string;
+  work_factor: number;
+}
+
+const passwordCredentialProjection = `
+  SELECT p.id AS profile_id, p.email_display, c.algorithm,
+         c.work_factor, c.salt, c.derived_key, c.hash_bytes,
+         c.normalization
+  FROM customer_profiles p
+  INNER JOIN customer_password_credentials c ON c.profile_id = p.id`;
+
+function passwordCredentialFromRow(
+  row: PasswordCredentialDatabaseRow | null,
+): PasswordCredentialRow | null {
+  return row
+    ? {
+        algorithm: row.algorithm,
+        derivedKey: row.derived_key,
+        email: row.email_display,
+        hashBytes: row.hash_bytes,
+        normalization: row.normalization,
+        profileId: row.profile_id,
+        salt: row.salt,
+        workFactor: row.work_factor,
+      }
+    : null;
+}
+
 export class OtpChallengeRequestRejected extends Error {
   constructor(readonly reason: "cooldown" | "rate_limit") {
     super(reason);
@@ -41,6 +76,9 @@ export class PasswordAttemptRejected extends Error {
     super("rate_limit");
   }
 }
+
+export type PasswordAttemptKind =
+  "password_change" | "password_login" | "password_reset";
 
 export function createD1CustomerIdentityRepository(database: D1Database) {
   return {
@@ -384,75 +422,22 @@ export function createD1CustomerIdentityRepository(database: D1Database) {
 
     async findPasswordCredentialByEmail(email: string) {
       const row = await database
-        .prepare(
-          `SELECT p.id AS profile_id, p.email_display, c.algorithm,
-                  c.work_factor, c.salt, c.derived_key, c.hash_bytes,
-                  c.normalization
-           FROM customer_profiles p
-           INNER JOIN customer_password_credentials c ON c.profile_id = p.id
-           WHERE p.email_normalized = ?`,
-        )
+        .prepare(`${passwordCredentialProjection} WHERE p.email_normalized = ?`)
         .bind(email)
-        .first<{
-          algorithm: PasswordCredentialHash["algorithm"];
-          derived_key: string;
-          email_display: string;
-          hash_bytes: 32;
-          normalization: "NFC";
-          profile_id: string;
-          salt: string;
-          work_factor: number;
-        }>();
-      return row
-        ? {
-            algorithm: row.algorithm,
-            derivedKey: row.derived_key,
-            email: row.email_display,
-            hashBytes: row.hash_bytes,
-            normalization: row.normalization,
-            profileId: row.profile_id,
-            salt: row.salt,
-            workFactor: row.work_factor,
-          }
-        : null;
+        .first<PasswordCredentialDatabaseRow>();
+      return passwordCredentialFromRow(row);
     },
 
     async findPasswordCredentialByProfileId(profileId: string) {
       const row = await database
-        .prepare(
-          `SELECT p.id AS profile_id, p.email_display, c.algorithm,
-                  c.work_factor, c.salt, c.derived_key, c.hash_bytes,
-                  c.normalization
-           FROM customer_profiles p
-           INNER JOIN customer_password_credentials c ON c.profile_id = p.id
-           WHERE p.id = ?`,
-        )
+        .prepare(`${passwordCredentialProjection} WHERE p.id = ?`)
         .bind(profileId)
-        .first<{
-          algorithm: PasswordCredentialHash["algorithm"];
-          derived_key: string;
-          email_display: string;
-          hash_bytes: 32;
-          normalization: "NFC";
-          profile_id: string;
-          salt: string;
-          work_factor: number;
-        }>();
-      return row
-        ? {
-            algorithm: row.algorithm,
-            derivedKey: row.derived_key,
-            email: row.email_display,
-            hashBytes: row.hash_bytes,
-            normalization: row.normalization,
-            profileId: row.profile_id,
-            salt: row.salt,
-            workFactor: row.work_factor,
-          }
-        : null;
+        .first<PasswordCredentialDatabaseRow>();
+      return passwordCredentialFromRow(row);
     },
 
     async reservePasswordAttempt(input: {
+      attemptKind: PasswordAttemptKind;
       createdAt: string;
       emailDigest: string;
       id: string;
@@ -462,10 +447,16 @@ export function createD1CustomerIdentityRepository(database: D1Database) {
         await database
           .prepare(
             `INSERT INTO customer_password_attempts
-             (id, email_digest, request_ip_digest, created_at)
-             VALUES (?, ?, ?, ?)`,
+             (id, attempt_kind, email_digest, request_ip_digest, created_at)
+             VALUES (?, ?, ?, ?, ?)`,
           )
-          .bind(input.id, input.emailDigest, input.ipDigest, input.createdAt)
+          .bind(
+            input.id,
+            input.attemptKind,
+            input.emailDigest,
+            input.ipDigest,
+            input.createdAt,
+          )
           .run();
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

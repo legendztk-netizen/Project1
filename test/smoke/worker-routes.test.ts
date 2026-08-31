@@ -424,6 +424,10 @@ describe("Cloudflare Worker route surfaces", () => {
     });
     expect(registrationVerified.status).toBe(302);
     const registrationCookie = cookieHeader(registrationVerified);
+    const [originalProfile] = runLocalD1<{ id: string }>(
+      `SELECT id FROM customer_profiles WHERE email_normalized = '${email}'`,
+    );
+    expect(originalProfile?.id).toBeTruthy();
     const securityPage = await fetch(`${origin}/account/security?welcome=1`, {
       headers: { cookie: registrationCookie },
     });
@@ -505,6 +509,49 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(renderedText(await wrongUnknown.text())).toContain(
       "The email or password is incorrect.",
     );
+
+    const hostileChange = new FormData();
+    hostileChange.set("intent", "change-current");
+    hostileChange.set("currentPassword", initialPassword);
+    hostileChange.set("newPassword", changedPassword);
+    hostileChange.set("confirmPassword", changedPassword);
+    expect([400, 403]).toContain(
+      (
+        await fetch(`${origin}/account/security`, {
+          body: hostileChange,
+          headers: {
+            cookie: passwordCookie,
+            origin: "https://evil.example",
+          },
+          method: "POST",
+        })
+      ).status,
+    );
+
+    const rejectedNewPassword = new FormData();
+    rejectedNewPassword.set("intent", "change-current");
+    rejectedNewPassword.set("currentPassword", initialPassword);
+    rejectedNewPassword.set("newPassword", "too short");
+    rejectedNewPassword.set("confirmPassword", "too short");
+    expect(
+      (
+        await fetch(`${origin}/account/security`, {
+          body: rejectedNewPassword,
+          headers: { cookie: passwordCookie, origin },
+          method: "POST",
+        })
+      ).status,
+    ).toBe(422);
+    expect(
+      runLocalD1<{ attempt_kind: string; succeeded_at: string | null }>(
+        `SELECT attempt_kind, succeeded_at FROM customer_password_attempts
+         WHERE attempt_kind = 'password_change'
+         ORDER BY rowid DESC LIMIT 1`,
+      )[0],
+    ).toMatchObject({
+      attempt_kind: "password_change",
+      succeeded_at: expect.any(String),
+    });
 
     const change = new FormData();
     change.set("intent", "change-current");
@@ -604,20 +651,28 @@ describe("Cloudflare Worker route surfaces", () => {
       form.set("confirmPassword", resetPassword);
       return form;
     }
-    const competingResets = await Promise.all([
-      fetch(`${origin}/reset-password`, {
-        body: resetPasswordForm(),
-        headers: { cookie: resetAuthorizationCookie, origin },
-        method: "POST",
-        redirect: "manual",
-      }),
-      fetch(`${origin}/reset-password`, {
-        body: resetPasswordForm(),
-        headers: { cookie: resetAuthorizationCookie, origin },
-        method: "POST",
-        redirect: "manual",
-      }),
-    ]);
+    expect([400, 403]).toContain(
+      (
+        await fetch(`${origin}/reset-password`, {
+          body: resetPasswordForm(),
+          headers: {
+            cookie: resetAuthorizationCookie,
+            origin: "https://evil.example",
+          },
+          method: "POST",
+        })
+      ).status,
+    );
+    const competingResets = await Promise.all(
+      Array.from({ length: 2 }, () =>
+        fetch(`${origin}/reset-password`, {
+          body: resetPasswordForm(),
+          headers: { cookie: resetAuthorizationCookie, origin },
+          method: "POST",
+          redirect: "manual",
+        }),
+      ),
+    );
     const successfulResets = competingResets.filter(
       (response) =>
         response.headers.get("location") === "/account/security?saved=1",
@@ -644,6 +699,59 @@ describe("Cloudflare Worker route surfaces", () => {
     ).toBe(200);
     expect((await passwordSignIn(otpChangedPassword)).status).toBe(422);
     expect((await passwordSignIn(resetPassword)).status).toBe(302);
+
+    runLocalD1(
+      `UPDATE customer_otp_challenges
+       SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-61 seconds')
+       WHERE email_normalized = '${email}'`,
+    );
+    const limitedResetRequest = await requestEmailOtp({
+      email,
+      path: "/forgot-password",
+    });
+    if (!limitedResetRequest.challenge) {
+      throw new Error("Expected rate-limit reset code");
+    }
+    const limitedResetVerified = await verifyEmailOtp({
+      challengeId: limitedResetRequest.challenge.challengeId,
+      code: limitedResetRequest.challenge.code,
+      path: "/forgot-password",
+    });
+    const limitedResetCookie = cookieHeader(limitedResetVerified);
+    const [resetAttempt] = runLocalD1<{
+      email_digest: string;
+      request_ip_digest: string;
+    }>(
+      `SELECT email_digest, request_ip_digest FROM customer_password_attempts
+       WHERE attempt_kind = 'password_reset' LIMIT 1`,
+    );
+    if (!resetAttempt) throw new Error("Expected a reset attempt digest");
+    runLocalD1(
+      `DELETE FROM customer_password_attempts
+       WHERE attempt_kind = 'password_reset'`,
+    );
+    runLocalD1(
+      `WITH RECURSIVE attempts(number) AS (
+         SELECT 1 UNION ALL SELECT number + 1 FROM attempts WHERE number < 10
+       )
+       INSERT INTO customer_password_attempts
+       (id, attempt_kind, email_digest, request_ip_digest, created_at)
+       SELECT 'reset-limit-' || number, 'password_reset',
+              '${resetAttempt.email_digest}',
+              '${resetAttempt.request_ip_digest}',
+              strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+       FROM attempts`,
+    );
+    expect(
+      (
+        await fetch(`${origin}/reset-password`, {
+          body: resetPasswordForm(),
+          headers: { cookie: limitedResetCookie, origin },
+          method: "POST",
+        })
+      ).status,
+    ).toBe(429);
+
     const replay = await fetch(`${origin}/reset-password`, {
       body: resetPasswordForm(),
       headers: { cookie: resetAuthorizationCookie, origin },
@@ -698,6 +806,25 @@ describe("Cloudflare Worker route surfaces", () => {
         })
       ).status,
     ).toBe(200);
+    runLocalD1(
+      `UPDATE customer_otp_challenges
+       SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-61 seconds')
+       WHERE email_normalized = '${skippedEmail}'`,
+    );
+    const skippedOtpSignIn = await requestEmailOtp({
+      email: skippedEmail,
+      path: "/sign-in",
+    });
+    if (!skippedOtpSignIn.challenge) {
+      throw new Error("Expected OTP sign-in after skipping password");
+    }
+    const skippedOtpVerified = await verifyEmailOtp({
+      challengeId: skippedOtpSignIn.challenge.challengeId,
+      code: skippedOtpSignIn.challenge.code,
+      path: "/sign-in",
+    });
+    expect(skippedOtpVerified.status).toBe(302);
+    const skippedOtpCookie = cookieHeader(skippedOtpVerified);
     const addLaterForm = new FormData();
     addLaterForm.set("intent", "set");
     addLaterForm.set("newPassword", "Added later customer passphrase 2026");
@@ -706,7 +833,7 @@ describe("Cloudflare Worker route surfaces", () => {
       (
         await fetch(`${origin}/account/security`, {
           body: addLaterForm,
-          headers: { cookie: skippedCookie, origin },
+          headers: { cookie: skippedOtpCookie, origin },
           method: "POST",
           redirect: "manual",
         })
@@ -728,6 +855,12 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(passwordLimitStatuses.slice(0, 10)).toEqual(Array(10).fill(422));
     expect(passwordLimitStatuses[10]).toBe(429);
 
+    expect(
+      runLocalD1<{ id: string }>(
+        `SELECT id FROM customer_profiles WHERE email_normalized = '${email}'`,
+      ),
+    ).toEqual([{ id: originalProfile?.id ?? "" }]);
+
     const csrfForm = new FormData();
     csrfForm.set("intent", "password");
     csrfForm.set("email", email);
@@ -741,7 +874,7 @@ describe("Cloudflare Worker route surfaces", () => {
         })
       ).status,
     );
-  });
+  }, 120_000);
 
   it("fails closed for cooldown, supersession, expiry, malformed values and attempt lockout", async () => {
     const locked = await requestEmailOtp({

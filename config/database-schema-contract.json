@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 25,
+  "schemaVersion": 26,
   "migrations": [
     "0000_initial_catalog_release.sql",
     "0001_add_admin_identities.sql",
@@ -25,6 +25,7 @@
     "0021_customer_otp_delivery_state.sql",
     "0022_customer_password_credentials.sql",
     "0023_count_only_failed_password_attempts.sql",
-    "0024_password_authorization_consumption_nonce.sql"
+    "0024_password_authorization_consumption_nonce.sql",
+    "0025_scope_password_attempt_limits.sql"
   ]
 }

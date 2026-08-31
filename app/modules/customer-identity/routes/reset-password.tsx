@@ -57,7 +57,10 @@ export async function action({ context, request }: Route.ActionArgs) {
     return redirect("/account/security?saved=1", { headers });
   } catch (error) {
     if (!(error instanceof CustomerIdentityError)) throw error;
-    return data({ error: error.message }, { status: 422 });
+    return data(
+      { error: error.message },
+      { status: error.code === "RATE_LIMITED" ? 429 : 422 },
+    );
   }
 }
 
