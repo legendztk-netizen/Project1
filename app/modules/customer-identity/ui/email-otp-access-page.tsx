@@ -1,4 +1,4 @@
-import { ArrowRight, Mail, ShieldCheck } from "lucide-react";
+import { ArrowRight, KeyRound, Mail, ShieldCheck } from "lucide-react";
 import { Form, Link, useNavigation } from "react-router";
 
 import type { EmailOtpPurpose } from "../domain/email-otp";
@@ -9,11 +9,12 @@ export interface EmailOtpActionData {
   email?: string;
   error?: string;
   localPreviewCode?: string | null;
-  step?: "email" | "verify";
+  step?: "email" | "password" | "verify";
 }
 
 export function EmailOtpAccessPage(input: {
   actionData?: EmailOtpActionData;
+  initialMethod?: "email-code" | "password";
   purpose: EmailOtpPurpose;
   returnTo: string;
 }) {
@@ -21,6 +22,10 @@ export function EmailOtpAccessPage(input: {
   const busy = navigation.state !== "idle";
   const register = input.purpose === "register";
   const verify = input.actionData?.step === "verify";
+  const password =
+    !register &&
+    (input.actionData?.step === "password" ||
+      (!input.actionData?.step && input.initialMethod === "password"));
   const title = register ? "Create your account" : "Sign in to your account";
 
   return (
@@ -29,17 +34,42 @@ export function EmailOtpAccessPage(input: {
       <main className="customer-auth-page">
         <section className="customer-auth-panel">
           <span className="customer-auth-icon" aria-hidden="true">
-            {verify ? <ShieldCheck size={24} /> : <Mail size={24} />}
+            {verify ? (
+              <ShieldCheck size={24} />
+            ) : password ? (
+              <KeyRound size={24} />
+            ) : (
+              <Mail size={24} />
+            )}
           </span>
           <span className="eyebrow">Personal Center</span>
           <h1>{verify ? "Enter your email code" : title}</h1>
           <p>
             {verify
               ? `We sent a six-digit code to ${input.actionData?.email ?? "your email"}. It expires in 10 minutes.`
-              : register
-                ? "Use your email to create a verified customer account. No password is required."
-                : "Use a six-digit email code to sign in without a password."}
+              : password
+                ? "Enter your email and password, or switch to an email code at any time."
+                : register
+                  ? "Use your email to create a verified customer account. No password is required."
+                  : "Use a six-digit email code to sign in without a password."}
           </p>
+
+          {!register && !verify ? (
+            <nav className="customer-auth-methods" aria-label="Sign-in method">
+              <Link
+                aria-current={!password ? "page" : undefined}
+                to={`/sign-in?returnTo=${encodeURIComponent(input.returnTo)}`}
+              >
+                Email code
+              </Link>
+              <Link
+                aria-current={password ? "page" : undefined}
+                to={`/sign-in?method=password&returnTo=${encodeURIComponent(input.returnTo)}`}
+              >
+                Password
+              </Link>
+            </nav>
+          ) : null}
 
           {input.actionData?.error ? (
             <div className="customer-auth-error" role="alert">
@@ -58,9 +88,32 @@ export function EmailOtpAccessPage(input: {
             <input
               name="intent"
               type="hidden"
-              value={verify ? "verify" : "request"}
+              value={password ? "password" : verify ? "verify" : "request"}
             />
-            {verify ? (
+            {password ? (
+              <>
+                <label htmlFor="customer-email">Email address</label>
+                <input
+                  autoComplete="email"
+                  autoFocus
+                  defaultValue={input.actionData?.email ?? ""}
+                  id="customer-email"
+                  inputMode="email"
+                  name="email"
+                  placeholder="you@company.com"
+                  required
+                  type="email"
+                />
+                <label htmlFor="customer-password">Password</label>
+                <input
+                  autoComplete="current-password"
+                  id="customer-password"
+                  name="password"
+                  required
+                  type="password"
+                />
+              </>
+            ) : verify ? (
               <>
                 <input
                   name="challengeId"
@@ -108,14 +161,22 @@ export function EmailOtpAccessPage(input: {
             >
               {busy
                 ? "Please wait..."
-                : verify
-                  ? register
-                    ? "Verify and create account"
-                    : "Verify and sign in"
-                  : "Send email code"}
+                : password
+                  ? "Sign in with password"
+                  : verify
+                    ? register
+                      ? "Verify and create account"
+                      : "Verify and sign in"
+                    : "Send email code"}
               {!busy ? <ArrowRight size={18} /> : null}
             </button>
           </Form>
+
+          {password ? (
+            <Link className="customer-auth-switch" to="/forgot-password">
+              Forgot password?
+            </Link>
+          ) : null}
 
           {verify ? (
             <Link

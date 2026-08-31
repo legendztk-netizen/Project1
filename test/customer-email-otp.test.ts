@@ -21,6 +21,16 @@ import {
   readCustomerSessionToken,
 } from "../app/modules/customer-identity/domain/customer-session";
 import type { createD1CustomerIdentityRepository } from "../app/modules/customer-identity/infrastructure/d1-customer-identity-repository";
+import {
+  customerPasswordAlgorithm,
+  customerPasswordMaximumLength,
+  customerPasswordMinimumLength,
+  customerPasswordWorkFactor,
+  hashCustomerPassword,
+  PasswordPolicyError,
+  validatedCustomerPassword,
+  verifyCustomerPassword,
+} from "../app/modules/customer-identity/domain/customer-password";
 
 describe("customer email OTP", () => {
   it("uses the ticket-defined lifetime, cooldown and attempt limit", () => {
@@ -139,5 +149,64 @@ describe("customer session", () => {
     const cookie = clearCustomerSessionCookie(false);
     expect(cookie).toContain("Max-Age=0");
     expect(cookie).toContain("Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+  });
+});
+
+describe("customer password", () => {
+  it("creates unique-salted Worker-compatible adaptive hashes", async () => {
+    const password = "A long customer passphrase 2026";
+    const [first, second] = await Promise.all([
+      hashCustomerPassword(password),
+      hashCustomerPassword(password),
+    ]);
+
+    expect(first).toMatchObject({
+      algorithm: customerPasswordAlgorithm,
+      hashBytes: 32,
+      normalization: "NFC",
+      workFactor: customerPasswordWorkFactor,
+    });
+    expect(first.salt).not.toBe(second.salt);
+    expect(first.derivedKey).not.toBe(second.derivedKey);
+    expect(JSON.stringify(first)).not.toContain(password);
+    await expect(verifyCustomerPassword(password, first)).resolves.toBe(true);
+    await expect(
+      verifyCustomerPassword("A different customer passphrase", first),
+    ).resolves.toBe(false);
+  });
+
+  it("accepts Unicode passphrases without composition rules", async () => {
+    await expect(
+      validatedCustomerPassword("液压系统 专用 长密码 2026"),
+    ).resolves.toBe("液压系统 专用 长密码 2026");
+  });
+
+  it("rejects short, overlong and common values without truncation", async () => {
+    await expect(validatedCustomerPassword("too short")).rejects.toMatchObject({
+      code: "TOO_SHORT",
+    });
+    await expect(
+      validatedCustomerPassword("x".repeat(customerPasswordMaximumLength + 1)),
+    ).rejects.toMatchObject({ code: "TOO_LONG" });
+    await expect(
+      validatedCustomerPassword("correcthorsebatterystaple"),
+    ).rejects.toMatchObject({ code: "COMMON_PASSWORD" });
+    expect(customerPasswordMinimumLength).toBe(15);
+    expect(new PasswordPolicyError("mismatch", "PASSWORD_MISMATCH").code).toBe(
+      "PASSWORD_MISMATCH",
+    );
+  });
+
+  it("allows the compromised-value screening provider to be replaced", async () => {
+    const screened: string[] = [];
+    await expect(
+      validatedCustomerPassword("A unique launch passphrase", {
+        isBlocked(password) {
+          screened.push(password);
+          return false;
+        },
+      }),
+    ).resolves.toBe("A unique launch passphrase");
+    expect(screened).toEqual(["A unique launch passphrase"]);
   });
 });

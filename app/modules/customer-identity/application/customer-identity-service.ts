@@ -11,6 +11,7 @@ import {
   generateSixDigitOtp,
   isSixDigitOtp,
   normalizeCustomerEmail,
+  type EmailOtpAuthorizationScope,
   type EmailOtpPurpose,
   verifyEmailOtpDigest,
 } from "../domain/email-otp";
@@ -23,12 +24,34 @@ import {
   readCustomerSessionToken,
 } from "../domain/customer-session";
 import {
+  hashCustomerPassword,
+  type PasswordScreeningProvider,
+  PasswordPolicyError,
+  validatedCustomerPassword,
+  verifyCustomerPassword,
+} from "../domain/customer-password";
+import {
+  createPasswordAuthorizationCookie,
+  generatePasswordAuthorizationToken,
+  passwordAuthorizationLifetimeSeconds,
+  readPasswordAuthorizationToken,
+  type PasswordAuthorizationScope,
+} from "../domain/password-authorization";
+import {
   createD1CustomerIdentityRepository,
   OtpChallengeRequestRejected,
+  PasswordAttemptRejected,
 } from "../infrastructure/d1-customer-identity-repository";
 
 export type CustomerIdentityErrorCode =
-  "COOLDOWN" | "INVALID_EMAIL" | "INVALID_OTP" | "RATE_LIMITED";
+  | "COOLDOWN"
+  | "INVALID_AUTHORIZATION"
+  | "INVALID_EMAIL"
+  | "INVALID_OTP"
+  | "INVALID_PASSWORD"
+  | "PASSWORD_EXISTS"
+  | "PASSWORD_POLICY"
+  | "RATE_LIMITED";
 
 export class CustomerIdentityError extends Error {
   constructor(
@@ -101,6 +124,7 @@ export function createCustomerIdentityService(
     deliver?: typeof deliverOtp;
     now?: () => Date;
     otp?: () => string;
+    passwordScreening?: PasswordScreeningProvider;
     repository?: ReturnType<typeof createD1CustomerIdentityRepository>;
   } = {},
 ) {
@@ -110,109 +134,209 @@ export function createCustomerIdentityService(
   const secret = customerIdentitySigningKey(env);
   const now = options.now ?? (() => new Date());
   const otp = options.otp ?? generateSixDigitOtp;
+  const passwordScreening = options.passwordScreening;
 
   async function sessionDigestFromRequest(request: Request) {
     const token = readCustomerSessionToken(request);
     return token ? digestCustomerSessionToken(token, secret) : null;
   }
 
-  return {
-    async requestOtp(input: {
-      email: string;
-      purpose: EmailOtpPurpose;
-      request: Request;
-    }) {
-      const email = normalizeCustomerEmail(input.email);
-      if (!email) {
-        throw new CustomerIdentityError(
-          "Enter a valid email address.",
-          "INVALID_EMAIL",
-        );
-      }
-      const instant = now();
-      const nowIso = instant.toISOString();
-      const latest = await repository.latestRequest(email);
-      if (
-        latest &&
-        instant.getTime() - new Date(latest.created_at).getTime() <
-          emailOtpResendCooldownSeconds * 1000
-      ) {
+  async function readSession(request: Request) {
+    const digest = await sessionDigestFromRequest(request);
+    if (!digest) return null;
+    return repository.findProfileBySessionDigest({
+      digest,
+      now: now().toISOString(),
+    });
+  }
+
+  async function requestOtp(input: {
+    authorizationScope?: EmailOtpAuthorizationScope;
+    email: string;
+    purpose: EmailOtpPurpose;
+    request: Request;
+  }) {
+    const authorizationScope = input.authorizationScope ?? "session";
+    const email = normalizeCustomerEmail(input.email);
+    if (!email) {
+      throw new CustomerIdentityError(
+        "Enter a valid email address.",
+        "INVALID_EMAIL",
+      );
+    }
+    const instant = now();
+    const nowIso = instant.toISOString();
+    const latest = await repository.latestRequest(email);
+    if (
+      latest &&
+      instant.getTime() - new Date(latest.created_at).getTime() <
+        emailOtpResendCooldownSeconds * 1000
+    ) {
+      throw new CustomerIdentityError(
+        "Please wait 60 seconds before requesting another code.",
+        "COOLDOWN",
+      );
+    }
+
+    const ipDigest = await digestCustomerSessionToken(
+      requestIp(input.request, env.APP_ENV),
+      secret,
+    );
+    const recent = await repository.countRecentRequests({
+      email,
+      ipDigest,
+      since: new Date(instant.getTime() - 60 * 60 * 1000).toISOString(),
+    });
+    if (
+      recent.email >= emailOtpMaximumRequestsPerEmailHour ||
+      recent.ip >= emailOtpMaximumRequestsPerIpHour
+    ) {
+      throw new CustomerIdentityError(
+        "Too many verification requests. Please try again later.",
+        "RATE_LIMITED",
+      );
+    }
+
+    const challengeId = crypto.randomUUID();
+    const code = otp();
+    const digest = await digestEmailOtp({
+      authorizationScope,
+      challengeId,
+      code,
+      email,
+      purpose: input.purpose,
+      secret,
+    });
+    try {
+      await repository.createChallenge({
+        authorizationScope,
+        createdAt: nowIso,
+        digest,
+        email,
+        expiresAt: addSeconds(instant, emailOtpLifetimeSeconds),
+        id: challengeId,
+        ipDigest,
+        purpose: input.purpose,
+      });
+    } catch (error) {
+      if (!(error instanceof OtpChallengeRequestRejected)) throw error;
+      if (error.reason === "cooldown") {
         throw new CustomerIdentityError(
           "Please wait 60 seconds before requesting another code.",
           "COOLDOWN",
         );
       }
+      throw new CustomerIdentityError(
+        "Too many verification requests. Please try again later.",
+        "RATE_LIMITED",
+      );
+    }
 
-      const ipDigest = await digestCustomerSessionToken(
+    try {
+      await sendOtp({ code, email, env, purpose: input.purpose });
+      await repository.activateDeliveredChallenge({
+        deliveredAt: now().toISOString(),
+        email,
+        id: challengeId,
+        purpose: input.purpose,
+      });
+    } catch (error) {
+      await repository.discardUndeliveredChallenge(challengeId);
+      throw error;
+    }
+    return {
+      challengeId,
+      email,
+      localPreviewCode: env.APP_ENV === "local" ? code : null,
+    };
+  }
+
+  function genericOtpFailure() {
+    return new CustomerIdentityError(
+      "That code is invalid or has expired. Request a new code and try again.",
+      "INVALID_OTP",
+    );
+  }
+
+  async function validatedOtpChallenge(input: {
+    authorizationScope: EmailOtpAuthorizationScope;
+    challengeId: string;
+    code: string;
+    purpose: EmailOtpPurpose;
+  }) {
+    if (!isSixDigitOtp(input.code) || !input.challengeId) {
+      throw genericOtpFailure();
+    }
+    const challenge = await repository.findChallenge(input.challengeId);
+    const instant = now();
+    if (
+      !challenge ||
+      challenge.purpose !== input.purpose ||
+      challenge.authorization_scope !== input.authorizationScope ||
+      challenge.delivery_status !== "delivered" ||
+      challenge.consumed_at ||
+      challenge.superseded_at ||
+      challenge.failed_attempts >= emailOtpMaximumFailedAttempts ||
+      new Date(challenge.expires_at).getTime() <= instant.getTime()
+    ) {
+      throw genericOtpFailure();
+    }
+    const valid = await verifyEmailOtpDigest({
+      authorizationScope: challenge.authorization_scope,
+      challengeId: challenge.id,
+      code: input.code,
+      digest: challenge.otp_digest,
+      email: challenge.email_normalized,
+      purpose: challenge.purpose,
+      secret,
+    });
+    if (!valid) {
+      await repository.recordFailedAttempt(challenge.id);
+      throw genericOtpFailure();
+    }
+    return { challenge, instant };
+  }
+
+  function passwordFailure() {
+    return new CustomerIdentityError(
+      "The email or password is incorrect.",
+      "INVALID_PASSWORD",
+    );
+  }
+
+  async function passwordAttemptDigests(input: {
+    email: string;
+    request: Request;
+  }) {
+    return {
+      emailDigest: await digestCustomerSessionToken(input.email, secret),
+      ipDigest: await digestCustomerSessionToken(
         requestIp(input.request, env.APP_ENV),
         secret,
-      );
-      const recent = await repository.countRecentRequests({
-        email,
-        ipDigest,
-        since: new Date(instant.getTime() - 60 * 60 * 1000).toISOString(),
-      });
-      if (
-        recent.email >= emailOtpMaximumRequestsPerEmailHour ||
-        recent.ip >= emailOtpMaximumRequestsPerIpHour
-      ) {
-        throw new CustomerIdentityError(
-          "Too many verification requests. Please try again later.",
-          "RATE_LIMITED",
-        );
-      }
+      ),
+    };
+  }
 
-      const challengeId = crypto.randomUUID();
-      const code = otp();
-      const digest = await digestEmailOtp({
-        challengeId,
-        code,
-        email,
-        purpose: input.purpose,
-        secret,
-      });
-      try {
-        await repository.createChallenge({
-          createdAt: nowIso,
-          digest,
-          email,
-          expiresAt: addSeconds(instant, emailOtpLifetimeSeconds),
-          id: challengeId,
-          ipDigest,
-          purpose: input.purpose,
-        });
-      } catch (error) {
-        if (!(error instanceof OtpChallengeRequestRejected)) throw error;
-        if (error.reason === "cooldown") {
-          throw new CustomerIdentityError(
-            "Please wait 60 seconds before requesting another code.",
-            "COOLDOWN",
-          );
-        }
-        throw new CustomerIdentityError(
-          "Too many verification requests. Please try again later.",
-          "RATE_LIMITED",
-        );
-      }
+  async function normalizedNewPassword(password: string) {
+    try {
+      return await validatedCustomerPassword(password, passwordScreening);
+    } catch (error) {
+      if (!(error instanceof PasswordPolicyError)) throw error;
+      throw new CustomerIdentityError(error.message, "PASSWORD_POLICY");
+    }
+  }
 
-      try {
-        await sendOtp({ code, email, env, purpose: input.purpose });
-        await repository.activateDeliveredChallenge({
-          deliveredAt: now().toISOString(),
-          email,
-          id: challengeId,
-          purpose: input.purpose,
-        });
-      } catch (error) {
-        await repository.discardUndeliveredChallenge(challengeId);
-        throw error;
-      }
-      return {
-        challengeId,
-        email,
-        localPreviewCode: env.APP_ENV === "local" ? code : null,
-      };
-    },
+  const dummyCredential = {
+    algorithm: "PBKDF2-HMAC-SHA-256" as const,
+    derivedKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    hashBytes: 32 as const,
+    normalization: "NFC" as const,
+    salt: "AAAAAAAAAAAAAAAAAAAAAA",
+    workFactor: 600_000,
+  };
+
+  return {
+    requestOtp,
 
     async verifyOtp(input: {
       challengeId: string;
@@ -220,39 +344,12 @@ export function createCustomerIdentityService(
       purpose: EmailOtpPurpose;
       request: Request;
     }) {
-      const genericFailure = () =>
-        new CustomerIdentityError(
-          "That code is invalid or has expired. Request a new code and try again.",
-          "INVALID_OTP",
-        );
-      if (!isSixDigitOtp(input.code) || !input.challengeId)
-        throw genericFailure();
-      const challenge = await repository.findChallenge(input.challengeId);
-      const instant = now();
-      if (
-        !challenge ||
-        challenge.purpose !== input.purpose ||
-        challenge.delivery_status !== "delivered" ||
-        challenge.consumed_at ||
-        challenge.superseded_at ||
-        challenge.failed_attempts >= emailOtpMaximumFailedAttempts ||
-        new Date(challenge.expires_at).getTime() <= instant.getTime()
-      ) {
-        throw genericFailure();
-      }
-
-      const valid = await verifyEmailOtpDigest({
-        challengeId: challenge.id,
+      const { challenge, instant } = await validatedOtpChallenge({
+        authorizationScope: "session",
+        challengeId: input.challengeId,
         code: input.code,
-        digest: challenge.otp_digest,
-        email: challenge.email_normalized,
-        purpose: challenge.purpose,
-        secret,
+        purpose: input.purpose,
       });
-      if (!valid) {
-        await repository.recordFailedAttempt(challenge.id);
-        throw genericFailure();
-      }
 
       const existingProfile = await repository.findProfileByEmail(
         challenge.email_normalized,
@@ -272,8 +369,10 @@ export function createCustomerIdentityService(
         now: instant.toISOString(),
         tokenDigest: await digestCustomerSessionToken(token, secret),
       });
-      if (!completion.consumed || !completion.profile) throw genericFailure();
+      if (!completion.consumed || !completion.profile)
+        throw genericOtpFailure();
       return {
+        newlyRegistered: input.purpose === "register" && !existingProfile,
         profile: completion.profile,
         setCookie: createCustomerSessionCookie({
           now: instant,
@@ -283,13 +382,275 @@ export function createCustomerIdentityService(
       };
     },
 
-    async readSession(request: Request) {
-      const digest = await sessionDigestFromRequest(request);
-      if (!digest) return null;
-      return repository.findProfileBySessionDigest({
-        digest,
+    readSession,
+
+    async readPasswordStatus(request: Request) {
+      const profile = await readSession(request);
+      if (!profile) return null;
+      const credential = await repository.findPasswordCredentialByProfileId(
+        profile.id,
+      );
+      return { hasPassword: Boolean(credential), profile };
+    },
+
+    async setInitialPassword(input: { password: string; request: Request }) {
+      const profile = await readSession(input.request);
+      if (!profile) {
+        throw new CustomerIdentityError(
+          "Sign in before changing account security.",
+          "INVALID_AUTHORIZATION",
+        );
+      }
+      if (await repository.findPasswordCredentialByProfileId(profile.id)) {
+        throw new CustomerIdentityError(
+          "This account already has a password.",
+          "PASSWORD_EXISTS",
+        );
+      }
+      const password = await normalizedNewPassword(input.password);
+      const created = await repository.createPasswordCredential({
+        credential: await hashCustomerPassword(password),
         now: now().toISOString(),
+        profileId: profile.id,
       });
+      if (!created) {
+        throw new CustomerIdentityError(
+          "This account already has a password.",
+          "PASSWORD_EXISTS",
+        );
+      }
+      return profile;
+    },
+
+    async signInWithPassword(input: {
+      email: string;
+      password: string;
+      request: Request;
+    }) {
+      const email = normalizeCustomerEmail(input.email);
+      if (!email) throw passwordFailure();
+      const attemptId = crypto.randomUUID();
+      const instant = now();
+      const digests = await passwordAttemptDigests({
+        email,
+        request: input.request,
+      });
+      try {
+        await repository.reservePasswordAttempt({
+          createdAt: instant.toISOString(),
+          id: attemptId,
+          ...digests,
+        });
+      } catch (error) {
+        if (!(error instanceof PasswordAttemptRejected)) throw error;
+        throw new CustomerIdentityError(
+          "Too many sign-in attempts. Try again later or use an email code.",
+          "RATE_LIMITED",
+        );
+      }
+      const credential = await repository.findPasswordCredentialByEmail(email);
+      const valid = await verifyCustomerPassword(
+        input.password,
+        credential ?? dummyCredential,
+      );
+      if (!credential || !valid) throw passwordFailure();
+      await repository.markPasswordAttemptSucceeded(
+        attemptId,
+        instant.toISOString(),
+      );
+      const token = generateCustomerSessionToken();
+      await repository.createSessionForProfile({
+        expiresAt: addSeconds(instant, customerSessionLifetimeSeconds),
+        now: instant.toISOString(),
+        previousTokenDigest: await sessionDigestFromRequest(input.request),
+        profileId: credential.profileId,
+        sessionId: crypto.randomUUID(),
+        tokenDigest: await digestCustomerSessionToken(token, secret),
+      });
+      return {
+        setCookie: createCustomerSessionCookie({
+          now: instant,
+          secure: env.APP_ENV !== "local",
+          token,
+        }),
+      };
+    },
+
+    async changePasswordWithCurrent(input: {
+      currentPassword: string;
+      newPassword: string;
+      request: Request;
+    }) {
+      const profile = await readSession(input.request);
+      if (!profile) throw passwordFailure();
+      const credential = await repository.findPasswordCredentialByProfileId(
+        profile.id,
+      );
+      if (!credential) throw passwordFailure();
+      const attemptId = crypto.randomUUID();
+      const instant = now();
+      const digests = await passwordAttemptDigests({
+        email: profile.email,
+        request: input.request,
+      });
+      try {
+        await repository.reservePasswordAttempt({
+          createdAt: instant.toISOString(),
+          id: attemptId,
+          ...digests,
+        });
+      } catch (error) {
+        if (!(error instanceof PasswordAttemptRejected)) throw error;
+        throw new CustomerIdentityError(
+          "Too many password attempts. Try again later or use an email code.",
+          "RATE_LIMITED",
+        );
+      }
+      if (!(await verifyCustomerPassword(input.currentPassword, credential))) {
+        throw passwordFailure();
+      }
+      const password = await normalizedNewPassword(input.newPassword);
+      const token = generateCustomerSessionToken();
+      const replaced = await repository.replacePasswordAndRotateSessions({
+        credential: await hashCustomerPassword(password),
+        expiresAt: addSeconds(instant, customerSessionLifetimeSeconds),
+        now: instant.toISOString(),
+        profileId: profile.id,
+        sessionId: crypto.randomUUID(),
+        tokenDigest: await digestCustomerSessionToken(token, secret),
+      });
+      if (!replaced) throw passwordFailure();
+      await repository.markPasswordAttemptSucceeded(
+        attemptId,
+        instant.toISOString(),
+      );
+      return {
+        setCookie: createCustomerSessionCookie({
+          now: instant,
+          secure: env.APP_ENV !== "local",
+          token,
+        }),
+      };
+    },
+
+    async requestPasswordAuthorizationOtp(input: {
+      email?: string;
+      request: Request;
+      scope: PasswordAuthorizationScope;
+    }) {
+      let email = input.email ?? "";
+      if (input.scope === "password_change") {
+        const profile = await readSession(input.request);
+        if (!profile) {
+          throw new CustomerIdentityError(
+            "Sign in before changing account security.",
+            "INVALID_AUTHORIZATION",
+          );
+        }
+        email = profile.email;
+      }
+      return requestOtp({
+        authorizationScope: input.scope,
+        email,
+        purpose: "sign_in",
+        request: input.request,
+      });
+    },
+
+    async verifyPasswordAuthorizationOtp(input: {
+      challengeId: string;
+      code: string;
+      request: Request;
+      scope: PasswordAuthorizationScope;
+    }) {
+      const { challenge, instant } = await validatedOtpChallenge({
+        authorizationScope: input.scope,
+        challengeId: input.challengeId,
+        code: input.code,
+        purpose: "sign_in",
+      });
+      const profile = await repository.findProfileByEmail(
+        challenge.email_normalized,
+      );
+      if (!profile) throw genericOtpFailure();
+      if (input.scope === "password_change") {
+        const session = await readSession(input.request);
+        if (!session || session.id !== profile.id) throw genericOtpFailure();
+      }
+      const token = generatePasswordAuthorizationToken();
+      const authorization = await repository.createPasswordAuthorization({
+        authorizationId: crypto.randomUUID(),
+        challengeId: challenge.id,
+        email: challenge.email_normalized,
+        expiresAt: addSeconds(instant, passwordAuthorizationLifetimeSeconds),
+        now: instant.toISOString(),
+        scope: input.scope,
+        tokenDigest: await digestCustomerSessionToken(token, secret),
+      });
+      if (!authorization) throw genericOtpFailure();
+      return {
+        setCookie: createPasswordAuthorizationCookie({
+          now: instant,
+          secure: env.APP_ENV !== "local",
+          token,
+        }),
+      };
+    },
+
+    async readPasswordAuthorization(request: Request) {
+      const token = readPasswordAuthorizationToken(request);
+      if (!token) return null;
+      return repository.findPasswordAuthorization({
+        now: now().toISOString(),
+        tokenDigest: await digestCustomerSessionToken(token, secret),
+      });
+    },
+
+    async replacePasswordWithAuthorization(input: {
+      newPassword: string;
+      request: Request;
+    }) {
+      const authorizationToken = readPasswordAuthorizationToken(input.request);
+      const authorization = authorizationToken
+        ? await repository.findPasswordAuthorization({
+            now: now().toISOString(),
+            tokenDigest: await digestCustomerSessionToken(
+              authorizationToken,
+              secret,
+            ),
+          })
+        : null;
+      if (!authorization) {
+        throw new CustomerIdentityError(
+          "This password link has expired. Request a new email code.",
+          "INVALID_AUTHORIZATION",
+        );
+      }
+      const password = await normalizedNewPassword(input.newPassword);
+      const instant = now();
+      const token = generateCustomerSessionToken();
+      const replaced = await repository.replacePasswordWithAuthorization({
+        authorizationId: authorization.id,
+        credential: await hashCustomerPassword(password),
+        expiresAt: addSeconds(instant, customerSessionLifetimeSeconds),
+        now: instant.toISOString(),
+        profileId: authorization.profileId,
+        sessionId: crypto.randomUUID(),
+        tokenDigest: await digestCustomerSessionToken(token, secret),
+      });
+      if (!replaced) {
+        throw new CustomerIdentityError(
+          "This password link has expired. Request a new email code.",
+          "INVALID_AUTHORIZATION",
+        );
+      }
+      return {
+        setCookie: createCustomerSessionCookie({
+          now: instant,
+          secure: env.APP_ENV !== "local",
+          token,
+        }),
+      };
     },
 
     async signOut(request: Request) {

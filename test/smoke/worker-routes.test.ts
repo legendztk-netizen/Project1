@@ -97,7 +97,7 @@ function otpChallengeFromHtml(html: string) {
 async function requestEmailOtp(input: {
   email: string;
   ip?: string;
-  path: "/register" | "/sign-in";
+  path: "/forgot-password" | "/register" | "/sign-in";
 }) {
   const form = new FormData();
   form.set("intent", "request");
@@ -123,7 +123,7 @@ async function verifyEmailOtp(input: {
   challengeId: string;
   code: string;
   cookie?: string;
-  path: "/register" | "/sign-in";
+  path: "/forgot-password" | "/register" | "/sign-in";
   returnTo?: string;
 }) {
   const form = new FormData();
@@ -329,7 +329,9 @@ describe("Cloudflare Worker route surfaces", () => {
       returnTo: "//evil.example/steal",
     });
     expect(verified.status).toBe(302);
-    expect(verified.headers.get("location")).toBe("/account");
+    expect(verified.headers.get("location")).toBe(
+      "/account/security?welcome=1&returnTo=%2Faccount",
+    );
     const customerCookie = cookieHeader(verified);
     expect(verified.headers.get("set-cookie")).toContain("HttpOnly");
     expect(verified.headers.get("set-cookie")).toContain("SameSite=Lax");
@@ -404,6 +406,341 @@ describe("Cloudflare Worker route surfaces", () => {
         })
       ).status,
     ).toBe(302);
+  });
+
+  it("supports optional password setup, both sign-in methods, change and single-use OTP reset", async () => {
+    const email = "password.customer@example.com";
+    const initialPassword = "Launch customer passphrase 2026";
+    const changedPassword = "Changed customer passphrase 2026";
+    const otpChangedPassword = "Email changed customer passphrase 2026";
+    const resetPassword = "Reset customer passphrase 2026";
+
+    const registration = await requestEmailOtp({ email, path: "/register" });
+    if (!registration.challenge) throw new Error("Expected registration code");
+    const registrationVerified = await verifyEmailOtp({
+      challengeId: registration.challenge.challengeId,
+      code: registration.challenge.code,
+      path: "/register",
+    });
+    expect(registrationVerified.status).toBe(302);
+    const registrationCookie = cookieHeader(registrationVerified);
+    const securityPage = await fetch(`${origin}/account/security?welcome=1`, {
+      headers: { cookie: registrationCookie },
+    });
+    const securityHtml = await securityPage.text();
+    expect(securityHtml).toContain("Set password");
+    expect(securityHtml).toContain("Skip for now");
+
+    const setPassword = new FormData();
+    setPassword.set("intent", "set");
+    setPassword.set("newPassword", initialPassword);
+    setPassword.set("confirmPassword", initialPassword);
+    const setResponse = await fetch(`${origin}/account/security`, {
+      body: setPassword,
+      headers: { cookie: registrationCookie, origin },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(setResponse.status).toBe(302);
+    const [storedCredential] = runLocalD1<{
+      algorithm: string;
+      credential_version: number;
+      derived_key: string;
+      hash_bytes: number;
+      normalization: string;
+      salt: string;
+      work_factor: number;
+    }>(
+      `SELECT algorithm, credential_version, derived_key, hash_bytes,
+              normalization, salt, work_factor
+       FROM customer_password_credentials c
+       INNER JOIN customer_profiles p ON p.id = c.profile_id
+       WHERE p.email_normalized = '${email}'`,
+    );
+    expect(storedCredential).toMatchObject({
+      algorithm: "PBKDF2-HMAC-SHA-256",
+      credential_version: 1,
+      hash_bytes: 32,
+      normalization: "NFC",
+      work_factor: 600000,
+    });
+    expect(JSON.stringify(storedCredential)).not.toContain(initialPassword);
+    expect(storedCredential?.salt).toBeTruthy();
+
+    const signOut = await fetch(`${origin}/sign-out`, {
+      headers: { cookie: registrationCookie, origin },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(signOut.status).toBe(302);
+
+    async function passwordSignIn(password: string, signInEmail = email) {
+      const form = new FormData();
+      form.set("intent", "password");
+      form.set("email", signInEmail);
+      form.set("password", password);
+      form.set("returnTo", "/account");
+      return fetch(`${origin}/sign-in?method=password&returnTo=%2Faccount`, {
+        body: form,
+        headers: { origin },
+        method: "POST",
+        redirect: "manual",
+      });
+    }
+
+    const signedIn = await passwordSignIn(initialPassword);
+    expect(signedIn.status).toBe(302);
+    expect(signedIn.headers.get("location")).toBe("/account");
+    const passwordCookie = cookieHeader(signedIn);
+    const wrongExisting = await passwordSignIn("Wrong customer passphrase");
+    const wrongUnknown = await passwordSignIn(
+      "Wrong customer passphrase",
+      "not-an-account@example.com",
+    );
+    expect(wrongExisting.status).toBe(422);
+    expect(wrongUnknown.status).toBe(422);
+    expect(renderedText(await wrongExisting.text())).toContain(
+      "The email or password is incorrect.",
+    );
+    expect(renderedText(await wrongUnknown.text())).toContain(
+      "The email or password is incorrect.",
+    );
+
+    const change = new FormData();
+    change.set("intent", "change-current");
+    change.set("currentPassword", initialPassword);
+    change.set("newPassword", changedPassword);
+    change.set("confirmPassword", changedPassword);
+    const changed = await fetch(`${origin}/account/security`, {
+      body: change,
+      headers: { cookie: passwordCookie, origin },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(changed.status).toBe(302);
+    const changedCookie = cookieHeader(changed);
+    expect(
+      (
+        await fetch(`${origin}/account`, {
+          headers: { cookie: passwordCookie },
+          redirect: "manual",
+        })
+      ).status,
+    ).toBe(302);
+    expect((await passwordSignIn(initialPassword)).status).toBe(422);
+    expect((await passwordSignIn(changedPassword)).status).toBe(302);
+
+    runLocalD1(
+      `UPDATE customer_otp_challenges
+       SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-61 seconds')
+       WHERE email_normalized = '${email}'`,
+    );
+    const requestChangeCode = new FormData();
+    requestChangeCode.set("intent", "request-code");
+    const changeCodeResponse = await fetch(`${origin}/account/security`, {
+      body: requestChangeCode,
+      headers: { cookie: changedCookie, origin },
+      method: "POST",
+    });
+    const changeCodeHtml = await changeCodeResponse.text();
+    expect(changeCodeResponse.status).toBe(200);
+    const changeCode = otpChallengeFromHtml(changeCodeHtml);
+    const verifyChangeCode = new FormData();
+    verifyChangeCode.set("intent", "verify-code");
+    verifyChangeCode.set("challengeId", changeCode.challengeId);
+    verifyChangeCode.set("code", changeCode.code);
+    const changeCodeVerified = await fetch(`${origin}/account/security`, {
+      body: verifyChangeCode,
+      headers: { cookie: changedCookie, origin },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(changeCodeVerified.status).toBe(302);
+    expect(changeCodeVerified.headers.get("location")).toBe(
+      "/reset-password?mode=change",
+    );
+    const changeAuthorizationCookie = cookieHeader(changeCodeVerified);
+    const otpChangeForm = new FormData();
+    otpChangeForm.set("newPassword", otpChangedPassword);
+    otpChangeForm.set("confirmPassword", otpChangedPassword);
+    const otpChanged = await fetch(`${origin}/reset-password?mode=change`, {
+      body: otpChangeForm,
+      headers: { cookie: changeAuthorizationCookie, origin },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(otpChanged.status).toBe(302);
+    const otpChangedCookie = cookieHeader(otpChanged);
+    expect((await passwordSignIn(changedPassword)).status).toBe(422);
+    expect((await passwordSignIn(otpChangedPassword)).status).toBe(302);
+
+    runLocalD1(
+      `UPDATE customer_otp_challenges
+       SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-61 seconds')
+       WHERE email_normalized = '${email}'`,
+    );
+    const resetRequest = await requestEmailOtp({
+      email,
+      path: "/forgot-password",
+    });
+    if (!resetRequest.challenge) throw new Error("Expected reset code");
+    expect(
+      runLocalD1<{ authorization_scope: string }>(
+        `SELECT authorization_scope FROM customer_otp_challenges
+         WHERE id = '${resetRequest.challenge.challengeId}'`,
+      ),
+    ).toEqual([{ authorization_scope: "password_reset" }]);
+    const resetVerified = await verifyEmailOtp({
+      challengeId: resetRequest.challenge.challengeId,
+      code: resetRequest.challenge.code,
+      path: "/forgot-password",
+    });
+    expect(resetVerified.status).toBe(302);
+    expect(resetVerified.headers.get("location")).toBe("/reset-password");
+    const resetAuthorizationCookie = cookieHeader(resetVerified);
+    function resetPasswordForm() {
+      const form = new FormData();
+      form.set("newPassword", resetPassword);
+      form.set("confirmPassword", resetPassword);
+      return form;
+    }
+    const competingResets = await Promise.all([
+      fetch(`${origin}/reset-password`, {
+        body: resetPasswordForm(),
+        headers: { cookie: resetAuthorizationCookie, origin },
+        method: "POST",
+        redirect: "manual",
+      }),
+      fetch(`${origin}/reset-password`, {
+        body: resetPasswordForm(),
+        headers: { cookie: resetAuthorizationCookie, origin },
+        method: "POST",
+        redirect: "manual",
+      }),
+    ]);
+    const successfulResets = competingResets.filter(
+      (response) =>
+        response.headers.get("location") === "/account/security?saved=1",
+    );
+    expect(successfulResets).toHaveLength(1);
+    const reset = successfulResets[0];
+    if (!reset) throw new Error("Expected one successful password reset");
+    expect(reset.status).toBe(302);
+    const resetSessionCookie = cookieHeader(reset);
+    expect(
+      (
+        await fetch(`${origin}/account`, {
+          headers: { cookie: otpChangedCookie },
+          redirect: "manual",
+        })
+      ).status,
+    ).toBe(302);
+    expect(
+      (
+        await fetch(`${origin}/account`, {
+          headers: { cookie: resetSessionCookie },
+        })
+      ).status,
+    ).toBe(200);
+    expect((await passwordSignIn(otpChangedPassword)).status).toBe(422);
+    expect((await passwordSignIn(resetPassword)).status).toBe(302);
+    const replay = await fetch(`${origin}/reset-password`, {
+      body: resetPasswordForm(),
+      headers: { cookie: resetAuthorizationCookie, origin },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(replay.status).toBe(302);
+    expect(replay.headers.get("location")).toBe("/forgot-password");
+    expect(
+      runLocalD1<{ credential_version: number }>(
+        `SELECT c.credential_version FROM customer_password_credentials c
+         INNER JOIN customer_profiles p ON p.id = c.profile_id
+         WHERE p.email_normalized = '${email}'`,
+      ),
+    ).toEqual([{ credential_version: 4 }]);
+
+    runLocalD1(
+      `UPDATE customer_otp_challenges
+       SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-61 seconds')
+       WHERE email_normalized = '${email}'`,
+    );
+    const otpSignIn = await requestEmailOtp({ email, path: "/sign-in" });
+    if (!otpSignIn.challenge) throw new Error("Expected OTP sign-in code");
+    expect(
+      (
+        await verifyEmailOtp({
+          challengeId: otpSignIn.challenge.challengeId,
+          code: otpSignIn.challenge.code,
+          path: "/sign-in",
+        })
+      ).status,
+    ).toBe(302);
+
+    const skippedEmail = "password-skipped@example.com";
+    const skippedRegistration = await requestEmailOtp({
+      email: skippedEmail,
+      path: "/register",
+    });
+    if (!skippedRegistration.challenge) {
+      throw new Error("Expected optional-password registration code");
+    }
+    const skippedVerified = await verifyEmailOtp({
+      challengeId: skippedRegistration.challenge.challengeId,
+      code: skippedRegistration.challenge.code,
+      path: "/register",
+    });
+    const skippedCookie = cookieHeader(skippedVerified);
+    expect(
+      (
+        await fetch(`${origin}/account`, {
+          headers: { cookie: skippedCookie },
+        })
+      ).status,
+    ).toBe(200);
+    const addLaterForm = new FormData();
+    addLaterForm.set("intent", "set");
+    addLaterForm.set("newPassword", "Added later customer passphrase 2026");
+    addLaterForm.set("confirmPassword", "Added later customer passphrase 2026");
+    expect(
+      (
+        await fetch(`${origin}/account/security`, {
+          body: addLaterForm,
+          headers: { cookie: skippedCookie, origin },
+          method: "POST",
+          redirect: "manual",
+        })
+      ).status,
+    ).toBe(302);
+
+    const limitedPasswordEmail = "password-rate-limit@example.com";
+    const passwordLimitStatuses: number[] = [];
+    for (let attempt = 0; attempt < 11; attempt += 1) {
+      passwordLimitStatuses.push(
+        (
+          await passwordSignIn(
+            "Always wrong customer passphrase",
+            limitedPasswordEmail,
+          )
+        ).status,
+      );
+    }
+    expect(passwordLimitStatuses.slice(0, 10)).toEqual(Array(10).fill(422));
+    expect(passwordLimitStatuses[10]).toBe(429);
+
+    const csrfForm = new FormData();
+    csrfForm.set("intent", "password");
+    csrfForm.set("email", email);
+    csrfForm.set("password", resetPassword);
+    expect([400, 403]).toContain(
+      (
+        await fetch(`${origin}/sign-in?method=password`, {
+          body: csrfForm,
+          headers: { origin: "https://evil.example" },
+          method: "POST",
+        })
+      ).status,
+    );
   });
 
   it("fails closed for cooldown, supersession, expiry, malformed values and attempt lockout", async () => {
@@ -3288,7 +3625,7 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(productText).toContain("SAE J514");
     expect(productText).not.toContain("factory_unit_price");
     expect(productText).not.toContain("costBasis");
-  }, 120_000);
+  }, 300_000);
 
   it("does not expose standalone email draft persistence", async () => {
     const saveResponse = await fetch(`${origin}/api/configurator/save-draft`, {

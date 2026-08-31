@@ -59,7 +59,11 @@ export async function handleEmailOtpAction(input: {
         purpose: input.purpose,
         request: input.request,
       });
-      return redirect(returnTo, {
+      const destination =
+        input.purpose === "register" && result.newlyRegistered
+          ? `/account/security?welcome=1&returnTo=${encodeURIComponent(returnTo)}`
+          : returnTo;
+      return redirect(destination, {
         headers: { "Set-Cookie": result.setCookie },
       });
     }

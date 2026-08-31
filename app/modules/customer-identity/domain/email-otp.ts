@@ -1,6 +1,8 @@
 import { encodeBase64Url } from "./base64-url";
 
 export type EmailOtpPurpose = "register" | "sign_in";
+export type EmailOtpAuthorizationScope =
+  "password_change" | "password_reset" | "session";
 
 export const emailOtpLifetimeSeconds = 10 * 60;
 export const emailOtpResendCooldownSeconds = 60;
@@ -46,6 +48,7 @@ export function isSixDigitOtp(value: string) {
 }
 
 export async function digestEmailOtp(input: {
+  authorizationScope?: EmailOtpAuthorizationScope;
   challengeId: string;
   code: string;
   email: string;
@@ -57,7 +60,11 @@ export async function digestEmailOtp(input: {
     "HMAC",
     key,
     encoder.encode(
-      `${input.challengeId}\n${input.email}\n${input.purpose}\n${input.code}`,
+      `${input.challengeId}\n${input.email}\n${input.purpose}${
+        input.authorizationScope && input.authorizationScope !== "session"
+          ? `\n${input.authorizationScope}`
+          : ""
+      }\n${input.code}`,
     ),
   );
   return encodeBase64Url(new Uint8Array(signature));
@@ -75,7 +82,11 @@ export async function verifyEmailOtpDigest(
     "HMAC",
     key,
     encoder.encode(
-      `${input.challengeId}\n${input.email}\n${input.purpose}\n${input.code}`,
+      `${input.challengeId}\n${input.email}\n${input.purpose}${
+        input.authorizationScope && input.authorizationScope !== "session"
+          ? `\n${input.authorizationScope}`
+          : ""
+      }\n${input.code}`,
     ),
   );
   const actualSignature = encodeBase64Url(new Uint8Array(signature));

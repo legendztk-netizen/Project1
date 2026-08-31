@@ -1,5 +1,5 @@
 import { LogOut, UserRound } from "lucide-react";
-import { Form, redirect } from "react-router";
+import { Form, Link, redirect } from "react-router";
 
 import type { Route } from "./+types/customer-account";
 import { cloudflareContext } from "#workers/context";
@@ -32,6 +32,9 @@ export default function CustomerAccount({ loaderData }: Route.ComponentProps) {
               <dd>{loaderData.profile.email}</dd>
             </div>
           </dl>
+          <Link className="button button-secondary" to="/account/security">
+            Account security
+          </Link>
           <Form action="/sign-out" method="post">
             <button className="button button-secondary" type="submit">
               <LogOut size={17} /> Sign out

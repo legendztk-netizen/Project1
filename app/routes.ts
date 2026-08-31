@@ -30,6 +30,18 @@ export default [
   route("sign-out", "modules/customer-identity/routes/sign-out.ts"),
   route("account", "modules/customer-identity/routes/customer-account.tsx"),
   route(
+    "account/security",
+    "modules/customer-identity/routes/account-security.tsx",
+  ),
+  route(
+    "forgot-password",
+    "modules/customer-identity/routes/forgot-password.tsx",
+  ),
+  route(
+    "reset-password",
+    "modules/customer-identity/routes/reset-password.tsx",
+  ),
+  route(
     "assembly-measurement-guide",
     "modules/storefront/routes/assembly-measurement-guide.tsx",
   ),
