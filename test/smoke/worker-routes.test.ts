@@ -2996,6 +2996,9 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(staleConfiguredQuoteList).toContain(
       "This saved configuration no longer matches the current catalog",
     );
+    expect(staleConfiguredQuoteList).toMatch(
+      /The selected Hose or Catalog Release changed|One or both Hose End combinations changed|current configuration reference data is unavailable/,
+    );
     expect(staleConfiguredQuoteList).toContain("Edit Configuration");
     expect(staleConfiguredQuoteList).toContain("Duplicate and Edit");
     const staleConfiguredEdit = await (
@@ -3546,7 +3549,18 @@ describe("Cloudflare Worker route surfaces", () => {
        UPDATE catalog_skus
        SET supply_availability = 'discontinued'
        WHERE import_id = '${replacementImportId}'
-         AND sku = 'QDC_16028_PLG_04_FNPT_04';`,
+         AND sku = 'QDC_16028_PLG_04_FNPT_04';
+       UPDATE catalog_sales_offers
+       SET reference_price_usd = 9.99
+       WHERE import_id = '${replacementImportId}'
+         AND base_sku = '601R1_001';
+       INSERT INTO quote_reference_discounts (
+         release_id, sku, line_kind, minimum_quantity,
+         discount_percent, record_version, updated_at
+       ) VALUES (
+         '${replacementDraft.id}', '601R1_001', 'length_based_hose', 1,
+         10, 1, CURRENT_TIMESTAMP
+       );`,
     );
     const [replacementDraftState] = runLocalD1<{ version: number }>(
       `SELECT version FROM catalog_releases WHERE id = '${replacementDraft.id}'`,
@@ -3581,6 +3595,79 @@ describe("Cloudflare Worker route surfaces", () => {
       replacementPublishResponse.status,
       await replacementPublishResponse.text(),
     ).toBe(302);
+    expect(
+      runLocalD1Failure(
+        `UPDATE quote_reference_discounts
+         SET discount_percent = 15, record_version = record_version + 1
+         WHERE release_id = '${replacementDraft.id}'
+           AND sku = '601R1_001'`,
+      ),
+    ).toContain("IMMUTABLE_QUOTE_REFERENCE_DISCOUNT");
+    expect(
+      runLocalD1Failure(
+        `INSERT INTO quote_reference_discounts (
+           release_id, sku, line_kind, minimum_quantity,
+           discount_percent, record_version, updated_at
+         ) VALUES (
+           '${draft.id}', '601R1_001', 'length_based_hose', 1,
+           5, 1, CURRENT_TIMESTAMP
+         )`,
+      ),
+    ).toContain("IMMUTABLE_QUOTE_REFERENCE_DISCOUNT");
+
+    const [retainedHoseBeforeRefresh] = runLocalD1<{
+      current_estimate_amount: number;
+      cutting_labeling_fee_amount: number;
+      cutting_labeling_fee_rate: number;
+      estimated_merchandise_amount: number;
+      reference_unit_price: number;
+    }>(
+      `SELECT reference_unit_price, cutting_labeling_fee_rate,
+              cutting_labeling_fee_amount, estimated_merchandise_amount,
+              current_estimate_amount
+       FROM anonymous_quote_lines
+       WHERE session_id = '${sessionId}'
+         AND line_identity = 'length-hose:601R1_001:50ft'`,
+    );
+    runLocalD1(
+      `UPDATE cutting_labeling_fee_rates
+       SET rate_per_piece = 2.25, version = version + 1
+       WHERE scope_key = 'series:601R1'`,
+    );
+    const refreshedQuoteListResponse = await fetch(`${origin}/quote-list`, {
+      headers: { cookie: quoteCookie },
+    });
+    const refreshedQuoteList = await refreshedQuoteListResponse.text();
+    expect(refreshedQuoteListResponse.status).toBe(200);
+    expect(refreshedQuoteList).toContain("Estimate updated");
+    expect(refreshedQuoteList).toContain("Former merchandise:");
+    expect(refreshedQuoteList).toContain("Current merchandise:");
+    expect(refreshedQuoteList).toContain("Former service fees:");
+    expect(refreshedQuoteList).toContain("Current service fees:");
+    expect(refreshedQuoteList).toContain("Current discount:");
+    expect(refreshedQuoteList).toContain("temporarily unavailable");
+    expect(refreshedQuoteList).toContain("excluded from merchandise subtotal");
+    expect(
+      runLocalD1<{
+        current_estimate_amount: number;
+        cutting_labeling_fee_amount: number;
+        cutting_labeling_fee_rate: number;
+        estimated_merchandise_amount: number;
+        reference_unit_price: number;
+      }>(
+        `SELECT reference_unit_price, cutting_labeling_fee_rate,
+                cutting_labeling_fee_amount, estimated_merchandise_amount,
+                current_estimate_amount
+         FROM anonymous_quote_lines
+         WHERE session_id = '${sessionId}'
+           AND line_identity = 'length-hose:601R1_001:50ft'`,
+      )[0],
+    ).toEqual(retainedHoseBeforeRefresh);
+    runLocalD1(
+      `UPDATE cutting_labeling_fee_rates
+       SET rate_per_piece = 1.25, version = version + 1
+       WHERE scope_key = 'series:601R1'`,
+    );
 
     const pinnedCompatibilityResponse = await fetch(
       `${origin}/api/configurator/compatible-end-a?release=${draft.id}&hose=601R1_002`,

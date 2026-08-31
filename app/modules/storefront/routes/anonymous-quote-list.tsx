@@ -13,6 +13,7 @@ import type { Route } from "./+types/anonymous-quote-list";
 import { createAnonymousQuoteListService } from "../../quote-list/application/anonymous-quote-list-service";
 import type { DashSize } from "../../catalog/domain/dash-size";
 import { QuoteListCommandRejected } from "../../quote-list/domain/anonymous-quote-list";
+import { discountedMerchandiseSubtotal } from "../../quote-list/domain/quote-list-refresh";
 import {
   maximumStandardProductQuantity,
   parseStandardProductQuantity,
@@ -155,6 +156,9 @@ function lineSubtotal(quantity: number, referenceUnitPrice: number | null) {
 function merchandiseEstimate(
   line: Route.ComponentProps["loaderData"]["lines"][number],
 ) {
+  if (line.refresh) {
+    return line.refresh.current.discountedMerchandiseAmount;
+  }
   if (line.lineKind === "length_based_hose") {
     return line.estimatedMerchandiseAmount;
   }
@@ -182,12 +186,9 @@ export default function AnonymousQuoteList({
 }: Route.ComponentProps) {
   const navigation = useNavigation();
   const busy = navigation.state !== "idle";
-  const referenceTotal = loaderData.lines.reduce(
-    (total, line) => total + (merchandiseEstimate(line) ?? 0),
-    0,
-  );
-  const cuttingLabelingFeeTotal = loaderData.lines.reduce(
-    (total, line) => total + (line.cuttingLabelingFeeAmount ?? 0),
+  const referenceTotal = discountedMerchandiseSubtotal(loaderData.lines);
+  const serviceFeeTotal = loaderData.lines.reduce(
+    (total, line) => total + (line.refresh?.current.serviceFeeAmount ?? 0),
     0,
   );
   const hasUnpricedLine = loaderData.lines.some(
@@ -337,9 +338,23 @@ export default function AnonymousQuoteList({
                           ) : null}
                         </>
                       ) : null}
+                      {line.refresh?.blockingReasons.length ? (
+                        <div
+                          className="quote-line-refresh-blockers"
+                          role="status"
+                        >
+                          <strong>
+                            <AlertCircle aria-hidden="true" size={17} /> Review
+                            required
+                          </strong>
+                          {line.refresh.blockingReasons.map((reason) => (
+                            <p key={reason.code}>{reason.message}</p>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="quote-line-price">
-                      <span>Merchandise estimate</span>
+                      <span>Current merchandise estimate</span>
                       <strong>
                         {subtotal == null
                           ? line.lineKind === "configured_assembly"
@@ -349,19 +364,83 @@ export default function AnonymousQuoteList({
                       </strong>
                       <small>
                         {line.lineKind === "configured_assembly"
-                          ? line.configuredAssembly.unitEstimateAmount === null
+                          ? line.refresh?.current.unitReferencePrice == null
                             ? "Reference inputs are incomplete"
-                            : `${line.currency} ${line.configuredAssembly.unitEstimateAmount.toFixed(2)} / assembly`
-                          : line.referenceUnitPrice == null
+                            : `${line.currency} ${line.refresh.current.unitReferencePrice.toFixed(2)} / assembly`
+                          : line.refresh?.current.unitReferencePrice == null
                             ? "No reference unit price"
-                            : `${line.currency} ${line.referenceUnitPrice.toFixed(2)} / ${line.salesUnit}`}
+                            : `${line.currency} ${line.refresh.current.unitReferencePrice.toFixed(2)} / ${line.salesUnit}`}
                       </small>
-                      {line.cuttingLabelingFeeAmount !== null &&
-                      line.cuttingLabelingFeeAmount > 0 ? (
+                      {line.refresh?.current.serviceFeeAmount != null &&
+                      line.refresh.current.serviceFeeAmount > 0 ? (
                         <small>
-                          Cutting &amp; Labeling Fee: {line.currency}{" "}
-                          {line.cuttingLabelingFeeAmount.toFixed(2)}
+                          {line.lineKind === "length_based_hose"
+                            ? "Cutting & Labeling Fee"
+                            : "Assembly service fees"}{" "}
+                          (excluded from merchandise subtotal): {line.currency}{" "}
+                          {line.refresh.current.serviceFeeAmount.toFixed(2)}
                         </small>
+                      ) : null}
+                      {line.refresh?.changed ? (
+                        <div className="quote-line-price-change">
+                          <span>Estimate updated</span>
+                          <small>
+                            Former merchandise: {line.currency}{" "}
+                            {line.refresh.former.discountedMerchandiseAmount ==
+                            null
+                              ? "not available"
+                              : line.refresh.former.discountedMerchandiseAmount.toFixed(
+                                  2,
+                                )}
+                          </small>
+                          <small>
+                            Current merchandise: {line.currency}{" "}
+                            {line.refresh.current.discountedMerchandiseAmount ==
+                            null
+                              ? "not available"
+                              : line.refresh.current.discountedMerchandiseAmount.toFixed(
+                                  2,
+                                )}
+                          </small>
+                          {line.refresh.former.serviceFeeAmount !==
+                          line.refresh.current.serviceFeeAmount ? (
+                            <>
+                              <small>
+                                Former service fees: {line.currency}{" "}
+                                {line.refresh.former.serviceFeeAmount == null
+                                  ? "not available"
+                                  : line.refresh.former.serviceFeeAmount.toFixed(
+                                      2,
+                                    )}
+                              </small>
+                              <small>
+                                Current service fees: {line.currency}{" "}
+                                {line.refresh.current.serviceFeeAmount == null
+                                  ? "not available"
+                                  : line.refresh.current.serviceFeeAmount.toFixed(
+                                      2,
+                                    )}
+                              </small>
+                            </>
+                          ) : null}
+                          {line.refresh.former.discountPercent !==
+                          line.refresh.current.discountPercent ? (
+                            <>
+                              <small>
+                                Former discount:{" "}
+                                {line.refresh.former.discountPercent.toFixed(2)}
+                                %
+                              </small>
+                              <small>
+                                Current discount:{" "}
+                                {line.refresh.current.discountPercent.toFixed(
+                                  2,
+                                )}
+                                %
+                              </small>
+                            </>
+                          ) : null}
+                        </div>
                       ) : null}
                     </div>
                     <div className="quote-line-actions">
@@ -505,16 +584,14 @@ export default function AnonymousQuoteList({
               <h2>Product estimate</h2>
               <strong>USD {referenceTotal.toFixed(2)}</strong>
               <small>Estimated merchandise subtotal</small>
-              {cuttingLabelingFeeTotal > 0 ? (
-                <p>
-                  Cutting &amp; Labeling Fee: USD{" "}
-                  {cuttingLabelingFeeTotal.toFixed(2)}
-                </p>
+              {serviceFeeTotal > 0 ? (
+                <p>Reference service fees: USD {serviceFeeTotal.toFixed(2)}</p>
               ) : null}
               {hasUnpricedLine ? <p>Plus products priced on quote.</p> : null}
               <p>
-                This is not checkout. Taxes, freight and final commercial terms
-                are not included in this reference estimate.
+                This is not checkout. Service fees, freight, tax, duties, import
+                charges and insurance do not count toward the merchandise
+                subtotal.
               </p>
             </aside>
           </div>

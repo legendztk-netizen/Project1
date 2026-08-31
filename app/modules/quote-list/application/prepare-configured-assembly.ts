@@ -130,7 +130,9 @@ export async function prepareConfiguredAssembly(input: {
   database: D1Database;
   draft: unknown;
   quantity: number;
+  referenceMode?: "current" | "pinned";
 }) {
+  const useCurrentReferences = input.referenceMode === "current";
   const raw = object(input.draft);
   const rawHoseSku = stringAt(raw, "hose", "sku");
   const rawReleaseId = stringAt(raw, "catalogRelease", "id");
@@ -139,7 +141,10 @@ export async function prepareConfiguredAssembly(input: {
   const currentDraft = hoseProduct
     ? createHoseConfigurationDraft(hoseProduct)
     : null;
-  if (!currentDraft || currentDraft.catalogRelease.id !== rawReleaseId) {
+  if (
+    !currentDraft ||
+    (!useCurrentReferences && currentDraft.catalogRelease.id !== rawReleaseId)
+  ) {
     reject(
       "The selected Hose or Catalog Release changed. Review the Hose selection and try again.",
     );
@@ -162,13 +167,15 @@ export async function prepareConfiguredAssembly(input: {
   };
   const endA = candidates.find(
     (candidate) =>
-      candidate.compatibilityId === endAInput.compatibilityId &&
+      (useCurrentReferences ||
+        candidate.compatibilityId === endAInput.compatibilityId) &&
       candidate.hoseEndSku === endAInput.hoseEndSku &&
       candidate.ferrule.sku === endAInput.ferrule.sku,
   );
   const endB = candidates.find(
     (candidate) =>
-      candidate.compatibilityId === endBInput.compatibilityId &&
+      (useCurrentReferences ||
+        candidate.compatibilityId === endBInput.compatibilityId) &&
       candidate.hoseEndSku === endBInput.hoseEndSku &&
       candidate.ferrule.sku === endBInput.ferrule.sku,
   );
@@ -202,7 +209,9 @@ export async function prepareConfiguredAssembly(input: {
     const code = stringAt(rawMeasurement, "method", "code");
     const version = object(rawMeasurement.method).recordVersion;
     const method = references.measurementMethods.find(
-      (entry) => entry.code === code && entry.recordVersion === version,
+      (entry) =>
+        entry.code === code &&
+        (useCurrentReferences || entry.recordVersion === version),
     );
     if (!method) {
       reject(
@@ -255,8 +264,9 @@ export async function prepareConfiguredAssembly(input: {
       "Clocking selection",
     );
     if (
+      !useCurrentReferences &&
       integerAt(rawClocking, "convention", "recordVersion") !==
-      currentConvention?.recordVersion
+        currentConvention?.recordVersion
     ) {
       reject("The Clocking convention changed. Review Clocking and try again.");
     }
@@ -282,7 +292,7 @@ export async function prepareConfiguredAssembly(input: {
   const protection = references.installedProtections.find(
     (entry) =>
       entry.code === protectionCode &&
-      entry.recordVersion === protectionVersion &&
+      (useCurrentReferences || entry.recordVersion === protectionVersion) &&
       entry.availability === "available",
   );
   const schedule = references.assemblyEstimateSchedule;
@@ -292,8 +302,9 @@ export async function prepareConfiguredAssembly(input: {
     );
   }
   if (
+    !useCurrentReferences &&
     integerAt(raw, "lengthReferencePricing", "scheduleRecordVersion") !==
-    schedule.recordVersion
+      schedule.recordVersion
   ) {
     reject(
       "The assembly estimate schedule changed. Review Protection and try again.",

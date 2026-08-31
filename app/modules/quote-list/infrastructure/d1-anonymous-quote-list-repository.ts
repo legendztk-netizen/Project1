@@ -18,6 +18,7 @@ type LengthBasedHoseEstimate = ReturnType<
 >;
 
 interface QuoteLineRow {
+  catalog_release_id: string;
   category: AnonymousQuoteLine["category"];
   currency: string;
   current_estimate_amount: number | null;
@@ -44,12 +45,14 @@ interface QuoteLineRow {
 
 function lineFromRow(row: QuoteLineRow): AnonymousQuoteLine {
   const common = {
+    catalogReleaseId: row.catalog_release_id,
     category: row.category,
     currency: row.currency,
     displayName: row.display_name,
     id: row.id,
     quantity: row.quantity,
     referenceUnitPrice: row.reference_unit_price,
+    refresh: null,
     salesUnit: row.sales_unit,
     sku: row.sku,
     updatedAt: row.updated_at,
@@ -757,7 +760,7 @@ export function createD1AnonymousQuoteListRepository(database: D1Database) {
     async findDetailedLine(sessionId: string, lineId: string) {
       const row = await database
         .prepare(
-          `SELECT id, sku, display_name, category, line_kind, quantity,
+          `SELECT id, sku, catalog_release_id, display_name, category, line_kind, quantity,
                   sales_unit, currency, reference_unit_price,
                   original_length_value, original_length_unit,
                   normalized_length_ft, piece_count, total_footage,
@@ -777,7 +780,7 @@ export function createD1AnonymousQuoteListRepository(database: D1Database) {
     async listLines(sessionId: string) {
       const rows = await database
         .prepare(
-          `SELECT id, sku, display_name, category, line_kind, quantity,
+          `SELECT id, sku, catalog_release_id, display_name, category, line_kind, quantity,
                   sales_unit, currency, reference_unit_price,
                   original_length_value, original_length_unit,
                   normalized_length_ft, piece_count, total_footage,

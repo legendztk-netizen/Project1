@@ -2,6 +2,7 @@ import { createD1PublicCatalogRepository } from "../../catalog/infrastructure/d1
 import type { PublicCatalogItem } from "../../catalog/domain/public-catalog";
 import {
   QuoteListCommandRejected,
+  type AnonymousQuoteLine,
   type AnonymousQuoteSession,
 } from "../domain/anonymous-quote-list";
 import {
@@ -14,7 +15,14 @@ import {
   parseLengthBasedHoseOrder,
   type LengthBasedHoseOrder,
 } from "../domain/length-based-hose";
+import {
+  refreshConfiguredAssemblyQuoteLine,
+  refreshLengthBasedHoseQuoteLine,
+  refreshStandardQuoteLine,
+} from "../domain/quote-list-refresh";
+import { noQuoteReferenceDiscount } from "../domain/quote-reference-discount";
 import { createD1AnonymousQuoteListRepository } from "../infrastructure/d1-anonymous-quote-list-repository";
+import { createD1QuoteReferenceDiscountRepository } from "../infrastructure/d1-quote-reference-discount-repository";
 import { prepareConfiguredAssembly } from "./prepare-configured-assembly";
 import type { ApplicationBindings } from "#workers/environment";
 import { quoteSessionSigningKey } from "#workers/session-secrets";
@@ -67,6 +75,7 @@ export function createAnonymousQuoteListService(
 ) {
   const catalog = createD1PublicCatalogRepository(env.DB);
   const quoteList = createD1AnonymousQuoteListRepository(env.DB);
+  const discounts = createD1QuoteReferenceDiscountRepository(env.DB);
   const generateId = dependencies.generateId ?? (() => crypto.randomUUID());
   const now = dependencies.now ?? (() => new Date());
   const secret = quoteSessionSigningKey(env);
@@ -167,27 +176,115 @@ export function createAnonymousQuoteListService(
     throw error;
   }
 
-  async function revalidateConfiguredLinesForDisplay(
+  async function refreshLinesForDisplay(
     lines: Awaited<ReturnType<typeof quoteList.listLines>>,
-  ) {
+    refreshedAt: string,
+  ): Promise<AnonymousQuoteLine[]> {
+    function refreshDiscounts(
+      line: AnonymousQuoteLine,
+      currentReleaseId: string | null,
+    ) {
+      return Promise.all([
+        discounts.findApplicable({
+          lineKind: line.lineKind,
+          quantity: line.quantity,
+          releaseId: line.catalogReleaseId,
+          sku: line.sku,
+        }),
+        currentReleaseId
+          ? discounts.findApplicable({
+              lineKind: line.lineKind,
+              quantity: line.quantity,
+              releaseId: currentReleaseId,
+              sku: line.sku,
+            })
+          : Promise.resolve(noQuoteReferenceDiscount),
+      ]);
+    }
+
     return Promise.all(
       lines.map(async (line) => {
-        if (line.lineKind !== "configured_assembly") return line;
+        if (line.lineKind === "standard") {
+          const product = await catalog.findItem(line.sku);
+          const [formerDiscount, currentDiscount] = await refreshDiscounts(
+            line,
+            product?.releaseId ?? null,
+          );
+          return {
+            ...line,
+            refresh: refreshStandardQuoteLine({
+              currentDiscount,
+              formerDiscount,
+              line,
+              product,
+              refreshedAt,
+            }),
+          };
+        }
+        if (line.lineKind === "length_based_hose") {
+          const product = await catalog.findItem(line.sku);
+          const [formerDiscount, currentDiscount] = await refreshDiscounts(
+            line,
+            product?.releaseId ?? null,
+          );
+          return {
+            ...line,
+            refresh: refreshLengthBasedHoseQuoteLine({
+              currentDiscount,
+              formerDiscount,
+              line,
+              product,
+              refreshedAt,
+            }),
+          };
+        }
         try {
-          await prepareConfiguredAssembly({
+          const prepared = await prepareConfiguredAssembly({
             database: env.DB,
             draft: line.configuredAssembly.snapshot.configuration,
             quantity: line.quantity,
+            referenceMode: "current",
           });
-          return line;
+          const [formerDiscount, currentDiscount] = await refreshDiscounts(
+            line,
+            prepared.hoseProduct.releaseId,
+          );
+          return {
+            ...line,
+            configuredAssembly: {
+              ...line.configuredAssembly,
+              currentIssue: null,
+            },
+            refresh: refreshConfiguredAssemblyQuoteLine({
+              current: {
+                basis: prepared.estimateBasis,
+                snapshot: prepared.snapshot,
+                unitEstimateAmount: prepared.unitEstimateAmount,
+              },
+              currentDiscount,
+              formerDiscount,
+              issue: null,
+              line,
+              refreshedAt,
+            }),
+          };
         } catch (error) {
           if (!(error instanceof QuoteListCommandRejected)) throw error;
+          const [formerDiscount] = await refreshDiscounts(line, null);
           return {
             ...line,
             configuredAssembly: {
               ...line.configuredAssembly,
               currentIssue: savedConfigurationChangedMessage,
             },
+            refresh: refreshConfiguredAssemblyQuoteLine({
+              current: null,
+              currentDiscount: undefined,
+              formerDiscount,
+              issue: error.message,
+              line,
+              refreshedAt,
+            }),
           };
         }
       }),
@@ -261,7 +358,7 @@ export function createAnonymousQuoteListService(
           "LINE_NOT_FOUND",
         );
       }
-      const [line] = await revalidateConfiguredLinesForDisplay([storedLine]);
+      const [line] = await refreshLinesForDisplay([storedLine], current.now);
       if (!line || line.lineKind !== "configured_assembly") {
         throw new QuoteListCommandRejected(
           "That configured assembly is not available in this Quote List.",
@@ -414,8 +511,9 @@ export function createAnonymousQuoteListService(
       );
       if (!touched) return { lines: [], setCookie: null };
       return {
-        lines: await revalidateConfiguredLinesForDisplay(
+        lines: await refreshLinesForDisplay(
           await quoteList.listLines(session.id),
+          current.now,
         ),
         setCookie: await cookie(session.id, current.date),
       };

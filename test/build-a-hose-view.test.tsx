@@ -113,6 +113,7 @@ function configuredQuoteLineContextFixture(item: PublicCatalogItem) {
   if (!configuration) throw new Error("Expected a selectable hose fixture");
   return {
     line: {
+      catalogReleaseId: item.releaseId,
       category: "hydraulic-hose" as const,
       configuredAssembly: {
         currentIssue: null,
@@ -153,6 +154,7 @@ function configuredQuoteLineContextFixture(item: PublicCatalogItem) {
       lineKind: "configured_assembly" as const,
       quantity: 1,
       referenceUnitPrice: null,
+      refresh: null,
       salesUnit: "assembly",
       sku: item.sku,
       updatedAt: "2026-08-29T00:00:00.000Z",

@@ -126,6 +126,43 @@
   font-size: 1rem;
 }
 
+.quote-line-price-change {
+  display: grid;
+  gap: 2px;
+  margin-top: 7px;
+  padding: 8px 9px;
+  background: #fff8e6;
+  border-left: 3px solid #b47700;
+}
+
+.quote-line-price-change > span {
+  color: #704b00;
+  font-weight: 800;
+}
+
+.quote-line-refresh-blockers {
+  display: grid;
+  gap: 5px;
+  margin-top: 12px;
+  padding: 10px 11px;
+  color: #81251e;
+  background: #fff2f0;
+  border: 1px solid #efb7b1;
+  border-radius: 4px;
+}
+
+.quote-line-refresh-blockers strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.78rem;
+}
+
+.quote-line-refresh-blockers p {
+  color: #81251e;
+  line-height: 1.4;
+}
+
 .quote-line-actions {
   display: flex;
   align-items: end;
