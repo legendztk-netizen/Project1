@@ -83,6 +83,65 @@ function renderedText(html: string) {
     .trim();
 }
 
+function otpChallengeFromHtml(html: string) {
+  const challengeId = html.match(
+    /name="challengeId"[^>]*value="([^"]+)"|value="([^"]+)"[^>]*name="challengeId"/,
+  );
+  const code = html.match(/<strong>(\d{6})<\/strong>/);
+  const id = challengeId?.[1] ?? challengeId?.[2];
+  expect(id).toBeTruthy();
+  expect(code?.[1]).toMatch(/^\d{6}$/);
+  return { challengeId: id ?? "", code: code?.[1] ?? "" };
+}
+
+async function requestEmailOtp(input: {
+  email: string;
+  ip?: string;
+  path: "/register" | "/sign-in";
+}) {
+  const form = new FormData();
+  form.set("intent", "request");
+  form.set("email", input.email);
+  form.set("returnTo", "/account");
+  const response = await fetch(`${origin}${input.path}`, {
+    body: form,
+    headers: {
+      origin,
+      ...(input.ip ? { "x-forwarded-for": input.ip } : {}),
+    },
+    method: "POST",
+  });
+  const html = await response.text();
+  return {
+    challenge: response.ok ? otpChallengeFromHtml(html) : null,
+    html,
+    response,
+  };
+}
+
+async function verifyEmailOtp(input: {
+  challengeId: string;
+  code: string;
+  cookie?: string;
+  path: "/register" | "/sign-in";
+  returnTo?: string;
+}) {
+  const form = new FormData();
+  form.set("intent", "verify");
+  form.set("challengeId", input.challengeId);
+  form.set("code", input.code);
+  form.set("returnTo", input.returnTo ?? "/account");
+  return fetch(`${origin}${input.path}`, {
+    body: form,
+    headers: {
+      ...(input.cookie ? { cookie: input.cookie } : {}),
+      origin,
+    },
+    method: "POST",
+    redirect: "manual",
+  });
+}
+
 function quoteFormFromProductDetail(html: string) {
   const command = html.indexOf('data-command="add-to-quote"');
   const start = html.lastIndexOf("<form", command);
@@ -229,6 +288,350 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(admin).not.toContain('href="#"');
     expect(admin).toContain("owner@local.invalid");
     expect(admin).toContain("local-development");
+  });
+
+  it("registers and signs in through a single-use email OTP without leaking plaintext", async () => {
+    const registerPage = await (await fetch(`${origin}/register`)).text();
+    const signInPage = await (await fetch(`${origin}/sign-in`)).text();
+    expect(registerPage).toContain("Create your account");
+    expect(signInPage).toContain("Sign in to your account");
+    expect(registerPage).toContain("Send email code");
+
+    const requested = await requestEmailOtp({
+      email: "first.customer@example.com",
+      path: "/register",
+    });
+    expect(requested.response.status).toBe(200);
+    const challenge = requested.challenge;
+    if (!challenge) throw new Error("Expected a registration challenge");
+    expect(requested.html).toContain("Local email delivery stub");
+    expect(
+      runLocalD1<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM customer_profiles WHERE email_normalized = 'first.customer@example.com'",
+      ),
+    ).toEqual([{ count: 0 }]);
+    const [storedChallenge] = runLocalD1<{
+      expires_in_seconds: number;
+      otp_digest: string;
+    }>(
+      `SELECT otp_digest,
+              CAST(strftime('%s', expires_at) - strftime('%s', created_at) AS INTEGER)
+                AS expires_in_seconds
+       FROM customer_otp_challenges WHERE id = '${challenge.challengeId}'`,
+    );
+    expect(storedChallenge?.otp_digest).not.toContain(challenge.code);
+    expect(storedChallenge?.expires_in_seconds).toBe(600);
+
+    const verified = await verifyEmailOtp({
+      challengeId: challenge.challengeId,
+      code: challenge.code,
+      path: "/register",
+      returnTo: "//evil.example/steal",
+    });
+    expect(verified.status).toBe(302);
+    expect(verified.headers.get("location")).toBe("/account");
+    const customerCookie = cookieHeader(verified);
+    expect(verified.headers.get("set-cookie")).toContain("HttpOnly");
+    expect(verified.headers.get("set-cookie")).toContain("SameSite=Lax");
+    expect(verified.headers.get("set-cookie")).not.toContain("Secure");
+    const account = await fetch(`${origin}/account`, {
+      headers: { cookie: customerCookie },
+    });
+    expect(account.status).toBe(200);
+    expect(await account.text()).toContain("first.customer@example.com");
+    expect(
+      runLocalD1<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM customer_profiles WHERE email_normalized = 'first.customer@example.com'",
+      ),
+    ).toEqual([{ count: 1 }]);
+
+    const replay = await verifyEmailOtp({
+      challengeId: challenge.challengeId,
+      code: challenge.code,
+      path: "/register",
+    });
+    expect(replay.status).toBe(422);
+
+    runLocalD1(
+      `UPDATE customer_otp_challenges
+       SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-61 seconds')
+       WHERE id = '${challenge.challengeId}'`,
+    );
+
+    const signIn = await requestEmailOtp({
+      email: "first.customer@example.com",
+      path: "/sign-in",
+    });
+    const signInChallenge = signIn.challenge;
+    if (!signInChallenge) throw new Error("Expected a sign-in challenge");
+    const rotated = await verifyEmailOtp({
+      challengeId: signInChallenge.challengeId,
+      code: signInChallenge.code,
+      cookie: customerCookie,
+      path: "/sign-in",
+    });
+    expect(rotated.status).toBe(302);
+    const rotatedCookie = cookieHeader(rotated);
+    expect(rotatedCookie).not.toBe(customerCookie);
+    expect(
+      (
+        await fetch(`${origin}/account`, {
+          headers: { cookie: customerCookie },
+          redirect: "manual",
+        })
+      ).status,
+    ).toBe(302);
+    expect(
+      (
+        await fetch(`${origin}/account`, {
+          headers: { cookie: rotatedCookie },
+        })
+      ).status,
+    ).toBe(200);
+
+    const signOut = await fetch(`${origin}/sign-out`, {
+      headers: { cookie: rotatedCookie, origin },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(signOut.status).toBe(302);
+    expect(signOut.headers.get("set-cookie")).toContain("Max-Age=0");
+    expect(
+      (
+        await fetch(`${origin}/account`, {
+          headers: { cookie: rotatedCookie },
+          redirect: "manual",
+        })
+      ).status,
+    ).toBe(302);
+  });
+
+  it("fails closed for cooldown, supersession, expiry, malformed values and attempt lockout", async () => {
+    const locked = await requestEmailOtp({
+      email: "locked.customer@example.com",
+      path: "/register",
+    });
+    const lockedChallenge = locked.challenge;
+    if (!lockedChallenge) throw new Error("Expected a lockout challenge");
+    const cooldown = await requestEmailOtp({
+      email: "locked.customer@example.com",
+      path: "/register",
+    });
+    expect(cooldown.response.status).toBe(429);
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const failed = await verifyEmailOtp({
+        challengeId: lockedChallenge.challengeId,
+        code: "999999",
+        path: "/register",
+      });
+      expect(failed.status).toBe(422);
+    }
+    const afterLock = await verifyEmailOtp({
+      challengeId: lockedChallenge.challengeId,
+      code: lockedChallenge.code,
+      path: "/register",
+    });
+    expect(afterLock.status).toBe(422);
+    expect(
+      runLocalD1<{ failed_attempts: number }>(
+        `SELECT failed_attempts FROM customer_otp_challenges WHERE id = '${lockedChallenge.challengeId}'`,
+      ),
+    ).toEqual([{ failed_attempts: 5 }]);
+
+    const expired = await requestEmailOtp({
+      email: "expired.customer@example.com",
+      path: "/register",
+    });
+    if (!expired.challenge) throw new Error("Expected an expiry challenge");
+    runLocalD1(
+      `UPDATE customer_otp_challenges SET expires_at = '2000-01-01T00:00:00.000Z'
+       WHERE id = '${expired.challenge.challengeId}'`,
+    );
+    expect(
+      (
+        await verifyEmailOtp({
+          challengeId: expired.challenge.challengeId,
+          code: expired.challenge.code,
+          path: "/register",
+        })
+      ).status,
+    ).toBe(422);
+
+    const first = await requestEmailOtp({
+      email: "superseded.customer@example.com",
+      path: "/register",
+    });
+    if (!first.challenge) throw new Error("Expected a superseded challenge");
+    runLocalD1(
+      `UPDATE customer_otp_challenges
+       SET created_at = datetime('now', '-61 seconds')
+       WHERE id = '${first.challenge.challengeId}'`,
+    );
+    const second = await requestEmailOtp({
+      email: "superseded.customer@example.com",
+      path: "/register",
+    });
+    expect(second.response.status).toBe(200);
+    expect(
+      (
+        await verifyEmailOtp({
+          challengeId: first.challenge.challengeId,
+          code: first.challenge.code,
+          path: "/register",
+        })
+      ).status,
+    ).toBe(422);
+
+    expect(
+      (
+        await verifyEmailOtp({
+          challengeId: second.challenge?.challengeId ?? "",
+          code: "123",
+          path: "/register",
+        })
+      ).status,
+    ).toBe(422);
+    const wrongOrigin = new FormData();
+    wrongOrigin.set("intent", "request");
+    wrongOrigin.set("email", "csrf.customer@example.com");
+    const rejectedOrigin = await fetch(`${origin}/register`, {
+      body: wrongOrigin,
+      headers: { origin: "https://evil.example" },
+      method: "POST",
+    });
+    expect([400, 403]).toContain(rejectedOrigin.status);
+
+    const concurrentEmail = "concurrent.customer@example.com";
+    const concurrent = await Promise.all([
+      requestEmailOtp({ email: concurrentEmail, path: "/register" }),
+      requestEmailOtp({ email: concurrentEmail, path: "/register" }),
+    ]);
+    expect(concurrent.map(({ response }) => response.status).sort()).toEqual([
+      200, 429,
+    ]);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM customer_otp_challenges
+         WHERE email_normalized = '${concurrentEmail}'`,
+      ),
+    ).toEqual([{ count: 1 }]);
+
+    const limitedEmail = "limited.customer@example.com";
+    for (let requestNumber = 0; requestNumber < 4; requestNumber += 1) {
+      const limited = await requestEmailOtp({
+        email: limitedEmail,
+        path: "/register",
+      });
+      expect(limited.response.status).toBe(200);
+      runLocalD1(
+        `UPDATE customer_otp_challenges
+         SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-61 seconds')
+         WHERE id = '${limited.challenge?.challengeId ?? ""}'`,
+      );
+    }
+    const emailBoundary = await Promise.all([
+      requestEmailOtp({ email: limitedEmail, path: "/register" }),
+      requestEmailOtp({ email: limitedEmail, path: "/register" }),
+    ]);
+    expect(emailBoundary.map(({ response }) => response.status).sort()).toEqual(
+      [200, 429],
+    );
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM customer_otp_challenges
+         WHERE email_normalized = '${limitedEmail}'`,
+      ),
+    ).toEqual([{ count: 5 }]);
+
+    const sharedIp = "198.51.100.35";
+    for (let requestNumber = 0; requestNumber < 19; requestNumber += 1) {
+      const requestedByIp = await requestEmailOtp({
+        email: `ip-limit-${requestNumber}@example.com`,
+        ip: sharedIp,
+        path: "/register",
+      });
+      expect(requestedByIp.response.status).toBe(200);
+    }
+    const ipBoundary = await Promise.all([
+      requestEmailOtp({
+        email: "ip-limit-boundary-a@example.com",
+        ip: sharedIp,
+        path: "/register",
+      }),
+      requestEmailOtp({
+        email: "ip-limit-boundary-b@example.com",
+        ip: sharedIp,
+        path: "/register",
+      }),
+    ]);
+    expect(ipBoundary.map(({ response }) => response.status).sort()).toEqual([
+      200, 429,
+    ]);
+    expect(ipBoundary.map(({ html }) => html).join(" ")).toContain(
+      "Too many verification requests",
+    );
+
+    const racing = await requestEmailOtp({
+      email: "racing.customer@example.com",
+      path: "/register",
+    });
+    if (!racing.challenge) throw new Error("Expected a race challenge");
+    runLocalD1(
+      `UPDATE customer_otp_challenges SET failed_attempts = 4
+       WHERE id = '${racing.challenge.challengeId}'`,
+    );
+    const [fifthFailure, correctAtBoundary] = await Promise.all([
+      verifyEmailOtp({
+        challengeId: racing.challenge.challengeId,
+        code: "999999",
+        path: "/register",
+      }),
+      verifyEmailOtp({
+        challengeId: racing.challenge.challengeId,
+        code: racing.challenge.code,
+        path: "/register",
+      }),
+    ]);
+    expect(fifthFailure.status).toBe(422);
+    expect([302, 422]).toContain(correctAtBoundary.status);
+    const [raceState] = runLocalD1<{
+      consumed_at: string | null;
+      failed_attempts: number;
+    }>(
+      `SELECT consumed_at, failed_attempts FROM customer_otp_challenges
+       WHERE id = '${racing.challenge.challengeId}'`,
+    );
+    if (correctAtBoundary.status === 302) {
+      expect(raceState?.consumed_at).not.toBeNull();
+      expect(raceState?.failed_attempts).toBe(4);
+    } else {
+      expect(raceState).toMatchObject({
+        consumed_at: null,
+        failed_attempts: 5,
+      });
+    }
+
+    const unknown = await requestEmailOtp({
+      email: "unknown.customer@example.com",
+      path: "/sign-in",
+    });
+    expect(unknown.response.status).toBe(200);
+    expect(unknown.html).toContain("We sent a six-digit code");
+    expect(
+      (
+        await verifyEmailOtp({
+          challengeId: unknown.challenge?.challengeId ?? "",
+          code: unknown.challenge?.code ?? "",
+          path: "/sign-in",
+        })
+      ).status,
+    ).toBe(422);
+    expect(
+      runLocalD1<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM customer_profiles WHERE email_normalized = 'unknown.customer@example.com'",
+      ),
+    ).toEqual([{ count: 0 }]);
   });
 
   it("persists a draft release through the Admin diagnostic and exposes no Storefront mutation", async () => {

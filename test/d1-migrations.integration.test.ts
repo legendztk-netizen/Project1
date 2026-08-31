@@ -14,6 +14,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
+import { getPlatformProxy } from "wrangler";
+
+import { createD1CustomerIdentityRepository } from "../app/modules/customer-identity/infrastructure/d1-customer-identity-repository";
 
 interface D1QueryResult<T> {
   results: T[];
@@ -275,6 +278,84 @@ afterEach(() => {
 });
 
 describe("real local D1 migration lifecycle", () => {
+  it("keeps the newest delivered OTP active when email delivery completes out of order", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "hose-d1-otp-ordering-"));
+    temporaryDirectories.push(directory);
+    const migration = runProjectMigrate(directory);
+    expect(migration.status, `${migration.stdout}\n${migration.stderr}`).toBe(
+      0,
+    );
+    const platform = await getPlatformProxy<{ DB: D1Database }>({
+      configPath: join(projectRoot, "wrangler.jsonc"),
+      persist: { path: join(directory, "v3") },
+      remoteBindings: false,
+    });
+
+    try {
+      const repository = createD1CustomerIdentityRepository(platform.env.DB);
+      const common = {
+        digest: "test-only-digest",
+        email: "delayed-delivery@example.com",
+        expiresAt: "2026-09-01T01:00:00.000Z",
+        ipDigest: "test-only-ip-digest",
+        purpose: "register" as const,
+      };
+      await repository.createChallenge({
+        ...common,
+        createdAt: "2026-09-01T00:00:00.000Z",
+        id: "older-delayed",
+      });
+      await repository.createChallenge({
+        ...common,
+        createdAt: "2026-09-01T00:01:01.000Z",
+        id: "newer-first",
+      });
+      await repository.activateDeliveredChallenge({
+        deliveredAt: "2026-09-01T00:01:02.000Z",
+        email: common.email,
+        id: "newer-first",
+        purpose: common.purpose,
+      });
+      await platform.env.DB.prepare(
+        `UPDATE customer_otp_challenges SET consumed_at = ? WHERE id = ?`,
+      )
+        .bind("2026-09-01T00:01:02.500Z", "newer-first")
+        .run();
+      await repository.activateDeliveredChallenge({
+        deliveredAt: "2026-09-01T00:01:03.000Z",
+        email: common.email,
+        id: "older-delayed",
+        purpose: common.purpose,
+      });
+
+      const rows = await platform.env.DB.prepare(
+        `SELECT id, delivery_status, consumed_at, superseded_at
+         FROM customer_otp_challenges ORDER BY rowid`,
+      ).all<{
+        consumed_at: string | null;
+        delivery_status: string;
+        id: string;
+        superseded_at: string | null;
+      }>();
+      expect(rows.results).toEqual([
+        {
+          consumed_at: null,
+          delivery_status: "delivered",
+          id: "older-delayed",
+          superseded_at: "2026-09-01T00:01:03.000Z",
+        },
+        {
+          consumed_at: "2026-09-01T00:01:02.500Z",
+          delivery_status: "delivered",
+          id: "newer-first",
+          superseded_at: null,
+        },
+      ]);
+    } finally {
+      await platform.dispose();
+    }
+  }, 30_000);
+
   it("runs pnpm migrate twice against one local D1 without duplicate schema", () => {
     const directory = mkdtempSync(join(tmpdir(), "hose-d1-command-isolation-"));
     temporaryDirectories.push(directory);

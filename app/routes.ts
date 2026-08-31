@@ -25,6 +25,10 @@ export default [
     "modules/storefront/routes/configurator-add-assembly-resource.ts",
   ),
   route("quote-list", "modules/storefront/routes/anonymous-quote-list.tsx"),
+  route("register", "modules/customer-identity/routes/register.tsx"),
+  route("sign-in", "modules/customer-identity/routes/sign-in.tsx"),
+  route("sign-out", "modules/customer-identity/routes/sign-out.ts"),
+  route("account", "modules/customer-identity/routes/customer-account.tsx"),
   route(
     "assembly-measurement-guide",
     "modules/storefront/routes/assembly-measurement-guide.tsx",

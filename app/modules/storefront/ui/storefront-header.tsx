@@ -1,4 +1,4 @@
-import { Ruler } from "lucide-react";
+import { Ruler, UserRound } from "lucide-react";
 import { Link, useLocation } from "react-router";
 
 import { BrandMark } from "../../shared/ui/brand-mark";
@@ -33,13 +33,22 @@ export function StorefrontHeader() {
           Quote List
         </Link>
       </nav>
-      <Link
-        className="button button-secondary"
-        to="/assembly-measurement-guide"
-      >
-        <Ruler size={18} />
-        <span>Measurement Guide</span>
-      </Link>
+      <div className="storefront-header-actions">
+        <Link className="storefront-register-link" to="/register">
+          Register
+        </Link>
+        <Link className="storefront-account-link" to="/sign-in">
+          <UserRound size={18} />
+          <span>Sign In</span>
+        </Link>
+        <Link
+          className="button button-secondary"
+          to="/assembly-measurement-guide"
+        >
+          <Ruler size={18} />
+          <span>Measurement Guide</span>
+        </Link>
+      </div>
     </header>
   );
 }

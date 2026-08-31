@@ -84,7 +84,9 @@ describe("Admin route boundary", () => {
   it("rejects a missing deployed Access assertion", async () => {
     await expect(
       authorizeAdminRequest(
-        new Request("https://admin.example.com/admin/catalog/review"),
+        new Request("https://admin.example.com/admin/catalog/review", {
+          headers: { cookie: "hs_customer_session=customer-token" },
+        }),
         deployedBindings,
       ),
     ).rejects.toMatchObject({ status: 401 });
