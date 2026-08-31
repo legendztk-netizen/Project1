@@ -71,6 +71,19 @@ export class CustomerIdentityError extends Error {
   }
 }
 
+export function confirmedCustomerPassword(
+  password: string,
+  confirmation: string,
+) {
+  if (password !== confirmation) {
+    throw new CustomerIdentityError(
+      "The new passwords do not match.",
+      "PASSWORD_POLICY",
+    );
+  }
+  return password;
+}
+
 function addSeconds(date: Date, seconds: number) {
   return new Date(date.getTime() + seconds * 1000).toISOString();
 }

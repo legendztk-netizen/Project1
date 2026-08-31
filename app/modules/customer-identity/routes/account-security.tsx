@@ -5,6 +5,7 @@ import type { Route } from "./+types/account-security";
 import { cloudflareContext } from "#workers/context";
 
 import {
+  confirmedCustomerPassword,
   createCustomerIdentityService,
   CustomerIdentityError,
 } from "../application/customer-identity-service";
@@ -18,14 +19,10 @@ function value(form: FormData, name: string) {
 }
 
 function matchingPassword(form: FormData) {
-  const password = value(form, "newPassword");
-  if (password !== value(form, "confirmPassword")) {
-    throw new CustomerIdentityError(
-      "The new passwords do not match.",
-      "PASSWORD_POLICY",
-    );
-  }
-  return password;
+  return confirmedCustomerPassword(
+    value(form, "newPassword"),
+    value(form, "confirmPassword"),
+  );
 }
 
 export function meta() {

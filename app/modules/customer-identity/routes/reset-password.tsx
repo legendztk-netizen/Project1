@@ -5,6 +5,7 @@ import type { Route } from "./+types/reset-password";
 import { cloudflareContext } from "#workers/context";
 
 import {
+  confirmedCustomerPassword,
   createCustomerIdentityService,
   CustomerIdentityError,
 } from "../application/customer-identity-service";
@@ -37,11 +38,11 @@ export async function action({ context, request }: Route.ActionArgs) {
     storefrontOrigin: env.PUBLIC_STOREFRONT_ORIGIN,
   });
   const form = await request.formData();
-  const password = value(form, "newPassword");
-  if (password !== value(form, "confirmPassword")) {
-    return data({ error: "The new passwords do not match." }, { status: 422 });
-  }
   try {
+    const password = confirmedCustomerPassword(
+      value(form, "newPassword"),
+      value(form, "confirmPassword"),
+    );
     const result = await createCustomerIdentityService(
       env,
     ).replacePasswordWithAuthorization({
