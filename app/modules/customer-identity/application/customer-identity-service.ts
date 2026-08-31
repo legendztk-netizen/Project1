@@ -24,7 +24,10 @@ import {
   readCustomerSessionToken,
 } from "../domain/customer-session";
 import {
+  customerPasswordAlgorithm,
+  customerPasswordWorkFactor,
   hashCustomerPassword,
+  type PasswordCredentialHash,
   type PasswordScreeningProvider,
   PasswordPolicyError,
   validatedCustomerPassword,
@@ -43,6 +46,11 @@ import {
   type PasswordAttemptKind,
   PasswordAttemptRejected,
 } from "../infrastructure/d1-customer-identity-repository";
+
+type IdentityDigestPurpose =
+  | "otp-request-ip"
+  | "password-authorization"
+  | `${PasswordAttemptKind}-${"email" | "ip"}`;
 
 export type CustomerIdentityErrorCode =
   | "COOLDOWN"
@@ -134,7 +142,7 @@ export function createCustomerIdentityService(
     return token ? digestCustomerSessionToken(token, secret) : null;
   }
 
-  function digestIdentityValue(purpose: string, value: string) {
+  function digestIdentityValue(purpose: IdentityDigestPurpose, value: string) {
     return digestCustomerSessionToken(`${purpose}\u0000${value}`, secret);
   }
 
@@ -353,13 +361,13 @@ export function createCustomerIdentityService(
     }
   }
 
-  const dummyCredential = {
-    algorithm: "PBKDF2-HMAC-SHA-256" as const,
+  const dummyCredential: PasswordCredentialHash = {
+    algorithm: customerPasswordAlgorithm,
     derivedKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     hashBytes: 32 as const,
     normalization: "NFC" as const,
     salt: "AAAAAAAAAAAAAAAAAAAAAA",
-    workFactor: 600_000,
+    workFactor: customerPasswordWorkFactor,
   };
 
   return {

@@ -41,7 +41,7 @@ export const builtInPasswordScreening: PasswordScreeningProvider = {
 };
 
 export type PasswordPolicyErrorCode =
-  "COMMON_PASSWORD" | "PASSWORD_MISMATCH" | "TOO_LONG" | "TOO_SHORT";
+  "COMMON_PASSWORD" | "TOO_LONG" | "TOO_SHORT";
 
 export class PasswordPolicyError extends Error {
   constructor(

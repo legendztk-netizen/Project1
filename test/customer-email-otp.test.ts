@@ -219,8 +219,8 @@ describe("customer password", () => {
       validatedCustomerPassword("correcthorsebatterystaple"),
     ).rejects.toMatchObject({ code: "COMMON_PASSWORD" });
     expect(customerPasswordMinimumLength).toBe(15);
-    expect(new PasswordPolicyError("mismatch", "PASSWORD_MISMATCH").code).toBe(
-      "PASSWORD_MISMATCH",
+    expect(new PasswordPolicyError("short", "TOO_SHORT").code).toBe(
+      "TOO_SHORT",
     );
   });
 

@@ -107,7 +107,7 @@ async function requestEmailOtp(input: {
     body: form,
     headers: {
       origin,
-      ...(input.ip ? { "x-forwarded-for": input.ip } : {}),
+      "x-forwarded-for": input.ip ?? `smoke-test:${input.email}`,
     },
     method: "POST",
   });
@@ -854,6 +854,45 @@ describe("Cloudflare Worker route surfaces", () => {
     }
     expect(passwordLimitStatuses.slice(0, 10)).toEqual(Array(10).fill(422));
     expect(passwordLimitStatuses[10]).toBe(429);
+
+    const [changeAttempt] = runLocalD1<{
+      email_digest: string;
+      request_ip_digest: string;
+    }>(
+      `SELECT email_digest, request_ip_digest FROM customer_password_attempts
+       WHERE attempt_kind = 'password_change' LIMIT 1`,
+    );
+    if (!changeAttempt) throw new Error("Expected a password-change attempt");
+    runLocalD1(
+      `DELETE FROM customer_password_attempts
+       WHERE attempt_kind = 'password_change'`,
+    );
+    runLocalD1(
+      `WITH RECURSIVE attempts(number) AS (
+         SELECT 1 UNION ALL SELECT number + 1 FROM attempts WHERE number < 10
+       )
+       INSERT INTO customer_password_attempts
+       (id, attempt_kind, email_digest, request_ip_digest, created_at)
+       SELECT 'change-limit-' || number, 'password_change',
+              '${changeAttempt.email_digest}',
+              '${changeAttempt.request_ip_digest}',
+              strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+       FROM attempts`,
+    );
+    const limitedChange = new FormData();
+    limitedChange.set("intent", "change-current");
+    limitedChange.set("currentPassword", resetPassword);
+    limitedChange.set("newPassword", "Rate limited replacement passphrase");
+    limitedChange.set("confirmPassword", "Rate limited replacement passphrase");
+    expect(
+      (
+        await fetch(`${origin}/account/security`, {
+          body: limitedChange,
+          headers: { cookie: resetSessionCookie, origin },
+          method: "POST",
+        })
+      ).status,
+    ).toBe(429);
 
     expect(
       runLocalD1<{ id: string }>(
