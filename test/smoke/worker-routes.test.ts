@@ -94,6 +94,15 @@ function otpChallengeFromHtml(html: string) {
   return { challengeId: id ?? "", code: code?.[1] ?? "" };
 }
 
+function registrationTransactionFromHtml(html: string) {
+  const match = html.match(
+    /name="registrationTransactionId"[^>]*value="([^"]+)"|value="([^"]+)"[^>]*name="registrationTransactionId"/,
+  );
+  const id = match?.[1] ?? match?.[2];
+  expect(id).toBeTruthy();
+  return id ?? "";
+}
+
 async function requestEmailOtp(input: {
   email: string;
   ip?: string;
@@ -116,6 +125,34 @@ async function requestEmailOtp(input: {
     challenge: response.ok ? otpChallengeFromHtml(html) : null,
     html,
     response,
+  };
+}
+
+async function requestDraftRegistration(input: {
+  cookie?: string;
+  email: string;
+  snapshot: string;
+}) {
+  const form = new FormData();
+  form.set("intent", "request-configuration-registration");
+  form.set("email", input.email);
+  form.set("returnTo", "/catalog/hydraulic-hose");
+  form.set("registrationSnapshot", input.snapshot);
+  const response = await fetch(`${origin}/register`, {
+    body: form,
+    headers: {
+      ...(input.cookie ? { cookie: input.cookie } : {}),
+      origin,
+      "x-forwarded-for": `draft-registration:${input.email}`,
+    },
+    method: "POST",
+  });
+  const html = await response.text();
+  return {
+    challenge: response.ok ? otpChallengeFromHtml(html) : null,
+    html,
+    response,
+    transactionId: response.ok ? registrationTransactionFromHtml(html) : null,
   };
 }
 
@@ -407,6 +444,244 @@ describe("Cloudflare Worker route surfaces", () => {
       ).status,
     ).toBe(302);
   });
+
+  it("converts one attached registration draft exactly once and rejects invalid transaction states", async () => {
+    const exactSnapshot = JSON.stringify({
+      catalogContext: {
+        releaseId: "draft-registration-release",
+        releaseNumber: "CAT-DRAFT-1",
+      },
+      configuration: {
+        catalogRelease: {
+          id: "draft-registration-release",
+          number: "CAT-DRAFT-1",
+        },
+        hose: {
+          dash: "-3",
+          equivalentStandard: "EN 853 1SN",
+          familyKey: "601r1",
+          familyName: "601R1 Hydraulic Hose",
+          mediaKey: "601R1",
+          nominalIdIn: 0.1875,
+          performance: {
+            temperatureMaxC: 100,
+            temperatureMinC: -40,
+            workingBar: 250,
+            workingPsi: 3626,
+          },
+          primaryStandard: "SAE 100 R1AT",
+          reinforcement: "Single wire braid",
+          series: "601R1",
+          sku: "601R1_001",
+        },
+      },
+      quantityInput: "2",
+      referenceContext: {
+        assemblyEstimateScheduleVersion: 3,
+        clockingConventionVersion: 2,
+        installedProtectionVersion: null,
+        measurementDiagramAssetVersion: "diagram-v4",
+        measurementMethodVersion: 7,
+        measurementOverlayVersion: "overlay-v2",
+      },
+      selectedFamilyKey: "601r1",
+      selectedSku: "601R1_001",
+      selectionProvenance: {
+        endA: {
+          catalogReleaseId: "draft-registration-release",
+          hoseSku: "601R1_001",
+        },
+      },
+      stage: "end-a",
+      version: 1,
+    });
+    const requested = await requestDraftRegistration({
+      email: "draft.owner@example.com",
+      snapshot: exactSnapshot,
+    });
+    expect(requested.response.status).toBe(200);
+    if (!requested.challenge || !requested.transactionId) {
+      throw new Error("Expected an attached registration transaction");
+    }
+    expect(
+      runLocalD1<{
+        expires_in_seconds: number;
+        snapshot_json: string;
+      }>(
+        `SELECT snapshot_json,
+                CAST(strftime('%s', expires_at) - strftime('%s', created_at) AS INTEGER)
+                  AS expires_in_seconds
+         FROM customer_registration_configuration_transactions
+         WHERE id = '${requested.transactionId}'`,
+      ),
+    ).toEqual([{ expires_in_seconds: 86400, snapshot_json: exactSnapshot }]);
+    expect(
+      runLocalD1<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM customer_saved_configurations",
+      ),
+    ).toEqual([{ count: 0 }]);
+
+    const verified = await verifyEmailOtp({
+      challengeId: requested.challenge.challengeId,
+      code: requested.challenge.code,
+      path: "/register",
+    });
+    expect(verified.status).toBe(302);
+    expect(
+      runLocalD1<{
+        converted_at: string;
+        email_display: string;
+        snapshot_json: string;
+      }>(
+        `SELECT t.converted_at, p.email_display, s.snapshot_json
+         FROM customer_saved_configurations s
+         INNER JOIN customer_profiles p ON p.id = s.profile_id
+         INNER JOIN customer_registration_configuration_transactions t
+           ON t.id = s.source_registration_transaction_id
+         WHERE t.id = '${requested.transactionId}'`,
+      ),
+    ).toEqual([
+      {
+        converted_at: expect.any(String),
+        email_display: "draft.owner@example.com",
+        snapshot_json: exactSnapshot,
+      },
+    ]);
+    expect(
+      (
+        await verifyEmailOtp({
+          challengeId: requested.challenge.challengeId,
+          code: requested.challenge.code,
+          path: "/register",
+        })
+      ).status,
+    ).toBe(422);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM customer_saved_configurations
+         WHERE source_registration_transaction_id = '${requested.transactionId}'`,
+      ),
+    ).toEqual([{ count: 1 }]);
+
+    const authenticatedAttempt = await requestDraftRegistration({
+      cookie: cookieHeader(verified),
+      email: "already.signed.in@example.com",
+      snapshot: exactSnapshot,
+    });
+    expect(authenticatedAttempt.response.status).toBe(422);
+    expect(authenticatedAttempt.html).toContain(
+      "This registration path is only available to guests.",
+    );
+    expect(
+      runLocalD1<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM customer_otp_challenges WHERE email_normalized = 'already.signed.in@example.com'",
+      ),
+    ).toEqual([{ count: 0 }]);
+
+    const expired = await requestDraftRegistration({
+      email: "expired.draft@example.com",
+      snapshot: exactSnapshot,
+    });
+    if (!expired.challenge || !expired.transactionId) {
+      throw new Error("Expected an expiring registration transaction");
+    }
+    runLocalD1(
+      `UPDATE customer_registration_configuration_transactions
+       SET expires_at = '2000-01-01T00:00:00.000Z'
+       WHERE id = '${expired.transactionId}'`,
+    );
+    expect(
+      (
+        await verifyEmailOtp({
+          challengeId: expired.challenge.challengeId,
+          code: expired.challenge.code,
+          path: "/register",
+        })
+      ).status,
+    ).toBe(422);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM customer_saved_configurations
+         WHERE source_registration_transaction_id = '${expired.transactionId}'`,
+      ),
+    ).toEqual([{ count: 0 }]);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count
+         FROM customer_registration_configuration_transactions
+         WHERE id = '${expired.transactionId}'`,
+      ),
+    ).toEqual([{ count: 0 }]);
+    expect(
+      runLocalD1<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM customer_profiles WHERE email_normalized = 'expired.draft@example.com'",
+      ),
+    ).toEqual([{ count: 0 }]);
+
+    const abandoned = await requestDraftRegistration({
+      email: "abandoned.draft@example.com",
+      snapshot: exactSnapshot,
+    });
+    if (!abandoned.challenge || !abandoned.transactionId) {
+      throw new Error("Expected an abandonable registration transaction");
+    }
+    const abandonForm = new FormData();
+    abandonForm.set("intent", "abandon-configuration-registration");
+    abandonForm.set("challengeId", abandoned.challenge.challengeId);
+    abandonForm.set("registrationTransactionId", abandoned.transactionId);
+    const abandonedResponse = await fetch(`${origin}/register`, {
+      body: abandonForm,
+      headers: { origin },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(abandonedResponse.status).toBe(302);
+    expect(
+      (
+        await verifyEmailOtp({
+          challengeId: abandoned.challenge.challengeId,
+          code: abandoned.challenge.code,
+          path: "/register",
+        })
+      ).status,
+    ).toBe(422);
+
+    const superseded = await requestDraftRegistration({
+      email: "superseded.draft@example.com",
+      snapshot: exactSnapshot,
+    });
+    if (!superseded.challenge || !superseded.transactionId) {
+      throw new Error("Expected a supersedable registration transaction");
+    }
+    runLocalD1(
+      `UPDATE customer_otp_challenges
+       SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-61 seconds')
+       WHERE id = '${superseded.challenge.challengeId}'`,
+    );
+    expect(
+      (
+        await requestEmailOtp({
+          email: "superseded.draft@example.com",
+          path: "/register",
+        })
+      ).response.status,
+    ).toBe(200);
+    expect(
+      (
+        await verifyEmailOtp({
+          challengeId: superseded.challenge.challengeId,
+          code: superseded.challenge.code,
+          path: "/register",
+        })
+      ).status,
+    ).toBe(422);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM customer_saved_configurations
+         WHERE source_registration_transaction_id = '${superseded.transactionId}'`,
+      ),
+    ).toEqual([{ count: 0 }]);
+  }, 180_000);
 
   it("supports optional password setup, both sign-in methods, change and single-use OTP reset", async () => {
     const email = "password.customer@example.com";
@@ -3897,12 +4172,22 @@ describe("Cloudflare Worker route surfaces", () => {
       `${origin}/verify-configuration-email?token=obsolete`,
     );
     expect(verificationResponse.status).toBe(404);
+
+    const emailRecoveryResponse = await fetch(
+      `${origin}/api/configurator/saved-configurations?email=draft.owner%40example.com`,
+    );
+    expect(emailRecoveryResponse.status).toBe(404);
     expect(
       runLocalD1<{ name: string }>(
         `SELECT name FROM sqlite_master
          WHERE type = 'table' AND name LIKE 'pending_configuration_%'`,
       ),
     ).toEqual([]);
+    expect(
+      runLocalD1<{ name: string }>(
+        "PRAGMA table_info(customer_saved_configurations)",
+      ).map((column) => column.name),
+    ).not.toContain("email");
   }, 30_000);
 
   it("keeps a blocking workbook error out of draft releases", async () => {

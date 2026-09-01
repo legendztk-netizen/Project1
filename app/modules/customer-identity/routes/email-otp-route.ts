@@ -37,6 +37,10 @@ export async function handleEmailOtpAction(input: {
   });
   const form = await input.request.formData();
   const intent = textValue(form, "intent");
+  const registrationTransactionId = textValue(
+    form,
+    "registrationTransactionId",
+  );
   const returnTo = validatedCustomerReturnPath(
     textValue(form, "returnTo"),
     input.env.PUBLIC_STOREFRONT_ORIGIN,
@@ -50,7 +54,7 @@ export async function handleEmailOtpAction(input: {
         purpose: input.purpose,
         request: input.request,
       });
-      return data({ ...result, step: "verify" as const });
+      return data({ ...result, returnTo, step: "verify" as const });
     }
     if (intent === "verify") {
       const result = await service.verifyOtp({
@@ -76,6 +80,11 @@ export async function handleEmailOtpAction(input: {
         challengeId: verify ? textValue(form, "challengeId") : undefined,
         email: textValue(form, "email") || undefined,
         error: error.message,
+        registrationTransactionId:
+          verify && registrationTransactionId
+            ? registrationTransactionId
+            : undefined,
+        returnTo,
         step: verify ? ("verify" as const) : ("email" as const),
       },
       {

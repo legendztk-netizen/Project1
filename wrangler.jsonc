@@ -11,6 +11,9 @@
     "enabled": true
   },
   "upload_source_maps": true,
+  "triggers": {
+    "crons": ["17 * * * *"]
+  },
   "vars": {
     "APP_ENV": "local",
     "PUBLIC_APP_NAME": "Hydraulic Supply",
@@ -48,6 +51,9 @@
   "env": {
     "preview": {
       "name": "hydraulic-hose-rfq-platform-preview",
+      "triggers": {
+        "crons": ["17 * * * *"]
+      },
       "vars": {
         "APP_ENV": "preview",
         "PUBLIC_APP_NAME": "Hydraulic Supply Preview",
@@ -89,6 +95,9 @@
     },
     "production": {
       "name": "hydraulic-hose-rfq-platform-production",
+      "triggers": {
+        "crons": ["17 * * * *"]
+      },
       "vars": {
         "APP_ENV": "production",
         "PUBLIC_APP_NAME": "Hydraulic Supply",

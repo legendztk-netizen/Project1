@@ -278,7 +278,7 @@ afterEach(() => {
 });
 
 describe("real local D1 migration lifecycle", () => {
-  it("keeps the newest delivered OTP active when email delivery completes out of order", async () => {
+  it("keeps the newest delivered OTP active and rejects repeated delivery", async () => {
     const directory = mkdtempSync(join(tmpdir(), "hose-d1-otp-ordering-"));
     temporaryDirectories.push(directory);
     const migration = runProjectMigrate(directory);
@@ -327,6 +327,14 @@ describe("real local D1 migration lifecycle", () => {
         id: "older-delayed",
         purpose: common.purpose,
       });
+      await expect(
+        repository.activateDeliveredChallenge({
+          deliveredAt: "2026-09-01T00:01:04.000Z",
+          email: common.email,
+          id: "older-delayed",
+          purpose: common.purpose,
+        }),
+      ).rejects.toThrow("OTP challenge delivery could not be activated");
 
       const rows = await platform.env.DB.prepare(
         `SELECT id, delivery_status, consumed_at, superseded_at

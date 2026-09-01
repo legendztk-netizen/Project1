@@ -12,6 +12,7 @@ import {
   validateRuntimeEnvironment,
 } from "./environment";
 import { createHealthResponse } from "./health";
+import { createRegistrationConfigurationService } from "../app/modules/customer-identity/application/registration-configuration-service";
 
 const requestHandler = createRequestHandler(
   () => import("virtual:react-router/server-build"),
@@ -42,5 +43,14 @@ export default {
     routerContext.set(cloudflareContext, { adminIdentity, env, runtime, ctx });
 
     return requestHandler(request, routerContext);
+  },
+
+  scheduled(controller, env, ctx) {
+    validateRuntimeEnvironment(env);
+    ctx.waitUntil(
+      createRegistrationConfigurationService(env, {
+        now: () => new Date(controller.scheduledTime),
+      }).cleanupExpired(),
+    );
   },
 } satisfies ExportedHandler<ApplicationBindings>;

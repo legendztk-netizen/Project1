@@ -9,6 +9,9 @@ export interface EmailOtpActionData {
   email?: string;
   error?: string;
   localPreviewCode?: string | null;
+  registrationSnapshot?: string;
+  registrationTransactionId?: string;
+  returnTo?: string;
   step?: "email" | "password" | "verify";
 }
 
@@ -27,6 +30,7 @@ export function EmailOtpAccessPage(input: {
     (input.actionData?.step === "password" ||
       (!input.actionData?.step && input.initialMethod === "password"));
   const title = register ? "Create your account" : "Sign in to your account";
+  const returnTo = input.actionData?.returnTo ?? input.returnTo;
 
   return (
     <div className="storefront-shell" data-surface="storefront">
@@ -58,13 +62,13 @@ export function EmailOtpAccessPage(input: {
             <nav className="customer-auth-methods" aria-label="Sign-in method">
               <Link
                 aria-current={!password ? "page" : undefined}
-                to={`/sign-in?returnTo=${encodeURIComponent(input.returnTo)}`}
+                to={`/sign-in?returnTo=${encodeURIComponent(returnTo)}`}
               >
                 Email code
               </Link>
               <Link
                 aria-current={password ? "page" : undefined}
-                to={`/sign-in?method=password&returnTo=${encodeURIComponent(input.returnTo)}`}
+                to={`/sign-in?method=password&returnTo=${encodeURIComponent(returnTo)}`}
               >
                 Password
               </Link>
@@ -84,12 +88,27 @@ export function EmailOtpAccessPage(input: {
           ) : null}
 
           <Form method="post" className="customer-auth-form">
-            <input name="returnTo" type="hidden" value={input.returnTo} />
+            <input name="returnTo" type="hidden" value={returnTo} />
             <input
               name="intent"
               type="hidden"
-              value={password ? "password" : verify ? "verify" : "request"}
+              value={
+                password
+                  ? "password"
+                  : verify
+                    ? "verify"
+                    : register && input.actionData?.registrationSnapshot
+                      ? "request-configuration-registration"
+                      : "request"
+              }
             />
+            {input.actionData?.registrationSnapshot && !verify ? (
+              <input
+                name="registrationSnapshot"
+                type="hidden"
+                value={input.actionData.registrationSnapshot}
+              />
+            ) : null}
             {password ? (
               <>
                 <label htmlFor="customer-email">Email address</label>
@@ -125,6 +144,13 @@ export function EmailOtpAccessPage(input: {
                   type="hidden"
                   value={input.actionData?.email ?? ""}
                 />
+                {input.actionData?.registrationTransactionId ? (
+                  <input
+                    name="registrationTransactionId"
+                    type="hidden"
+                    value={input.actionData.registrationTransactionId}
+                  />
+                ) : null}
                 <label htmlFor="otp-code">Verification code</label>
                 <input
                   autoComplete="one-time-code"
@@ -179,12 +205,35 @@ export function EmailOtpAccessPage(input: {
           ) : null}
 
           {verify ? (
-            <Link
-              className="customer-auth-switch"
-              to={register ? "/register" : "/sign-in"}
-            >
-              Use a different email
-            </Link>
+            register && input.actionData?.registrationTransactionId ? (
+              <Form method="post" className="customer-auth-cancel-form">
+                <input
+                  name="intent"
+                  type="hidden"
+                  value="abandon-configuration-registration"
+                />
+                <input
+                  name="challengeId"
+                  type="hidden"
+                  value={input.actionData.challengeId ?? ""}
+                />
+                <input
+                  name="registrationTransactionId"
+                  type="hidden"
+                  value={input.actionData.registrationTransactionId}
+                />
+                <button className="customer-auth-switch" type="submit">
+                  Discard saved draft and use a different email
+                </button>
+              </Form>
+            ) : (
+              <Link
+                className="customer-auth-switch"
+                to={register ? "/register" : "/sign-in"}
+              >
+                Use a different email
+              </Link>
+            )
           ) : (
             <p className="customer-auth-switch">
               {register ? "Already registered?" : "New customer?"}{" "}

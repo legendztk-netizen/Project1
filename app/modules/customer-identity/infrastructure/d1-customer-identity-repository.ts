@@ -310,6 +310,7 @@ export function createD1CustomerIdentityRepository(database: D1Database) {
       tokenDigest: string;
     }) {
       const nonce = crypto.randomUUID();
+      const savedConfigurationId = crypto.randomUUID();
       const results = await database.batch([
         database
           .prepare(
@@ -318,9 +319,18 @@ export function createD1CustomerIdentityRepository(database: D1Database) {
              WHERE id = ? AND consumed_at IS NULL AND superseded_at IS NULL
                AND delivery_status = 'delivered'
                AND failed_attempts < 5 AND expires_at > ?
+               AND (
+                 registration_configuration_requested = 0 OR EXISTS (
+                   SELECT 1
+                   FROM customer_registration_configuration_transactions t
+                   WHERE t.otp_challenge_id = customer_otp_challenges.id
+                     AND t.abandoned_at IS NULL AND t.converted_at IS NULL
+                     AND t.expires_at > ?
+                 )
+               )
              RETURNING id`,
           )
-          .bind(input.now, nonce, input.challengeId, input.now),
+          .bind(input.now, nonce, input.challengeId, input.now, input.now),
         database
           .prepare(
             `INSERT INTO customer_profiles
@@ -386,6 +396,43 @@ export function createD1CustomerIdentityRepository(database: D1Database) {
             nonce,
             input.profileId,
           ),
+        database
+          .prepare(
+            `INSERT INTO customer_saved_configurations
+               (id, profile_id, source_registration_transaction_id,
+                snapshot_json, created_at, updated_at)
+             SELECT ?, p.id, t.id, t.snapshot_json, ?, ?
+             FROM customer_registration_configuration_transactions t
+             INNER JOIN customer_otp_challenges c
+               ON c.id = t.otp_challenge_id
+             INNER JOIN customer_profiles p
+               ON p.email_normalized = c.email_normalized
+             WHERE c.id = ? AND c.consumption_nonce = ?
+               AND t.abandoned_at IS NULL AND t.converted_at IS NULL
+               AND t.expires_at > ?
+             ON CONFLICT(source_registration_transaction_id) DO NOTHING
+             RETURNING id`,
+          )
+          .bind(
+            savedConfigurationId,
+            input.now,
+            input.now,
+            input.challengeId,
+            nonce,
+            input.now,
+          ),
+        database
+          .prepare(
+            `UPDATE customer_registration_configuration_transactions
+             SET converted_at = ?
+             WHERE otp_challenge_id = ? AND converted_at IS NULL
+               AND EXISTS (
+                 SELECT 1 FROM customer_saved_configurations s
+                 WHERE s.source_registration_transaction_id =
+                   customer_registration_configuration_transactions.id
+               )`,
+          )
+          .bind(input.now, input.challengeId),
       ]);
       const consumed = (results[0]?.meta.changes ?? 0) === 1;
       if (!consumed) return { consumed: false, profile: null };

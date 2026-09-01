@@ -28,6 +28,7 @@ function renderPage(
   items: PublicCatalogItem[],
   options: {
     clockingConvention?: ClockingConvention | null;
+    isAuthenticated?: boolean;
     quoteLineContext?: Parameters<
       typeof BuildAHoseView
     >[0]["loaderData"]["quoteLineContext"];
@@ -86,9 +87,11 @@ function renderPage(
                 },
               ],
               measurementMethods: measurementMethodsFixture(),
+              isAuthenticated: options.isAuthenticated ?? false,
               publishedHoseCount: items.length,
               quoteLineContext: options.quoteLineContext ?? null,
               quoteLineError: null,
+              releaseId: items[0]?.releaseId ?? null,
               releaseNumber: items[0]?.releaseNumber ?? null,
               requestedEndASku: options.requestedEndASku ?? null,
             }}
@@ -328,7 +331,7 @@ describe("Build a Hose view", () => {
     });
     expect(within(dialog).queryByLabelText("Email address")).toBeNull();
     expect(dialog.textContent).toContain(
-      "Saving this draft will become available through account registration.",
+      "Registering verifies your email before this draft is saved to your account.",
     );
     expect(dialog.textContent).toContain(
       "It is not stored against an email address alone.",
@@ -419,17 +422,25 @@ describe("Build a Hose view", () => {
     const discard = within(dialog).getByRole("button", {
       name: "Leave and Discard",
     });
+    const register = within(dialog).getByRole("button", {
+      name: "Register to Save",
+    });
     expect(document.activeElement).toBe(stay);
-    discard.focus();
+    register.focus();
     fireEvent.keyDown(document, { key: "Tab" });
     expect(document.activeElement).toBe(stay);
+
+    stay.focus();
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(register);
+    discard.focus();
 
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByText("SKU 601R1_001")).toBeTruthy();
   });
 
-  it("never posts an unfinished configuration from the exit warning", async () => {
+  it("offers registration without storing the draft until the customer chooses it", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     renderPage([publicHoseFixture()]);
@@ -445,6 +456,55 @@ describe("Build a Hose view", () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(within(dialog).queryByRole("textbox")).toBeNull();
+    expect(within(dialog).getAllByRole("button")).toHaveLength(3);
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Register to Save" }),
+    );
+    expect(
+      within(dialog).getByRole("textbox", { name: "Email address" }),
+    ).toBeTruthy();
+    const snapshot = within(dialog)
+      .getByRole("textbox", { name: "Email address" })
+      .closest("form")
+      ?.querySelector<HTMLInputElement>(
+        'input[name="registrationSnapshot"]',
+      )?.value;
+    expect(snapshot).toBeTruthy();
+    expect(JSON.parse(snapshot ?? "{}")).toMatchObject({
+      catalogContext: {
+        releaseId: "release-002",
+        releaseNumber: "CAT-002",
+      },
+      configuration: {
+        catalogRelease: {
+          id: "release-002",
+          number: "CAT-002",
+        },
+        hose: { sku: "601R1_001" },
+      },
+      selectedFamilyKey: "601r1",
+      selectedSku: "601R1_001",
+      stage: "hose",
+      version: 1,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not offer the registration path to an authenticated customer", async () => {
+    renderPage([publicHoseFixture()], { isAuthenticated: true });
+    fireEvent.click(
+      screen.getByRole("button", { name: /601R1 Hydraulic Hose/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Select 3\/16 in/ }));
+    fireEvent.click(screen.getByRole("link", { name: "Products" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Leave this configuration?",
+    });
+    expect(
+      within(dialog).queryByRole("button", { name: "Register to Save" }),
+    ).toBeNull();
     expect(within(dialog).getAllByRole("button")).toHaveLength(2);
   });
 

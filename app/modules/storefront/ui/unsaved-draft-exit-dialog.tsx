@@ -1,19 +1,29 @@
 import { TriangleAlert } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Form } from "react-router";
 
 interface UnsavedDraftExitDialogProps {
+  canRegister: boolean;
+  draftSnapshot: string;
   onLeave: () => void;
+  onRegister: () => void;
   onStay: () => void;
+  returnTo: string;
 }
 
 export function UnsavedDraftExitDialog({
+  canRegister,
+  draftSnapshot,
   onLeave,
+  onRegister,
   onStay,
+  returnTo,
 }: UnsavedDraftExitDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const stayButtonRef = useRef<HTMLButtonElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const onStayRef = useRef(onStay);
+  const [registering, setRegistering] = useState(false);
 
   useEffect(() => {
     onStayRef.current = onStay;
@@ -81,8 +91,9 @@ export function UnsavedDraftExitDialog({
           Your selected configuration will be lost when you leave.
         </p>
         <small>
-          Saving this draft will become available through account registration.
-          It is not stored against an email address alone.
+          {canRegister
+            ? "Registering verifies your email before this draft is saved to your account. It is not stored against an email address alone."
+            : "This draft is not stored until Saved Configurations becomes available in your account."}
         </small>
         <div className="unsaved-draft-actions">
           <button
@@ -100,7 +111,50 @@ export function UnsavedDraftExitDialog({
           >
             Leave and Discard
           </button>
+          {canRegister && !registering ? (
+            <button
+              className="button button-primary"
+              onClick={() => setRegistering(true)}
+              type="button"
+            >
+              Register to Save
+            </button>
+          ) : null}
         </div>
+        {canRegister && registering ? (
+          <Form
+            action="/register"
+            className="unsaved-draft-registration"
+            method="post"
+            onSubmit={onRegister}
+          >
+            <input
+              name="intent"
+              type="hidden"
+              value="request-configuration-registration"
+            />
+            <input name="returnTo" type="hidden" value={returnTo} />
+            <input
+              name="registrationSnapshot"
+              type="hidden"
+              value={draftSnapshot}
+            />
+            <label htmlFor="draft-registration-email">Email address</label>
+            <input
+              autoComplete="email"
+              autoFocus
+              id="draft-registration-email"
+              inputMode="email"
+              name="email"
+              placeholder="you@company.com"
+              required
+              type="email"
+            />
+            <button className="button button-primary" type="submit">
+              Send Verification Code
+            </button>
+          </Form>
+        ) : null}
       </div>
     </div>
   );

@@ -45,6 +45,7 @@ import {
   createHoseConfigurationDraft,
   type HoseConfigurationDraft,
 } from "../../configurator/domain/hose-configuration-draft";
+import { serializedRegistrationConfigurationSnapshot } from "../../configurator/domain/registration-configuration";
 import {
   attachFinishedLengthToDraft,
   attachMeasurementSelectionToDraft,
@@ -60,6 +61,7 @@ import {
 } from "../../catalog/domain/public-catalog";
 import { createD1PublicCatalogRepository } from "../../catalog/infrastructure/d1-public-catalog-repository";
 import { createAnonymousQuoteListService } from "../../quote-list/application/anonymous-quote-list-service";
+import { createCustomerIdentityService } from "../../customer-identity/application/customer-identity-service";
 import { QuoteListCommandRejected } from "../../quote-list/domain/anonymous-quote-list";
 import { hoseSizeLabel } from "../domain/variant-label";
 import { fetchCompatibleHoseEndCandidates } from "../infrastructure/compatible-hose-end-client";
@@ -168,6 +170,8 @@ export async function loader({ context, request }: Route.LoaderArgs) {
     hasMatchingReferenceSnapshot && referenceSnapshot
       ? referenceSnapshot.assemblyEstimateSchedule
       : null;
+  const customerProfile =
+    await createCustomerIdentityService(env).readSession(request);
 
   let directSelection: DirectSelectionState = { kind: "none" };
   if (requestedSku) {
@@ -223,9 +227,11 @@ export async function loader({ context, request }: Route.LoaderArgs) {
       measurementMethods,
       installedProtectionRules,
       installedProtections,
+      isAuthenticated: Boolean(customerProfile),
       publishedHoseCount: hoses.length,
       quoteLineContext,
       quoteLineError,
+      releaseId: hoses[0]?.releaseId ?? null,
       releaseNumber: hoses[0]?.releaseNumber ?? null,
       requestedEndASku: requestedEndASku ?? null,
     },
@@ -640,6 +646,53 @@ export function BuildAHoseView({
         : null,
     [savedDraft, savedLine?.quantity],
   );
+  const registrationDraftSnapshot = useMemo(() => {
+    if (!selectedFamilyKey && !draft) return "";
+    return serializedRegistrationConfigurationSnapshot({
+      catalogContext: {
+        releaseId: draft?.catalogRelease.id ?? loaderData.releaseId,
+        releaseNumber: draft?.catalogRelease.number ?? loaderData.releaseNumber,
+      },
+      configuration: draft,
+      quantityInput,
+      referenceContext: {
+        assemblyEstimateScheduleVersion:
+          loaderData.assemblyEstimateSchedule?.recordVersion ?? null,
+        clockingConventionVersion:
+          loaderData.clockingConvention?.recordVersion ?? null,
+        installedProtectionVersion:
+          draft?.installedProtection?.recordVersion ?? null,
+        measurementDiagramAssetVersion:
+          draft?.measurementSelection?.state === "selected"
+            ? draft.measurementSelection.diagram.assetVersion
+            : null,
+        measurementMethodVersion:
+          draft?.measurementSelection?.state === "selected"
+            ? draft.measurementSelection.method.recordVersion
+            : null,
+        measurementOverlayVersion:
+          draft?.measurementSelection?.state === "selected"
+            ? draft.measurementSelection.diagram.overlayVersion
+            : null,
+      },
+      selectedFamilyKey,
+      selectedSku,
+      selectionProvenance,
+      stage,
+      version: 1,
+    });
+  }, [
+    draft,
+    loaderData.assemblyEstimateSchedule?.recordVersion,
+    loaderData.clockingConvention?.recordVersion,
+    loaderData.releaseId,
+    loaderData.releaseNumber,
+    quantityInput,
+    selectedFamilyKey,
+    selectedSku,
+    selectionProvenance,
+    stage,
+  ]);
   const hasUnsavedDraft =
     loaderData.quoteLineContext?.mode === "edit"
       ? Boolean(
@@ -891,6 +944,10 @@ export function BuildAHoseView({
   const stayOnConfigurator = useCallback(() => {
     if (navigationBlocker.state === "blocked") navigationBlocker.reset();
   }, [navigationBlocker]);
+
+  function registerToSaveDraft() {
+    allowNavigationRef.current = true;
+  }
 
   const receiveCompatibleCandidates = useMemo(
     () => (snapshot: CompatibleCandidateSnapshot) => {
@@ -1397,8 +1454,12 @@ export function BuildAHoseView({
       </main>
       {navigationBlocker.state === "blocked" ? (
         <UnsavedDraftExitDialog
+          canRegister={!loaderData.isAuthenticated}
+          draftSnapshot={registrationDraftSnapshot}
           onLeave={discardInPageDraftAndLeave}
+          onRegister={registerToSaveDraft}
           onStay={stayOnConfigurator}
+          returnTo={`${navigationBlocker.location.pathname}${navigationBlocker.location.search}${navigationBlocker.location.hash}`}
         />
       ) : null}
     </div>

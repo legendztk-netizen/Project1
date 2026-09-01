@@ -686,9 +686,31 @@
 
 .unsaved-draft-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   margin-top: 8px;
+}
+
+.unsaved-draft-registration {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.unsaved-draft-registration label {
+  grid-column: 1 / -1;
+  font-weight: 800;
+}
+
+.unsaved-draft-registration input {
+  min-width: 0;
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 1px solid #8f9aa1;
+  border-radius: 4px;
+  font: inherit;
 }
 
 .unsaved-draft-discard {
@@ -2230,6 +2252,10 @@
   }
 
   .unsaved-draft-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .unsaved-draft-registration {
     grid-template-columns: 1fr;
   }
 
