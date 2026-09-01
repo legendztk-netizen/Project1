@@ -11,7 +11,7 @@ import {
 } from "../application/customer-identity-service";
 import { requireTrustedAuthPost } from "../application/trusted-auth-request";
 import { validatedCustomerReturnPath } from "../domain/email-otp";
-import { StorefrontHeader } from "../../storefront/ui/storefront-header";
+import { AccountWorkspace } from "../ui/account-workspace";
 
 function value(form: FormData, name: string) {
   const item = form.get(name);
@@ -154,14 +154,13 @@ export default function AccountSecurity({
   const busy = useNavigation().state !== "idle";
   const verify = actionData?.step === "verify";
   return (
-    <div className="storefront-shell" data-surface="storefront">
-      <StorefrontHeader />
-      <main className="customer-auth-page">
+    <AccountWorkspace activeSection="security">
+      <div className="account-security-detail">
         <section className="customer-auth-panel customer-security-panel">
           <span className="customer-auth-icon" aria-hidden="true">
             <KeyRound size={24} />
           </span>
-          <span className="eyebrow">Personal Center</span>
+          <span className="eyebrow">Account &amp; Lists</span>
           <h1>
             {loaderData.welcome ? "Secure your account" : "Account security"}
           </h1>
@@ -261,12 +260,12 @@ export default function AccountSecurity({
               Skip for now
             </Link>
           ) : (
-            <Link className="customer-auth-switch" to="/account">
-              Back to Personal Center
+            <Link className="customer-auth-switch" to="/quote-list">
+              Back to Quote List
             </Link>
           )}
         </section>
-      </main>
-    </div>
+      </div>
+    </AccountWorkspace>
   );
 }

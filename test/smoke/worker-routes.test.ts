@@ -378,6 +378,15 @@ describe("Cloudflare Worker route surfaces", () => {
     });
     expect(account.status).toBe(200);
     expect(await account.text()).toContain("first.customer@example.com");
+    const accountLists = await fetch(`${origin}/quote-list`, {
+      headers: { cookie: customerCookie },
+    });
+    expect(accountLists.status).toBe(200);
+    const accountListsHtml = await accountLists.text();
+    expect(accountListsHtml).toContain('aria-label="Account &amp; Lists"');
+    expect(accountListsHtml).toContain('href="/account/security"');
+    expect(accountListsHtml).toContain("first.customer@example.com");
+    expect(accountListsHtml).not.toContain(">Sign In<");
     expect(
       runLocalD1<{ count: number }>(
         "SELECT COUNT(*) AS count FROM customer_profiles WHERE email_normalized = 'first.customer@example.com'",

@@ -43,17 +43,18 @@ describe("StorefrontHeader", () => {
     expect(
       screen.getByRole("link", { name: "Sign In" }).getAttribute("href"),
     ).toBe("/sign-in");
-    expect(screen.queryByRole("link", { name: "Personal Center" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Account & Lists" })).toBeNull();
   });
 
-  it("replaces guest actions with Personal Center for a signed-in customer", async () => {
+  it("replaces guest actions with Account & Lists for a signed-in customer", async () => {
     renderHeader({ email: "buyer@example.com", id: "customer-1" });
 
     const accountLink = await screen.findByRole("link", {
-      name: "Personal Center",
+      name: "Account & Lists",
     });
-    expect(accountLink.getAttribute("href")).toBe("/account");
+    expect(accountLink.getAttribute("href")).toBe("/quote-list");
     expect(screen.queryByRole("link", { name: "Register" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Sign In" })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^Quote List$/u })).toBeNull();
   });
 });

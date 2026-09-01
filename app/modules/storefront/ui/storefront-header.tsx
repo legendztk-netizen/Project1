@@ -29,24 +29,29 @@ export function StorefrontHeader() {
         >
           Build a Hose
         </Link>
-        <Link
-          className={location.pathname === "/quote-list" ? "active" : ""}
-          to="/quote-list"
-        >
-          Quote List
-        </Link>
+        {!isAuthenticated ? (
+          <Link
+            className={location.pathname === "/quote-list" ? "active" : ""}
+            to="/quote-list"
+          >
+            Quote List
+          </Link>
+        ) : null}
       </nav>
       <div className="storefront-header-actions">
         {isAuthenticated ? (
           <Link
             aria-current={
-              location.pathname.startsWith("/account") ? "page" : undefined
+              location.pathname === "/quote-list" ||
+              location.pathname.startsWith("/account")
+                ? "page"
+                : undefined
             }
             className="storefront-account-link"
-            to="/account"
+            to="/quote-list"
           >
             <UserRound aria-hidden="true" size={18} />
-            <span>Personal Center</span>
+            <span>Account &amp; Lists</span>
           </Link>
         ) : (
           <>
