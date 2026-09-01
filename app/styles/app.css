@@ -1921,6 +1921,49 @@ a.customer-auth-switch {
   border-bottom: 1px solid var(--line);
 }
 
+.saved-configuration-list {
+  display: grid;
+  gap: 12px;
+}
+
+.saved-configuration-list > article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 24px;
+  padding: 22px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.saved-configuration-list h2 {
+  margin: 6px 0;
+  font-size: 1.05rem;
+}
+
+.saved-configuration-list p {
+  margin: 0;
+  color: var(--muted);
+  text-transform: capitalize;
+}
+
+.saved-configuration-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.saved-configuration-actions form {
+  margin: 0;
+}
+
+.saved-configuration-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
 .account-record-list,
 .account-context-list {
   display: grid;
@@ -2198,6 +2241,19 @@ a.customer-auth-switch {
   .account-record-actions {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .saved-configuration-list > article {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .saved-configuration-actions {
+    width: 100%;
+  }
+
+  .saved-configuration-actions .button {
+    min-height: 44px;
   }
 
   .account-summary-grid {

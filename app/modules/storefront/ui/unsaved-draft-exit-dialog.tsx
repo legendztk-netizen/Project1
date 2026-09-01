@@ -4,20 +4,28 @@ import { Form } from "react-router";
 
 interface UnsavedDraftExitDialogProps {
   canRegister: boolean;
+  canSave: boolean;
   draftSnapshot: string;
   onLeave: () => void;
   onRegister: () => void;
+  onSave: () => void;
   onStay: () => void;
   returnTo: string;
+  saveError: string | null;
+  saving: boolean;
 }
 
 export function UnsavedDraftExitDialog({
   canRegister,
+  canSave,
   draftSnapshot,
   onLeave,
   onRegister,
+  onSave,
   onStay,
   returnTo,
+  saveError,
+  saving,
 }: UnsavedDraftExitDialogProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const stayButtonRef = useRef<HTMLButtonElement>(null);
@@ -93,7 +101,7 @@ export function UnsavedDraftExitDialog({
         <small>
           {canRegister
             ? "Registering verifies your email before this draft is saved to your account. It is not stored against an email address alone."
-            : "This draft is not stored until Saved Configurations becomes available in your account."}
+            : "Save this draft to your account before leaving, or discard it."}
         </small>
         <div className="unsaved-draft-actions">
           <button
@@ -120,7 +128,18 @@ export function UnsavedDraftExitDialog({
               Register to Save
             </button>
           ) : null}
+          {canSave ? (
+            <button
+              className="button button-primary"
+              disabled={saving}
+              onClick={onSave}
+              type="button"
+            >
+              {saving ? "Saving..." : "Save Configuration and Leave"}
+            </button>
+          ) : null}
         </div>
+        {saveError ? <p role="alert">{saveError}</p> : null}
         {canRegister && registering ? (
           <Form
             action="/register"

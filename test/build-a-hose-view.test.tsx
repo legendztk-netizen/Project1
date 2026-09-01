@@ -94,6 +94,8 @@ function renderPage(
               releaseId: items[0]?.releaseId ?? null,
               releaseNumber: items[0]?.releaseNumber ?? null,
               requestedEndASku: options.requestedEndASku ?? null,
+              savedConfigurationContext: null,
+              savedConfigurationError: null,
             }}
           />
         ),
@@ -101,6 +103,7 @@ function renderPage(
       },
       { element: <h1>Products destination</h1>, path: "/" },
       { element: <h1>Quote List destination</h1>, path: "/quote-list" },
+      { element: <h1>Saved Configurations destination</h1>, path: "/account" },
       {
         element: <h1>Measurement Guide destination</h1>,
         path: "/assembly-measurement-guide",
@@ -491,7 +494,7 @@ describe("Build a Hose view", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("does not offer the registration path to an authenticated customer", async () => {
+  it("offers account save instead of registration to an authenticated customer", async () => {
     renderPage([publicHoseFixture()], { isAuthenticated: true });
     fireEvent.click(
       screen.getByRole("button", { name: /601R1 Hydraulic Hose/ }),
@@ -505,7 +508,49 @@ describe("Build a Hose view", () => {
     expect(
       within(dialog).queryByRole("button", { name: "Register to Save" }),
     ).toBeNull();
-    expect(within(dialog).getAllByRole("button")).toHaveLength(2);
+    expect(
+      within(dialog).getByRole("button", {
+        name: "Save Configuration and Leave",
+      }),
+    ).toBeTruthy();
+    expect(within(dialog).getAllByRole("button")).toHaveLength(3);
+  });
+
+  it("explicitly saves an authenticated draft without creating a quote command", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: null, id: "saved-1", ok: true }), {
+        headers: { "content-type": "application/json" },
+        status: 201,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    renderPage([publicHoseFixture()], { isAuthenticated: true });
+    fireEvent.click(
+      screen.getByRole("button", { name: /601R1 Hydraulic Hose/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Select 3\/16 in/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save Configuration" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/configurator/saved-configurations",
+    );
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const form = request.body as FormData;
+    expect(String(form.get("commandId"))).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f-]{27}$/iu,
+    );
+    expect(form.has("email")).toBe(false);
+    expect(JSON.parse(String(form.get("snapshot")))).toMatchObject({
+      configuration: { hose: { sku: "601R1_001" } },
+      selectedFamilyKey: "601r1",
+      selectedSku: "601R1_001",
+    });
+    expect(
+      await screen.findByRole("heading", {
+        name: "Saved Configurations destination",
+      }),
+    ).toBeTruthy();
   });
 
   it("discards the in-page draft and completes the blocked navigation", async () => {

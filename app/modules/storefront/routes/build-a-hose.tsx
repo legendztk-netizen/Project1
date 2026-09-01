@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Check,
   Layers3,
+  Save,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -62,6 +63,7 @@ import {
 import { createD1PublicCatalogRepository } from "../../catalog/infrastructure/d1-public-catalog-repository";
 import { createAnonymousQuoteListService } from "../../quote-list/application/anonymous-quote-list-service";
 import { createCustomerIdentityService } from "../../customer-identity/application/customer-identity-service";
+import { createSavedConfigurationService } from "../../customer-identity/application/saved-configuration-service";
 import { QuoteListCommandRejected } from "../../quote-list/domain/anonymous-quote-list";
 import { hoseSizeLabel } from "../domain/variant-label";
 import { fetchCompatibleHoseEndCandidates } from "../infrastructure/compatible-hose-end-client";
@@ -139,6 +141,9 @@ export async function loader({ context, request }: Route.LoaderArgs) {
   const requestedEndASku = url.searchParams.get("endA")?.trim();
   const requestedQuoteLineId = url.searchParams.get("quoteLine")?.trim();
   const requestedQuoteMode = url.searchParams.get("mode")?.trim();
+  const requestedSavedConfigurationId = url.searchParams
+    .get("savedConfiguration")
+    ?.trim();
   const requested = requestedSku
     ? hoses.find((item) => item.sku === requestedSku)
     : null;
@@ -172,6 +177,23 @@ export async function loader({ context, request }: Route.LoaderArgs) {
       : null;
   const customerProfile =
     await createCustomerIdentityService(env).readSession(request);
+
+  let savedConfigurationContext: Awaited<
+    ReturnType<ReturnType<typeof createSavedConfigurationService>["find"]>
+  > = null;
+  let savedConfigurationError: string | null = null;
+  if (requestedSavedConfigurationId) {
+    savedConfigurationContext = await createSavedConfigurationService(env).find(
+      {
+        id: requestedSavedConfigurationId,
+        request,
+      },
+    );
+    if (!savedConfigurationContext) {
+      savedConfigurationError =
+        "This saved configuration is unavailable or does not belong to this account.";
+    }
+  }
 
   let directSelection: DirectSelectionState = { kind: "none" };
   if (requestedSku) {
@@ -234,6 +256,8 @@ export async function loader({ context, request }: Route.LoaderArgs) {
       releaseId: hoses[0]?.releaseId ?? null,
       releaseNumber: hoses[0]?.releaseNumber ?? null,
       requestedEndASku: requestedEndASku ?? null,
+      savedConfigurationContext,
+      savedConfigurationError,
     },
     { headers },
   );
@@ -428,15 +452,19 @@ export function BuildAHoseView({
 }) {
   const navigate = useNavigate();
   const savedLine = loaderData.quoteLineContext?.line ?? null;
-  const savedDraft = savedLine?.configuredAssembly.snapshot.configuration;
+  const accountSnapshot = loaderData.savedConfigurationContext?.snapshot;
+  const savedDraft =
+    savedLine?.configuredAssembly.snapshot.configuration ??
+    accountSnapshot?.configuration ??
+    undefined;
   const [stage, setStage] = useState<ConfiguratorStage>(
-    savedDraft ? "review" : "hose",
+    savedLine ? "review" : (accountSnapshot?.stage ?? "hose"),
   );
   const [selectedFamilyKey, setSelectedFamilyKey] = useState<string | null>(
-    savedDraft?.hose.familyKey ?? null,
+    accountSnapshot?.selectedFamilyKey ?? savedDraft?.hose.familyKey ?? null,
   );
   const [selectedSku, setSelectedSku] = useState<string | null>(
-    savedDraft?.hose.sku ?? null,
+    accountSnapshot?.selectedSku ?? savedDraft?.hose.sku ?? null,
   );
   const [retainedHoseItem, setRetainedHoseItem] =
     useState<PublicCatalogItem | null>(null);
@@ -474,7 +502,7 @@ export function BuildAHoseView({
         : null,
     );
   const [quantityInput, setQuantityInput] = useState(
-    String(savedLine?.quantity ?? 1),
+    accountSnapshot?.quantityInput ?? String(savedLine?.quantity ?? 1),
   );
   const [reviewVisited, setReviewVisited] = useState(Boolean(savedDraft));
   const [quoteCommand, setQuoteCommand] = useState<{
@@ -482,17 +510,27 @@ export function BuildAHoseView({
     pending: boolean;
   }>({ error: null, pending: false });
   const allowNavigationRef = useRef(false);
+  const saveCommandIdRef = useRef<{
+    id: string;
+    snapshot: string;
+  } | null>(null);
   const [selectionProvenance, setSelectionProvenance] =
     useState<DraftSelectionProvenance>(
-      savedDraft
-        ? restoredProvenance(savedDraft, loaderData.assemblyEstimateSchedule)
-        : {},
+      accountSnapshot
+        ? accountSnapshot.selectionProvenance
+        : savedDraft
+          ? restoredProvenance(savedDraft, loaderData.assemblyEstimateSchedule)
+          : {},
     );
   const [compatibleCandidateSnapshot, setCompatibleCandidateSnapshot] =
     useState<CompatibleCandidateSnapshot | null>(null);
   const [compatibilityCheckFailure, setCompatibilityCheckFailure] = useState<
     DraftSelectionProvenance["endA"] | null
   >(null);
+  const [saveCommand, setSaveCommand] = useState<{
+    error: string | null;
+    pending: boolean;
+  }>({ error: null, pending: false });
   const selectedFamily = loaderData.families.find(
     (family) => family.familyKey === selectedFamilyKey,
   );
@@ -648,6 +686,26 @@ export function BuildAHoseView({
   );
   const registrationDraftSnapshot = useMemo(() => {
     if (!selectedFamilyKey && !draft) return "";
+    const accountConfigurationUnchanged =
+      accountSnapshot &&
+      (accountSnapshot.configuration
+        ? draft &&
+          managedDraftFingerprint(
+            accountSnapshot.configuration,
+            accountSnapshot.quantityInput,
+          ) === managedDraftFingerprint(draft, quantityInput)
+        : !draft && accountSnapshot.quantityInput === quantityInput);
+    if (
+      accountSnapshot &&
+      accountConfigurationUnchanged &&
+      accountSnapshot.selectedFamilyKey === selectedFamilyKey &&
+      accountSnapshot.selectedSku === selectedSku &&
+      accountSnapshot.stage === stage &&
+      JSON.stringify(sortedJsonValue(accountSnapshot.selectionProvenance)) ===
+        JSON.stringify(sortedJsonValue(selectionProvenance))
+    ) {
+      return JSON.stringify(accountSnapshot);
+    }
     return serializedRegistrationConfigurationSnapshot({
       catalogContext: {
         releaseId: draft?.catalogRelease.id ?? loaderData.releaseId,
@@ -682,6 +740,7 @@ export function BuildAHoseView({
       version: 1,
     });
   }, [
+    accountSnapshot,
     draft,
     loaderData.assemblyEstimateSchedule?.recordVersion,
     loaderData.clockingConvention?.recordVersion,
@@ -700,7 +759,9 @@ export function BuildAHoseView({
           (draft &&
             currentManagedDraftFingerprint !== originalManagedDraftFingerprint),
         )
-      : Boolean(selectedFamilyKey || draft);
+      : accountSnapshot
+        ? registrationDraftSnapshot !== JSON.stringify(accountSnapshot)
+        : Boolean(selectedFamilyKey || draft);
   const navigationBlocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       hasUnsavedDraft &&
@@ -919,6 +980,50 @@ export function BuildAHoseView({
     }
   }
 
+  async function saveCurrentConfiguration(leaveAfterSave = false) {
+    if (!registrationDraftSnapshot || saveCommand.pending) return;
+    setSaveCommand({ error: null, pending: true });
+    const form = new FormData();
+    if (saveCommandIdRef.current?.snapshot !== registrationDraftSnapshot) {
+      saveCommandIdRef.current = {
+        id: crypto.randomUUID(),
+        snapshot: registrationDraftSnapshot,
+      };
+    }
+    form.set("commandId", saveCommandIdRef.current.id);
+    form.set("snapshot", registrationDraftSnapshot);
+    try {
+      const response = await fetch("/api/configurator/saved-configurations", {
+        body: form,
+        method: "POST",
+      });
+      const result = (await response.json()) as {
+        error: string | null;
+        id?: string;
+        ok: boolean;
+      };
+      if (!response.ok || !result.ok) {
+        setSaveCommand({
+          error: result.error ?? "The configuration could not be saved.",
+          pending: false,
+        });
+        return;
+      }
+      allowNavigationRef.current = true;
+      if (leaveAfterSave && navigationBlocker.state === "blocked") {
+        navigationBlocker.proceed();
+      } else {
+        navigate("/account?view=saved-configurations&saved=1");
+      }
+    } catch {
+      setSaveCommand({
+        error:
+          "The configuration could not be saved. Check your connection and try again.",
+        pending: false,
+      });
+    }
+  }
+
   function discardInPageDraftAndLeave() {
     if (navigationBlocker.state !== "blocked") return;
     allowNavigationRef.current = true;
@@ -993,13 +1098,60 @@ export function BuildAHoseView({
             <h1>Build a Hose</h1>
             <p>Start with the hose series and exact inside diameter.</p>
           </div>
-          <div className="configurator-release">
-            <span>Catalog release</span>
-            <strong>{loaderData.releaseNumber ?? "Not available"}</strong>
+          <div className="configurator-heading-actions">
+            {loaderData.isAuthenticated && registrationDraftSnapshot ? (
+              <button
+                className="button button-secondary button-with-icon"
+                disabled={saveCommand.pending}
+                onClick={() => void saveCurrentConfiguration()}
+                type="button"
+              >
+                <Save aria-hidden="true" size={18} />
+                {saveCommand.pending ? "Saving..." : "Save Configuration"}
+              </button>
+            ) : null}
+            <div className="configurator-release">
+              <span>Catalog release</span>
+              <strong>{loaderData.releaseNumber ?? "Not available"}</strong>
+            </div>
           </div>
         </header>
 
-        {loaderData.quoteLineContext ? (
+        {saveCommand.error ? (
+          <div className="configurator-alert" role="alert">
+            <AlertTriangle aria-hidden="true" size={20} />
+            <div>
+              <strong>Configuration not saved</strong>
+              <p>{saveCommand.error}</p>
+            </div>
+          </div>
+        ) : null}
+
+        {loaderData.savedConfigurationContext ? (
+          <section className="configurator-edit-context" role="status">
+            <div>
+              <span className="eyebrow">Resumed saved configuration</span>
+              <strong>
+                This is an isolated working copy. The saved record remains
+                unchanged until you delete it.
+              </strong>
+            </div>
+            <Link
+              className="button button-secondary"
+              to="/account?view=saved-configurations"
+            >
+              Back to Saved Configurations
+            </Link>
+          </section>
+        ) : loaderData.savedConfigurationError ? (
+          <div className="configurator-alert" role="alert">
+            <AlertTriangle aria-hidden="true" size={20} />
+            <div>
+              <strong>Saved configuration unavailable</strong>
+              <p>{loaderData.savedConfigurationError}</p>
+            </div>
+          </div>
+        ) : loaderData.quoteLineContext ? (
           <section className="configurator-edit-context" role="status">
             <div>
               <span className="eyebrow">
@@ -1455,10 +1607,14 @@ export function BuildAHoseView({
       {navigationBlocker.state === "blocked" ? (
         <UnsavedDraftExitDialog
           canRegister={!loaderData.isAuthenticated}
+          canSave={loaderData.isAuthenticated}
           draftSnapshot={registrationDraftSnapshot}
           onLeave={discardInPageDraftAndLeave}
           onRegister={registerToSaveDraft}
+          onSave={() => void saveCurrentConfiguration(true)}
           onStay={stayOnConfigurator}
+          saveError={saveCommand.error}
+          saving={saveCommand.pending}
           returnTo={`${navigationBlocker.location.pathname}${navigationBlocker.location.search}${navigationBlocker.location.hash}`}
         />
       ) : null}

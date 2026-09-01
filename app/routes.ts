@@ -24,6 +24,10 @@ export default [
     "api/configurator/quote-assembly",
     "modules/storefront/routes/configurator-add-assembly-resource.ts",
   ),
+  route(
+    "api/configurator/saved-configurations",
+    "modules/storefront/routes/configurator-saved-configuration-resource.ts",
+  ),
   route("quote-list", "modules/storefront/routes/anonymous-quote-list.tsx"),
   route("register", "modules/customer-identity/routes/register.tsx"),
   route("sign-in", "modules/customer-identity/routes/sign-in.tsx"),

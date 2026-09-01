@@ -35,6 +35,11 @@ import {
   type AccountDetailView,
 } from "../ui/account-detail-navigation";
 import { AccountWorkspace } from "../ui/account-workspace";
+import { createSavedConfigurationService } from "../application/saved-configuration-service";
+import {
+  savedConfigurationLabel,
+  type SavedConfiguration,
+} from "../domain/saved-configuration";
 
 function selectedView(request: Request): AccountDetailView {
   const requested = new URL(request.url).searchParams.get("view");
@@ -54,9 +59,19 @@ const accountActions = [
   "delete_address",
   "create_organization",
   "select_context",
+  "delete_saved_configuration",
 ] as const;
 
 const countryDisplayNames = new Intl.DisplayNames(["en"], { type: "region" });
+const customerDateTime = new Intl.DateTimeFormat("en-US", {
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+  month: "short",
+  timeZone: "America/New_York",
+  timeZoneName: "short",
+  year: "numeric",
+});
 
 type AccountAction = (typeof accountActions)[number];
 
@@ -109,10 +124,13 @@ export async function loader({ context, request }: Route.LoaderArgs) {
   if (editAddressId && !editingAddress) {
     throw new Response("Address not found", { status: 404 });
   }
+  const savedConfigurations =
+    (await createSavedConfigurationService(env).list(request)) ?? [];
   return {
     ...account,
     editingAddress,
     saved: new URL(request.url).searchParams.get("saved") === "1",
+    savedConfigurations,
     view,
   };
 }
@@ -186,16 +204,25 @@ export async function action({ context, request }: Route.ActionArgs) {
           request,
         });
         break;
+      case "delete_saved_configuration":
+        result = await createSavedConfigurationService(env).delete({
+          id: text(form, "savedConfigurationId"),
+          request,
+        });
+        if (result === false) throw new CustomerAccountAccessError();
+        break;
     }
 
     if (!result) throw signInRedirect(view);
     const destination =
-      intent === "create_address" ||
-      intent === "update_address" ||
-      intent === "select_address" ||
-      intent === "delete_address"
-        ? "/account?view=addresses&saved=1"
-        : "/account?view=profile&saved=1";
+      intent === "delete_saved_configuration"
+        ? "/account?view=saved-configurations"
+        : intent === "create_address" ||
+            intent === "update_address" ||
+            intent === "select_address" ||
+            intent === "delete_address"
+          ? "/account?view=addresses&saved=1"
+          : "/account?view=profile&saved=1";
     return redirect(destination);
   } catch (error) {
     if (error instanceof CustomerAccountAccessError) {
@@ -212,6 +239,75 @@ export async function action({ context, request }: Route.ActionArgs) {
     }
     throw error;
   }
+}
+
+function SavedConfigurationsDetail({
+  configurations,
+}: {
+  configurations: SavedConfiguration[];
+}) {
+  return (
+    <section className="account-record-detail saved-configurations-detail">
+      <span className="eyebrow">Reusable drafts</span>
+      <h1>Saved Configurations</h1>
+      <p className="account-detail-intro">
+        Resume a private copy and recheck it against the current catalog before
+        adding it to your Quote List.
+      </p>
+      {configurations.length === 0 ? (
+        <div className="account-inline-empty">
+          <p>No saved hose configurations yet.</p>
+          <Link className="button button-secondary" to="/build-a-hose">
+            Build a hose
+          </Link>
+        </div>
+      ) : (
+        <div className="saved-configuration-list">
+          {configurations.map((configuration) => (
+            <article key={configuration.id}>
+              <div>
+                <span className="eyebrow">
+                  {configuration.source === "registration"
+                    ? "Saved during registration"
+                    : "Saved configuration"}
+                </span>
+                <h2>{savedConfigurationLabel(configuration.snapshot)}</h2>
+                <p>
+                  Stage: {configuration.snapshot.stage.replace("-", " ")} ·
+                  Updated{" "}
+                  {customerDateTime.format(new Date(configuration.updatedAt))}
+                </p>
+              </div>
+              <div className="saved-configuration-actions">
+                <Link
+                  className="button button-primary"
+                  to={`/build-a-hose?savedConfiguration=${encodeURIComponent(configuration.id)}`}
+                >
+                  Resume
+                </Link>
+                <Form method="post">
+                  <input
+                    name="savedConfigurationId"
+                    type="hidden"
+                    value={configuration.id}
+                  />
+                  <button
+                    className="button button-secondary"
+                    name="intent"
+                    type="submit"
+                    value="delete_saved_configuration"
+                  >
+                    <Trash2 aria-hidden="true" size={17} />
+                    Delete
+                  </button>
+                </Form>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
 }
 
 function EmptyDetail(input: {
@@ -728,16 +824,8 @@ export default function CustomerAccount({
     );
   } else if (view === "saved-configurations") {
     detail = (
-      <EmptyDetail
-        description={
-          profile.savedConfigurationCount === 0
-            ? "No saved hose configurations yet."
-            : `${profile.savedConfigurationCount} saved hose configuration${
-                profile.savedConfigurationCount === 1 ? "" : "s"
-              } in your account.`
-        }
-        title="Saved Configurations"
-        to={profile.savedConfigurationCount === 0 ? "/build-a-hose" : undefined}
+      <SavedConfigurationsDetail
+        configurations={loaderData.savedConfigurations}
       />
     );
   } else if (view === "my-quotes") {

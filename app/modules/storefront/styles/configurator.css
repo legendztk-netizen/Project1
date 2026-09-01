@@ -12,6 +12,13 @@
   padding-bottom: 24px;
 }
 
+.configurator-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
 .configurator-edit-context {
   display: flex;
   align-items: center;

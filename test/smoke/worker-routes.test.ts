@@ -512,6 +512,7 @@ describe("Cloudflare Worker route surfaces", () => {
 
     const profileForm = new FormData();
     profileForm.set("fullName", "Morgan Buyer");
+    profileForm.set("intent", "update_contact");
     profileForm.set("phoneNumber", "+1 212 555 0109");
     profileForm.set("profileId", other.id);
     const updated = await fetch(`${origin}/account?view=profile`, {
@@ -548,7 +549,6 @@ describe("Cloudflare Worker route surfaces", () => {
         phone_number: "+1 212 555 0109",
       },
     ]);
-
     const profile = await fetch(`${origin}/account?view=profile`, {
       headers: { cookie: ownerCookie },
     });
@@ -1014,7 +1014,7 @@ describe("Cloudflare Worker route surfaces", () => {
       email: "draft.owner@example.com",
       snapshot: exactSnapshot,
     });
-    expect(requested.response.status).toBe(200);
+    expect(requested.response.status, requested.html).toBe(200);
     if (!requested.challenge || !requested.transactionId) {
       throw new Error("Expected an attached registration transaction");
     }
@@ -1042,6 +1042,7 @@ describe("Cloudflare Worker route surfaces", () => {
       path: "/register",
     });
     expect(verified.status).toBe(302);
+    const registrationCookie = cookieHeader(verified);
     expect(
       runLocalD1<{
         converted_at: string;
@@ -1062,6 +1063,18 @@ describe("Cloudflare Worker route surfaces", () => {
         snapshot_json: exactSnapshot,
       },
     ]);
+    const registrationSavedPage = await fetch(
+      `${origin}/account?view=saved-configurations`,
+      { headers: { cookie: registrationCookie } },
+    );
+    const registrationSavedMarkup = await registrationSavedPage.text();
+    const registrationSavedHtml = renderedText(registrationSavedMarkup);
+    expect(registrationSavedPage.status).toBe(200);
+    expect(registrationSavedHtml).toContain("Saved during registration");
+    expect(registrationSavedHtml).toContain("601R1 Hydraulic Hose");
+    expect(registrationSavedMarkup).toContain(
+      'href="/build-a-hose?savedConfiguration=',
+    );
     expect(
       (
         await verifyEmailOtp({
@@ -1079,7 +1092,7 @@ describe("Cloudflare Worker route surfaces", () => {
     ).toEqual([{ count: 1 }]);
 
     const authenticatedAttempt = await requestDraftRegistration({
-      cookie: cookieHeader(verified),
+      cookie: registrationCookie,
       email: "already.signed.in@example.com",
       snapshot: exactSnapshot,
     });
@@ -1194,6 +1207,199 @@ describe("Cloudflare Worker route surfaces", () => {
       runLocalD1<{ count: number }>(
         `SELECT COUNT(*) AS count FROM customer_saved_configurations
          WHERE source_registration_transaction_id = '${superseded.transactionId}'`,
+      ),
+    ).toEqual([{ count: 0 }]);
+  }, 180_000);
+
+  it("saves, resumes and deletes account-owned configurations without creating quote state", async () => {
+    async function register(email: string) {
+      const requested = await requestEmailOtp({ email, path: "/register" });
+      if (!requested.challenge) {
+        throw new Error(`Expected registration OTP: ${requested.html}`);
+      }
+      const response = await verifyEmailOtp({
+        challengeId: requested.challenge.challengeId,
+        code: requested.challenge.code,
+        path: "/register",
+      });
+      expect(response.status, await response.clone().text()).toBe(302);
+      return cookieHeader(response);
+    }
+
+    async function deleteSaved(cookie: string, id: string) {
+      const form = new FormData();
+      form.set("intent", "delete_saved_configuration");
+      form.set("savedConfigurationId", id);
+      return fetch(`${origin}/account?view=saved-configurations`, {
+        body: form,
+        headers: { cookie, origin },
+        method: "POST",
+        redirect: "manual",
+      });
+    }
+
+    const snapshot = JSON.stringify({
+      catalogContext: {
+        releaseId: "saved-release-1",
+        releaseNumber: "SAVED-CAT-1",
+      },
+      configuration: {
+        catalogRelease: {
+          id: "saved-release-1",
+          number: "SAVED-CAT-1",
+        },
+        hose: {
+          dash: "-3",
+          equivalentStandard: "EN 853 1SN",
+          familyKey: "601r1",
+          familyName: "601R1 Hydraulic Hose",
+          mediaKey: "601R1",
+          nominalIdIn: 0.1875,
+          performance: {
+            temperatureMaxC: 100,
+            temperatureMinC: -40,
+            workingBar: 250,
+            workingPsi: 3626,
+          },
+          primaryStandard: "SAE 100 R1AT",
+          reinforcement: "Single wire braid",
+          series: "601R1",
+          sku: "601R1_001",
+        },
+      },
+      quantityInput: "2",
+      referenceContext: {
+        assemblyEstimateScheduleVersion: 3,
+        clockingConventionVersion: 2,
+        installedProtectionVersion: null,
+        measurementDiagramAssetVersion: null,
+        measurementMethodVersion: null,
+        measurementOverlayVersion: null,
+      },
+      selectedFamilyKey: "601r1",
+      selectedSku: "601R1_001",
+      selectionProvenance: {},
+      stage: "end-a",
+      version: 1,
+    });
+    const ownerCookie = await register("ticket08.owner@example.com");
+    const otherCookie = await register("ticket08.other@example.com");
+    const quoteLinesBefore = runLocalD1<{ count: number }>(
+      "SELECT COUNT(*) AS count FROM anonymous_quote_lines",
+    );
+
+    const anonymousForm = new FormData();
+    anonymousForm.set("commandId", "00000000-0000-4000-8000-000000000000");
+    anonymousForm.set("snapshot", snapshot);
+    expect(
+      (
+        await fetch(`${origin}/api/configurator/saved-configurations`, {
+          body: anonymousForm,
+          headers: { origin },
+          method: "POST",
+        })
+      ).status,
+    ).toBe(401);
+
+    const saveForm = new FormData();
+    const saveCommandId = "11111111-1111-4111-8111-111111111111";
+    saveForm.set("commandId", saveCommandId);
+    saveForm.set("snapshot", snapshot);
+    const savedResponse = await fetch(
+      `${origin}/api/configurator/saved-configurations`,
+      {
+        body: saveForm,
+        headers: { cookie: ownerCookie, origin },
+        method: "POST",
+      },
+    );
+    expect(savedResponse.status).toBe(201);
+    const savedResult = (await savedResponse.json()) as { id: string };
+    expect(savedResult.id).toBeTruthy();
+    const retriedSaveForm = new FormData();
+    retriedSaveForm.set("commandId", saveCommandId);
+    retriedSaveForm.set("snapshot", snapshot);
+    const retriedSave = await fetch(
+      `${origin}/api/configurator/saved-configurations`,
+      {
+        body: retriedSaveForm,
+        headers: { cookie: ownerCookie, origin },
+        method: "POST",
+      },
+    );
+    expect(retriedSave.status).toBe(201);
+    expect(await retriedSave.json()).toMatchObject({ id: savedResult.id });
+    expect(
+      runLocalD1<{
+        snapshot_json: string;
+        command_id: string | null;
+        source_kind: string;
+        source_registration_transaction_id: string | null;
+      }>(
+        `SELECT command_id, source_kind, source_registration_transaction_id, snapshot_json
+         FROM customer_saved_configurations
+         WHERE id = '${savedResult.id}'`,
+      ),
+    ).toEqual([
+      {
+        command_id: saveCommandId,
+        snapshot_json: snapshot,
+        source_kind: "explicit",
+        source_registration_transaction_id: null,
+      },
+    ]);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM customer_saved_configurations
+         WHERE command_id = '${saveCommandId}'`,
+      ),
+    ).toEqual([{ count: 1 }]);
+    expect(
+      runLocalD1<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM anonymous_quote_lines",
+      ),
+    ).toEqual(quoteLinesBefore);
+
+    const accountPage = await fetch(
+      `${origin}/account?view=saved-configurations`,
+      { headers: { cookie: ownerCookie } },
+    );
+    const accountHtml = renderedText(await accountPage.text());
+    expect(accountPage.status).toBe(200);
+    expect(accountHtml).toContain("601R1 Hydraulic Hose");
+    expect(accountHtml).toContain("Saved configuration");
+    expect(accountHtml).toContain("Resume");
+
+    const resumed = await fetch(
+      `${origin}/build-a-hose?savedConfiguration=${savedResult.id}`,
+      { headers: { cookie: ownerCookie } },
+    );
+    const resumedHtml = renderedText(await resumed.text());
+    expect(resumed.status).toBe(200);
+    expect(resumedHtml).toContain("Resumed saved configuration");
+    expect(resumedHtml).toContain("isolated working copy");
+    expect(resumedHtml).toContain("601R1_001");
+    expect(resumedHtml).toContain("Configuration needs attention");
+    expect(
+      runLocalD1<{ snapshot_json: string }>(
+        `SELECT snapshot_json FROM customer_saved_configurations
+         WHERE id = '${savedResult.id}'`,
+      ),
+    ).toEqual([{ snapshot_json: snapshot }]);
+
+    const foreignResume = await fetch(
+      `${origin}/build-a-hose?savedConfiguration=${savedResult.id}`,
+      { headers: { cookie: otherCookie } },
+    );
+    expect(renderedText(await foreignResume.text())).toContain(
+      "unavailable or does not belong to this account",
+    );
+    expect((await deleteSaved(otherCookie, savedResult.id)).status).toBe(404);
+    expect((await deleteSaved(ownerCookie, savedResult.id)).status).toBe(302);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM customer_saved_configurations
+         WHERE id = '${savedResult.id}'`,
       ),
     ).toEqual([{ count: 0 }]);
   }, 180_000);

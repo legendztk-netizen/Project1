@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 36,
+  "schemaVersion": 38,
   "migrations": [
     "0000_initial_catalog_release.sql",
     "0001_add_admin_identities.sql",
@@ -36,6 +36,8 @@
     "0032_customer_quote_list_ownership.sql",
     "0033_bind_quote_session_to_otp.sql",
     "0034_customer_addresses_and_purchasing_contexts.sql",
-    "0035_enforce_customer_account_ownership.sql"
+    "0035_enforce_customer_account_ownership.sql",
+    "0036_account_owned_saved_configurations.sql",
+    "0037_saved_configuration_command_idempotency.sql"
   ]
 }
