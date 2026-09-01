@@ -454,6 +454,104 @@ describe("Cloudflare Worker route surfaces", () => {
     ).toBe(302);
   });
 
+  it("keeps account details and profile updates scoped to the signed-in customer", async () => {
+    const unauthenticated = await fetch(
+      `${origin}/account?view=orders&profileId=another-customer`,
+      { redirect: "manual" },
+    );
+    expect(unauthenticated.status).toBe(302);
+    expect(unauthenticated.headers.get("location")).toContain("/sign-in?");
+
+    async function register(email: string) {
+      const request = await requestEmailOtp({ email, path: "/register" });
+      if (!request.challenge) throw new Error("Expected registration OTP");
+      const response = await verifyEmailOtp({
+        challengeId: request.challenge.challengeId,
+        code: request.challenge.code,
+        path: "/register",
+      });
+      return cookieHeader(response);
+    }
+
+    const ownerCookie = await register("ticket05.owner@example.com");
+    await register("ticket05.other@example.com");
+    const [other] = runLocalD1<{ id: string }>(
+      "SELECT id FROM customer_profiles WHERE email_normalized = 'ticket05.other@example.com'",
+    );
+    if (!other) throw new Error("Expected the other customer profile");
+
+    const orders = await fetch(
+      `${origin}/account?view=orders&profileId=${other.id}`,
+      { headers: { cookie: ownerCookie } },
+    );
+    const ordersHtml = await orders.text();
+    expect(orders.status).toBe(200);
+    expect(ordersHtml).toContain("ticket05.owner@example.com");
+    expect(ordersHtml).not.toContain("ticket05.other@example.com");
+    expect(renderedText(ordersHtml)).toContain(
+      "No paid and confirmed orders yet. Quote requests and unpaid PIs do not appear here.",
+    );
+    for (const label of [
+      "Overview",
+      "Saved Configurations",
+      "My Quotes",
+      "Orders",
+      "Addresses",
+      "Profile / Company",
+    ]) {
+      expect(renderedText(ordersHtml)).toContain(label);
+    }
+
+    const profileForm = new FormData();
+    profileForm.set("fullName", "Morgan Buyer");
+    profileForm.set("phoneNumber", "+1 212 555 0109");
+    profileForm.set("profileId", other.id);
+    const updated = await fetch(`${origin}/account?view=profile`, {
+      body: profileForm,
+      headers: { cookie: ownerCookie, origin },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(updated.status).toBe(302);
+    expect(updated.headers.get("location")).toBe(
+      "/account?view=profile&saved=1",
+    );
+    expect(
+      runLocalD1<{
+        email_normalized: string;
+        full_name: string | null;
+        phone_number: string | null;
+      }>(
+        `SELECT email_normalized, full_name, phone_number
+         FROM customer_profiles
+         WHERE email_normalized IN (
+           'ticket05.owner@example.com', 'ticket05.other@example.com'
+         ) ORDER BY email_normalized`,
+      ),
+    ).toEqual([
+      {
+        email_normalized: "ticket05.other@example.com",
+        full_name: null,
+        phone_number: null,
+      },
+      {
+        email_normalized: "ticket05.owner@example.com",
+        full_name: "Morgan Buyer",
+        phone_number: "+1 212 555 0109",
+      },
+    ]);
+
+    const profile = await fetch(`${origin}/account?view=profile`, {
+      headers: { cookie: ownerCookie },
+    });
+    const profileHtml = await profile.text();
+    expect(profileHtml).toContain("Morgan Buyer");
+    expect(profileHtml).toContain("+1 212 555 0109");
+    expect(profileHtml).toContain(
+      "Company and purchasing details are collected separately",
+    );
+  });
+
   it("converts one attached registration draft exactly once and rejects invalid transaction states", async () => {
     const exactSnapshot = JSON.stringify({
       catalogContext: {

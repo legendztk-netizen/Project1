@@ -55,6 +55,7 @@ describe("AccountWorkspace", () => {
     expect(quoteList.getAttribute("aria-current")).toBe("page");
     expect(quoteList.getAttribute("href")).toBe("/quote-list");
     expect(security.getAttribute("href")).toBe("/account/security");
+    expect(within(navigation).getAllByRole("link")).toHaveLength(2);
     expect(
       screen.getByRole("heading", { name: "Selected account detail" }),
     ).toBeTruthy();

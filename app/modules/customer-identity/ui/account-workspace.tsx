@@ -6,7 +6,7 @@ import type { RootLoaderData } from "../../../root";
 import { StorefrontHeader } from "../../storefront/ui/storefront-header";
 
 interface AccountWorkspaceProps {
-  activeSection: "quote-list" | "security";
+  activeSection: "quote-list" | "security" | null;
   children: ReactNode;
 }
 

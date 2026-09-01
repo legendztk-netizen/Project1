@@ -52,7 +52,7 @@ describe("StorefrontHeader", () => {
     const accountLink = await screen.findByRole("link", {
       name: "Account & Lists",
     });
-    expect(accountLink.getAttribute("href")).toBe("/quote-list");
+    expect(accountLink.getAttribute("href")).toBe("/account");
     expect(screen.queryByRole("link", { name: "Register" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Sign In" })).toBeNull();
     expect(screen.queryByRole("link", { name: /^Quote List$/u })).toBeNull();

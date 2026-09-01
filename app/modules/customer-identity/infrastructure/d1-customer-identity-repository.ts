@@ -4,6 +4,7 @@ import type {
 } from "../domain/email-otp";
 import type { PasswordCredentialHash } from "../domain/customer-password";
 import type { PasswordAuthorizationScope } from "../domain/password-authorization";
+import type { CustomerContactProfile } from "../domain/customer-profile";
 
 export interface CustomerProfile {
   email: string;
@@ -82,6 +83,67 @@ export type PasswordAttemptKind =
 
 export function createD1CustomerIdentityRepository(database: D1Database) {
   return {
+    async findCustomerProfileById(id: string) {
+      const row = await database
+        .prepare(
+          `SELECT id, email_display, email_verified_at, full_name, phone_number
+           FROM customer_profiles WHERE id = ?`,
+        )
+        .bind(id)
+        .first<{
+          email_display: string;
+          email_verified_at: string;
+          full_name: string | null;
+          id: string;
+          phone_number: string | null;
+        }>();
+      return row
+        ? ({
+            email: row.email_display,
+            fullName: row.full_name ?? "",
+            id: row.id,
+            phoneNumber: row.phone_number ?? "",
+            verifiedAt: row.email_verified_at,
+          } satisfies CustomerContactProfile)
+        : null;
+    },
+
+    async updateCustomerProfileContact(input: {
+      fullName: string;
+      phoneNumber: string;
+      profileId: string;
+      updatedAt: string;
+    }) {
+      const result = await database
+        .prepare(
+          `UPDATE customer_profiles
+           SET full_name = NULLIF(?, ''), phone_number = NULLIF(?, ''),
+               updated_at = ?
+           WHERE id = ?`,
+        )
+        .bind(
+          input.fullName,
+          input.phoneNumber,
+          input.updatedAt,
+          input.profileId,
+        )
+        .run();
+      if ((result.meta.changes ?? 0) !== 1) {
+        throw new Error("Customer profile could not be updated");
+      }
+    },
+
+    async countSavedConfigurations(profileId: string) {
+      const row = await database
+        .prepare(
+          `SELECT COUNT(*) AS count FROM customer_saved_configurations
+           WHERE profile_id = ?`,
+        )
+        .bind(profileId)
+        .first<{ count: number }>();
+      return Number(row?.count ?? 0);
+    },
+
     async countRecentRequests(input: {
       email: string;
       ipDigest: string;

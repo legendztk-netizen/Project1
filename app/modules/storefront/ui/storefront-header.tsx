@@ -48,7 +48,7 @@ export function StorefrontHeader() {
                 : undefined
             }
             className="storefront-account-link"
-            to="/quote-list"
+            to="/account"
           >
             <UserRound aria-hidden="true" size={18} />
             <span>Account &amp; Lists</span>
