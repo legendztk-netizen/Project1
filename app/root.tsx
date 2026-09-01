@@ -8,7 +8,28 @@ import {
 } from "react-router";
 
 import type { Route } from "./+types/root";
+import { createCustomerIdentityService } from "./modules/customer-identity/application/customer-identity-service";
 import "./styles/app.css";
+import { cloudflareContext } from "#workers/context";
+
+export interface RootLoaderData {
+  customer: {
+    email: string;
+    id: string;
+  } | null;
+}
+
+export async function loader({
+  context,
+  request,
+}: Route.LoaderArgs): Promise<RootLoaderData> {
+  const { env } = context.get(cloudflareContext);
+  const profile = await createCustomerIdentityService(env).readSession(request);
+
+  return {
+    customer: profile ? { email: profile.email, id: profile.id } : null,
+  };
+}
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (

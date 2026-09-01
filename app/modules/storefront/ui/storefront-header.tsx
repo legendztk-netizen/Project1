@@ -1,10 +1,13 @@
 import { Ruler, UserRound } from "lucide-react";
-import { Link, useLocation } from "react-router";
+import { Link, useLocation, useRouteLoaderData } from "react-router";
 
 import { BrandMark } from "../../shared/ui/brand-mark";
+import type { RootLoaderData } from "../../../root";
 
 export function StorefrontHeader() {
   const location = useLocation();
+  const rootData = useRouteLoaderData<RootLoaderData>("root");
+  const isAuthenticated = Boolean(rootData?.customer);
   return (
     <header className="storefront-header">
       <BrandMark />
@@ -34,13 +37,28 @@ export function StorefrontHeader() {
         </Link>
       </nav>
       <div className="storefront-header-actions">
-        <Link className="storefront-register-link" to="/register">
-          Register
-        </Link>
-        <Link className="storefront-account-link" to="/sign-in">
-          <UserRound size={18} />
-          <span>Sign In</span>
-        </Link>
+        {isAuthenticated ? (
+          <Link
+            aria-current={
+              location.pathname.startsWith("/account") ? "page" : undefined
+            }
+            className="storefront-account-link"
+            to="/account"
+          >
+            <UserRound aria-hidden="true" size={18} />
+            <span>Personal Center</span>
+          </Link>
+        ) : (
+          <>
+            <Link className="storefront-register-link" to="/register">
+              Register
+            </Link>
+            <Link className="storefront-account-link" to="/sign-in">
+              <UserRound aria-hidden="true" size={18} />
+              <span>Sign In</span>
+            </Link>
+          </>
+        )}
         <Link
           className="button button-secondary"
           to="/assembly-measurement-guide"
