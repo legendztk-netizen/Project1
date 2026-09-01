@@ -556,7 +556,407 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(profileHtml).toContain("Morgan Buyer");
     expect(profileHtml).toContain("+1 212 555 0109");
     expect(profileHtml).toContain(
-      "Company and purchasing details are collected separately",
+      "Purchasing contexts identify whether a quote is for you or an organization",
+    );
+  });
+
+  it("maintains owned Delivery Addresses and Individual or Organization Purchasing Contexts", async () => {
+    async function register(email: string) {
+      const requested = await requestEmailOtp({ email, path: "/register" });
+      if (!requested.challenge) throw new Error("Expected registration OTP");
+      const response = await verifyEmailOtp({
+        challengeId: requested.challenge.challengeId,
+        code: requested.challenge.code,
+        path: "/register",
+      });
+      return cookieHeader(response);
+    }
+
+    async function accountPost(cookie: string, view: string, values: object) {
+      const form = new FormData();
+      for (const [name, value] of Object.entries(values)) {
+        form.set(name, String(value));
+      }
+      return fetch(`${origin}/account?view=${view}`, {
+        body: form,
+        headers: { cookie, origin },
+        method: "POST",
+        redirect: "manual",
+      });
+    }
+
+    const ownerCookie = await register("ticket07.owner@example.com");
+    const otherCookie = await register("ticket07.other@example.com");
+
+    expect((await accountPost(ownerCookie, "profile", {})).status).toBe(400);
+
+    const initialProfile = await fetch(`${origin}/account?view=profile`, {
+      headers: { cookie: ownerCookie },
+    });
+    const initialProfileHtml = await initialProfile.text();
+    expect(initialProfile.status).toBe(200);
+    expect(renderedText(initialProfileHtml)).toContain("Individual purchase");
+    expect(renderedText(initialProfileHtml)).toContain("Current context");
+
+    const incomplete = await accountPost(ownerCookie, "addresses", {
+      addressLine1: "200 Park Avenue",
+      addressLine2: "",
+      city: "",
+      countryCode: "US",
+      intent: "create_address",
+      label: "Main warehouse",
+      postalCode: "10166",
+      recipientEmail: "receiving@example.com",
+      recipientName: "Morgan Buyer",
+      recipientPhone: "+1 212 555 0109",
+      stateProvince: "New York",
+    });
+    expect(incomplete.status).toBe(422);
+    expect(await incomplete.text()).toContain("City is required.");
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM customer_delivery_addresses a
+         INNER JOIN customer_profiles p ON p.id = a.profile_id
+         WHERE p.email_normalized = 'ticket07.owner@example.com'`,
+      ),
+    ).toEqual([{ count: 0 }]);
+
+    const mainAddress = {
+      addressLine1: "200 Park Avenue",
+      addressLine2: "Suite 900",
+      city: "New York",
+      countryCode: "US",
+      intent: "create_address",
+      label: "Main warehouse",
+      postalCode: "10166",
+      recipientEmail: "receiving@example.com",
+      recipientName: "Morgan Buyer",
+      recipientPhone: "+1 212 555 0109",
+      stateProvince: "New York",
+    };
+    expect(
+      (await accountPost(ownerCookie, "addresses", mainAddress)).status,
+    ).toBe(302);
+    expect(
+      (
+        await accountPost(ownerCookie, "addresses", {
+          ...mainAddress,
+          addressLine1: "50 Fremont Street",
+          addressLine2: "",
+          city: "San Francisco",
+          label: "West receiving",
+          postalCode: "94105",
+          stateProvince: "California",
+        })
+      ).status,
+    ).toBe(302);
+
+    const addresses = runLocalD1<{
+      id: string;
+      label: string;
+      selected: number;
+    }>(
+      `SELECT a.id, a.label,
+              CASE WHEN pref.selected_delivery_address_id = a.id
+                THEN 1 ELSE 0 END AS selected
+       FROM customer_delivery_addresses a
+       INNER JOIN customer_profiles p ON p.id = a.profile_id
+       INNER JOIN customer_account_preferences pref ON pref.profile_id = p.id
+       WHERE p.email_normalized = 'ticket07.owner@example.com'
+       ORDER BY a.label`,
+    );
+    expect(addresses).toHaveLength(2);
+    expect(
+      addresses.find(({ label }) => label === "Main warehouse")?.selected,
+    ).toBe(1);
+    const main = addresses.find(({ label }) => label === "Main warehouse");
+    const west = addresses.find(({ label }) => label === "West receiving");
+    if (!main || !west) throw new Error("Expected both Delivery Addresses");
+
+    expect(
+      (
+        await accountPost(otherCookie, "addresses", {
+          ...mainAddress,
+          addressLine1: "10 Other Street",
+          city: "Boston",
+          label: "Other customer address",
+          postalCode: "02108",
+          stateProvince: "Massachusetts",
+        })
+      ).status,
+    ).toBe(302);
+    const [otherAddress] = runLocalD1<{ id: string }>(
+      `SELECT a.id FROM customer_delivery_addresses a
+       INNER JOIN customer_profiles p ON p.id = a.profile_id
+       WHERE p.email_normalized = 'ticket07.other@example.com'`,
+    );
+    if (!otherAddress) throw new Error("Expected other customer address");
+    expect(
+      runLocalD1Failure(
+        `UPDATE customer_account_preferences
+         SET selected_delivery_address_id = '${otherAddress.id}'
+         WHERE profile_id = (
+           SELECT id FROM customer_profiles
+           WHERE email_normalized = 'ticket07.owner@example.com'
+         )`,
+      ),
+    ).toContain("FOREIGN KEY constraint failed");
+
+    expect(
+      (
+        await accountPost(ownerCookie, "addresses", {
+          addressId: west.id,
+          intent: "select_address",
+        })
+      ).status,
+    ).toBe(302);
+    expect(
+      (
+        await accountPost(ownerCookie, "addresses", {
+          ...mainAddress,
+          addressId: west.id,
+          addressLine1: "88 Fremont Street",
+          addressLine2: "Dock 4",
+          city: "San Francisco",
+          intent: "update_address",
+          label: "West receiving updated",
+          postalCode: "94105",
+          stateProvince: "California",
+        })
+      ).status,
+    ).toBe(302);
+    expect(
+      runLocalD1<{
+        address_line_1: string;
+        label: string;
+        selected: number;
+      }>(
+        `SELECT a.address_line_1, a.label,
+                CASE WHEN pref.selected_delivery_address_id = a.id
+                  THEN 1 ELSE 0 END AS selected
+         FROM customer_delivery_addresses a
+         INNER JOIN customer_account_preferences pref
+           ON pref.profile_id = a.profile_id
+         WHERE a.id = '${west.id}'`,
+      ),
+    ).toEqual([
+      {
+        address_line_1: "88 Fremont Street",
+        label: "West receiving updated",
+        selected: 1,
+      },
+    ]);
+
+    expect(
+      (
+        await accountPost(otherCookie, "addresses", {
+          addressId: main.id,
+          intent: "delete_address",
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await fetch(`${origin}/account?view=addresses&editAddress=${main.id}`, {
+          headers: { cookie: otherCookie },
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM customer_delivery_addresses
+         WHERE id = '${main.id}'`,
+      ),
+    ).toEqual([{ count: 1 }]);
+    expect(
+      (
+        await accountPost(ownerCookie, "addresses", {
+          addressId: main.id,
+          intent: "delete_address",
+        })
+      ).status,
+    ).toBe(302);
+    expect(
+      (
+        await accountPost(ownerCookie, "addresses", {
+          addressId: west.id,
+          intent: "delete_address",
+        })
+      ).status,
+    ).toBe(302);
+    expect(
+      runLocalD1<{
+        address_count: number;
+        selected_delivery_address_id: string | null;
+      }>(
+        `SELECT COUNT(a.id) AS address_count,
+                pref.selected_delivery_address_id
+         FROM customer_account_preferences pref
+         INNER JOIN customer_profiles p ON p.id = pref.profile_id
+         LEFT JOIN customer_delivery_addresses a
+           ON a.id = '${west.id}' AND a.profile_id = p.id
+         WHERE p.email_normalized = 'ticket07.owner@example.com'
+         GROUP BY pref.selected_delivery_address_id`,
+      ),
+    ).toEqual([{ address_count: 0, selected_delivery_address_id: null }]);
+
+    expect(
+      (
+        await accountPost(ownerCookie, "profile", {
+          intent: "create_organization",
+          legalName: "Acme Hydraulics LLC",
+          organizationCountryCode: "US",
+          registrationOrTaxId: "US-ACME-100",
+          tradeName: "Acme Hose",
+        })
+      ).status,
+    ).toBe(302);
+    expect(
+      (
+        await accountPost(ownerCookie, "profile", {
+          intent: "create_organization",
+          legalName: "Northstar Fluid Power Inc.",
+          organizationCountryCode: "CA",
+          registrationOrTaxId: "",
+          tradeName: "Northstar",
+        })
+      ).status,
+    ).toBe(302);
+
+    const contexts = runLocalD1<{
+      id: string;
+      kind: string;
+      legal_name: string | null;
+      selected: number;
+    }>(
+      `SELECT c.id, c.kind, o.legal_name,
+              CASE WHEN pref.selected_purchasing_context_id = c.id
+                THEN 1 ELSE 0 END AS selected
+       FROM customer_profiles p
+       INNER JOIN customer_account_preferences pref ON pref.profile_id = p.id
+       INNER JOIN customer_purchasing_contexts c ON (
+         c.individual_profile_id = p.id OR c.organization_id IN (
+           SELECT organization_id FROM customer_organization_memberships
+           WHERE profile_id = p.id AND status = 'active'
+         )
+       )
+       LEFT JOIN customer_organizations o ON o.id = c.organization_id
+       WHERE p.email_normalized = 'ticket07.owner@example.com'
+       ORDER BY c.kind, o.legal_name`,
+    );
+    expect(contexts).toHaveLength(3);
+    expect(contexts.filter(({ kind }) => kind === "organization")).toHaveLength(
+      2,
+    );
+    expect(
+      contexts.find(
+        ({ legal_name }) => legal_name === "Northstar Fluid Power Inc.",
+      )?.selected,
+    ).toBe(1);
+    expect(
+      runLocalD1<{
+        email_normalized: string;
+        organization_count: number;
+      }>(
+        `SELECT p.email_normalized, COUNT(*) AS organization_count
+         FROM customer_organization_memberships m
+         INNER JOIN customer_profiles p ON p.id = m.profile_id
+         WHERE p.email_normalized = 'ticket07.owner@example.com'
+           AND m.role = 'primary_contact' AND m.status = 'active'
+         GROUP BY p.email_normalized`,
+      ),
+    ).toEqual([
+      {
+        email_normalized: "ticket07.owner@example.com",
+        organization_count: 2,
+      },
+    ]);
+
+    const individual = contexts.find(({ kind }) => kind === "individual");
+    const acme = contexts.find(
+      ({ legal_name }) => legal_name === "Acme Hydraulics LLC",
+    );
+    if (!individual || !acme) throw new Error("Expected purchasing contexts");
+    expect(
+      (
+        await accountPost(ownerCookie, "profile", {
+          contextId: individual.id,
+          intent: "select_context",
+        })
+      ).status,
+    ).toBe(302);
+    expect(
+      (
+        await accountPost(otherCookie, "profile", {
+          contextId: acme.id,
+          intent: "select_context",
+        })
+      ).status,
+    ).toBe(404);
+    const [otherIndividual] = runLocalD1<{ id: string }>(
+      `SELECT c.id FROM customer_purchasing_contexts c
+       INNER JOIN customer_profiles p ON p.id = c.individual_profile_id
+       WHERE p.email_normalized = 'ticket07.other@example.com'`,
+    );
+    if (!otherIndividual) throw new Error("Expected other individual context");
+    expect(
+      runLocalD1Failure(
+        `UPDATE customer_account_preferences
+         SET selected_purchasing_context_id = '${otherIndividual.id}'
+         WHERE profile_id = (
+           SELECT id FROM customer_profiles
+           WHERE email_normalized = 'ticket07.owner@example.com'
+         )`,
+      ),
+    ).toContain("FOREIGN KEY constraint failed");
+    runLocalD1(
+      `UPDATE customer_organization_memberships
+       SET status = 'inactive'
+       WHERE organization_id = (
+         SELECT id FROM customer_organizations
+         WHERE legal_name = 'Acme Hydraulics LLC'
+       ) AND profile_id = (
+         SELECT id FROM customer_profiles
+         WHERE email_normalized = 'ticket07.owner@example.com'
+       )`,
+    );
+    expect(
+      (
+        await accountPost(ownerCookie, "profile", {
+          contextId: acme.id,
+          intent: "select_context",
+        })
+      ).status,
+    ).toBe(404);
+    runLocalD1(
+      `UPDATE customer_organization_memberships
+       SET status = 'active'
+       WHERE organization_id = (
+         SELECT id FROM customer_organizations
+         WHERE legal_name = 'Acme Hydraulics LLC'
+       ) AND profile_id = (
+         SELECT id FROM customer_profiles
+         WHERE email_normalized = 'ticket07.owner@example.com'
+       )`,
+    );
+    expect(
+      runLocalD1<{ selected_purchasing_context_id: string }>(
+        `SELECT pref.selected_purchasing_context_id
+         FROM customer_account_preferences pref
+         INNER JOIN customer_profiles p ON p.id = pref.profile_id
+         WHERE p.email_normalized = 'ticket07.owner@example.com'`,
+      ),
+    ).toEqual([{ selected_purchasing_context_id: individual.id }]);
+
+    const profile = await fetch(`${origin}/account?view=profile`, {
+      headers: { cookie: ownerCookie },
+    });
+    const profileHtml = renderedText(await profile.text());
+    expect(profile.status).toBe(200);
+    expect(profileHtml).toContain("Acme Hydraulics LLC");
+    expect(profileHtml).toContain("Northstar Fluid Power Inc.");
+    expect(profileHtml).toContain(
+      "Primary contact: ticket07.owner@example.com",
     );
   });
 
