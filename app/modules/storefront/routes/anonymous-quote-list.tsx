@@ -614,7 +614,7 @@ export default function AnonymousQuoteList(props: Route.ComponentProps) {
 
   if (rootData?.customer) {
     return (
-      <AccountWorkspace activeSection="quote-list">{content}</AccountWorkspace>
+      <AccountWorkspace activeView="quote-list">{content}</AccountWorkspace>
     );
   }
 

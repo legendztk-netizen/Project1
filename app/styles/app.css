@@ -1798,38 +1798,33 @@ a.customer-auth-switch {
 }
 
 .account-detail-navigation {
-  display: flex;
+  display: grid;
   min-width: 0;
-  overflow-x: auto;
-  padding: 0 28px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
-  overscroll-behavior-inline: contain;
-  scroll-snap-type: inline proximity;
-  scrollbar-width: thin;
+  gap: 4px;
+  padding: 0;
+  background: transparent;
+  border: 0;
 }
 
 .account-detail-navigation a {
   display: flex;
-  min-height: 54px;
-  flex: 0 0 auto;
+  width: 100%;
+  min-height: 44px;
   align-items: center;
-  gap: 7px;
-  padding: 0 14px;
+  gap: 10px;
+  padding: 0 12px;
   color: var(--muted);
-  border-bottom: 3px solid transparent;
-  font-size: 0.78rem;
+  border-left: 3px solid transparent;
+  font-size: 0.86rem;
   font-weight: 720;
   text-decoration: none;
-  scroll-margin-inline: 12px;
-  scroll-snap-align: start;
 }
 
 .account-detail-navigation a:hover,
 .account-detail-navigation a[aria-current="page"] {
   color: var(--ink);
   background: #f4f7f8;
-  border-bottom-color: var(--signal);
+  border-left-color: var(--signal);
 }
 
 .account-detail-content {
@@ -1853,7 +1848,7 @@ a.customer-auth-switch {
 
 .account-summary-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -1940,6 +1935,10 @@ a.customer-auth-switch {
   .family-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .account-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 700px) {
@@ -2006,12 +2005,12 @@ a.customer-auth-switch {
   }
 
   .account-detail-navigation {
-    padding: 0 8px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .account-detail-navigation a {
-    min-height: 50px;
-    padding: 0 11px;
+    justify-content: flex-start;
+    padding: 10px 8px;
   }
 
   .account-detail-content {

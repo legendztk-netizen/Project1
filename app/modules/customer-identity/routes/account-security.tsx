@@ -154,7 +154,7 @@ export default function AccountSecurity({
   const busy = useNavigation().state !== "idle";
   const verify = actionData?.step === "verify";
   return (
-    <AccountWorkspace activeSection="security">
+    <AccountWorkspace activeView="security">
       <div className="account-security-detail">
         <section className="customer-auth-panel customer-security-panel">
           <span className="customer-auth-icon" aria-hidden="true">

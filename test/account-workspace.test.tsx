@@ -7,14 +7,14 @@ import { createMemoryRouter, Outlet, RouterProvider } from "react-router";
 import type { RootLoaderData } from "../app/root";
 import { AccountWorkspace } from "../app/modules/customer-identity/ui/account-workspace";
 
-function renderWorkspace(activeSection: "quote-list" | "security") {
+function renderWorkspace() {
   const router = createMemoryRouter(
     [
       {
         children: [
           {
             element: (
-              <AccountWorkspace activeSection={activeSection}>
+              <AccountWorkspace activeView="quote-list">
                 <h1>Selected account detail</h1>
               </AccountWorkspace>
             ),
@@ -39,11 +39,11 @@ function renderWorkspace(activeSection: "quote-list" | "security") {
 afterEach(cleanup);
 
 describe("AccountWorkspace", () => {
-  it("shows the requested first-level menu beside the selected detail", async () => {
-    renderWorkspace("quote-list");
+  it("shows the complete first-level menu in the left rail", async () => {
+    renderWorkspace();
 
     const navigation = await screen.findByRole("navigation", {
-      name: "Account & Lists",
+      name: "Account details",
     });
     const quoteList = within(navigation).getByRole("link", {
       name: "Quote List",
@@ -55,7 +55,21 @@ describe("AccountWorkspace", () => {
     expect(quoteList.getAttribute("aria-current")).toBe("page");
     expect(quoteList.getAttribute("href")).toBe("/quote-list");
     expect(security.getAttribute("href")).toBe("/account/security");
-    expect(within(navigation).getAllByRole("link")).toHaveLength(2);
+    expect(
+      within(navigation)
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual([
+      "Overview",
+      "Quote List",
+      "Saved Configurations",
+      "My Quotes",
+      "Orders",
+      "Addresses",
+      "Account Security",
+      "Profile / Company",
+    ]);
+    expect(screen.getByRole("button", { name: "Sign Out" })).toBeTruthy();
     expect(
       screen.getByRole("heading", { name: "Selected account detail" }),
     ).toBeTruthy();

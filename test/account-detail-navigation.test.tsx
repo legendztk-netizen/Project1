@@ -9,7 +9,7 @@ import { AccountDetailNavigation } from "../app/modules/customer-identity/ui/acc
 afterEach(cleanup);
 
 describe("AccountDetailNavigation", () => {
-  it("keeps detailed account views inside the right-hand secondary navigation", () => {
+  it("keeps all account views in the requested menu order", () => {
     render(
       <MemoryRouter>
         <AccountDetailNavigation activeView="orders" />
@@ -19,7 +19,20 @@ describe("AccountDetailNavigation", () => {
     const navigation = screen.getByRole("navigation", {
       name: "Account details",
     });
-    expect(within(navigation).getAllByRole("link")).toHaveLength(6);
+    expect(
+      within(navigation)
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual([
+      "Overview",
+      "Quote List",
+      "Saved Configurations",
+      "My Quotes",
+      "Orders",
+      "Addresses",
+      "Account Security",
+      "Profile / Company",
+    ]);
     expect(
       within(navigation)
         .getByRole("link", { name: "Orders" })
@@ -42,7 +55,7 @@ describe("AccountDetailNavigation", () => {
     const links = within(
       screen.getByRole("navigation", { name: "Account details" }),
     ).getAllByRole("link");
-    expect(links).toHaveLength(6);
+    expect(links).toHaveLength(8);
     for (const link of links) {
       expect(link.tabIndex).toBe(0);
       link.focus();

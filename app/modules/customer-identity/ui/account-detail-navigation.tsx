@@ -3,6 +3,8 @@ import {
   ClipboardList,
   FileText,
   Gauge,
+  KeyRound,
+  ListChecks,
   MapPin,
   Save,
 } from "lucide-react";
@@ -10,6 +12,12 @@ import { Link } from "react-router";
 
 const items = [
   { href: "/account", icon: Gauge, label: "Overview", view: "overview" },
+  {
+    href: "/quote-list",
+    icon: ListChecks,
+    label: "Quote List",
+    view: "quote-list",
+  },
   {
     href: "/account?view=saved-configurations",
     icon: Save,
@@ -35,6 +43,12 @@ const items = [
     view: "addresses",
   },
   {
+    href: "/account/security",
+    icon: KeyRound,
+    label: "Account Security",
+    view: "security",
+  },
+  {
     href: "/account?view=profile",
     icon: Building2,
     label: "Profile / Company",
@@ -42,18 +56,27 @@ const items = [
   },
 ] as const;
 
-export type AccountDetailView = (typeof items)[number]["view"];
+export type AccountNavigationView = (typeof items)[number]["view"];
+export type AccountDetailView = Exclude<
+  AccountNavigationView,
+  "quote-list" | "security"
+>;
 
 export function isAccountDetailView(
   value: string | null,
 ): value is AccountDetailView {
-  return items.some((item) => item.view === value);
+  return items.some(
+    (item) =>
+      item.view === value &&
+      item.view !== "quote-list" &&
+      item.view !== "security",
+  );
 }
 
 export function AccountDetailNavigation({
   activeView,
 }: {
-  activeView: AccountDetailView;
+  activeView: AccountNavigationView;
 }) {
   return (
     <nav className="account-detail-navigation" aria-label="Account details">

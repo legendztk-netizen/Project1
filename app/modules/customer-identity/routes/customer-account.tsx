@@ -1,4 +1,10 @@
-import { CheckCircle2, CircleUserRound } from "lucide-react";
+import {
+  CheckCircle2,
+  CircleUserRound,
+  ClipboardList,
+  FileText,
+  ListChecks,
+} from "lucide-react";
 import { data, Form, Link, redirect, useNavigation } from "react-router";
 
 import type { Route } from "./+types/customer-account";
@@ -9,7 +15,6 @@ import {
 } from "../application/customer-profile-service";
 import { requireTrustedAuthPost } from "../application/trusted-auth-request";
 import {
-  AccountDetailNavigation,
   isAccountDetailView,
   type AccountDetailView,
 } from "../ui/account-detail-navigation";
@@ -100,6 +105,26 @@ export default function CustomerAccount({
         <span className="eyebrow">Account &amp; Lists</span>
         <h1>Welcome back{profile.fullName ? `, ${profile.fullName}` : ""}</h1>
         <div className="account-summary-grid">
+          <article>
+            <ListChecks aria-hidden="true" size={22} />
+            <h2>Quote List</h2>
+            <p>
+              Review products and hose assemblies before requesting a quote.
+            </p>
+            <Link to="/quote-list">View Quote List</Link>
+          </article>
+          <article>
+            <FileText aria-hidden="true" size={22} />
+            <h2>My Quotes</h2>
+            <p>No submitted quote requests yet.</p>
+            <Link to="/account?view=my-quotes">View My Quotes</Link>
+          </article>
+          <article>
+            <ClipboardList aria-hidden="true" size={22} />
+            <h2>Orders</h2>
+            <p>No paid and confirmed orders yet.</p>
+            <Link to="/account?view=orders">View Orders</Link>
+          </article>
           <article>
             <CircleUserRound aria-hidden="true" size={22} />
             <h2>Contact profile</h2>
@@ -208,11 +233,8 @@ export default function CustomerAccount({
   }
 
   return (
-    <AccountWorkspace activeSection={null}>
-      <div className="account-detail-shell">
-        <AccountDetailNavigation activeView={view} />
-        <div className="account-detail-content">{detail}</div>
-      </div>
+    <AccountWorkspace activeView={view}>
+      <div className="account-detail-content">{detail}</div>
     </AccountWorkspace>
   );
 }

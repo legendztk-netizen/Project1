@@ -377,13 +377,17 @@ describe("Cloudflare Worker route surfaces", () => {
       headers: { cookie: customerCookie },
     });
     expect(account.status).toBe(200);
-    expect(await account.text()).toContain("first.customer@example.com");
+    const accountHtml = await account.text();
+    expect(accountHtml).toContain("first.customer@example.com");
+    expect(accountHtml).toContain("View Quote List");
+    expect(accountHtml).toContain("View My Quotes");
+    expect(accountHtml).toContain("View Orders");
     const accountLists = await fetch(`${origin}/quote-list`, {
       headers: { cookie: customerCookie },
     });
     expect(accountLists.status).toBe(200);
     const accountListsHtml = await accountLists.text();
-    expect(accountListsHtml).toContain('aria-label="Account &amp; Lists"');
+    expect(accountListsHtml).toContain('aria-label="Account details"');
     expect(accountListsHtml).toContain('href="/account/security"');
     expect(accountListsHtml).toContain("first.customer@example.com");
     expect(accountListsHtml).not.toContain(">Sign In<");
@@ -493,10 +497,12 @@ describe("Cloudflare Worker route surfaces", () => {
     );
     for (const label of [
       "Overview",
+      "Quote List",
       "Saved Configurations",
       "My Quotes",
       "Orders",
       "Addresses",
+      "Account Security",
       "Profile / Company",
     ]) {
       expect(renderedText(ordersHtml)).toContain(label);
