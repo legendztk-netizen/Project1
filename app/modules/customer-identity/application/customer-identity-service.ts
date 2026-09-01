@@ -1,5 +1,13 @@
 import type { ApplicationBindings } from "#workers/environment";
-import { customerIdentitySigningKey } from "#workers/session-secrets";
+import {
+  customerIdentitySigningKey,
+  quoteSessionSigningKey,
+} from "#workers/session-secrets";
+
+import {
+  clearAnonymousQuoteCookie,
+  readAnonymousQuoteSessionId,
+} from "../../quote-list/domain/anonymous-quote-session";
 
 import {
   digestEmailOtp,
@@ -216,6 +224,10 @@ export function createCustomerIdentityService(
     }
 
     const challengeId = crypto.randomUUID();
+    const anonymousQuoteSessionId = await readAnonymousQuoteSessionId(
+      input.request,
+      quoteSessionSigningKey(env),
+    );
     const code = otp();
     const digest = await digestEmailOtp({
       authorizationScope,
@@ -227,6 +239,7 @@ export function createCustomerIdentityService(
     });
     try {
       await repository.createChallenge({
+        anonymousQuoteSessionId,
         authorizationScope,
         createdAt: nowIso,
         digest,
@@ -403,16 +416,23 @@ export function createCustomerIdentityService(
         challenge.email_normalized,
       );
       const previousDigest = await sessionDigestFromRequest(input.request);
+      const anonymousQuoteSessionId = await readAnonymousQuoteSessionId(
+        input.request,
+        quoteSessionSigningKey(env),
+      );
       const token = generateCustomerSessionToken();
       const authenticate =
         input.purpose === "register" || Boolean(existingProfile);
       const completion = await repository.completeVerification({
+        anonymousQuoteSessionId,
         authenticate,
         challengeId: challenge.id,
         email: challenge.email_normalized,
         expiresAt: addSeconds(instant, customerSessionLifetimeSeconds),
         previousTokenDigest: previousDigest,
         profileId: existingProfile?.id ?? crypto.randomUUID(),
+        quoteListDestinationSessionId: crypto.randomUUID(),
+        quoteListMergeId: crypto.randomUUID(),
         sessionId: crypto.randomUUID(),
         now: instant.toISOString(),
         tokenDigest: await digestCustomerSessionToken(token, secret),
@@ -420,6 +440,9 @@ export function createCustomerIdentityService(
       if (!completion.consumed || !completion.profile)
         throw genericOtpFailure();
       return {
+        clearAnonymousQuoteCookie: completion.quoteListMerged
+          ? clearAnonymousQuoteCookie(env.APP_ENV !== "local")
+          : null,
         newlyRegistered: input.purpose === "register" && !existingProfile,
         profile: completion.profile,
         setCookie: createCustomerSessionCookie({

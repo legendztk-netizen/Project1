@@ -79,7 +79,7 @@ export async function action({ context, request }: Route.ActionArgs) {
       env,
     ).addLengthBasedHose(request, sku, parsed.value);
     const headers = new Headers();
-    headers.set("Set-Cookie", result.setCookie);
+    if (result.setCookie) headers.set("Set-Cookie", result.setCookie);
     return redirect("/quote-list", { headers });
   } catch (error) {
     if (error instanceof QuoteListCommandRejected) {

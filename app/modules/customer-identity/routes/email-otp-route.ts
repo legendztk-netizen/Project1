@@ -67,8 +67,13 @@ export async function handleEmailOtpAction(input: {
         input.purpose === "register" && result.newlyRegistered
           ? `/account/security?welcome=1&returnTo=${encodeURIComponent(returnTo)}`
           : returnTo;
+      const headers = new Headers();
+      headers.append("Set-Cookie", result.setCookie);
+      if (result.clearAnonymousQuoteCookie) {
+        headers.append("Set-Cookie", result.clearAnonymousQuoteCookie);
+      }
       return redirect(destination, {
-        headers: { "Set-Cookie": result.setCookie },
+        headers,
       });
     }
     throw new Response("Unknown authentication command", { status: 400 });

@@ -5,6 +5,7 @@ import type {
 import type { PasswordCredentialHash } from "../domain/customer-password";
 import type { PasswordAuthorizationScope } from "../domain/password-authorization";
 import type { CustomerContactProfile } from "../domain/customer-profile";
+import { customerQuoteListMergeStatements } from "../../quote-list/infrastructure/d1-customer-quote-list-merge";
 
 export interface CustomerProfile {
   email: string;
@@ -243,6 +244,7 @@ export function createD1CustomerIdentityRepository(database: D1Database) {
     },
 
     async createChallenge(input: {
+      anonymousQuoteSessionId?: string | null;
       authorizationScope?: EmailOtpAuthorizationScope;
       createdAt: string;
       digest: string;
@@ -257,9 +259,9 @@ export function createD1CustomerIdentityRepository(database: D1Database) {
           .prepare(
             `INSERT INTO customer_otp_challenges
                (id, email_normalized, purpose, authorization_scope,
-                otp_digest, request_ip_digest,
+                otp_digest, request_ip_digest, quote_session_id_at_request,
                 delivery_status, failed_attempts, created_at, expires_at)
-             VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)`,
           )
           .bind(
             input.id,
@@ -268,6 +270,7 @@ export function createD1CustomerIdentityRepository(database: D1Database) {
             input.authorizationScope ?? "session",
             input.digest,
             input.ipDigest,
+            input.anonymousQuoteSessionId ?? null,
             input.createdAt,
             input.expiresAt,
           )
@@ -361,6 +364,7 @@ export function createD1CustomerIdentityRepository(database: D1Database) {
     },
 
     async completeVerification(input: {
+      anonymousQuoteSessionId: string | null;
       authenticate: boolean;
       challengeId: string;
       email: string;
@@ -368,12 +372,14 @@ export function createD1CustomerIdentityRepository(database: D1Database) {
       now: string;
       profileId: string;
       previousTokenDigest: string | null;
+      quoteListDestinationSessionId: string;
+      quoteListMergeId: string;
       sessionId: string;
       tokenDigest: string;
     }) {
       const nonce = crypto.randomUUID();
       const savedConfigurationId = crypto.randomUUID();
-      const results = await database.batch([
+      const statements = [
         database
           .prepare(
             `UPDATE customer_otp_challenges
@@ -495,7 +501,24 @@ export function createD1CustomerIdentityRepository(database: D1Database) {
                )`,
           )
           .bind(input.now, input.challengeId),
-      ]);
+      ];
+      let quoteListAuditResultIndex: number | null = null;
+      if (input.authenticate && input.anonymousQuoteSessionId) {
+        quoteListAuditResultIndex = statements.length + 1;
+        statements.push(
+          ...customerQuoteListMergeStatements(database, {
+            actorProfileId: input.profileId,
+            challengeId: input.challengeId,
+            challengeNonce: nonce,
+            destinationSessionId: input.quoteListDestinationSessionId,
+            mergeId: input.quoteListMergeId,
+            now: input.now,
+            profileId: input.profileId,
+            sourceSessionId: input.anonymousQuoteSessionId,
+          }),
+        );
+      }
+      const results = await database.batch(statements);
       const consumed = (results[0]?.meta.changes ?? 0) === 1;
       if (!consumed) return { consumed: false, profile: null };
       if (!input.authenticate) return { consumed: true, profile: null };
@@ -516,6 +539,9 @@ export function createD1CustomerIdentityRepository(database: D1Database) {
           id: profileRow.id,
           verifiedAt: profileRow.email_verified_at,
         },
+        quoteListMerged:
+          quoteListAuditResultIndex !== null &&
+          (results[quoteListAuditResultIndex]?.meta.changes ?? 0) === 1,
       };
     },
 

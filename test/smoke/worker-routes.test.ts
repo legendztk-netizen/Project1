@@ -104,6 +104,7 @@ function registrationTransactionFromHtml(html: string) {
 }
 
 async function requestEmailOtp(input: {
+  cookie?: string;
   email: string;
   ip?: string;
   path: "/forgot-password" | "/register" | "/sign-in";
@@ -115,6 +116,7 @@ async function requestEmailOtp(input: {
   const response = await fetch(`${origin}${input.path}`, {
     body: form,
     headers: {
+      ...(input.cookie ? { cookie: input.cookie } : {}),
       origin,
       "x-forwarded-for": input.ip ?? `smoke-test:${input.email}`,
     },
@@ -4273,6 +4275,67 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(productText).not.toContain("factory_unit_price");
     expect(productText).not.toContain("costBasis");
   }, 300_000);
+
+  it("merges the anonymous Quote List into the verified customer account", async () => {
+    const add = new FormData();
+    add.set("intent", "add");
+    add.set("sku", "JIC_F_SW_04_04");
+    add.set("quantity", "2");
+    const added = await fetch(`${origin}/quote-list`, {
+      body: add,
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(added.status).toBe(302);
+    const anonymousCookie = cookieHeader(added);
+    const anonymousSessionId = sessionIdFromCookie(anonymousCookie);
+
+    const requested = await requestEmailOtp({
+      cookie: anonymousCookie,
+      email: "quote-list-merge@example.com",
+      path: "/register",
+    });
+    if (!requested.challenge) throw new Error("Expected registration OTP");
+    const verified = await verifyEmailOtp({
+      challengeId: requested.challenge.challengeId,
+      code: requested.challenge.code,
+      cookie: anonymousCookie,
+      path: "/register",
+      returnTo: "/quote-list",
+    });
+    expect(verified.status).toBe(302);
+    expect(verified.headers.get("set-cookie")).toMatch(
+      /hs_quote_session=;[^,]*Max-Age=0/,
+    );
+    const customerCookie = cookieHeader(verified);
+
+    const accountList = await fetch(`${origin}/quote-list`, {
+      headers: { cookie: customerCookie },
+    });
+    expect(accountList.status).toBe(200);
+    expect(await accountList.text()).toContain("JIC_F_SW_04_04");
+    expect(accountList.headers.get("set-cookie")).toBeNull();
+    expect(
+      runLocalD1<{
+        merged_into_session_id: string;
+        retired_at: string;
+      }>(
+        `SELECT retired_at, merged_into_session_id
+         FROM anonymous_quote_sessions WHERE id = '${anonymousSessionId}'`,
+      ),
+    ).toEqual([
+      {
+        merged_into_session_id: expect.any(String),
+        retired_at: expect.any(String),
+      },
+    ]);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM customer_quote_list_merges
+         WHERE source_session_id = '${anonymousSessionId}'`,
+      ),
+    ).toEqual([{ count: 1 }]);
+  });
 
   it("does not expose standalone email draft persistence", async () => {
     const saveResponse = await fetch(`${origin}/api/configurator/save-draft`, {

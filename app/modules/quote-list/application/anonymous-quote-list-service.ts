@@ -1,6 +1,11 @@
 import { createD1PublicCatalogRepository } from "../../catalog/infrastructure/d1-public-catalog-repository";
 import type { PublicCatalogItem } from "../../catalog/domain/public-catalog";
 import {
+  digestCustomerSessionToken,
+  readCustomerSessionToken,
+} from "../../customer-identity/domain/customer-session";
+import { createD1CustomerIdentityRepository } from "../../customer-identity/infrastructure/d1-customer-identity-repository";
+import {
   QuoteListCommandRejected,
   type AnonymousQuoteLine,
   type AnonymousQuoteSession,
@@ -25,10 +30,17 @@ import { createD1AnonymousQuoteListRepository } from "../infrastructure/d1-anony
 import { createD1QuoteReferenceDiscountRepository } from "../infrastructure/d1-quote-reference-discount-repository";
 import { prepareConfiguredAssembly } from "./prepare-configured-assembly";
 import type { ApplicationBindings } from "#workers/environment";
-import { quoteSessionSigningKey } from "#workers/session-secrets";
+import {
+  customerIdentitySigningKey,
+  quoteSessionSigningKey,
+} from "#workers/session-secrets";
 
 const savedConfigurationChangedMessage =
   "This saved configuration no longer matches the current catalog or reference data. Its original selections are retained for review.";
+
+type ResolvedQuoteSession = AnonymousQuoteSession & {
+  accountOwned: boolean;
+};
 
 function standardProductError(product: PublicCatalogItem | null) {
   if (!product || !product.canAddToQuote || !product.offer) {
@@ -76,6 +88,7 @@ export function createAnonymousQuoteListService(
   const catalog = createD1PublicCatalogRepository(env.DB);
   const quoteList = createD1AnonymousQuoteListRepository(env.DB);
   const discounts = createD1QuoteReferenceDiscountRepository(env.DB);
+  const identity = createD1CustomerIdentityRepository(env.DB);
   const generateId = dependencies.generateId ?? (() => crypto.randomUUID());
   const now = dependencies.now ?? (() => new Date());
   const secret = quoteSessionSigningKey(env);
@@ -89,27 +102,63 @@ export function createAnonymousQuoteListService(
     };
   }
 
-  async function cookie(sessionId: string, date: Date) {
+  async function cookie(session: ResolvedQuoteSession, date: Date) {
+    if (session.accountOwned) return null;
     return createAnonymousQuoteCookie({
       now: date,
       secret,
       secure: env.APP_ENV !== "local",
-      sessionId,
+      sessionId: session.id,
+    });
+  }
+
+  async function authenticatedProfile(request: Request) {
+    const token = readCustomerSessionToken(request);
+    if (!token) return null;
+    const digest = await digestCustomerSessionToken(
+      token,
+      customerIdentitySigningKey(env),
+    );
+    return identity.findProfileBySessionDigest({
+      digest,
+      now: time().now,
     });
   }
 
   async function existingSession(request: Request) {
+    const profile = await authenticatedProfile(request);
+    if (profile) {
+      const session = await quoteList.findAccountSession(profile.id);
+      return session ? { ...session, accountOwned: true } : null;
+    }
     const sessionId = await readAnonymousQuoteSessionId(request, secret);
     if (!sessionId) return null;
-    return quoteList.findActiveSession(sessionId, time().now);
+    const session = await quoteList.findActiveSession(sessionId, time().now);
+    return session ? { ...session, accountOwned: false } : null;
   }
 
   async function ensureSession(request: Request) {
     const existing = await existingSession(request);
     if (existing) return { created: false, session: existing };
     const current = time();
+    const profile = await authenticatedProfile(request);
+    if (profile) {
+      const accountSession = await quoteList.findOrCreateAccountSession({
+        now: current.now,
+        profileId: profile.id,
+        sessionId: generateId(),
+      });
+      if (!accountSession) {
+        throw new Error("Account Quote List could not be created");
+      }
+      return {
+        created: false,
+        session: { ...accountSession, accountOwned: true },
+      };
+    }
     await quoteList.deleteExpiredSessions(current.now);
-    const session: AnonymousQuoteSession = {
+    const session: ResolvedQuoteSession = {
+      accountOwned: false,
       expiresAt: current.expiresAt,
       id: generateId(),
     };
@@ -120,13 +169,15 @@ export function createAnonymousQuoteListService(
   async function configuredAssemblySession(request: Request) {
     const existing = await existingSession(request);
     if (existing) return { created: false, session: existing };
+    if (await authenticatedProfile(request)) return ensureSession(request);
     const current = time();
     return {
       created: true,
       session: {
+        accountOwned: false,
         expiresAt: current.expiresAt,
         id: generateId(),
-      } satisfies AnonymousQuoteSession,
+      } satisfies ResolvedQuoteSession,
     };
   }
 
@@ -328,7 +379,7 @@ export function createAnonymousQuoteListService(
         if (error instanceof QuoteListCommandRejected) throw error;
         translateQuantityConstraint(error);
       }
-      return { setCookie: await cookie(session.id, current.date) };
+      return { setCookie: await cookie(session, current.date) };
     },
 
     async configuredAssemblyDraft(request: Request, lineId: string) {
@@ -367,7 +418,7 @@ export function createAnonymousQuoteListService(
       }
       return {
         line,
-        setCookie: await cookie(session.id, current.date),
+        setCookie: await cookie(session, current.date),
       };
     },
 
@@ -421,7 +472,7 @@ export function createAnonymousQuoteListService(
         if (error instanceof QuoteListCommandRejected) throw error;
         translateQuantityConstraint(error);
       }
-      return { setCookie: await cookie(session.id, current.date) };
+      return { setCookie: await cookie(session, current.date) };
     },
 
     async add(request: Request, sku: string, quantity: number) {
@@ -451,7 +502,7 @@ export function createAnonymousQuoteListService(
         }
         throw error;
       }
-      return { setCookie: await cookie(session.id, current.date) };
+      return { setCookie: await cookie(session, current.date) };
     },
 
     async addLengthBasedHose(
@@ -497,7 +548,7 @@ export function createAnonymousQuoteListService(
         if (error instanceof QuoteListCommandRejected) throw error;
         translateQuantityConstraint(error);
       }
-      return { setCookie: await cookie(session.id, current.date) };
+      return { setCookie: await cookie(session, current.date) };
     },
 
     async read(request: Request) {
@@ -515,7 +566,7 @@ export function createAnonymousQuoteListService(
           await quoteList.listLines(session.id),
           current.now,
         ),
-        setCookie: await cookie(session.id, current.date),
+        setCookie: await cookie(session, current.date),
       };
     },
 
@@ -523,7 +574,7 @@ export function createAnonymousQuoteListService(
       const { created, session } = await ensureSession(request);
       const current = time();
       if (created) {
-        return { setCookie: await cookie(session.id, current.date) };
+        return { setCookie: await cookie(session, current.date) };
       }
       const removed = await quoteList.removeLine({
         expiresAt: current.expiresAt,
@@ -537,14 +588,14 @@ export function createAnonymousQuoteListService(
           "LINE_NOT_FOUND",
         );
       }
-      return { setCookie: await cookie(session.id, current.date) };
+      return { setCookie: await cookie(session, current.date) };
     },
 
     async update(request: Request, lineId: string, quantity: number) {
       const { created, session } = await ensureSession(request);
       const current = time();
       if (created) {
-        return { setCookie: await cookie(session.id, current.date) };
+        return { setCookie: await cookie(session, current.date) };
       }
       const line = await quoteList.findLine(session.id, lineId);
       if (!line) {
@@ -563,7 +614,7 @@ export function createAnonymousQuoteListService(
         sessionId: session.id,
       });
       if (!updated) throw await catalogChanged(line.sku);
-      return { setCookie: await cookie(session.id, current.date) };
+      return { setCookie: await cookie(session, current.date) };
     },
 
     async updateConfiguredAssemblyQuantity(
@@ -597,7 +648,7 @@ export function createAnonymousQuoteListService(
         if (error instanceof QuoteListCommandRejected) throw error;
         translateQuantityConstraint(error);
       }
-      return { setCookie: await cookie(session.id, current.date) };
+      return { setCookie: await cookie(session, current.date) };
     },
 
     async updateLengthBasedHose(
@@ -608,7 +659,7 @@ export function createAnonymousQuoteListService(
       const { created, session } = await ensureSession(request);
       const current = time();
       if (created) {
-        return { setCookie: await cookie(session.id, current.date) };
+        return { setCookie: await cookie(session, current.date) };
       }
       const line = await quoteList.findLine(session.id, lineId);
       if (
@@ -650,7 +701,7 @@ export function createAnonymousQuoteListService(
         if (error instanceof QuoteListCommandRejected) throw error;
         translateQuantityConstraint(error);
       }
-      return { setCookie: await cookie(session.id, current.date) };
+      return { setCookie: await cookie(session, current.date) };
     },
   };
 }

@@ -278,6 +278,464 @@ afterEach(() => {
 });
 
 describe("real local D1 migration lifecycle", () => {
+  it("transactionally merges anonymous Quote Lists into one account-owned list", async () => {
+    const directory = mkdtempSync(
+      join(tmpdir(), "hose-d1-account-quote-merge-"),
+    );
+    temporaryDirectories.push(directory);
+    const migration = runProjectMigrate(directory);
+    expect(migration.status, `${migration.stdout}\n${migration.stderr}`).toBe(
+      0,
+    );
+    const platform = await getPlatformProxy<{ DB: D1Database }>({
+      configPath: join(projectRoot, "wrangler.jsonc"),
+      persist: { path: join(directory, "v3") },
+      remoteBindings: false,
+    });
+    const database = platform.env.DB;
+    const now = "2026-09-01T00:10:00.000Z";
+    const future = "2026-10-01T00:00:00.000Z";
+
+    async function seedSql(sql: string) {
+      const statements = sql
+        .split(";")
+        .map((statement) => statement.trim())
+        .filter(Boolean)
+        .map((statement) => database.prepare(statement));
+      await database.batch(statements);
+    }
+
+    async function seedChallenge(
+      id: string,
+      email: string,
+      createdAt: string,
+      sourceSessionId: string,
+    ) {
+      await database
+        .prepare(
+          `INSERT INTO customer_otp_challenges
+             (id, email_normalized, purpose, otp_digest, request_ip_digest,
+              created_at, expires_at, delivery_status,
+              quote_session_id_at_request)
+           VALUES (?, ?, 'register', 'digest', ?, ?, ?, 'delivered', ?)`,
+        )
+        .bind(id, email, `ip-${id}`, createdAt, future, sourceSessionId)
+        .run();
+    }
+
+    async function complete(input: {
+      challengeId: string;
+      email: string;
+      profileId: string;
+      sourceSessionId: string;
+      suffix: string;
+    }) {
+      return createD1CustomerIdentityRepository(database).completeVerification({
+        anonymousQuoteSessionId: input.sourceSessionId,
+        authenticate: true,
+        challengeId: input.challengeId,
+        email: input.email,
+        expiresAt: future,
+        now,
+        previousTokenDigest: null,
+        profileId: input.profileId,
+        quoteListDestinationSessionId: `destination-${input.suffix}`,
+        quoteListMergeId: `merge-${input.suffix}`,
+        sessionId: `customer-session-${input.suffix}`,
+        tokenDigest: `customer-token-${input.suffix}`,
+      });
+    }
+
+    try {
+      await seedSql(
+        `INSERT INTO catalog_imports
+           (id, kind, status, summary_json, error_count, warning_count,
+            created_at, completed_at)
+         VALUES ('merge-import', 'diagnostic', 'completed', '{}', 0, 0,
+                 '${now}', '${now}');
+         INSERT INTO catalog_releases
+           (id, release_number, status, source_import_id, version, created_at,
+            published_at)
+         VALUES ('merge-release', 'MERGE-1', 'published', 'merge-import', 1,
+                 '${now}', '${now}');
+         INSERT INTO customer_profiles
+           (id, email_normalized, email_display, email_verified_at,
+            created_at, updated_at)
+         VALUES ('profile-main', 'merge@example.com', 'merge@example.com',
+                 '${now}', '${now}', '${now}');
+         INSERT INTO anonymous_quote_sessions
+           (id, created_at, last_activity_at, expires_at, profile_id)
+         VALUES ('destination-main', '${now}', '${now}',
+                 '9999-12-31T23:59:59.999Z', 'profile-main');
+         INSERT INTO anonymous_quote_sessions
+           (id, created_at, last_activity_at, expires_at)
+         VALUES ('source-main', '${now}', '${now}', '${future}');`,
+      );
+
+      const commonColumns = `
+        id, session_id, line_identity, sku, catalog_release_id, display_name,
+        category, line_kind, quantity, sales_unit, currency,
+        reference_unit_price, created_at, updated_at`;
+      await seedSql(
+        `INSERT INTO anonymous_quote_lines (${commonColumns}) VALUES
+           ('dest-standard', 'destination-main', 'standard:SKU-A', 'SKU-A',
+            'merge-release', 'Standard A', 'hose-ends', 'standard', 2, 'each',
+            'USD', 4, '${now}', '${now}'),
+           ('source-standard', 'source-main', 'standard:SKU-A', 'SKU-A',
+            'merge-release', 'Standard A old', 'hose-ends', 'standard', 3,
+            'each', 'USD', 5, '${now}', '${now}'),
+           ('source-standard-unique', 'source-main', 'standard:SKU-B', 'SKU-B',
+            'merge-release', 'Standard B', 'hose-ends', 'standard', 4, 'each',
+            'USD', 6, '${now}', '${now}');
+         INSERT INTO anonymous_quote_lines
+           (${commonColumns}, original_length_value, original_length_unit,
+            normalized_length_ft, piece_count, total_footage,
+            cutting_labeling_fee_rate, cutting_labeling_fee_amount,
+            cutting_labeling_fee_scope, cutting_labeling_fee_version,
+            estimated_merchandise_amount, current_estimate_amount)
+         VALUES
+           ('dest-length', 'destination-main', 'length-hose:HOSE-A:10ft',
+            'HOSE-A', 'merge-release', 'Hose A 10 ft', 'hydraulic-hose',
+            'length_based_hose', 1, 'ft', 'USD', 2, '${now}', '${now}',
+            10, 'ft', 10, 1, 10, 1, 1, 'per_piece', 1, 20, 21),
+           ('source-length', 'source-main', 'length-hose:HOSE-A:10ft',
+            'HOSE-A', 'merge-release', 'Hose A old 10 ft', 'hydraulic-hose',
+            'length_based_hose', 2, 'ft', 'USD', 3, '${now}', '${now}',
+            10, 'ft', 10, 2, 20, 2, 4, 'per_piece', 2, 60, 64),
+           ('source-length-unique', 'source-main', 'length-hose:HOSE-A:20ft',
+            'HOSE-A', 'merge-release', 'Hose A 20 ft', 'hydraulic-hose',
+            'length_based_hose', 1, 'ft', 'USD', 3, '${now}', '${now}',
+            20, 'ft', 20, 1, 20, 2, 2, 'per_piece', 2, 60, 62);
+         INSERT INTO anonymous_quote_lines
+           (${commonColumns}, current_estimate_amount, configured_snapshot_json,
+            configured_estimate_inputs_json, configured_unit_estimate_amount)
+         VALUES
+           ('dest-configured', 'destination-main', 'configured:shared',
+            'HOSE-A', 'merge-release', 'Configured A', 'hydraulic-hose',
+            'configured_assembly', 1, 'each', 'USD', NULL, '${now}', '${now}',
+            12, '{"context":"destination"}', '{"priceVersion":1}', 12),
+           ('source-configured', 'source-main', 'configured:shared',
+            'HOSE-A', 'merge-release', 'Configured A old', 'hydraulic-hose',
+            'configured_assembly', 2, 'each', 'USD', NULL, '${now}', '${now}',
+            40, '{"context":"source"}', '{"priceVersion":2}', 20),
+           ('source-configured-unique', 'source-main', 'configured:unique',
+            'HOSE-A', 'merge-release', 'Configured B', 'hydraulic-hose',
+            'configured_assembly', 1, 'each', 'USD', NULL, '${now}', '${now}',
+            15, '{"context":"unique"}', '{"priceVersion":3}', 15);`,
+      );
+      await seedChallenge(
+        "challenge-main",
+        "merge@example.com",
+        "2026-09-01T00:00:00.000Z",
+        "source-main",
+      );
+
+      const first = await complete({
+        challengeId: "challenge-main",
+        email: "merge@example.com",
+        profileId: "profile-main",
+        sourceSessionId: "source-main",
+        suffix: "main",
+      });
+      expect(first).toMatchObject({ consumed: true, quoteListMerged: true });
+
+      const merged = await database
+        .prepare(
+          `SELECT id, line_identity, quantity, piece_count, total_footage,
+                  cutting_labeling_fee_amount, estimated_merchandise_amount,
+                  current_estimate_amount, configured_snapshot_json,
+                  configured_estimate_inputs_json,
+                  configured_unit_estimate_amount, original_length_value,
+                  original_length_unit
+           FROM anonymous_quote_lines WHERE session_id = 'destination-main'
+           ORDER BY line_identity`,
+        )
+        .all<{
+          configured_snapshot_json: string | null;
+          configured_estimate_inputs_json: string | null;
+          configured_unit_estimate_amount: number | null;
+          current_estimate_amount: number | null;
+          cutting_labeling_fee_amount: number | null;
+          estimated_merchandise_amount: number | null;
+          id: string;
+          line_identity: string;
+          original_length_unit: string | null;
+          original_length_value: number | null;
+          piece_count: number | null;
+          quantity: number;
+          total_footage: number | null;
+        }>();
+      expect(merged.results).toHaveLength(6);
+      expect(
+        merged.results.find((line) => line.line_identity === "standard:SKU-A"),
+      ).toMatchObject({ id: "dest-standard", quantity: 5 });
+      expect(
+        merged.results.find(
+          (line) => line.line_identity === "length-hose:HOSE-A:10ft",
+        ),
+      ).toMatchObject({
+        current_estimate_amount: 63,
+        cutting_labeling_fee_amount: 3,
+        estimated_merchandise_amount: 60,
+        id: "dest-length",
+        piece_count: 3,
+        quantity: 3,
+        total_footage: 30,
+      });
+      expect(
+        merged.results.find(
+          (line) => line.line_identity === "configured:shared",
+        ),
+      ).toMatchObject({
+        configured_snapshot_json: '{"context":"destination"}',
+        configured_unit_estimate_amount: 12,
+        current_estimate_amount: 36,
+        id: "dest-configured",
+        quantity: 3,
+      });
+      expect(
+        merged.results.find((line) => line.line_identity === "standard:SKU-B"),
+      ).toMatchObject({ id: "source-standard-unique", quantity: 4 });
+      expect(
+        merged.results.find(
+          (line) => line.line_identity === "length-hose:HOSE-A:20ft",
+        ),
+      ).toMatchObject({
+        current_estimate_amount: 62,
+        id: "source-length-unique",
+        original_length_unit: "ft",
+        original_length_value: 20,
+        quantity: 1,
+      });
+      expect(
+        merged.results.find(
+          (line) => line.line_identity === "configured:unique",
+        ),
+      ).toMatchObject({
+        configured_estimate_inputs_json: '{"priceVersion":3}',
+        configured_snapshot_json: '{"context":"unique"}',
+        current_estimate_amount: 15,
+        id: "source-configured-unique",
+        quantity: 1,
+      });
+
+      const source = await database
+        .prepare(
+          `SELECT retired_at, merged_into_session_id,
+             (SELECT COUNT(*) FROM anonymous_quote_lines
+              WHERE session_id = 'source-main') AS remaining_lines
+           FROM anonymous_quote_sessions WHERE id = 'source-main'`,
+        )
+        .first<{
+          merged_into_session_id: string;
+          remaining_lines: number;
+          retired_at: string;
+        }>();
+      expect(source).toEqual({
+        merged_into_session_id: "destination-main",
+        remaining_lines: 0,
+        retired_at: now,
+      });
+
+      const audit = await database
+        .prepare(
+          `SELECT result_json FROM customer_quote_list_merges
+           WHERE source_session_id = 'source-main'`,
+        )
+        .first<{ result_json: string }>();
+      const result = JSON.parse(audit?.result_json ?? "{}") as {
+        combinedLineCount: number;
+        lines: Array<{
+          finalDestinationLineId: string;
+          finalQuantity: number;
+          lineIdentity: string;
+          sourceRetainedContext: Record<string, unknown>;
+        }>;
+        movedLineCount: number;
+        sourceLineCount: number;
+      };
+      expect(result).toMatchObject({
+        combinedLineCount: 3,
+        movedLineCount: 3,
+        sourceLineCount: 6,
+      });
+      expect(
+        result.lines.find((line) => line.lineIdentity === "configured:shared"),
+      ).toMatchObject({
+        finalDestinationLineId: "dest-configured",
+        finalQuantity: 3,
+        sourceRetainedContext: {
+          configuredEstimateInputs: { priceVersion: 2 },
+          configuredSnapshot: { context: "source" },
+          configuredUnitEstimateAmount: 20,
+          currentEstimateAmount: 40,
+        },
+      });
+      expect(
+        result.lines.find(
+          (line) => line.lineIdentity === "length-hose:HOSE-A:10ft",
+        ),
+      ).toMatchObject({
+        finalDestinationLineId: "dest-length",
+        finalQuantity: 3,
+        sourceRetainedContext: {
+          cuttingLabelingFeeAmount: 4,
+          cuttingLabelingFeeRate: 2,
+          cuttingLabelingFeeScope: "per_piece",
+          cuttingLabelingFeeVersion: 2,
+          estimatedMerchandiseAmount: 60,
+          normalizedLengthFt: 10,
+          originalLengthUnit: "ft",
+          originalLengthValue: 10,
+          pieceCount: 2,
+          totalFootage: 20,
+        },
+      });
+
+      const retry = await complete({
+        challengeId: "challenge-main",
+        email: "merge@example.com",
+        profileId: "profile-main",
+        sourceSessionId: "source-main",
+        suffix: "retry",
+      });
+      expect(retry).toEqual({ consumed: false, profile: null });
+      expect(
+        (
+          await database
+            .prepare(
+              `SELECT quantity FROM anonymous_quote_lines
+               WHERE id = 'dest-standard'`,
+            )
+            .first<{ quantity: number }>()
+        )?.quantity,
+      ).toBe(5);
+
+      await seedSql(
+        `INSERT INTO anonymous_quote_sessions
+           (id, created_at, last_activity_at, expires_at)
+         VALUES ('source-empty', '${now}', '${now}', '${future}');`,
+      );
+      await seedChallenge(
+        "challenge-empty",
+        "merge@example.com",
+        "2026-09-01T00:02:00.000Z",
+        "source-empty",
+      );
+      const empty = await complete({
+        challengeId: "challenge-empty",
+        email: "merge@example.com",
+        profileId: "profile-main",
+        sourceSessionId: "source-empty",
+        suffix: "empty",
+      });
+      expect(empty).toMatchObject({ consumed: true, quoteListMerged: true });
+      const emptyAudit = await database
+        .prepare(
+          `SELECT result_json FROM customer_quote_list_merges
+           WHERE source_session_id = 'source-empty'`,
+        )
+        .first<{ result_json: string }>();
+      expect(JSON.parse(emptyAudit?.result_json ?? "{}")).toMatchObject({
+        combinedLineCount: 0,
+        movedLineCount: 0,
+        sourceLineCount: 0,
+      });
+
+      await seedSql(
+        `INSERT INTO anonymous_quote_sessions
+           (id, created_at, last_activity_at, expires_at)
+         VALUES ('source-unrelated', '${now}', '${now}', '${future}');`,
+      );
+      await seedChallenge(
+        "challenge-unrelated",
+        "merge@example.com",
+        "2026-09-01T00:04:00.000Z",
+        "source-main",
+      );
+      const unrelated = await complete({
+        challengeId: "challenge-unrelated",
+        email: "merge@example.com",
+        profileId: "profile-main",
+        sourceSessionId: "source-unrelated",
+        suffix: "unrelated",
+      });
+      expect(unrelated).toMatchObject({
+        consumed: true,
+        quoteListMerged: false,
+      });
+      expect(
+        await database
+          .prepare(
+            `SELECT COUNT(*) AS count FROM customer_quote_list_merges
+             WHERE source_session_id = 'source-unrelated'`,
+          )
+          .first<{ count: number }>(),
+      ).toEqual({ count: 0 });
+      expect(
+        await database
+          .prepare(
+            `SELECT retired_at, merged_into_session_id
+             FROM anonymous_quote_sessions WHERE id = 'source-unrelated'`,
+          )
+          .first(),
+      ).toEqual({ merged_into_session_id: null, retired_at: null });
+
+      await seedSql(
+        `INSERT INTO anonymous_quote_sessions
+           (id, created_at, last_activity_at, expires_at)
+         VALUES ('source-overflow', '${now}', '${now}', '${future}');
+         INSERT INTO anonymous_quote_lines (${commonColumns}) VALUES
+           ('source-overflow-line', 'source-overflow', 'standard:SKU-A',
+            'SKU-A', 'merge-release', 'Standard A overflow', 'hose-ends',
+            'standard', 9999, 'each', 'USD', 4, '${now}', '${now}');`,
+      );
+      await seedChallenge(
+        "challenge-overflow",
+        "merge@example.com",
+        "2026-09-01T00:06:00.000Z",
+        "source-overflow",
+      );
+      const overflow = await complete({
+        challengeId: "challenge-overflow",
+        email: "merge@example.com",
+        profileId: "profile-main",
+        sourceSessionId: "source-overflow",
+        suffix: "overflow",
+      });
+      expect(overflow).toMatchObject({
+        consumed: true,
+        quoteListMerged: false,
+      });
+      expect(
+        await database
+          .prepare(
+            `SELECT quantity FROM anonymous_quote_lines
+             WHERE id = 'dest-standard'`,
+          )
+          .first(),
+      ).toEqual({ quantity: 5 });
+      expect(
+        await database
+          .prepare(
+            `SELECT quantity FROM anonymous_quote_lines
+             WHERE id = 'source-overflow-line'`,
+          )
+          .first(),
+      ).toEqual({ quantity: 9999 });
+      expect(
+        await database
+          .prepare(
+            `SELECT retired_at, merged_into_session_id
+             FROM anonymous_quote_sessions WHERE id = 'source-overflow'`,
+          )
+          .first(),
+      ).toEqual({ merged_into_session_id: null, retired_at: null });
+    } finally {
+      await platform.dispose();
+    }
+  }, 60_000);
+
   it("keeps the newest delivered OTP active and rejects repeated delivery", async () => {
     const directory = mkdtempSync(join(tmpdir(), "hose-d1-otp-ordering-"));
     temporaryDirectories.push(directory);

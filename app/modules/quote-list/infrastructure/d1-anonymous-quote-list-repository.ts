@@ -12,6 +12,7 @@ import type {
   calculateLengthBasedHoseEstimate,
 } from "../domain/length-based-hose";
 import { lengthBasedHoseLineIdentity } from "../domain/length-based-hose";
+import { accountQuoteListExpiry } from "./d1-customer-quote-list-merge";
 
 type LengthBasedHoseEstimate = ReturnType<
   typeof calculateLengthBasedHoseEstimate
@@ -266,8 +267,9 @@ export function createD1AnonymousQuoteListRepository(database: D1Database) {
     return database
       .prepare(
         `UPDATE anonymous_quote_sessions
-         SET last_activity_at = ?, expires_at = ?
-         WHERE id = ? AND expires_at > ?
+         SET last_activity_at = ?,
+             expires_at = CASE WHEN profile_id IS NULL THEN ? ELSE expires_at END
+         WHERE id = ? AND retired_at IS NULL AND expires_at > ?
          RETURNING id`,
       )
       .bind(now, expiresAt, sessionId, now);
@@ -385,8 +387,9 @@ export function createD1AnonymousQuoteListRepository(database: D1Database) {
         database
           .prepare(
             `UPDATE anonymous_quote_sessions
-             SET last_activity_at = ?, expires_at = ?
-             WHERE id = ? AND expires_at > ?
+             SET last_activity_at = ?,
+                 expires_at = CASE WHEN profile_id IS NULL THEN ? ELSE expires_at END
+             WHERE id = ? AND retired_at IS NULL AND expires_at > ?
                AND EXISTS (${activeConfiguredAssemblyGuard})
              RETURNING id`,
           )
@@ -520,8 +523,9 @@ export function createD1AnonymousQuoteListRepository(database: D1Database) {
         database
           .prepare(
             `UPDATE anonymous_quote_sessions
-             SET last_activity_at = ?, expires_at = ?
-             WHERE id = ? AND expires_at > ?
+             SET last_activity_at = ?,
+                 expires_at = CASE WHEN profile_id IS NULL THEN ? ELSE expires_at END
+             WHERE id = ? AND retired_at IS NULL AND expires_at > ?
                AND EXISTS (${activeConfiguredAssemblyGuard})
              RETURNING id`,
           )
@@ -722,9 +726,55 @@ export function createD1AnonymousQuoteListRepository(database: D1Database) {
         .run();
     },
 
+    async findOrCreateAccountSession(input: {
+      now: string;
+      profileId: string;
+      sessionId: string;
+    }) {
+      await database
+        .prepare(
+          `INSERT INTO anonymous_quote_sessions
+             (id, created_at, last_activity_at, expires_at, profile_id)
+           SELECT ?, ?, ?, ?, ?
+           WHERE EXISTS (SELECT 1 FROM customer_profiles WHERE id = ?)
+           ON CONFLICT(profile_id) WHERE profile_id IS NOT NULL DO NOTHING`,
+        )
+        .bind(
+          input.sessionId,
+          input.now,
+          input.now,
+          accountQuoteListExpiry,
+          input.profileId,
+          input.profileId,
+        )
+        .run();
+      return database
+        .prepare(
+          `SELECT id, expires_at AS expiresAt
+           FROM anonymous_quote_sessions
+           WHERE profile_id = ? AND retired_at IS NULL`,
+        )
+        .bind(input.profileId)
+        .first<AnonymousQuoteSession>();
+    },
+
+    async findAccountSession(profileId: string) {
+      return database
+        .prepare(
+          `SELECT id, expires_at AS expiresAt
+           FROM anonymous_quote_sessions
+           WHERE profile_id = ? AND retired_at IS NULL`,
+        )
+        .bind(profileId)
+        .first<AnonymousQuoteSession>();
+    },
+
     async deleteExpiredSessions(now: string) {
       await database
-        .prepare(`DELETE FROM anonymous_quote_sessions WHERE expires_at <= ?`)
+        .prepare(
+          `DELETE FROM anonymous_quote_sessions
+           WHERE profile_id IS NULL AND expires_at <= ?`,
+        )
         .bind(now)
         .run();
     },
@@ -734,7 +784,8 @@ export function createD1AnonymousQuoteListRepository(database: D1Database) {
         .prepare(
           `SELECT id, expires_at AS expiresAt
            FROM anonymous_quote_sessions
-           WHERE id = ? AND expires_at > ?`,
+           WHERE id = ? AND profile_id IS NULL AND retired_at IS NULL
+             AND expires_at > ?`,
         )
         .bind(sessionId, now)
         .first<AnonymousQuoteSession>();

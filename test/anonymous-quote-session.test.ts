@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   anonymousQuoteCookieName,
   anonymousQuoteSessionLifetimeSeconds,
+  clearAnonymousQuoteCookie,
   createAnonymousQuoteCookie,
   parseStandardProductQuantity,
   readAnonymousQuoteSessionId,
@@ -45,6 +46,16 @@ describe("anonymous Quote Session", () => {
     expect(cookie).toContain(`Max-Age=${anonymousQuoteSessionLifetimeSeconds}`);
     expect(cookie).not.toContain("SKU");
     expect(cookie).not.toContain("email");
+  });
+
+  it("retires the browser ownership token after an account merge", () => {
+    const cookie = clearAnonymousQuoteCookie(true);
+    expect(cookie).toContain(`${anonymousQuoteCookieName}=`);
+    expect(cookie).toContain("Max-Age=0");
+    expect(cookie).toContain("Expires=Thu, 01 Jan 1970 00:00:00 GMT");
+    expect(cookie).toContain("HttpOnly");
+    expect(cookie).toContain("SameSite=Lax");
+    expect(cookie).toContain("Secure");
   });
 
   it("accepts only whole quantities from 1 through 9,999", () => {

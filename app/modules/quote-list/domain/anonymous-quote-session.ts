@@ -113,6 +113,20 @@ export function quoteSessionExpiry(now: Date) {
   ).toISOString();
 }
 
+export function clearAnonymousQuoteCookie(secure: boolean) {
+  return [
+    `${anonymousQuoteCookieName}=`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    "Max-Age=0",
+    "Expires=Thu, 01 Jan 1970 00:00:00 GMT",
+    secure ? "Secure" : null,
+  ]
+    .filter(Boolean)
+    .join("; ");
+}
+
 export function parseStandardProductQuantity(value: FormDataEntryValue | null) {
   const normalized = typeof value === "string" ? value.trim() : "";
   if (!/^\d+$/.test(normalized)) return null;
