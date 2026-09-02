@@ -1,6 +1,8 @@
 import {
   AlertCircle,
   ArrowLeft,
+  Building2,
+  CheckCircle2,
   Copy,
   FileText,
   Pencil,
@@ -21,12 +23,19 @@ import { createAnonymousQuoteListService } from "../../quote-list/application/an
 import type { DashSize } from "../../catalog/domain/dash-size";
 import { QuoteListCommandRejected } from "../../quote-list/domain/anonymous-quote-list";
 import { discountedMerchandiseSubtotal } from "../../quote-list/domain/quote-list-refresh";
+import { evaluateRfqPreparation } from "../../quote-list/domain/rfq-preparation";
 import {
   maximumStandardProductQuantity,
   parseStandardProductQuantity,
 } from "../../quote-list/domain/anonymous-quote-session";
 import { StorefrontHeader } from "../ui/storefront-header";
 import { AccountWorkspace } from "../../customer-identity/ui/account-workspace";
+import {
+  createCustomerAccountService,
+  CustomerAccountAccessError,
+} from "../../customer-identity/application/customer-account-service";
+import { requireTrustedAuthPost } from "../../customer-identity/application/trusted-auth-request";
+import type { PurchasingContext } from "../../customer-identity/domain/customer-account";
 import type { RootLoaderData } from "../../../root";
 import { hoseSizeLabel } from "../domain/variant-label";
 import "../styles/quote-list.css";
@@ -49,9 +58,15 @@ export function meta() {
 
 export async function loader({ context, request }: Route.LoaderArgs) {
   const { env } = context.get(cloudflareContext);
-  const result = await createAnonymousQuoteListService(env).read(request);
+  const [result, account] = await Promise.all([
+    createAnonymousQuoteListService(env).read(request),
+    createCustomerAccountService(env).read(request),
+  ]);
   return data(
-    { lines: result.lines },
+    {
+      lines: result.lines,
+      purchasingContexts: account?.purchasingContexts ?? [],
+    },
     { headers: responseHeaders(result.setCookie) },
   );
 }
@@ -60,12 +75,32 @@ export async function action({ context, request }: Route.ActionArgs) {
   if (request.method !== "POST") {
     throw new Response("Method not allowed", { status: 405 });
   }
-  const { env } = context.get(cloudflareContext);
+  const { env, runtime } = context.get(cloudflareContext);
   const form = await request.formData();
   const intent = textValue(form, "intent");
   const service = createAnonymousQuoteListService(env);
 
   try {
+    if (intent === "select_purchasing_context") {
+      requireTrustedAuthPost({
+        environment: runtime.environment,
+        request,
+        storefrontOrigin: env.PUBLIC_STOREFRONT_ORIGIN,
+      });
+      const result = await createCustomerAccountService(
+        env,
+      ).selectPurchasingContext({
+        contextId: textValue(form, "contextId"),
+        request,
+      });
+      if (!result) {
+        return redirect(
+          `/sign-in?returnTo=${encodeURIComponent("/quote-list")}`,
+        );
+      }
+      return redirect("/quote-list");
+    }
+
     if (intent === "add") {
       const quantity = parseStandardProductQuantity(form.get("quantity"));
       if (quantity === null) {
@@ -151,11 +186,206 @@ export async function action({ context, request }: Route.ActionArgs) {
 
     return data({ formError: "Unknown Quote List command." }, { status: 400 });
   } catch (error) {
+    if (error instanceof CustomerAccountAccessError) {
+      return data(
+        { formError: "The selected purchasing context is not available." },
+        { status: 404 },
+      );
+    }
     if (error instanceof QuoteListCommandRejected) {
       return data({ formError: error.message }, { status: 409 });
     }
     throw error;
   }
+}
+
+function contextName(context: PurchasingContext) {
+  if (context.kind === "individual") return "Individual purchase";
+  return context.tradeName || context.legalName || "Organization purchase";
+}
+
+function RfqPreparation({
+  busy,
+  hasBlockedLine,
+  merchandiseSubtotal,
+  purchasingContexts,
+  serviceFeeTotal,
+}: {
+  busy: boolean;
+  hasBlockedLine: boolean;
+  merchandiseSubtotal: number;
+  purchasingContexts: PurchasingContext[];
+  serviceFeeTotal: number;
+}) {
+  const selectedContext =
+    purchasingContexts.find((context) => context.isSelected) ?? null;
+  const evaluation = evaluateRfqPreparation({
+    amounts: {
+      duties: null,
+      freight: null,
+      importCharges: null,
+      insurance: null,
+      merchandise: merchandiseSubtotal,
+      serviceFees: serviceFeeTotal,
+      tax: null,
+    },
+    pricingComplete: !hasBlockedLine,
+    purchasingContextKind: selectedContext?.kind ?? null,
+  });
+  const outcome = evaluation.outcome;
+
+  return (
+    <section
+      className="rfq-preparation"
+      aria-labelledby="rfq-preparation-title"
+    >
+      <span className="eyebrow">Request preparation</span>
+      <h2 id="rfq-preparation-title">Ready to request a quote?</h2>
+
+      {purchasingContexts.length ? (
+        <div className="rfq-contexts">
+          <strong>Purchasing context</strong>
+          {purchasingContexts.map((context) => (
+            <Form className="rfq-context-option" key={context.id} method="post">
+              <input
+                name="intent"
+                type="hidden"
+                value="select_purchasing_context"
+              />
+              <input name="contextId" type="hidden" value={context.id} />
+              <button
+                aria-current={context.isSelected ? "true" : undefined}
+                disabled={busy || context.isSelected}
+                type="submit"
+              >
+                {context.kind === "organization" ? (
+                  <Building2 aria-hidden="true" size={17} />
+                ) : (
+                  <CheckCircle2 aria-hidden="true" size={17} />
+                )}
+                <span>
+                  <strong>{contextName(context)}</strong>
+                  <small>
+                    {context.isSelected
+                      ? "Currently selected"
+                      : "Use this context"}
+                  </small>
+                </span>
+              </button>
+            </Form>
+          ))}
+        </div>
+      ) : null}
+
+      <div
+        className={`rfq-eligibility rfq-eligibility-${outcome.allowed ? "ready" : "blocked"}`}
+        role="status"
+      >
+        {outcome.code === "INCOMPLETE_PRICING" ? (
+          <>
+            <strong>Product review is required first</strong>
+            <p>
+              One or more products are unavailable, incompatible or missing a
+              current reference price. Resolve the highlighted line before
+              submission.
+            </p>
+          </>
+        ) : null}
+        {outcome.code === "MINIMUM_NOT_MET" ? (
+          <>
+            <strong>Add more products to request a quote</strong>
+            <p>
+              The refreshed merchandise subtotal must reach USD 100.00. Fees and
+              delivery-related charges do not count toward this minimum.
+            </p>
+          </>
+        ) : null}
+        {outcome.code === "PURCHASING_CONTEXT_REQUIRED" ? (
+          <>
+            {purchasingContexts.length ? (
+              <>
+                <strong>Select who is purchasing</strong>
+                <p>
+                  Choose one of the Purchasing Contexts shown above before you
+                  request a quote.
+                </p>
+              </>
+            ) : (
+              <>
+                <strong>Sign in to choose who is purchasing</strong>
+                <p>
+                  A verified account and a Purchasing Context are required
+                  before you can request a quote.
+                </p>
+                <Link
+                  className="button button-secondary"
+                  to="/sign-in?returnTo=%2Fquote-list"
+                >
+                  Sign in
+                </Link>
+              </>
+            )}
+          </>
+        ) : null}
+        {outcome.code === "ORGANIZATION_REQUIRED" ? (
+          <>
+            <strong>Use an Organization Purchasing Context</strong>
+            <p>
+              Individual quote requests are limited to USD 4,500.00 in
+              merchandise. Select an organization or add one in Profile /
+              Company.
+            </p>
+            <Link
+              className="button button-secondary"
+              to="/account?view=profile"
+            >
+              Manage organizations
+            </Link>
+          </>
+        ) : null}
+        {outcome.code === "INDIVIDUAL_DDP" ||
+        outcome.code === "ORGANIZATION_DDP" ? (
+          <>
+            <strong>
+              Eligible to request a quote: delivered with import handling (DDP)
+            </strong>
+            <p>
+              We arrange import clearance and include duties and import tax in
+              the final quote terms. The exact delivered price is confirmed only
+              after review.
+            </p>
+          </>
+        ) : null}
+        {outcome.code === "ORGANIZATION_DAP" ? (
+          <>
+            <strong>
+              Eligible to request a quote: customer-managed import clearance
+              (DAP)
+            </strong>
+            <p>
+              We arrange delivery to the destination. Your organization, as
+              importer, handles import clearance and pays duties and import tax.
+            </p>
+          </>
+        ) : null}
+      </div>
+
+      <dl className="rfq-preparation-facts">
+        <div>
+          <dt>Merchandise subtotal used</dt>
+          <dd>USD {evaluation.merchandiseSubtotal.toFixed(2)}</dd>
+        </div>
+        <div>
+          <dt>Freight</dt>
+          <dd>Calculated after quote request</dd>
+        </div>
+      </dl>
+      <p className="rfq-preparation-disclaimer">
+        This is not checkout. No payment is collected here, and no delivered
+        total is shown before review.
+      </p>
+    </section>
+  );
 }
 
 function lineSubtotal(quantity: number, referenceUnitPrice: number | null) {
@@ -202,6 +432,10 @@ export function QuoteListContent({
   );
   const hasUnpricedLine = loaderData.lines.some(
     (line) => merchandiseEstimate(line) == null,
+  );
+  const hasBlockedLine = loaderData.lines.some(
+    (line) =>
+      line.refresh?.status === "blocked" || merchandiseEstimate(line) == null,
   );
 
   return (
@@ -578,21 +812,30 @@ export function QuoteListContent({
             })}
           </section>
 
-          <aside className="quote-summary">
-            <span className="eyebrow">Reference only</span>
-            <h2>Product estimate</h2>
-            <strong>USD {referenceTotal.toFixed(2)}</strong>
-            <small>Estimated merchandise subtotal</small>
-            {serviceFeeTotal > 0 ? (
-              <p>Reference service fees: USD {serviceFeeTotal.toFixed(2)}</p>
-            ) : null}
-            {hasUnpricedLine ? <p>Plus products priced on quote.</p> : null}
-            <p>
-              This is not checkout. Service fees, freight, tax, duties, import
-              charges and insurance do not count toward the merchandise
-              subtotal.
-            </p>
-          </aside>
+          <div className="quote-list-sidebar">
+            <aside className="quote-summary">
+              <span className="eyebrow">Reference only</span>
+              <h2>Product estimate</h2>
+              <strong>USD {referenceTotal.toFixed(2)}</strong>
+              <small>Estimated merchandise subtotal</small>
+              {serviceFeeTotal > 0 ? (
+                <p>Reference service fees: USD {serviceFeeTotal.toFixed(2)}</p>
+              ) : null}
+              {hasUnpricedLine ? <p>Plus products priced on quote.</p> : null}
+              <p>
+                This is not checkout. Service fees, freight, tax, duties, import
+                charges and insurance do not count toward the merchandise
+                subtotal.
+              </p>
+            </aside>
+            <RfqPreparation
+              busy={busy}
+              hasBlockedLine={hasBlockedLine}
+              merchandiseSubtotal={referenceTotal}
+              purchasingContexts={loaderData.purchasingContexts}
+              serviceFeeTotal={serviceFeeTotal}
+            />
+          </div>
         </div>
       ) : (
         <section className="quote-list-empty">
