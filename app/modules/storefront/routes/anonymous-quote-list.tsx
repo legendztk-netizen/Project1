@@ -37,8 +37,8 @@ import {
 import { requireTrustedAuthPost } from "../../customer-identity/application/trusted-auth-request";
 import type { PurchasingContext } from "../../customer-identity/domain/customer-account";
 import type { DeliveryAddress } from "../../customer-identity/domain/customer-account";
-import { createIndividualQuoteRequestService } from "../../quote-request/application/individual-quote-request-service";
-import { IndividualQuoteRequestRejected } from "../../quote-request/domain/individual-quote-request";
+import { createQuoteRequestService } from "../../quote-request/application/quote-request-service";
+import { QuoteRequestRejected } from "../../quote-request/domain/quote-request";
 import type { RootLoaderData } from "../../../root";
 import { hoseSizeLabel } from "../domain/variant-label";
 import "../styles/quote-list.css";
@@ -86,15 +86,17 @@ export async function action({ context, request }: Route.ActionArgs) {
   const service = createAnonymousQuoteListService(env);
 
   try {
-    if (intent === "submit_individual_quote_request") {
+    if (
+      intent === "submit_individual_quote_request" ||
+      intent === "submit_organization_quote_request"
+    ) {
       requireTrustedAuthPost({
         environment: runtime.environment,
         request,
         storefrontOrigin: env.PUBLIC_STOREFRONT_ORIGIN,
       });
-      const result = await createIndividualQuoteRequestService(
-        env,
-      ).submitIndividual({
+      const quoteRequests = createQuoteRequestService(env);
+      const submission = {
         accuracyConfirmed: form.get("accuracyConfirmed") === "yes",
         commercialReviewConfirmed:
           form.get("commercialReviewConfirmed") === "yes",
@@ -103,7 +105,11 @@ export async function action({ context, request }: Route.ActionArgs) {
         selectedLineIds: form
           .getAll("selectedLineId")
           .filter((value): value is string => typeof value === "string"),
-      });
+      };
+      const result =
+        intent === "submit_organization_quote_request"
+          ? await quoteRequests.submitOrganization(submission)
+          : await quoteRequests.submitIndividual(submission);
       return redirect(
         `/quote-request/${encodeURIComponent(result.id)}/confirmation`,
       );
@@ -260,7 +266,7 @@ export async function action({ context, request }: Route.ActionArgs) {
         { status: 404 },
       );
     }
-    if (error instanceof IndividualQuoteRequestRejected) {
+    if (error instanceof QuoteRequestRejected) {
       if (error.code === "AUTHENTICATION_REQUIRED") {
         return redirect(
           `/sign-in?returnTo=${encodeURIComponent("/quote-list")}`,
@@ -476,13 +482,17 @@ function RfqPreparation({
         This is not checkout. No payment is collected here, and no delivered
         total is shown before review.
       </p>
-      {outcome.allowed && outcome.code === "INDIVIDUAL_DDP" ? (
+      {outcome.allowed ? (
         selectedAddress ? (
           <Form className="quote-request-form" method="post">
             <input
               name="intent"
               type="hidden"
-              value="submit_individual_quote_request"
+              value={
+                selectedContext?.kind === "organization"
+                  ? "submit_organization_quote_request"
+                  : "submit_individual_quote_request"
+              }
             />
             <input name="idempotencyKey" type="hidden" value={idempotencyKey} />
             {selectedLineIds.map((lineId) => (
@@ -494,6 +504,12 @@ function RfqPreparation({
               />
             ))}
             <div className="quote-request-destination">
+              {selectedContext?.kind === "organization" ? (
+                <>
+                  <strong>Purchasing for {contextName(selectedContext)}</strong>
+                  <span>Legal company: {selectedContext.legalName}</span>
+                </>
+              ) : null}
               <strong>Deliver to {selectedAddress.label}</strong>
               <span>{selectedAddress.recipientName}</span>
               <span>

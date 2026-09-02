@@ -17,7 +17,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { getPlatformProxy } from "wrangler";
 
 import { createD1CustomerIdentityRepository } from "../app/modules/customer-identity/infrastructure/d1-customer-identity-repository";
-import { staleLengthBasedHoseFeeGuardSql } from "../app/modules/quote-request/infrastructure/d1-individual-quote-request-repository";
+import { staleLengthBasedHoseFeeGuardSql } from "../app/modules/quote-request/infrastructure/d1-quote-request-repository";
 
 interface D1QueryResult<T> {
   results: T[];

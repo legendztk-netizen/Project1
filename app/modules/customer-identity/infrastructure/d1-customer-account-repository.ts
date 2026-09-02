@@ -157,6 +157,7 @@ export function createD1CustomerAccountRepository(database: D1Database) {
            INNER JOIN customer_organization_memberships member_access
              ON member_access.organization_id = o.id
                 AND member_access.profile_id = access.profile_id
+                AND member_access.role = 'primary_contact'
                 AND member_access.status = 'active'
            INNER JOIN customer_organization_memberships primary_member
              ON primary_member.organization_id = o.id
@@ -417,6 +418,7 @@ export function createD1CustomerAccountRepository(database: D1Database) {
                  SELECT 1 FROM customer_organization_memberships m
                  WHERE m.organization_id = c.organization_id
                    AND m.profile_id = ? AND m.status = 'active'
+                   AND m.role = 'primary_contact'
                ))
              )
            )`,

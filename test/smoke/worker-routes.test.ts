@@ -5524,6 +5524,287 @@ describe("Cloudflare Worker route surfaces", () => {
     }
   }, 120_000);
 
+  it("submits business RFQs through the shared atomic command for an active Primary Company Contact", async () => {
+    const email = "business-request@example.com";
+    const requested = await requestEmailOtp({ email, path: "/register" });
+    if (!requested.challenge)
+      throw new Error("Expected business registration OTP");
+    const verified = await verifyEmailOtp({
+      challengeId: requested.challenge.challengeId,
+      code: requested.challenge.code,
+      path: "/register",
+      returnTo: "/quote-list",
+    });
+    const customerCookie = cookieHeader(verified);
+
+    const address = new FormData();
+    for (const [name, value] of Object.entries({
+      addressLine1: "350 Fifth Avenue",
+      addressLine2: "Floor 21",
+      city: "New York",
+      countryCode: "US",
+      intent: "create_address",
+      label: "Business receiving",
+      postalCode: "10118",
+      recipientEmail: email,
+      recipientName: "Business Buyer",
+      recipientPhone: "+1 212 555 0199",
+      stateProvince: "New York",
+    })) {
+      address.set(name, value);
+    }
+    expect(
+      (
+        await fetch(`${origin}/account?view=addresses`, {
+          body: address,
+          headers: { cookie: customerCookie, origin },
+          method: "POST",
+          redirect: "manual",
+        })
+      ).status,
+    ).toBe(302);
+
+    const organization = new FormData();
+    for (const [name, value] of Object.entries({
+      intent: "create_organization",
+      legalName: "Business Request Test LLC",
+      organizationCountryCode: "US",
+      registrationOrTaxId: "US-TEST-1100",
+      tradeName: "Business Request Test",
+    })) {
+      organization.set(name, value);
+    }
+    expect(
+      (
+        await fetch(`${origin}/account?view=profile`, {
+          body: organization,
+          headers: { cookie: customerCookie, origin },
+          method: "POST",
+          redirect: "manual",
+        })
+      ).status,
+    ).toBe(302);
+
+    const [account] = runLocalD1<{
+      address_id: string;
+      context_id: string;
+      membership_id: string;
+      organization_id: string;
+      profile_id: string;
+    }>(
+      `SELECT p.id AS profile_id, a.id AS address_id, c.id AS context_id,
+              o.id AS organization_id, m.id AS membership_id
+       FROM customer_profiles p
+       INNER JOIN customer_delivery_addresses a ON a.profile_id = p.id
+       INNER JOIN customer_organization_memberships m ON m.profile_id = p.id
+       INNER JOIN customer_organizations o ON o.id = m.organization_id
+       INNER JOIN customer_purchasing_contexts c ON c.organization_id = o.id
+       WHERE p.email_normalized = '${email}'`,
+    );
+    if (!account) throw new Error("Expected business account records");
+
+    const addLine = async (quantity: number) => {
+      const add = new FormData();
+      add.set("intent", "add");
+      add.set("sku", "ADP_ST_JIC_M_02_NPT_M_02");
+      add.set("quantity", String(quantity));
+      const response = await fetch(`${origin}/quote-list`, {
+        body: add,
+        headers: { cookie: customerCookie },
+        method: "POST",
+        redirect: "manual",
+      });
+      expect(response.status, renderedText(await response.clone().text())).toBe(
+        302,
+      );
+      const [line] = runLocalD1<{ id: string }>(
+        `SELECT l.id FROM anonymous_quote_lines l
+         INNER JOIN anonymous_quote_sessions s ON s.id = l.session_id
+         WHERE s.profile_id = '${account.profile_id}'
+         ORDER BY l.created_at DESC LIMIT 1`,
+      );
+      if (!line) throw new Error("Expected business Quote List line");
+      return line.id;
+    };
+    const submitOrganization = (lineId: string) => {
+      const form = new FormData();
+      form.set("intent", "submit_organization_quote_request");
+      form.set("idempotencyKey", crypto.randomUUID());
+      form.set("selectedLineId", lineId);
+      form.set("accuracyConfirmed", "yes");
+      form.set("commercialReviewConfirmed", "yes");
+      return fetch(`${origin}/quote-list`, {
+        body: form,
+        headers: { cookie: customerCookie, origin },
+        method: "POST",
+        redirect: "manual",
+      });
+    };
+
+    const ddpLineId = await addLine(100);
+    const quoteListHtml = await (
+      await fetch(`${origin}/quote-list`, {
+        headers: { cookie: customerCookie },
+      })
+    ).text();
+    expect(quoteListHtml).toContain(
+      'value="submit_organization_quote_request"',
+    );
+    expect(renderedText(quoteListHtml)).toContain(
+      "Purchasing for Business Request Test",
+    );
+    expect(renderedText(quoteListHtml)).toContain(
+      "Legal company: Business Request Test LLC",
+    );
+
+    const ownershipCountBefore = runLocalD1<{ count: number }>(
+      `SELECT COUNT(*) AS count FROM customer_organization_memberships
+       WHERE organization_id = '${account.organization_id}'`,
+    )[0]?.count;
+    runLocalD1(
+      `UPDATE customer_organization_memberships SET role = 'member'
+       WHERE id = '${account.membership_id}'`,
+    );
+    const unauthorizedSelection = new FormData();
+    unauthorizedSelection.set("intent", "select_context");
+    unauthorizedSelection.set("contextId", account.context_id);
+    const selectionResponse = await fetch(`${origin}/account?view=profile`, {
+      body: unauthorizedSelection,
+      headers: { cookie: customerCookie, origin },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(selectionResponse.status).toBe(404);
+    const unauthorizedSubmission = await submitOrganization(ddpLineId);
+    expect(unauthorizedSubmission.status).toBe(422);
+    expect(renderedText(await unauthorizedSubmission.text())).toContain(
+      "Primary Company Contact",
+    );
+    runLocalD1(
+      `UPDATE customer_organization_memberships SET role = 'primary_contact'
+       WHERE id = '${account.membership_id}'`,
+    );
+
+    runLocalD1(
+      `UPDATE customer_organizations SET country_code = 'XX'
+       WHERE id = '${account.organization_id}'`,
+    );
+    const incompleteCompany = await submitOrganization(ddpLineId);
+    expect(incompleteCompany.status).toBe(422);
+    expect(renderedText(await incompleteCompany.text())).toContain(
+      "Complete the selected organization's legal company details",
+    );
+    runLocalD1(
+      `UPDATE customer_organizations SET country_code = 'US'
+       WHERE id = '${account.organization_id}'`,
+    );
+
+    runLocalD1(
+      `UPDATE customer_delivery_addresses SET country_code = 'XX'
+       WHERE id = '${account.address_id}'`,
+    );
+    const incompleteAddress = await submitOrganization(ddpLineId);
+    expect(incompleteAddress.status).toBe(422);
+    expect(renderedText(await incompleteAddress.text())).toContain(
+      "complete every required field",
+    );
+    runLocalD1(
+      `UPDATE customer_delivery_addresses SET country_code = 'US'
+       WHERE id = '${account.address_id}'`,
+    );
+
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM customer_quote_requests
+         WHERE profile_id = '${account.profile_id}'`,
+      ),
+    ).toEqual([{ count: 0 }]);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM anonymous_quote_lines l
+         INNER JOIN anonymous_quote_sessions s ON s.id = l.session_id
+         WHERE s.profile_id = '${account.profile_id}'`,
+      ),
+    ).toEqual([{ count: 1 }]);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM customer_organization_memberships
+         WHERE organization_id = '${account.organization_id}'`,
+      )[0]?.count,
+    ).toBe(ownershipCountBefore);
+
+    const ddpSubmission = await submitOrganization(ddpLineId);
+    expect(ddpSubmission.status).toBe(302);
+    const ddpConfirmationPath = ddpSubmission.headers.get("location") ?? "";
+    const ddpConfirmation = await fetch(`${origin}${ddpConfirmationPath}`, {
+      headers: { cookie: customerCookie },
+    });
+    const ddpConfirmationText = renderedText(await ddpConfirmation.text());
+    expect(ddpConfirmation.status).toBe(200);
+    expect(ddpConfirmationText).toContain("Business Request Test LLC");
+    expect(ddpConfirmationText).toContain("Import handling DDP");
+
+    const dapLineId = await addLine(2_000);
+    const dapSubmission = await submitOrganization(dapLineId);
+    expect(dapSubmission.status).toBe(302);
+
+    const stored = runLocalD1<{
+      fulfillment_term: string;
+      purchasing_context_kind: string;
+      snapshot_json: string;
+    }>(
+      `SELECT purchasing_context_kind, fulfillment_term, snapshot_json
+       FROM customer_quote_requests
+       WHERE profile_id = '${account.profile_id}'
+       ORDER BY submitted_at, id`,
+    );
+    expect(stored).toHaveLength(2);
+    expect(
+      stored.map(({ fulfillment_term }) => fulfillment_term).sort(),
+    ).toEqual(["DAP", "DDP"]);
+    for (const row of stored) {
+      expect(row.purchasing_context_kind).toBe("organization");
+      const snapshot = JSON.parse(row.snapshot_json);
+      expect(snapshot).toMatchObject({
+        acknowledgements: { version: "organization-request-v1" },
+        actor: { email, id: account.profile_id },
+        destination: {
+          addressLine1: "350 Fifth Avenue",
+          city: "New York",
+        },
+        purchasingContext: {
+          countryCode: "US",
+          id: account.context_id,
+          kind: "organization",
+          legalName: "Business Request Test LLC",
+          registrationOrTaxId: "US-TEST-1100",
+          tradeName: "Business Request Test",
+        },
+      });
+      expect(snapshot.importResponsibility.fulfillmentTerm).toBe(
+        row.fulfillment_term,
+      );
+    }
+    const ddpSnapshot = JSON.parse(
+      stored.find(({ fulfillment_term }) => fulfillment_term === "DDP")!
+        .snapshot_json,
+    );
+    const dapSnapshot = JSON.parse(
+      stored.find(({ fulfillment_term }) => fulfillment_term === "DAP")!
+        .snapshot_json,
+    );
+    expect(ddpSnapshot.amounts.merchandiseSubtotal).toBeGreaterThanOrEqual(100);
+    expect(ddpSnapshot.amounts.merchandiseSubtotal).toBeLessThanOrEqual(3_000);
+    expect(dapSnapshot.amounts.merchandiseSubtotal).toBeGreaterThan(4_500);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM anonymous_quote_lines l
+         INNER JOIN anonymous_quote_sessions s ON s.id = l.session_id
+         WHERE s.profile_id = '${account.profile_id}'`,
+      ),
+    ).toEqual([{ count: 0 }]);
+  }, 120_000);
+
   it("does not expose standalone email draft persistence", async () => {
     const saveResponse = await fetch(`${origin}/api/configurator/save-draft`, {
       body: new FormData(),

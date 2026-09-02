@@ -1,7 +1,7 @@
 import type {
-  IndividualQuoteRequestRecord,
-  IndividualQuoteRequestSnapshot,
-} from "../domain/individual-quote-request";
+  QuoteRequestRecord,
+  QuoteRequestSnapshot,
+} from "../domain/quote-request";
 
 interface QuoteRequestRow {
   id: string;
@@ -10,11 +10,11 @@ interface QuoteRequestRow {
   submitted_at: string;
 }
 
-function record(row: QuoteRequestRow): IndividualQuoteRequestRecord {
+function record(row: QuoteRequestRow): QuoteRequestRecord {
   return {
     id: row.id,
     referenceNumber: row.reference_number,
-    snapshot: JSON.parse(row.snapshot_json) as IndividualQuoteRequestSnapshot,
+    snapshot: JSON.parse(row.snapshot_json) as QuoteRequestSnapshot,
     submittedAt: row.submitted_at,
   };
 }
@@ -38,6 +38,83 @@ const selectedIndividualContextGuard = `
     AND address.address_line_1 = ?
     AND COALESCE(address.address_line_2, '') = ?
 `;
+
+const selectedOrganizationContextGuard = `
+  SELECT 1
+  FROM customer_account_preferences pref
+  INNER JOIN customer_purchasing_contexts context
+    ON context.id = pref.selected_purchasing_context_id
+  INNER JOIN customer_organizations organization
+    ON organization.id = context.organization_id
+  INNER JOIN customer_profile_purchasing_context_access access
+    ON access.context_id = context.id AND access.profile_id = pref.profile_id
+  INNER JOIN customer_organization_memberships membership
+    ON membership.organization_id = organization.id
+   AND membership.profile_id = pref.profile_id
+   AND membership.role = 'primary_contact'
+   AND membership.status = 'active'
+  INNER JOIN customer_delivery_addresses address
+    ON address.id = pref.selected_delivery_address_id
+   AND address.profile_id = pref.profile_id
+  WHERE pref.profile_id = ?
+    AND context.id = ? AND context.kind = 'organization'
+    AND organization.legal_name = ?
+    AND COALESCE(organization.trade_name, '') = ?
+    AND organization.country_code = ?
+    AND COALESCE(organization.registration_or_tax_id, '') = ?
+    AND address.id = ? AND address.profile_id = ?
+    AND address.label = ? AND address.recipient_name = ?
+    AND address.recipient_email = ? AND address.recipient_phone = ?
+    AND address.country_code = ? AND address.state_province = ?
+    AND address.city = ? AND address.postal_code = ?
+    AND address.address_line_1 = ?
+    AND COALESCE(address.address_line_2, '') = ?
+`;
+
+function selectedContextGuard(snapshot: QuoteRequestSnapshot) {
+  return snapshot.purchasingContext.kind === "organization"
+    ? selectedOrganizationContextGuard
+    : selectedIndividualContextGuard;
+}
+
+function selectedContextBindings(input: {
+  profileId: string;
+  purchasingContextId: string;
+  snapshot: QuoteRequestSnapshot;
+  sourceAddressId: string;
+}) {
+  const destinationBindings = [
+    input.sourceAddressId,
+    input.profileId,
+    input.snapshot.destination.label,
+    input.snapshot.destination.recipientName,
+    input.snapshot.destination.recipientEmail,
+    input.snapshot.destination.recipientPhone,
+    input.snapshot.destination.countryCode,
+    input.snapshot.destination.stateProvince,
+    input.snapshot.destination.city,
+    input.snapshot.destination.postalCode,
+    input.snapshot.destination.addressLine1,
+    input.snapshot.destination.addressLine2,
+  ];
+  if (input.snapshot.purchasingContext.kind === "organization") {
+    return [
+      input.profileId,
+      input.purchasingContextId,
+      input.snapshot.purchasingContext.legalName,
+      input.snapshot.purchasingContext.tradeName ?? "",
+      input.snapshot.purchasingContext.countryCode,
+      input.snapshot.purchasingContext.registrationOrTaxId ?? "",
+      ...destinationBindings,
+    ];
+  }
+  return [
+    input.profileId,
+    input.purchasingContextId,
+    input.profileId,
+    ...destinationBindings,
+  ];
+}
 
 function deleteGuardForInvalidConfiguredEnd(end: "A" | "B") {
   return `DELETE FROM customer_quote_request_submission_guards AS guard
@@ -144,7 +221,7 @@ export const staleLengthBasedHoseFeeGuardSql = `
     )
   )`;
 
-export function createD1IndividualQuoteRequestRepository(database: D1Database) {
+export function createD1QuoteRequestRepository(database: D1Database) {
   async function findByIdempotency(profileId: string, idempotencyKey: string) {
     const row = await database
       .prepare(
@@ -189,7 +266,7 @@ export function createD1IndividualQuoteRequestRepository(database: D1Database) {
       referenceNumber: string;
       sessionId: string;
       sessionVersion: string;
-      snapshot: IndividualQuoteRequestSnapshot;
+      snapshot: QuoteRequestSnapshot;
       sourceAddressId: string;
       selectedLineIds: string[];
     }) {
@@ -198,6 +275,7 @@ export function createD1IndividualQuoteRequestRepository(database: D1Database) {
       const expectedLengthBasedHoseFeesJson = JSON.stringify(
         input.expectedLengthBasedHoseFees,
       );
+      const contextBindings = selectedContextBindings(input);
       const batchResults = await database.batch<QuoteRequestRow>([
         database
           .prepare(
@@ -215,7 +293,7 @@ export function createD1IndividualQuoteRequestRepository(database: D1Database) {
                    AND COALESCE(profile.full_name, '') = ?
                    AND COALESCE(profile.phone_number, '') = ?
                )
-               AND EXISTS (${selectedIndividualContextGuard})
+               AND EXISTS (${selectedContextGuard(input.snapshot)})
                AND json_array_length(?) = ?
                AND (SELECT COUNT(*) FROM anonymous_quote_lines l
                     WHERE l.session_id = s.id
@@ -243,21 +321,7 @@ export function createD1IndividualQuoteRequestRepository(database: D1Database) {
             input.snapshot.actor.verifiedAt,
             input.snapshot.actor.fullName ?? "",
             input.snapshot.actor.phoneNumber ?? "",
-            input.profileId,
-            input.purchasingContextId,
-            input.profileId,
-            input.sourceAddressId,
-            input.profileId,
-            input.snapshot.destination.label,
-            input.snapshot.destination.recipientName,
-            input.snapshot.destination.recipientEmail,
-            input.snapshot.destination.recipientPhone,
-            input.snapshot.destination.countryCode,
-            input.snapshot.destination.stateProvince,
-            input.snapshot.destination.city,
-            input.snapshot.destination.postalCode,
-            input.snapshot.destination.addressLine1,
-            input.snapshot.destination.addressLine2,
+            ...contextBindings,
             selectedLineIdsJson,
             input.expectedLineCount,
             selectedLineIdsJson,
@@ -371,7 +435,7 @@ export function createD1IndividualQuoteRequestRepository(database: D1Database) {
                 purchasing_context_kind, fulfillment_term, currency,
                 merchandise_subtotal, service_fee_total, idempotency_key,
                 snapshot_json, submitted_at)
-             SELECT ?, ?, ?, ?, s.id, ?, ?, 'individual', 'DDP', 'USD',
+             SELECT ?, ?, ?, ?, s.id, ?, ?, ?, ?, 'USD',
                     ?, ?, ?, ?, ?
              FROM customer_quote_request_submission_guards guard
              INNER JOIN anonymous_quote_sessions s ON s.id = guard.session_id
@@ -386,6 +450,8 @@ export function createD1IndividualQuoteRequestRepository(database: D1Database) {
             input.purchasingContextId,
             input.sessionVersion,
             input.sourceAddressId,
+            input.snapshot.purchasingContext.kind,
+            input.snapshot.importResponsibility.fulfillmentTerm,
             input.snapshot.amounts.merchandiseSubtotal,
             input.snapshot.amounts.serviceFeeTotal,
             input.idempotencyKey,

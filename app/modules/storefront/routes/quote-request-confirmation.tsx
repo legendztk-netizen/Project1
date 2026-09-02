@@ -3,7 +3,7 @@ import { Link, redirect } from "react-router";
 
 import type { Route } from "./+types/quote-request-confirmation";
 import { AccountWorkspace } from "../../customer-identity/ui/account-workspace";
-import { createIndividualQuoteRequestService } from "../../quote-request/application/individual-quote-request-service";
+import { createQuoteRequestService } from "../../quote-request/application/quote-request-service";
 import "../styles/quote-list.css";
 import { cloudflareContext } from "#workers/context";
 
@@ -13,7 +13,7 @@ export function meta() {
 
 export async function loader({ context, params, request }: Route.LoaderArgs) {
   const { env } = context.get(cloudflareContext);
-  const result = await createIndividualQuoteRequestService(env).readOwned(
+  const result = await createQuoteRequestService(env).readOwned(
     request,
     params.requestId,
   );
@@ -56,6 +56,20 @@ export default function QuoteRequestConfirmation({
               <dd>
                 USD{" "}
                 {quoteRequest.snapshot.amounts.merchandiseSubtotal.toFixed(2)}
+              </dd>
+            </div>
+            <div>
+              <dt>Purchasing as</dt>
+              <dd>
+                {quoteRequest.snapshot.purchasingContext.kind === "organization"
+                  ? quoteRequest.snapshot.purchasingContext.legalName
+                  : "Individual purchase"}
+              </dd>
+            </div>
+            <div>
+              <dt>Import handling</dt>
+              <dd>
+                {quoteRequest.snapshot.importResponsibility.fulfillmentTerm}
               </dd>
             </div>
           </dl>
