@@ -1941,10 +1941,94 @@ a.customer-auth-switch {
 }
 
 .customer-quote-list-heading {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(260px, 380px) auto;
   align-items: start;
-  justify-content: space-between;
   gap: 20px;
+}
+
+.customer-quote-request-preview {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--quote-preview-count, 1), minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  min-height: 92px;
+}
+
+.customer-quote-request-preview[data-count="2"] {
+  --quote-preview-count: 2;
+}
+
+.customer-quote-request-preview[data-count="3"] {
+  --quote-preview-count: 3;
+}
+
+.customer-quote-product-preview {
+  display: grid;
+  grid-template-columns: 1fr;
+  width: min(100%, 380px);
+  height: 126px;
+  margin: 0;
+  overflow: hidden;
+  background: #f5f7f8;
+  border: 1px solid var(--line);
+}
+
+.customer-quote-product-preview[data-assembly] {
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr) minmax(0, 0.9fr);
+}
+
+.customer-quote-product-preview[data-compact] {
+  height: 92px;
+}
+
+.customer-quote-preview-part {
+  min-width: 0;
+  overflow: hidden;
+  background: #fff;
+}
+
+.customer-quote-preview-part img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.customer-quote-preview-part[data-kind="hose"] img {
+  object-fit: contain;
+  transform: scale(1.12);
+}
+
+.customer-quote-product-preview:not([data-assembly])
+  .customer-quote-preview-part[data-kind="hose"]
+  img {
+  transform: scale(1.65);
+}
+
+.customer-quote-preview-fallback {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  color: #78868e;
+}
+
+.customer-quote-preview-more {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  display: grid;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 7px;
+  place-items: center;
+  color: #fff;
+  background: #1f2a30;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 780;
 }
 
 .customer-quote-list-heading span,
@@ -2049,17 +2133,20 @@ a.customer-auth-switch {
 }
 
 .customer-quote-lines article {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 380px) auto;
   align-items: start;
-  justify-content: space-between;
   gap: 20px;
   padding: 16px 0;
   border-top: 1px solid var(--line);
 }
 
+.customer-quote-line-quantity {
+  white-space: nowrap;
+}
+
 .customer-configured-assembly-details {
-  flex: 0 0 100%;
+  grid-column: 1 / -1;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: 12px;
   padding: 16px;
@@ -2422,6 +2509,13 @@ a.customer-auth-switch {
   .customer-quote-list-heading,
   .customer-quote-detail-header {
     align-items: stretch;
+  }
+
+  .customer-quote-list-heading {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-quote-detail-header {
     flex-direction: column;
   }
 
@@ -2430,9 +2524,24 @@ a.customer-auth-switch {
   }
 
   .customer-quote-list dl,
-  .customer-quote-detail-grid,
-  .customer-configured-assembly-details {
+  .customer-quote-detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .customer-quote-lines article {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-quote-section .customer-quote-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-quote-section .customer-configured-assembly-details {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-quote-product-preview {
+    width: 100%;
   }
 
   .account-form-wide {

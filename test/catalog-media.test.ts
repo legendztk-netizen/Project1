@@ -4,7 +4,11 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import type { PublicCatalogItem } from "../app/modules/catalog/domain/public-catalog";
-import { catalogMediaPath } from "../app/modules/storefront/ui/catalog-media";
+import {
+  catalogMediaPath,
+  hoseEndMediaPathFromDisplayName,
+  hoseMediaPath,
+} from "../app/modules/storefront/ui/catalog-media";
 import { publicHoseFixture } from "./fixtures/public-hose";
 
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
@@ -53,4 +57,19 @@ describe("catalog hose-end media", () => {
       expect(existsSync(`${projectRoot}/public${path}`)).toBe(true);
     },
   );
+
+  it("resolves a submitted hose-end family name without its size suffix", () => {
+    expect(
+      hoseEndMediaPathFromDisplayName(
+        "BSPP Female Swivel 0° Straight Hose End -4 x -4",
+      ),
+    ).toBe("/images/catalog/hose-ends/bspp-female-swivel-straight.jpg");
+  });
+
+  it("only returns hose series images that exist", () => {
+    expect(hoseMediaPath("601R1")).toBe(
+      "/images/catalog/hose/601R1-structure.jpg",
+    );
+    expect(hoseMediaPath("UNKNOWN")).toBeNull();
+  });
 });

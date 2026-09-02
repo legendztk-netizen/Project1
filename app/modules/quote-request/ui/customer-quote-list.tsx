@@ -6,6 +6,7 @@ import {
   quoteImportHandling,
   quotePurchasingAs,
 } from "./customer-quote-presentation";
+import { CustomerQuoteRequestPreview } from "./customer-quote-product-preview";
 
 export function CustomerQuoteList({
   quoteRequests,
@@ -36,6 +37,9 @@ export function CustomerQuoteList({
                   <span>{quoteRequest.progress.label}</span>
                   <h2>{quoteRequest.referenceNumber}</h2>
                 </div>
+                <CustomerQuoteRequestPreview
+                  lines={quoteRequest.snapshot.lines}
+                />
                 <Link
                   className="button button-secondary"
                   to={`/account/quotes/${encodeURIComponent(quoteRequest.id)}`}

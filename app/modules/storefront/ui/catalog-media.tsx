@@ -33,9 +33,50 @@ const hoseEndMedia: Record<string, string> = {
   "SAE Code 61-Fixed-90°": "code-61-90.jpg",
 };
 
+const hoseMediaKeys = new Set([
+  "601R1",
+  "601R2",
+  "EN1SC",
+  "EN2SC",
+  "EN4SH",
+  "EN4SP",
+]);
+
+function normalizedHoseEndMediaName(value: string) {
+  return value
+    .replace(/\s+-\d+\s+x\s+-\d+\s*$/u, "")
+    .replace(/\s+Hose End\s*$/iu, "")
+    .replaceAll("-", " ")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .toLocaleLowerCase("en-US");
+}
+
+const hoseEndMediaByDisplayName = new Map(
+  Object.entries(hoseEndMedia).map(([mediaKey, filename]) => [
+    normalizedHoseEndMediaName(mediaKey),
+    filename,
+  ]),
+);
+
+export function hoseMediaPath(mediaKey: string | null | undefined) {
+  if (!mediaKey || !hoseMediaKeys.has(mediaKey)) return null;
+  return `/images/catalog/hose/${mediaKey}-structure.jpg`;
+}
+
 export function hoseEndMediaPath(mediaKey: string | null | undefined) {
   if (!mediaKey) return null;
   const filename = hoseEndMedia[mediaKey];
+  return filename ? `/images/catalog/hose-ends/${filename}` : null;
+}
+
+export function hoseEndMediaPathFromDisplayName(
+  displayName: string | null | undefined,
+) {
+  if (!displayName) return null;
+  const filename = hoseEndMediaByDisplayName.get(
+    normalizedHoseEndMediaName(displayName),
+  );
   return filename ? `/images/catalog/hose-ends/${filename}` : null;
 }
 

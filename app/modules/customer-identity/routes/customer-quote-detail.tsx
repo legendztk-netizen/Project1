@@ -10,6 +10,7 @@ import {
   quoteImportHandling,
   quotePurchasingAs,
 } from "../../quote-request/ui/customer-quote-presentation";
+import { CustomerQuoteProductPreview } from "../../quote-request/ui/customer-quote-product-preview";
 import { cloudflareContext } from "#workers/context";
 
 export function meta() {
@@ -163,12 +164,15 @@ export default function CustomerQuoteDetail({
           <div className="customer-quote-lines">
             {snapshot.lines.map((line) => (
               <article key={line.id}>
-                <div>
+                <div className="customer-quote-line-copy">
                   <h3>{line.displayName}</h3>
                   <p>SKU {line.sku}</p>
                   <p>{lineDetails(line)}</p>
                 </div>
-                <strong>Qty {line.quantity}</strong>
+                <CustomerQuoteProductPreview line={line} />
+                <strong className="customer-quote-line-quantity">
+                  Qty {line.quantity}
+                </strong>
                 {configuredAssemblyDetails(line)}
               </article>
             ))}
