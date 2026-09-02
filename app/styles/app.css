@@ -1706,9 +1706,14 @@ a.customer-auth-switch {
 
 .account-workspace-sidebar {
   display: flex;
+  position: sticky;
+  top: 0;
   min-width: 0;
+  height: calc(100vh - 68px);
+  align-self: start;
   flex-direction: column;
   gap: 28px;
+  overflow-y: auto;
   padding: 32px 20px;
   background: var(--surface);
   border-right: 1px solid var(--line);
@@ -2176,7 +2181,10 @@ a.customer-auth-switch {
   }
 
   .account-workspace-sidebar {
+    position: static;
+    height: auto;
     gap: 16px;
+    overflow-y: visible;
     padding: 20px 18px 0;
     border-right: 0;
     border-bottom: 1px solid var(--line);
