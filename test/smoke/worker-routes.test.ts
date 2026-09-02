@@ -4215,6 +4215,24 @@ describe("Cloudflare Worker route surfaces", () => {
     });
     expect(updateResponse.status).toBe(302);
 
+    const autosaveQuantity = new FormData();
+    autosaveQuantity.set("intent", "autosave-quantity");
+    autosaveQuantity.set("lineId", mergedLine?.id ?? "");
+    autosaveQuantity.set("lineKind", "standard");
+    autosaveQuantity.set("quantity", "6");
+    const autosaveQuantityResponse = await fetch(`${origin}/quote-list`, {
+      body: autosaveQuantity,
+      headers: { cookie: quoteCookie },
+      method: "POST",
+    });
+    expect(autosaveQuantityResponse.status).toBe(200);
+    expect(
+      runLocalD1<{ quantity: number }>(
+        `SELECT quantity FROM anonymous_quote_lines
+         WHERE id = '${mergedLine?.id ?? ""}'`,
+      ),
+    ).toEqual([{ quantity: 6 }]);
+
     const invalidQuantity = new FormData();
     invalidQuantity.set("intent", "update");
     invalidQuantity.set("lineId", mergedLine?.id ?? "");

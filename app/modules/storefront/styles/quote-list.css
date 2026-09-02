@@ -127,19 +127,6 @@
   font-size: 0.68rem;
 }
 
-.quote-line-field-error {
-  display: block;
-  max-width: 190px;
-  margin-top: 5px;
-  color: #a22f28;
-  font-size: 0.7rem;
-  line-height: 1.35;
-}
-
-.quote-line-actions input[aria-invalid="true"] {
-  border-color: #b43b32;
-}
-
 .quote-line-price {
   display: grid;
   gap: 4px;
@@ -196,7 +183,7 @@
   border-top: 1px solid var(--line);
 }
 
-.quote-line-actions label {
+.quote-quantity-control label {
   display: block;
   margin-bottom: 5px;
   color: var(--muted);
@@ -204,12 +191,7 @@
   font-weight: 700;
 }
 
-.quote-line-actions form:first-child > div {
-  display: flex;
-  gap: 6px;
-}
-
-.quote-line-actions input {
+.quote-quantity-control input {
   width: 80px;
   min-height: 40px;
   padding: 0 9px;
@@ -217,10 +199,79 @@
   border-radius: 4px;
 }
 
+.quote-quantity-control input[aria-invalid="true"] {
+  border-color: #b43b32;
+}
+
+.quote-quantity-status {
+  display: block;
+  min-height: 17px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.quote-quantity-control input[aria-invalid="true"] + .quote-quantity-status {
+  max-width: 180px;
+  color: #a22f28;
+}
+
 .quote-remove-command {
   color: #a1261d;
   background: transparent;
   border-color: #e2b5b1;
+}
+
+.quote-remove-overlay {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(20 29 34 / 58%);
+}
+
+.quote-remove-dialog {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  width: min(520px, 100%);
+  padding: 26px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 18px 54px rgb(0 0 0 / 22%);
+}
+
+.quote-remove-dialog > svg {
+  margin-top: 3px;
+  color: #a1261d;
+}
+
+.quote-remove-dialog h2 {
+  margin: 5px 0 8px;
+  font-size: 1.35rem;
+}
+
+.quote-remove-dialog p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.quote-remove-dialog-actions {
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.quote-remove-confirm {
+  color: #fff;
+  background: #a1261d;
+  border-color: #a1261d;
 }
 
 .quote-summary {
@@ -560,13 +611,21 @@
     padding-top: 14px;
   }
 
-  .quote-line-actions form:first-child > div {
-    display: grid;
-    grid-template-columns: 82px 1fr;
+  .quote-quantity-control input,
+  .quote-line-actions .button {
+    width: 100%;
   }
 
-  .quote-line-actions input,
-  .quote-line-actions .button {
+  .quote-remove-dialog {
+    padding: 22px 18px;
+  }
+
+  .quote-remove-dialog-actions {
+    display: grid;
+  }
+
+  .quote-remove-dialog-actions form,
+  .quote-remove-dialog-actions .button {
     width: 100%;
   }
 }

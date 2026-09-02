@@ -6,7 +6,6 @@ import {
   Copy,
   FileText,
   Pencil,
-  RefreshCw,
   Trash2,
 } from "lucide-react";
 import {
@@ -14,16 +13,16 @@ import {
   Link,
   data,
   redirect,
+  useFetcher,
   useNavigation,
   useRouteLoaderData,
 } from "react-router";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Route } from "./+types/anonymous-quote-list";
 import { createAnonymousQuoteListService } from "../../quote-list/application/anonymous-quote-list-service";
 import type { DashSize } from "../../catalog/domain/dash-size";
 import { QuoteListCommandRejected } from "../../quote-list/domain/anonymous-quote-list";
-import { discountedMerchandiseSubtotal } from "../../quote-list/domain/quote-list-refresh";
 import { evaluateRfqPreparation } from "../../quote-list/domain/rfq-preparation";
 import {
   maximumStandardProductQuantity,
@@ -146,6 +145,46 @@ export async function action({ context, request }: Route.ActionArgs) {
       return redirect("/quote-list", {
         headers: responseHeaders(result.setCookie),
       });
+    }
+
+    if (intent === "autosave-quantity") {
+      const lineId = textValue(form, "lineId");
+      const quantity = parseStandardProductQuantity(form.get("quantity"));
+      if (quantity === null) {
+        return data(
+          {
+            formError: "Quantity must be a whole number from 1 to 9,999.",
+            lineId,
+          },
+          { status: 422 },
+        );
+      }
+
+      const lineKind = textValue(form, "lineKind");
+      if (
+        lineKind !== "standard" &&
+        lineKind !== "length_based_hose" &&
+        lineKind !== "configured_assembly"
+      ) {
+        return data(
+          { formError: "The Quote List product type is not valid.", lineId },
+          { status: 400 },
+        );
+      }
+      const result =
+        lineKind === "configured_assembly"
+          ? await service.updateConfiguredAssemblyQuantity(
+              request,
+              lineId,
+              quantity,
+            )
+          : lineKind === "length_based_hose"
+            ? await service.updateLengthBasedHose(request, lineId, quantity)
+            : await service.update(request, lineId, quantity);
+      return data(
+        { lineId, quantity, saved: true },
+        { headers: responseHeaders(result.setCookie) },
+      );
     }
 
     if (intent === "update") {
@@ -528,19 +567,51 @@ function lineSubtotal(quantity: number, referenceUnitPrice: number | null) {
   return referenceUnitPrice == null ? null : quantity * referenceUnitPrice;
 }
 
-function merchandiseEstimate(
-  line: Route.ComponentProps["loaderData"]["lines"][number],
+type QuoteLine = Route.ComponentProps["loaderData"]["lines"][number];
+
+function roundMoney(amount: number) {
+  return Math.round((amount + Number.EPSILON) * 100) / 100;
+}
+
+function scaleAmount(
+  amount: number | null,
+  persistedQuantity: number,
+  quantity: number,
 ) {
+  if (amount === null) return null;
+  if (persistedQuantity === quantity) return amount;
+  return roundMoney((amount / persistedQuantity) * quantity);
+}
+
+function merchandiseEstimate(line: QuoteLine, quantity = line.quantity) {
   if (line.refresh) {
-    return line.refresh.current.discountedMerchandiseAmount;
+    return scaleAmount(
+      line.refresh.current.discountedMerchandiseAmount,
+      line.quantity,
+      quantity,
+    );
   }
   if (line.lineKind === "length_based_hose") {
-    return line.estimatedMerchandiseAmount;
+    return scaleAmount(
+      line.estimatedMerchandiseAmount,
+      line.quantity,
+      quantity,
+    );
   }
   if (line.lineKind === "configured_assembly") {
-    return line.currentEstimateAmount;
+    return scaleAmount(line.currentEstimateAmount, line.quantity, quantity);
   }
-  return lineSubtotal(line.quantity, line.referenceUnitPrice);
+  return lineSubtotal(quantity, line.referenceUnitPrice);
+}
+
+function serviceFeeEstimate(line: QuoteLine, quantity = line.quantity) {
+  return (
+    scaleAmount(
+      line.refresh?.current.serviceFeeAmount ?? 0,
+      line.quantity,
+      quantity,
+    ) ?? 0
+  );
 }
 
 function lineReadyForSubmission(
@@ -561,15 +632,242 @@ function configuredHoseSize(
   return hoseSizeLabel(hose.nominalIdIn, dash) ?? "Not available";
 }
 
+function QuantityAutosave({
+  disabled,
+  label,
+  line,
+  onPendingChange,
+  onQuantityChange,
+  quantity,
+}: {
+  disabled: boolean;
+  label: string;
+  line: QuoteLine;
+  onPendingChange: (lineId: string, pending: boolean) => void;
+  onQuantityChange: (lineId: string, quantity: number) => void;
+  quantity: number;
+}) {
+  const fetcher = useFetcher<typeof action>();
+  const [value, setValue] = useState(String(quantity));
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestValueRef = useRef(value);
+  const inputId = `quantity-${line.id}`;
+  const errorId = `quantity-error-${line.id}`;
+  const parsedValue = parseStandardProductQuantity(value);
+  const responseError =
+    fetcher.data && "formError" in fetcher.data ? fetcher.data.formError : null;
+  const invalidMessage =
+    parsedValue === null
+      ? "Enter a whole number from 1 to 9,999."
+      : responseError;
+
+  useEffect(() => {
+    latestValueRef.current = value;
+  }, [value]);
+
+  useEffect(() => {
+    if (fetcher.state !== "idle" || !fetcher.data) return;
+    const latestQuantity = parseStandardProductQuantity(latestValueRef.current);
+    const savedQuantity =
+      "saved" in fetcher.data && fetcher.data.saved
+        ? fetcher.data.quantity
+        : null;
+    onPendingChange(
+      line.id,
+      Boolean(responseError) || latestQuantity !== savedQuantity,
+    );
+  }, [fetcher.data, fetcher.state, line.id, onPendingChange, responseError]);
+
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      onPendingChange(line.id, false);
+    },
+    [line.id, onPendingChange],
+  );
+
+  return (
+    <div className="quote-quantity-control">
+      <label htmlFor={inputId}>{label}</label>
+      <input
+        aria-describedby={invalidMessage ? errorId : undefined}
+        aria-invalid={Boolean(invalidMessage)}
+        disabled={disabled}
+        id={inputId}
+        inputMode="numeric"
+        max={maximumStandardProductQuantity}
+        min="1"
+        onChange={(event) => {
+          const nextValue = event.currentTarget.value;
+          const nextQuantity = parseStandardProductQuantity(nextValue);
+          setValue(nextValue);
+          latestValueRef.current = nextValue;
+          if (timerRef.current) clearTimeout(timerRef.current);
+
+          if (nextQuantity === null) {
+            onPendingChange(line.id, true);
+            return;
+          }
+
+          onQuantityChange(line.id, nextQuantity);
+          if (nextQuantity === line.quantity) {
+            onPendingChange(line.id, false);
+            return;
+          }
+
+          onPendingChange(line.id, true);
+          timerRef.current = setTimeout(() => {
+            fetcher.submit(
+              {
+                intent: "autosave-quantity",
+                lineId: line.id,
+                lineKind: line.lineKind,
+                quantity: String(nextQuantity),
+              },
+              { action: "/quote-list", method: "post" },
+            );
+          }, 350);
+        }}
+        required
+        step="1"
+        type="number"
+        value={value}
+      />
+      <span className="quote-quantity-status" role="status">
+        {invalidMessage
+          ? invalidMessage
+          : fetcher.state !== "idle" || quantity !== line.quantity
+            ? "Saving..."
+            : "Saved"}
+      </span>
+    </div>
+  );
+}
+
+function RemoveLineDialog({
+  busy,
+  line,
+  onClose,
+}: {
+  busy: boolean;
+  line: QuoteLine;
+  onClose: () => void;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    cancelRef.current?.focus();
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !busy) {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), [href], input:not([disabled])",
+      );
+      if (!focusable?.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus();
+    };
+  }, [busy, onClose]);
+
+  return (
+    <div className="quote-remove-overlay" role="presentation">
+      <div
+        aria-describedby="quote-remove-description"
+        aria-labelledby="quote-remove-title"
+        aria-modal="true"
+        className="quote-remove-dialog"
+        ref={dialogRef}
+        role="dialog"
+      >
+        <Trash2 aria-hidden="true" size={26} />
+        <div>
+          <span className="eyebrow">Confirm removal</span>
+          <h2 id="quote-remove-title">Remove this product?</h2>
+          <p id="quote-remove-description">
+            {line.displayName} ({line.sku}) will be removed from your Quote
+            List.
+          </p>
+        </div>
+        <div className="quote-remove-dialog-actions">
+          <button
+            className="button button-secondary"
+            disabled={busy}
+            onClick={onClose}
+            ref={cancelRef}
+            type="button"
+          >
+            Cancel
+          </button>
+          <Form method="post">
+            <input name="intent" type="hidden" value="remove" />
+            <input name="lineId" type="hidden" value={line.id} />
+            <button
+              className="button quote-remove-confirm"
+              disabled={busy}
+              type="submit"
+            >
+              <Trash2 aria-hidden="true" size={17} />
+              {busy ? "Removing..." : "Remove from Quote List"}
+            </button>
+          </Form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function QuoteListContent({
   actionData,
   loaderData,
 }: Route.ComponentProps) {
   const navigation = useNavigation();
-  const busy = navigation.state !== "idle";
+  const navigationBusy = navigation.state !== "idle";
   const [selectedLineIds, setSelectedLineIds] = useState<string[]>(() =>
     loaderData.lines.filter(lineReadyForSubmission).map((line) => line.id),
   );
+  const [optimisticQuantities, setOptimisticQuantities] = useState<
+    Record<string, number>
+  >({});
+  const [pendingQuantityLineIds, setPendingQuantityLineIds] = useState<
+    Set<string>
+  >(new Set());
+  const [removalLineId, setRemovalLineId] = useState<string | null>(null);
+  const setQuantity = useCallback((lineId: string, quantity: number) => {
+    setOptimisticQuantities((current) => ({ ...current, [lineId]: quantity }));
+  }, []);
+  const setQuantityPending = useCallback((lineId: string, pending: boolean) => {
+    setPendingQuantityLineIds((current) => {
+      const next = new Set(current);
+      if (pending) next.add(lineId);
+      else next.delete(lineId);
+      return next;
+    });
+  }, []);
+  const closeRemovalDialog = useCallback(() => setRemovalLineId(null), []);
+  const busy = navigationBusy || pendingQuantityLineIds.size > 0;
   const availableLineIds = new Set(loaderData.lines.map((line) => line.id));
   const activeSelectedLineIds = selectedLineIds.filter((lineId) =>
     availableLineIds.has(lineId),
@@ -578,10 +876,21 @@ export function QuoteListContent({
   const selectedLines = loaderData.lines.filter((line) =>
     selectedLineIdSet.has(line.id),
   );
-  const referenceTotal = discountedMerchandiseSubtotal(selectedLines);
-  const serviceFeeTotal = selectedLines.reduce(
-    (total, line) => total + (line.refresh?.current.serviceFeeAmount ?? 0),
-    0,
+  const effectiveQuantity = (line: QuoteLine) =>
+    optimisticQuantities[line.id] ?? line.quantity;
+  const referenceTotal = roundMoney(
+    selectedLines.reduce(
+      (total, line) =>
+        total + (merchandiseEstimate(line, effectiveQuantity(line)) ?? 0),
+      0,
+    ),
+  );
+  const serviceFeeTotal = roundMoney(
+    selectedLines.reduce(
+      (total, line) =>
+        total + serviceFeeEstimate(line, effectiveQuantity(line)),
+      0,
+    ),
   );
   const hasUnpricedLine = selectedLines.some(
     (line) => merchandiseEstimate(line) == null,
@@ -590,6 +899,26 @@ export function QuoteListContent({
     (line) =>
       line.refresh?.status === "blocked" || merchandiseEstimate(line) == null,
   );
+  const removalLine =
+    loaderData.lines.find((line) => line.id === removalLineId) ?? null;
+
+  useEffect(() => {
+    setOptimisticQuantities((current) => {
+      const next = { ...current };
+      let changed = false;
+      for (const line of loaderData.lines) {
+        if (next[line.id] === line.quantity) {
+          delete next[line.id];
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [loaderData.lines]);
+
+  useEffect(() => {
+    if (removalLineId && !removalLine) setRemovalLineId(null);
+  }, [removalLine, removalLineId]);
 
   return (
     <div className="quote-list-page">
@@ -622,20 +951,16 @@ export function QuoteListContent({
         <div className="quote-list-layout">
           <section className="quote-lines" aria-label="Quote List products">
             {loaderData.lines.map((line) => {
-              const subtotal = merchandiseEstimate(line);
-              const pieceCountError =
-                actionData &&
-                "lineId" in actionData &&
-                actionData.lineId === line.id
-                  ? actionData.pieceCountError
-                  : null;
+              const quantity = effectiveQuantity(line);
+              const subtotal = merchandiseEstimate(line, quantity);
+              const serviceFee = serviceFeeEstimate(line, quantity);
               return (
                 <article className="quote-line" key={line.id}>
                   <label className="quote-line-selection">
                     <input
                       aria-label={`Include ${line.displayName} in this quote request`}
                       checked={selectedLineIdSet.has(line.id)}
-                      disabled={busy}
+                      disabled={navigationBusy}
                       onChange={(event) => {
                         const checked = event.currentTarget.checked;
                         setSelectedLineIds((current) =>
@@ -660,12 +985,14 @@ export function QuoteListContent({
                       <p className="quote-line-length">
                         <strong>Made to order</strong>
                         <span>
-                          {line.lengthOrder.originalLengthValue} ft x{" "}
-                          {line.lengthOrder.pieceCount}{" "}
-                          {line.lengthOrder.pieceCount === 1
-                            ? "piece"
-                            : "pieces"}{" "}
-                          = {line.lengthOrder.totalFootage} total ft
+                          {line.lengthOrder.originalLengthValue} ft x {quantity}{" "}
+                          {quantity === 1 ? "piece" : "pieces"} ={" "}
+                          {Number(
+                            (
+                              line.lengthOrder.originalLengthValue * quantity
+                            ).toFixed(4),
+                          )}{" "}
+                          total ft
                         </span>
                       </p>
                     ) : null}
@@ -782,14 +1109,13 @@ export function QuoteListContent({
                           ? "No reference unit price"
                           : `${line.currency} ${line.refresh.current.unitReferencePrice.toFixed(2)} / ${line.salesUnit}`}
                     </small>
-                    {line.refresh?.current.serviceFeeAmount != null &&
-                    line.refresh.current.serviceFeeAmount > 0 ? (
+                    {serviceFee > 0 ? (
                       <small>
                         {line.lineKind === "length_based_hose"
                           ? "Cutting & Labeling Fee"
                           : "Assembly service fees"}{" "}
                         (excluded from merchandise subtotal): {line.currency}{" "}
-                        {line.refresh.current.serviceFeeAmount.toFixed(2)}
+                        {serviceFee.toFixed(2)}
                       </small>
                     ) : null}
                     {line.refresh?.changed ? (
@@ -851,100 +1177,20 @@ export function QuoteListContent({
                     ) : null}
                   </div>
                   <div className="quote-line-actions">
-                    {line.lineKind !== "configured_assembly" ? (
-                      <Form method="post">
-                        <input
-                          name="intent"
-                          type="hidden"
-                          value={
-                            line.lineKind === "length_based_hose"
-                              ? "update-length-hose"
-                              : "update"
-                          }
-                        />
-                        <input name="lineId" type="hidden" value={line.id} />
-                        <label htmlFor={`quantity-${line.id}`}>
-                          {line.lineKind === "length_based_hose"
-                            ? "Number of pieces"
-                            : "Quantity"}
-                        </label>
-                        <div>
-                          <input
-                            aria-describedby={
-                              pieceCountError
-                                ? `quantity-error-${line.id}`
-                                : undefined
-                            }
-                            aria-invalid={Boolean(pieceCountError)}
-                            defaultValue={
-                              line.lengthOrder?.pieceCount ?? line.quantity
-                            }
-                            disabled={busy}
-                            id={`quantity-${line.id}`}
-                            max={maximumStandardProductQuantity}
-                            min="1"
-                            name={
-                              line.lineKind === "length_based_hose"
-                                ? "pieceCount"
-                                : "quantity"
-                            }
-                            required
-                            step="1"
-                            type="number"
-                          />
-                          <button
-                            className="button button-secondary"
-                            disabled={busy}
-                            title="Update quantity"
-                            type="submit"
-                          >
-                            <RefreshCw size={17} /> Update
-                          </button>
-                        </div>
-                        {pieceCountError ? (
-                          <small
-                            className="quote-line-field-error"
-                            id={`quantity-error-${line.id}`}
-                            role="alert"
-                          >
-                            {pieceCountError}
-                          </small>
-                        ) : null}
-                      </Form>
-                    ) : (
+                    <QuantityAutosave
+                      disabled={navigationBusy}
+                      label={
+                        line.lineKind === "length_based_hose"
+                          ? "Number of pieces"
+                          : "Quantity"
+                      }
+                      line={line}
+                      onPendingChange={setQuantityPending}
+                      onQuantityChange={setQuantity}
+                      quantity={quantity}
+                    />
+                    {line.lineKind === "configured_assembly" ? (
                       <>
-                        <Form method="post">
-                          <input
-                            name="intent"
-                            type="hidden"
-                            value="update-configured-assembly"
-                          />
-                          <input name="lineId" type="hidden" value={line.id} />
-                          <label htmlFor={`quantity-${line.id}`}>
-                            Quantity
-                          </label>
-                          <div>
-                            <input
-                              defaultValue={line.quantity}
-                              disabled={busy}
-                              id={`quantity-${line.id}`}
-                              max={maximumStandardProductQuantity}
-                              min="1"
-                              name="quantity"
-                              required
-                              step="1"
-                              type="number"
-                            />
-                            <button
-                              className="button button-secondary"
-                              disabled={busy}
-                              title="Update quantity"
-                              type="submit"
-                            >
-                              <RefreshCw size={17} /> Update
-                            </button>
-                          </div>
-                        </Form>
                         <div className="quote-configured-edit-actions">
                           <Link
                             className="button button-secondary"
@@ -962,20 +1208,17 @@ export function QuoteListContent({
                           </Link>
                         </div>
                       </>
-                    )}
-                    <Form method="post">
-                      <input name="intent" type="hidden" value="remove" />
-                      <input name="lineId" type="hidden" value={line.id} />
-                      <button
-                        aria-label={`Remove ${line.sku}`}
-                        className="button quote-remove-command"
-                        disabled={busy}
-                        title="Remove from Quote List"
-                        type="submit"
-                      >
-                        <Trash2 size={17} /> Remove
-                      </button>
-                    </Form>
+                    ) : null}
+                    <button
+                      aria-label={`Remove ${line.sku}`}
+                      className="button quote-remove-command"
+                      disabled={busy}
+                      onClick={() => setRemovalLineId(line.id)}
+                      title="Remove from Quote List"
+                      type="button"
+                    >
+                      <Trash2 size={17} /> Remove
+                    </button>
                   </div>
                 </article>
               );
@@ -1011,6 +1254,13 @@ export function QuoteListContent({
               serviceFeeTotal={serviceFeeTotal}
             />
           </div>
+          {removalLine ? (
+            <RemoveLineDialog
+              busy={navigationBusy}
+              line={removalLine}
+              onClose={closeRemovalDialog}
+            />
+          ) : null}
         </div>
       ) : (
         <section className="quote-list-empty">
