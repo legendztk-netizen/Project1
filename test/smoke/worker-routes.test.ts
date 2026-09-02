@@ -5000,10 +5000,14 @@ describe("Cloudflare Worker route surfaces", () => {
     );
     const keyBeforeAddress =
       firstKey?.[1] ?? firstKey?.[2] ?? crypto.randomUUID();
+    let selectedLineIds: string[] = [];
     const submit = (key: string, acknowledgements = true) => {
       const form = new FormData();
       form.set("intent", "submit_individual_quote_request");
       form.set("idempotencyKey", key);
+      for (const lineId of selectedLineIds) {
+        form.append("selectedLineId", lineId);
+      }
       if (acknowledgements) {
         form.set("accuracyConfirmed", "yes");
         form.set("commercialReviewConfirmed", "yes");
@@ -5117,12 +5121,6 @@ describe("Cloudflare Worker route surfaces", () => {
     );
     expect((await selectContext(individualContext.id)).status).toBe(302);
 
-    const belowMinimum = await submit(crypto.randomUUID());
-    expect(belowMinimum.status).toBe(422);
-    expect(renderedText(await belowMinimum.text())).toContain(
-      "merchandise subtotal must be at least USD 100.00",
-    );
-
     const [line] = runLocalD1<{ id: string }>(
       `SELECT l.id FROM anonymous_quote_lines l
        INNER JOIN anonymous_quote_sessions s ON s.id = l.session_id
@@ -5130,6 +5128,13 @@ describe("Cloudflare Worker route surfaces", () => {
        WHERE p.email_normalized = 'individual-request@example.com'`,
     );
     if (!line) throw new Error("Expected account-owned Quote List line");
+    selectedLineIds = [line.id];
+
+    const belowMinimum = await submit(crypto.randomUUID());
+    expect(belowMinimum.status).toBe(422);
+    expect(renderedText(await belowMinimum.text())).toContain(
+      "merchandise subtotal must be at least USD 100.00",
+    );
 
     runLocalD1(
       `UPDATE anonymous_quote_lines
@@ -5162,6 +5167,32 @@ describe("Cloudflare Worker route surfaces", () => {
       ).status,
     ).toBe(302);
 
+    const unselectedLine = { id: `${line.id}-unselected` };
+    runLocalD1(
+      `INSERT INTO anonymous_quote_lines
+         (id, session_id, line_identity, sku, catalog_release_id, display_name,
+          category, quantity, sales_unit, currency, reference_unit_price,
+          created_at, updated_at, line_kind, original_length_value,
+          original_length_unit, normalized_length_ft, piece_count,
+          total_footage, cutting_labeling_fee_rate,
+          cutting_labeling_fee_amount, cutting_labeling_fee_scope,
+          cutting_labeling_fee_version, estimated_merchandise_amount,
+          current_estimate_amount, configured_snapshot_json,
+          configured_estimate_inputs_json, configured_unit_estimate_amount)
+       SELECT '${unselectedLine.id}', session_id,
+              'unselected:' || line_identity, 'TICKET10_UNSELECTED_BLOCKED',
+              catalog_release_id, 'Unselected blocked product', category, 1,
+              sales_unit, currency, reference_unit_price, created_at,
+              CURRENT_TIMESTAMP, line_kind, original_length_value,
+              original_length_unit, normalized_length_ft, piece_count,
+              total_footage, cutting_labeling_fee_rate,
+              cutting_labeling_fee_amount, cutting_labeling_fee_scope,
+              cutting_labeling_fee_version, estimated_merchandise_amount,
+              current_estimate_amount, configured_snapshot_json,
+              configured_estimate_inputs_json, configured_unit_estimate_amount
+       FROM anonymous_quote_lines WHERE id = '${line.id}'`,
+    );
+
     const readyHtml = await (
       await fetch(`${origin}/quote-list`, {
         headers: { cookie: customerCookie },
@@ -5174,6 +5205,7 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(idempotencyKey).toBeTruthy();
     expect(renderedText(readyHtml)).toContain("Request Quote");
     expect(renderedText(readyHtml)).toContain("Deliver to Main delivery");
+    expect(renderedText(readyHtml)).toContain("TICKET10_UNSELECTED_BLOCKED");
 
     const aboveLimit = new FormData();
     aboveLimit.set("intent", "update");
@@ -5242,7 +5274,15 @@ describe("Cloudflare Worker route surfaces", () => {
          INNER JOIN customer_profiles p ON p.id = s.profile_id
          WHERE p.email_normalized = 'individual-request@example.com'`,
       ),
-    ).toEqual([{ count: 0 }]);
+    ).toEqual([{ count: 1 }]);
+    expect(
+      runLocalD1<{ sku: string }>(
+        `SELECT l.sku FROM anonymous_quote_lines l
+         INNER JOIN anonymous_quote_sessions s ON s.id = l.session_id
+         INNER JOIN customer_profiles p ON p.id = s.profile_id
+         WHERE p.email_normalized = 'individual-request@example.com'`,
+      ),
+    ).toEqual([{ sku: "TICKET10_UNSELECTED_BLOCKED" }]);
     expect(
       runLocalD1<{ count: number }>(
         `SELECT COUNT(*) AS count FROM anonymous_quote_lines l
@@ -5252,6 +5292,9 @@ describe("Cloudflare Worker route surfaces", () => {
       ),
     ).toEqual([{ count: 1 }]);
 
+    runLocalD1(
+      `DELETE FROM anonymous_quote_lines WHERE id = '${unselectedLine.id}'`,
+    );
     const emptyList = await submit(crypto.randomUUID());
     expect(emptyList.status).toBe(422);
     expect(renderedText(await emptyList.text())).toContain(
@@ -5391,6 +5434,15 @@ describe("Cloudflare Worker route surfaces", () => {
         })
       ).status,
     ).toBe(302);
+    const [rollbackQuoteLine] = runLocalD1<{ id: string }>(
+      `SELECT l.id FROM anonymous_quote_lines l
+       INNER JOIN anonymous_quote_sessions s ON s.id = l.session_id
+       INNER JOIN customer_profiles p ON p.id = s.profile_id
+       WHERE p.email_normalized = 'individual-request@example.com'`,
+    );
+    if (!rollbackQuoteLine)
+      throw new Error("Expected rollback Quote List line");
+    selectedLineIds = [rollbackQuoteLine.id];
     runLocalD1(
       `CREATE TRIGGER ticket10_force_submission_guard_rejection
        AFTER INSERT ON customer_quote_request_submission_guards

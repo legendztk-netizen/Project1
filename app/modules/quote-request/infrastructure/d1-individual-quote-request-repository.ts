@@ -46,6 +46,7 @@ function deleteGuardForInvalidConfiguredEnd(end: "A" | "B") {
             INNER JOIN catalog_active_release active ON active.singleton = 1
             INNER JOIN catalog_releases release ON release.id = active.release_id
             WHERE line.session_id = guard.session_id
+              AND line.id IN (SELECT value FROM json_each(?))
               AND line.line_kind = 'configured_assembly'
               AND NOT EXISTS (
                 SELECT 1 FROM catalog_compatibilities compatibility
@@ -92,6 +93,7 @@ function deleteGuardForInvalidRegistry(input: {
             SELECT 1 FROM anonymous_quote_lines line
             INNER JOIN catalog_active_release active ON active.singleton = 1
             WHERE line.session_id = guard.session_id
+              AND line.id IN (SELECT value FROM json_each(?))
               AND line.line_kind = 'configured_assembly'
               ${input.whenSql ? `AND ${input.whenSql}` : ""}
               AND NOT EXISTS (
@@ -112,6 +114,7 @@ export const staleLengthBasedHoseFeeGuardSql = `
   WHERE guard.id = ? AND (
     (SELECT COUNT(*) FROM anonymous_quote_lines line
      WHERE line.session_id = guard.session_id
+       AND line.id IN (SELECT value FROM json_each(?))
        AND line.line_kind = 'length_based_hose')
       != json_array_length(?)
     OR EXISTS (
@@ -169,7 +172,7 @@ export function createD1IndividualQuoteRequestRepository(database: D1Database) {
       return row ? record(row) : null;
     },
 
-    async createAndClearQuoteList(input: {
+    async createAndClearSelectedQuoteLines(input: {
       expectedCatalogReleaseId: string;
       expectedLengthBasedHoseFees: {
         lineId: string;
@@ -188,8 +191,10 @@ export function createD1IndividualQuoteRequestRepository(database: D1Database) {
       sessionVersion: string;
       snapshot: IndividualQuoteRequestSnapshot;
       sourceAddressId: string;
+      selectedLineIds: string[];
     }) {
       const snapshotJson = JSON.stringify(input.snapshot);
+      const selectedLineIdsJson = JSON.stringify(input.selectedLineIds);
       const expectedLengthBasedHoseFeesJson = JSON.stringify(
         input.expectedLengthBasedHoseFees,
       );
@@ -211,8 +216,10 @@ export function createD1IndividualQuoteRequestRepository(database: D1Database) {
                    AND COALESCE(profile.phone_number, '') = ?
                )
                AND EXISTS (${selectedIndividualContextGuard})
+               AND json_array_length(?) = ?
                AND (SELECT COUNT(*) FROM anonymous_quote_lines l
-                    WHERE l.session_id = s.id) = ?
+                    WHERE l.session_id = s.id
+                      AND l.id IN (SELECT value FROM json_each(?))) = ?
                AND (SELECT json_group_array(
                               json_object('id', id, 'quantity', quantity,
                                           'updatedAt', updated_at)
@@ -220,6 +227,7 @@ export function createD1IndividualQuoteRequestRepository(database: D1Database) {
                     FROM (SELECT id, quantity, updated_at
                           FROM anonymous_quote_lines
                           WHERE session_id = s.id
+                            AND id IN (SELECT value FROM json_each(?))
                           ORDER BY created_at, id)) = ?
              ON CONFLICT(id) DO NOTHING`,
           )
@@ -250,7 +258,11 @@ export function createD1IndividualQuoteRequestRepository(database: D1Database) {
             input.snapshot.destination.postalCode,
             input.snapshot.destination.addressLine1,
             input.snapshot.destination.addressLine2,
+            selectedLineIdsJson,
             input.expectedLineCount,
+            selectedLineIdsJson,
+            input.expectedLineCount,
+            selectedLineIdsJson,
             input.expectedLineState,
           ),
         database
@@ -259,6 +271,7 @@ export function createD1IndividualQuoteRequestRepository(database: D1Database) {
              WHERE guard.id = ? AND EXISTS (
                SELECT 1 FROM anonymous_quote_lines line
                WHERE line.session_id = guard.session_id
+                 AND line.id IN (SELECT value FROM json_each(?))
                  AND NOT EXISTS (
                    SELECT 1
                    FROM catalog_active_release active
@@ -289,20 +302,21 @@ export function createD1IndividualQuoteRequestRepository(database: D1Database) {
                  )
              )`,
           )
-          .bind(input.id, input.expectedCatalogReleaseId),
+          .bind(input.id, selectedLineIdsJson, input.expectedCatalogReleaseId),
         database
           .prepare(staleLengthBasedHoseFeeGuardSql)
           .bind(
             input.id,
+            selectedLineIdsJson,
             expectedLengthBasedHoseFeesJson,
             expectedLengthBasedHoseFeesJson,
           ),
         database
           .prepare(deleteGuardForInvalidConfiguredEnd("A"))
-          .bind(input.id),
+          .bind(input.id, selectedLineIdsJson),
         database
           .prepare(deleteGuardForInvalidConfiguredEnd("B"))
-          .bind(input.id),
+          .bind(input.id, selectedLineIdsJson),
         database
           .prepare(
             deleteGuardForInvalidRegistry({
@@ -313,7 +327,7 @@ export function createD1IndividualQuoteRequestRepository(database: D1Database) {
               registryType: "installed_protection",
             }),
           )
-          .bind(input.id),
+          .bind(input.id, selectedLineIdsJson),
         database
           .prepare(
             deleteGuardForInvalidRegistry({
@@ -323,7 +337,7 @@ export function createD1IndividualQuoteRequestRepository(database: D1Database) {
               registryType: "assembly_estimate_schedule",
             }),
           )
-          .bind(input.id),
+          .bind(input.id, selectedLineIdsJson),
         database
           .prepare(
             deleteGuardForInvalidRegistry({
@@ -336,7 +350,7 @@ export function createD1IndividualQuoteRequestRepository(database: D1Database) {
                 "json_extract(line.configured_snapshot_json, '$.configuration.measurementSelection.state') = 'selected'",
             }),
           )
-          .bind(input.id),
+          .bind(input.id, selectedLineIdsJson),
         database
           .prepare(
             deleteGuardForInvalidRegistry({
@@ -348,7 +362,7 @@ export function createD1IndividualQuoteRequestRepository(database: D1Database) {
                 "json_extract(line.configured_snapshot_json, '$.configuration.clocking.convention.recordVersion') IS NOT NULL",
             }),
           )
-          .bind(input.id),
+          .bind(input.id, selectedLineIdsJson),
         database
           .prepare(
             `INSERT INTO customer_quote_requests
@@ -383,12 +397,18 @@ export function createD1IndividualQuoteRequestRepository(database: D1Database) {
           .prepare(
             `DELETE FROM anonymous_quote_lines
              WHERE session_id = ?
+               AND id IN (SELECT value FROM json_each(?))
                AND EXISTS (
                  SELECT 1 FROM customer_quote_requests
                  WHERE id = ? AND source_session_id = ?
                )`,
           )
-          .bind(input.sessionId, input.id, input.sessionId),
+          .bind(
+            input.sessionId,
+            selectedLineIdsJson,
+            input.id,
+            input.sessionId,
+          ),
         database
           .prepare(
             `DELETE FROM customer_quote_request_submission_guards WHERE id = ?`,

@@ -839,10 +839,11 @@ describe("real local D1 migration lifecycle", () => {
           version: 1,
         },
       ]);
+      const selectedFeeLines = JSON.stringify(["fee-line"]);
 
       await database
         .prepare(staleLengthBasedHoseFeeGuardSql)
-        .bind("fee-guard", expectedGlobal, expectedGlobal)
+        .bind("fee-guard", selectedFeeLines, expectedGlobal, expectedGlobal)
         .run();
       expect(
         await database
@@ -865,7 +866,7 @@ describe("real local D1 migration lifecycle", () => {
         .run();
       await database
         .prepare(staleLengthBasedHoseFeeGuardSql)
-        .bind("fee-guard", expectedGlobal, expectedGlobal)
+        .bind("fee-guard", selectedFeeLines, expectedGlobal, expectedGlobal)
         .run();
       expect(
         await database
@@ -895,7 +896,7 @@ describe("real local D1 migration lifecycle", () => {
       ]);
       await database
         .prepare(staleLengthBasedHoseFeeGuardSql)
-        .bind("fee-guard", expectedSeries, expectedSeries)
+        .bind("fee-guard", selectedFeeLines, expectedSeries, expectedSeries)
         .run();
       expect(
         await database
@@ -915,7 +916,7 @@ describe("real local D1 migration lifecycle", () => {
         .run();
       await database
         .prepare(staleLengthBasedHoseFeeGuardSql)
-        .bind("fee-guard", expectedSeries, expectedSeries)
+        .bind("fee-guard", selectedFeeLines, expectedSeries, expectedSeries)
         .run();
       expect(
         await database

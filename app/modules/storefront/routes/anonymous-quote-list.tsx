@@ -17,6 +17,7 @@ import {
   useNavigation,
   useRouteLoaderData,
 } from "react-router";
+import { useState } from "react";
 
 import type { Route } from "./+types/anonymous-quote-list";
 import { createAnonymousQuoteListService } from "../../quote-list/application/anonymous-quote-list-service";
@@ -100,6 +101,9 @@ export async function action({ context, request }: Route.ActionArgs) {
           form.get("commercialReviewConfirmed") === "yes",
         idempotencyKey: textValue(form, "idempotencyKey"),
         request,
+        selectedLineIds: form
+          .getAll("selectedLineId")
+          .filter((value): value is string => typeof value === "string"),
       });
       return redirect(
         `/quote-request/${encodeURIComponent(result.id)}/confirmation`,
@@ -244,6 +248,7 @@ function RfqPreparation({
   idempotencyKey,
   merchandiseSubtotal,
   purchasingContexts,
+  selectedLineIds,
   serviceFeeTotal,
 }: {
   addresses: DeliveryAddress[];
@@ -252,6 +257,7 @@ function RfqPreparation({
   idempotencyKey: string;
   merchandiseSubtotal: number;
   purchasingContexts: PurchasingContext[];
+  selectedLineIds: string[];
   serviceFeeTotal: number;
 }) {
   const selectedContext =
@@ -272,6 +278,7 @@ function RfqPreparation({
     purchasingContextKind: selectedContext?.kind ?? null,
   });
   const outcome = evaluation.outcome;
+  const selectionEmpty = selectedLineIds.length === 0;
 
   return (
     <section
@@ -320,7 +327,13 @@ function RfqPreparation({
         className={`rfq-eligibility rfq-eligibility-${outcome.allowed ? "ready" : "blocked"}`}
         role="status"
       >
-        {outcome.code === "INCOMPLETE_PRICING" ? (
+        {selectionEmpty ? (
+          <>
+            <strong>Select products to continue</strong>
+            <p>Choose at least one Quote List product for this request.</p>
+          </>
+        ) : null}
+        {!selectionEmpty && outcome.code === "INCOMPLETE_PRICING" ? (
           <>
             <strong>Product review is required first</strong>
             <p>
@@ -330,7 +343,7 @@ function RfqPreparation({
             </p>
           </>
         ) : null}
-        {outcome.code === "MINIMUM_NOT_MET" ? (
+        {!selectionEmpty && outcome.code === "MINIMUM_NOT_MET" ? (
           <>
             <strong>Add more products to request a quote</strong>
             <p>
@@ -339,7 +352,7 @@ function RfqPreparation({
             </p>
           </>
         ) : null}
-        {outcome.code === "PURCHASING_CONTEXT_REQUIRED" ? (
+        {!selectionEmpty && outcome.code === "PURCHASING_CONTEXT_REQUIRED" ? (
           <>
             {purchasingContexts.length ? (
               <>
@@ -366,7 +379,7 @@ function RfqPreparation({
             )}
           </>
         ) : null}
-        {outcome.code === "ORGANIZATION_REQUIRED" ? (
+        {!selectionEmpty && outcome.code === "ORGANIZATION_REQUIRED" ? (
           <>
             <strong>Use an Organization Purchasing Context</strong>
             <p>
@@ -382,8 +395,9 @@ function RfqPreparation({
             </Link>
           </>
         ) : null}
-        {outcome.code === "INDIVIDUAL_DDP" ||
-        outcome.code === "ORGANIZATION_DDP" ? (
+        {!selectionEmpty &&
+        (outcome.code === "INDIVIDUAL_DDP" ||
+          outcome.code === "ORGANIZATION_DDP") ? (
           <>
             <strong>
               Eligible to request a quote: delivered with import handling (DDP)
@@ -395,7 +409,7 @@ function RfqPreparation({
             </p>
           </>
         ) : null}
-        {outcome.code === "ORGANIZATION_DAP" ? (
+        {!selectionEmpty && outcome.code === "ORGANIZATION_DAP" ? (
           <>
             <strong>
               Eligible to request a quote: customer-managed import clearance
@@ -432,6 +446,14 @@ function RfqPreparation({
               value="submit_individual_quote_request"
             />
             <input name="idempotencyKey" type="hidden" value={idempotencyKey} />
+            {selectedLineIds.map((lineId) => (
+              <input
+                key={lineId}
+                name="selectedLineId"
+                type="hidden"
+                value={lineId}
+              />
+            ))}
             <div className="quote-request-destination">
               <strong>Deliver to {selectedAddress.label}</strong>
               <span>{selectedAddress.recipientName}</span>
@@ -521,6 +543,12 @@ function merchandiseEstimate(
   return lineSubtotal(line.quantity, line.referenceUnitPrice);
 }
 
+function lineReadyForSubmission(
+  line: Route.ComponentProps["loaderData"]["lines"][number],
+) {
+  return line.refresh?.status === "ready" && merchandiseEstimate(line) !== null;
+}
+
 function configuredHoseSize(
   line: Extract<
     Route.ComponentProps["loaderData"]["lines"][number],
@@ -539,15 +567,26 @@ export function QuoteListContent({
 }: Route.ComponentProps) {
   const navigation = useNavigation();
   const busy = navigation.state !== "idle";
-  const referenceTotal = discountedMerchandiseSubtotal(loaderData.lines);
-  const serviceFeeTotal = loaderData.lines.reduce(
+  const [selectedLineIds, setSelectedLineIds] = useState<string[]>(() =>
+    loaderData.lines.filter(lineReadyForSubmission).map((line) => line.id),
+  );
+  const availableLineIds = new Set(loaderData.lines.map((line) => line.id));
+  const activeSelectedLineIds = selectedLineIds.filter((lineId) =>
+    availableLineIds.has(lineId),
+  );
+  const selectedLineIdSet = new Set(activeSelectedLineIds);
+  const selectedLines = loaderData.lines.filter((line) =>
+    selectedLineIdSet.has(line.id),
+  );
+  const referenceTotal = discountedMerchandiseSubtotal(selectedLines);
+  const serviceFeeTotal = selectedLines.reduce(
     (total, line) => total + (line.refresh?.current.serviceFeeAmount ?? 0),
     0,
   );
-  const hasUnpricedLine = loaderData.lines.some(
+  const hasUnpricedLine = selectedLines.some(
     (line) => merchandiseEstimate(line) == null,
   );
-  const hasBlockedLine = loaderData.lines.some(
+  const hasBlockedLine = selectedLines.some(
     (line) =>
       line.refresh?.status === "blocked" || merchandiseEstimate(line) == null,
   );
@@ -592,6 +631,22 @@ export function QuoteListContent({
                   : null;
               return (
                 <article className="quote-line" key={line.id}>
+                  <label className="quote-line-selection">
+                    <input
+                      aria-label={`Include ${line.displayName} in this quote request`}
+                      checked={selectedLineIdSet.has(line.id)}
+                      disabled={busy}
+                      onChange={(event) => {
+                        setSelectedLineIds((current) =>
+                          event.currentTarget.checked
+                            ? [...new Set([...current, line.id])]
+                            : current.filter((lineId) => lineId !== line.id),
+                        );
+                      }}
+                      type="checkbox"
+                    />
+                    <span>Include in this quote request</span>
+                  </label>
                   <div className="quote-line-main">
                     <span className="eyebrow">
                       {line.category.replaceAll("-", " ")}
@@ -929,9 +984,11 @@ export function QuoteListContent({
           <div className="quote-list-sidebar">
             <aside className="quote-summary">
               <span className="eyebrow">Reference only</span>
-              <h2>Product estimate</h2>
+              <h2>Selected product estimate</h2>
               <strong>USD {referenceTotal.toFixed(2)}</strong>
-              <small>Estimated merchandise subtotal</small>
+              <small>
+                {selectedLines.length} selected · Estimated merchandise subtotal
+              </small>
               {serviceFeeTotal > 0 ? (
                 <p>Reference service fees: USD {serviceFeeTotal.toFixed(2)}</p>
               ) : null}
@@ -949,6 +1006,7 @@ export function QuoteListContent({
               idempotencyKey={loaderData.idempotencyKey}
               merchandiseSubtotal={referenceTotal}
               purchasingContexts={loaderData.purchasingContexts}
+              selectedLineIds={activeSelectedLineIds}
               serviceFeeTotal={serviceFeeTotal}
             />
           </div>

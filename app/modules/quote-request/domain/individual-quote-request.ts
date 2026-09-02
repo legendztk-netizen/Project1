@@ -51,6 +51,7 @@ export type IndividualQuoteRequestErrorCode =
   | "LIST_CHANGED"
   | "LIST_EMPTY"
   | "LIST_NOT_READY"
+  | "NO_LINES_SELECTED"
   | "THRESHOLD_NOT_MET";
 
 export class IndividualQuoteRequestRejected extends Error {

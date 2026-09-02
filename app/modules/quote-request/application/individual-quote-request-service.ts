@@ -56,6 +56,7 @@ export function createIndividualQuoteRequestService(
       commercialReviewConfirmed: boolean;
       idempotencyKey: string;
       request: Request;
+      selectedLineIds: string[];
     }) {
       if (!validIdempotencyKey(input.idempotencyKey)) {
         throw new IndividualQuoteRequestRejected(
@@ -124,7 +125,24 @@ export function createIndividualQuoteRequestService(
           "LIST_EMPTY",
         );
       }
-      const ready = prepared.lines.every(
+      const selectedLineIds = [...new Set(input.selectedLineIds)];
+      if (selectedLineIds.length === 0) {
+        throw new IndividualQuoteRequestRejected(
+          "Select at least one product before requesting a quote.",
+          "NO_LINES_SELECTED",
+        );
+      }
+      const selectedLineIdSet = new Set(selectedLineIds);
+      const selectedLines = prepared.lines.filter((line) =>
+        selectedLineIdSet.has(line.id),
+      );
+      if (selectedLines.length !== selectedLineIds.length) {
+        throw new IndividualQuoteRequestRejected(
+          "Your selected products changed. Review the Quote List and try again.",
+          "LIST_CHANGED",
+        );
+      }
+      const ready = selectedLines.every(
         (line) =>
           line.refresh?.status === "ready" &&
           line.refresh.current.discountedMerchandiseAmount !== null,
@@ -136,7 +154,7 @@ export function createIndividualQuoteRequestService(
         );
       }
       const currentReleaseIds = new Set(
-        prepared.lines.map((line) => line.refresh?.currentCatalogRelease?.id),
+        selectedLines.map((line) => line.refresh?.currentCatalogRelease?.id),
       );
       if (currentReleaseIds.size !== 1 || currentReleaseIds.has(undefined)) {
         throw new IndividualQuoteRequestRejected(
@@ -145,7 +163,7 @@ export function createIndividualQuoteRequestService(
         );
       }
       const expectedCatalogReleaseId = [...currentReleaseIds][0]!;
-      const expectedLengthBasedHoseFees = prepared.lines
+      const expectedLengthBasedHoseFees = selectedLines
         .filter((line) => line.lineKind === "length_based_hose")
         .map((line) => ({
           lineId: line.id,
@@ -154,9 +172,9 @@ export function createIndividualQuoteRequestService(
           version: line.refresh!.current.serviceFeeRecordVersion,
         }));
 
-      const merchandiseSubtotal = discountedMerchandiseSubtotal(prepared.lines);
+      const merchandiseSubtotal = discountedMerchandiseSubtotal(selectedLines);
       const serviceFeeTotal = quoteMoney(
-        prepared.lines.reduce(
+        selectedLines.reduce(
           (total, line) =>
             total + (line.refresh?.current.serviceFeeAmount ?? 0),
           0,
@@ -211,16 +229,16 @@ export function createIndividualQuoteRequestService(
           fulfillmentTerm: "DDP",
           version: individualDdpExpectationVersion,
         },
-        lines: prepared.lines,
+        lines: selectedLines,
         purchasingContext: { ...purchasingContext, kind: "individual" },
         submittedAt: submittedAt.toISOString(),
         version: quoteRequestSnapshotVersion,
       };
-      const result = await repository.createAndClearQuoteList({
+      const result = await repository.createAndClearSelectedQuoteLines({
         expectedCatalogReleaseId,
         expectedLengthBasedHoseFees,
-        expectedLineCount: prepared.lines.length,
-        expectedLineState: quoteListSourceState(prepared.lines),
+        expectedLineCount: selectedLines.length,
+        expectedLineState: quoteListSourceState(selectedLines),
         id: generateId(),
         idempotencyKey: input.idempotencyKey,
         profileId: prepared.profile.id,
@@ -230,6 +248,7 @@ export function createIndividualQuoteRequestService(
         sessionVersion: prepared.session.lastActivityAt,
         snapshot,
         sourceAddressId: destination.id,
+        selectedLineIds,
       });
       if (!result.record) {
         throw new IndividualQuoteRequestRejected(

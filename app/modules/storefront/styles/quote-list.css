@@ -70,6 +70,29 @@
   border-radius: 6px;
 }
 
+.quote-line-selection {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.quote-line-selection input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--action);
+}
+
+.quote-line-selection:has(input:checked) {
+  color: var(--action);
+}
+
 .quote-line h2 {
   margin: 5px 0 8px;
   font-size: 1.05rem;
