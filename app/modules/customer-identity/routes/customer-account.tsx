@@ -40,6 +40,8 @@ import {
   savedConfigurationLabel,
   type SavedConfiguration,
 } from "../domain/saved-configuration";
+import { createQuoteRequestService } from "../../quote-request/application/quote-request-service";
+import { CustomerQuoteList } from "../../quote-request/ui/customer-quote-list";
 
 function selectedView(request: Request): AccountDetailView {
   const requested = new URL(request.url).searchParams.get("view");
@@ -126,11 +128,13 @@ export async function loader({ context, request }: Route.LoaderArgs) {
   }
   const savedConfigurations =
     (await createSavedConfigurationService(env).list(request)) ?? [];
+  const quoteRequests = await createQuoteRequestService(env).listOwned(request);
   return {
     ...account,
     editingAddress,
     saved: new URL(request.url).searchParams.get("saved") === "1",
     savedConfigurations,
+    quoteRequests: quoteRequests.records,
     view,
   };
 }
@@ -788,7 +792,10 @@ export default function CustomerAccount({
           <article>
             <FileText aria-hidden="true" size={22} />
             <h2>My Quotes</h2>
-            <p>No submitted quote requests yet.</p>
+            <p>
+              {loaderData.quoteRequests.length} submitted quote request
+              {loaderData.quoteRequests.length === 1 ? "" : "s"}.
+            </p>
             <Link to="/account?view=my-quotes">View My Quotes</Link>
           </article>
           <article>
@@ -829,13 +836,7 @@ export default function CustomerAccount({
       />
     );
   } else if (view === "my-quotes") {
-    detail = (
-      <EmptyDetail
-        description="No submitted quote requests yet."
-        title="My Quotes"
-        to="/"
-      />
-    );
+    detail = <CustomerQuoteList quoteRequests={loaderData.quoteRequests} />;
   } else if (view === "orders") {
     detail = (
       <EmptyDetail

@@ -17,6 +17,7 @@ import {
   organizationDdpExpectationVersion,
   organizationQuoteRequestAcknowledgementVersion,
   quoteListSourceState,
+  customerQuoteProjection,
   quoteRequestAcknowledgementVersion,
   quoteRequestSnapshotVersion,
   type IndividualQuoteRequestSnapshot,
@@ -330,12 +331,24 @@ export function createQuoteRequestService(
   }
 
   return {
+    async listOwned(request: Request) {
+      const account = await accounts.read(request);
+      if (!account) return { authenticated: false as const, records: [] };
+      const records = await repository.listOwned(account.profile.id);
+      return {
+        authenticated: true as const,
+        records: records.map((record) => customerQuoteProjection(record)),
+      };
+    },
+
     async readOwned(request: Request, requestId: string) {
       const account = await accounts.read(request);
       if (!account) return { authenticated: false as const, record: null };
       return {
         authenticated: true as const,
-        record: await repository.findOwned(account.profile.id, requestId),
+        record: await repository
+          .findOwned(account.profile.id, requestId)
+          .then((record) => (record ? customerQuoteProjection(record) : null)),
       };
     },
 

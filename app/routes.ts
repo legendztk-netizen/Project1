@@ -38,6 +38,10 @@ export default [
   route("sign-out", "modules/customer-identity/routes/sign-out.ts"),
   route("account", "modules/customer-identity/routes/customer-account.tsx"),
   route(
+    "account/quotes/:requestId",
+    "modules/customer-identity/routes/customer-quote-detail.tsx",
+  ),
+  route(
     "account/security",
     "modules/customer-identity/routes/account-security.tsx",
   ),

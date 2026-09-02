@@ -5276,6 +5276,40 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(confirmationText).toContain("Quote request number");
     expect(confirmationText).toContain("not an order or payment receipt");
 
+    const requestId = confirmationPath.split("/")[2];
+    const myQuotes = await fetch(`${origin}/account?view=my-quotes`, {
+      headers: { cookie: customerCookie },
+    });
+    const myQuotesText = renderedText(await myQuotes.text());
+    expect(myQuotes.status).toBe(200);
+    expect(myQuotesText).toContain("My Quotes");
+    expect(myQuotesText).toContain("RFQ Submitted");
+    expect(myQuotesText).toContain("Individual purchase");
+    expect(myQuotesText).toContain("Seller-managed import handling (DDP)");
+    expect(myQuotesText).toContain("View details");
+
+    const quoteDetailPath = `/account/quotes/${requestId}`;
+    const quoteDetail = await fetch(`${origin}${quoteDetailPath}`, {
+      headers: { cookie: customerCookie },
+    });
+    const quoteDetailText = renderedText(await quoteDetail.text());
+    expect(quoteDetail.status).toBe(200);
+    expect(quoteDetailText).toContain("Submitted products");
+    expect(quoteDetailText).toContain("ADP_ST_JIC_M_02_NPT_M_02");
+    expect(quoteDetailText).toContain("200 Park Avenue");
+    expect(quoteDetailText).toContain("Individual purchase");
+    expect(quoteDetailText).toContain(
+      "not a formal quoted price, PI, payment request or order",
+    );
+
+    const orders = await fetch(`${origin}/account?view=orders`, {
+      headers: { cookie: customerCookie },
+    });
+    const ordersText = renderedText(await orders.text());
+    expect(orders.status).toBe(200);
+    expect(ordersText).toContain("No paid and confirmed orders yet");
+    expect(ordersText).not.toContain("QR-20260821");
+
     const repeated = await submit(idempotencyKey ?? "", true);
     expect(repeated.status).toBe(302);
     expect(repeated.headers.get("location")).toBe(confirmationPath);
@@ -5426,6 +5460,15 @@ describe("Cloudflare Worker route surfaces", () => {
       headers: { cookie: cookieHeader(otherVerified) },
     });
     expect(otherConfirmation.status).toBe(404);
+    const otherQuoteDetail = await fetch(`${origin}${quoteDetailPath}`, {
+      headers: { cookie: cookieHeader(otherVerified) },
+    });
+    expect(otherQuoteDetail.status).toBe(404);
+    const changedIdentifier = await fetch(
+      `${origin}/account/quotes/${requestId}-changed`,
+      { headers: { cookie: customerCookie } },
+    );
+    expect(changedIdentifier.status).toBe(404);
     expect(
       runLocalD1Failure(
         `UPDATE customer_quote_requests SET service_fee_total = 99
@@ -5750,10 +5793,13 @@ describe("Cloudflare Worker route surfaces", () => {
 
     const stored = runLocalD1<{
       fulfillment_term: string;
+      id: string;
       purchasing_context_kind: string;
+      reference_number: string;
       snapshot_json: string;
     }>(
-      `SELECT purchasing_context_kind, fulfillment_term, snapshot_json
+      `SELECT id, reference_number, purchasing_context_kind,
+              fulfillment_term, snapshot_json
        FROM customer_quote_requests
        WHERE profile_id = '${account.profile_id}'
        ORDER BY submitted_at, id`,
@@ -5803,6 +5849,55 @@ describe("Cloudflare Worker route surfaces", () => {
          WHERE s.profile_id = '${account.profile_id}'`,
       ),
     ).toEqual([{ count: 0 }]);
+
+    const businessMyQuotes = await fetch(`${origin}/account?view=my-quotes`, {
+      headers: { cookie: customerCookie },
+    });
+    const businessMyQuotesText = renderedText(await businessMyQuotes.text());
+    expect(businessMyQuotes.status).toBe(200);
+    expect(businessMyQuotesText).toContain("Business Request Test LLC");
+    expect(businessMyQuotesText).toContain(
+      "Seller-managed import handling (DDP)",
+    );
+    expect(businessMyQuotesText).toContain(
+      "Customer-managed import clearance (DAP)",
+    );
+    for (const request of stored) {
+      expect(businessMyQuotesText).toContain(request.reference_number);
+    }
+
+    const dapRequest = stored.find(
+      ({ fulfillment_term }) => fulfillment_term === "DAP",
+    );
+    if (!dapRequest) throw new Error("Expected DAP business request");
+    const businessDetail = await fetch(
+      `${origin}/account/quotes/${dapRequest.id}`,
+      { headers: { cookie: customerCookie } },
+    );
+    const businessDetailText = renderedText(await businessDetail.text());
+    expect(businessDetail.status).toBe(200);
+    expect(businessDetailText).toContain("Business Request Test LLC");
+    expect(businessDetailText).toContain(
+      "Customer-managed import clearance (DAP)",
+    );
+    expect(businessDetailText).toContain("350 Fifth Avenue");
+
+    const outsiderRequested = await requestEmailOtp({
+      email: "business-request-outsider@example.com",
+      path: "/register",
+    });
+    if (!outsiderRequested.challenge)
+      throw new Error("Expected outsider registration OTP");
+    const outsiderVerified = await verifyEmailOtp({
+      challengeId: outsiderRequested.challenge.challengeId,
+      code: outsiderRequested.challenge.code,
+      path: "/register",
+    });
+    const outsiderDetail = await fetch(
+      `${origin}/account/quotes/${dapRequest.id}`,
+      { headers: { cookie: cookieHeader(outsiderVerified) } },
+    );
+    expect(outsiderDetail.status).toBe(404);
   }, 120_000);
 
   it("does not expose standalone email draft persistence", async () => {

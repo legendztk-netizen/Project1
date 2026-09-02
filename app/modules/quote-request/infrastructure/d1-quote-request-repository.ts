@@ -19,6 +19,33 @@ function record(row: QuoteRequestRow): QuoteRequestRecord {
   };
 }
 
+const ownedQuoteRequestWhere = `
+  INNER JOIN customer_purchasing_contexts context
+    ON context.id = request.purchasing_context_id
+  WHERE (
+    (
+      request.purchasing_context_kind = 'individual'
+      AND context.kind = 'individual'
+      AND context.individual_profile_id = ?
+      AND request.profile_id = ?
+    ) OR (
+      request.purchasing_context_kind = 'organization'
+      AND context.kind = 'organization'
+      AND EXISTS (
+        SELECT 1
+        FROM customer_profile_purchasing_context_access access
+        INNER JOIN customer_organization_memberships membership
+          ON membership.organization_id = context.organization_id
+         AND membership.profile_id = access.profile_id
+         AND membership.role = 'primary_contact'
+         AND membership.status = 'active'
+        WHERE access.context_id = context.id
+          AND access.profile_id = ?
+      )
+    )
+  )
+`;
+
 const selectedIndividualContextGuard = `
   SELECT 1
   FROM customer_account_preferences pref
@@ -237,14 +264,30 @@ export function createD1QuoteRequestRepository(database: D1Database) {
   return {
     findByIdempotency,
 
+    async listOwned(profileId: string) {
+      const result = await database
+        .prepare(
+          `SELECT request.id, request.reference_number,
+                  request.snapshot_json, request.submitted_at
+           FROM customer_quote_requests request
+           ${ownedQuoteRequestWhere}
+           ORDER BY request.submitted_at DESC, request.id DESC`,
+        )
+        .bind(profileId, profileId, profileId)
+        .all<QuoteRequestRow>();
+      return result.results.map(record);
+    },
+
     async findOwned(profileId: string, requestId: string) {
       const row = await database
         .prepare(
-          `SELECT id, reference_number, snapshot_json, submitted_at
-           FROM customer_quote_requests
-           WHERE id = ? AND profile_id = ?`,
+          `SELECT request.id, request.reference_number,
+                  request.snapshot_json, request.submitted_at
+           FROM customer_quote_requests request
+           ${ownedQuoteRequestWhere}
+           AND request.id = ?`,
         )
-        .bind(requestId, profileId)
+        .bind(profileId, profileId, profileId, requestId)
         .first<QuoteRequestRow>();
       return row ? record(row) : null;
     },

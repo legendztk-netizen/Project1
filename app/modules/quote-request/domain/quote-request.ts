@@ -81,6 +81,38 @@ export interface QuoteRequestRecord {
   submittedAt: string;
 }
 
+export const customerQuoteProgressStages = [
+  { code: "RFQ_SUBMITTED", label: "RFQ Submitted" },
+  { code: "QUOTE_READY", label: "Quote Ready" },
+  { code: "PI_ACCEPTED", label: "PI Accepted" },
+  { code: "PAYMENT_PENDING", label: "Payment Pending" },
+  { code: "PAYMENT_CONFIRMED", label: "Payment Confirmed" },
+  { code: "ORDER_CREATED", label: "Order Created" },
+] as const;
+
+export type CustomerQuoteProgressCode =
+  (typeof customerQuoteProgressStages)[number]["code"];
+
+export interface CustomerQuoteProjection extends QuoteRequestRecord {
+  progress: {
+    code: CustomerQuoteProgressCode;
+    label: string;
+  };
+}
+
+export function customerQuoteProjection(
+  record: QuoteRequestRecord,
+  progressCode: CustomerQuoteProgressCode = "RFQ_SUBMITTED",
+): CustomerQuoteProjection {
+  const current = customerQuoteProgressStages.find(
+    ({ code }) => code === progressCode,
+  )!;
+  return {
+    ...record,
+    progress: { ...current },
+  };
+}
+
 export type QuoteRequestErrorCode =
   | "ACKNOWLEDGEMENTS_REQUIRED"
   | "ADDRESS_REQUIRED"

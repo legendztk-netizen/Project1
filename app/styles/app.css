@@ -1926,6 +1926,188 @@ a.customer-auth-switch {
   border-bottom: 1px solid var(--line);
 }
 
+.customer-quote-list {
+  display: grid;
+  gap: 12px;
+}
+
+.customer-quote-list > article,
+.customer-quote-section,
+.customer-quote-progress {
+  padding: 22px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.customer-quote-list-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.customer-quote-list-heading span,
+.customer-quote-status {
+  display: inline-flex;
+  padding: 5px 8px;
+  color: #1f654b;
+  background: #e8f4ee;
+  border: 1px solid #b8dacb;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 780;
+}
+
+.customer-quote-list-heading h2 {
+  margin: 10px 0 0;
+  font-size: 1.15rem;
+}
+
+.customer-quote-list dl,
+.customer-quote-section dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+  margin: 20px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.customer-quote-list dt,
+.customer-quote-section dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 680;
+}
+
+.customer-quote-list dd,
+.customer-quote-section dd {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+  font-weight: 720;
+}
+
+.customer-quote-detail {
+  width: min(100%, 1040px);
+  margin: 0 auto;
+}
+
+.customer-quote-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--steel);
+  font-weight: 720;
+}
+
+.customer-quote-detail-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 28px 0 22px;
+}
+
+.customer-quote-detail-header h1 {
+  margin: 7px 0;
+  font-size: 1.8rem;
+  letter-spacing: 0;
+}
+
+.customer-quote-detail-header p,
+.customer-quote-progress p,
+.customer-quote-lines p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.customer-quote-progress {
+  display: flex;
+  align-items: start;
+  gap: 14px;
+  margin-bottom: 18px;
+  border-left: 4px solid #2c7a5a;
+}
+
+.customer-quote-progress > svg {
+  flex: 0 0 auto;
+  color: #2c7a5a;
+}
+
+.customer-quote-section {
+  margin-bottom: 18px;
+}
+
+.customer-quote-section h2 {
+  margin: 0 0 18px;
+  font-size: 1.1rem;
+}
+
+.customer-quote-lines {
+  display: grid;
+}
+
+.customer-quote-lines article {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+
+.customer-configured-assembly-details {
+  flex: 0 0 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 12px;
+  padding: 16px;
+  background: #f7f9fa;
+  border: 0;
+}
+
+.customer-quote-lines article:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.customer-quote-lines h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.customer-quote-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.customer-quote-detail-grid .customer-quote-section {
+  margin: 0;
+}
+
+.customer-quote-section address {
+  display: grid;
+  gap: 5px;
+  font-style: normal;
+}
+
+.customer-quote-summary {
+  grid-template-columns: 1fr;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.customer-quote-commercial-note {
+  margin: 20px 0 0;
+  padding-top: 18px;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+  line-height: 1.5;
+}
+
 .saved-configuration-list {
   display: grid;
   gap: 12px;
@@ -2234,6 +2416,22 @@ a.customer-auth-switch {
   }
 
   .account-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-quote-list-heading,
+  .customer-quote-detail-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .customer-quote-list-heading .button {
+    width: 100%;
+  }
+
+  .customer-quote-list dl,
+  .customer-quote-detail-grid,
+  .customer-configured-assembly-details {
     grid-template-columns: 1fr;
   }
 
