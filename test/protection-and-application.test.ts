@@ -85,6 +85,7 @@ describe("protection and application requirements", () => {
       schedule,
     });
     expect(fromInches).toEqual(fromMillimetres);
+    expect(fromInches.exactLengthFeet).toBe(254 / 304.8);
     expect(fromInches).toMatchObject({
       assemblyServiceUsd: 0.5,
       protectionUsd: 10.13,

@@ -429,7 +429,7 @@ export async function prepareConfiguredAssembly(input: {
     ferruleAPriceUsd: currentUnitPrice(ferruleAProduct, "each"),
     ferruleBPriceUsd: currentUnitPrice(ferruleBProduct, "each"),
     finishedOverallLengthFeet: lengthPricing.exactLengthFeet,
-    hoseCutLengthFeet: null,
+    hoseCutLengthFeet: lengthPricing.exactLengthFeet,
     hoseEndAPriceUsd: currentUnitPrice(endAProduct, "each"),
     hoseEndBPriceUsd: currentUnitPrice(endBProduct, "each"),
     hosePricePerFootUsd: currentUnitPrice(hoseProduct, "ft"),

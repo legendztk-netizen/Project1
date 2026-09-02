@@ -3550,7 +3550,7 @@ describe("Cloudflare Worker route surfaces", () => {
        WHERE session_id = '${configuredSessionId}'`,
     );
     expect(configuredLine).toMatchObject({
-      configured_unit_estimate_amount: null,
+      configured_unit_estimate_amount: 28.86,
       line_kind: "configured_assembly",
       quantity: 1,
     });
@@ -3626,7 +3626,7 @@ describe("Cloudflare Worker route surfaces", () => {
       JSON.parse(configuredLine?.configured_estimate_inputs_json ?? "{}"),
     ).toMatchObject({
       basis: "versioned_reference_inputs",
-      hoseCutLengthFeet: null,
+      hoseCutLengthFeet: 2,
       protectionRecordVersion: protectionVersion,
       scheduleRecordVersion: estimateScheduleVersion,
     });
@@ -3691,7 +3691,8 @@ describe("Cloudflare Worker route surfaces", () => {
         headers: { cookie: configuredCookie },
       })
     ).text();
-    expect(configuredQuoteList).toContain("Price confirmed with quote");
+    expect(configuredQuoteList).toContain("USD 83.58");
+    expect(configuredQuoteList).toContain("USD 28.94");
     expect(configuredQuoteList).toContain("JIC_F_SW_04_04");
 
     runLocalD1(
