@@ -637,8 +637,9 @@ export function QuoteListContent({
                       checked={selectedLineIdSet.has(line.id)}
                       disabled={busy}
                       onChange={(event) => {
+                        const checked = event.currentTarget.checked;
                         setSelectedLineIds((current) =>
-                          event.currentTarget.checked
+                          checked
                             ? [...new Set([...current, line.id])]
                             : current.filter((lineId) => lineId !== line.id),
                         );
