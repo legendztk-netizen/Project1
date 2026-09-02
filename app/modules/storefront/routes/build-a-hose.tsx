@@ -685,6 +685,7 @@ export function BuildAHoseView({
     [savedDraft, savedLine?.quantity],
   );
   const registrationDraftSnapshot = useMemo(() => {
+    if (loaderData.quoteLineContext) return "";
     if (!selectedFamilyKey && !draft) return "";
     const accountConfigurationUnchanged =
       accountSnapshot &&
@@ -742,6 +743,7 @@ export function BuildAHoseView({
   }, [
     accountSnapshot,
     draft,
+    loaderData.quoteLineContext,
     loaderData.assemblyEstimateSchedule?.recordVersion,
     loaderData.clockingConvention?.recordVersion,
     loaderData.releaseId,

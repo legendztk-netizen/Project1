@@ -36,6 +36,9 @@ import {
 } from "../../customer-identity/application/customer-account-service";
 import { requireTrustedAuthPost } from "../../customer-identity/application/trusted-auth-request";
 import type { PurchasingContext } from "../../customer-identity/domain/customer-account";
+import type { DeliveryAddress } from "../../customer-identity/domain/customer-account";
+import { createIndividualQuoteRequestService } from "../../quote-request/application/individual-quote-request-service";
+import { IndividualQuoteRequestRejected } from "../../quote-request/domain/individual-quote-request";
 import type { RootLoaderData } from "../../../root";
 import { hoseSizeLabel } from "../domain/variant-label";
 import "../styles/quote-list.css";
@@ -64,6 +67,8 @@ export async function loader({ context, request }: Route.LoaderArgs) {
   ]);
   return data(
     {
+      addresses: account?.addresses ?? [],
+      idempotencyKey: crypto.randomUUID(),
       lines: result.lines,
       purchasingContexts: account?.purchasingContexts ?? [],
     },
@@ -81,6 +86,26 @@ export async function action({ context, request }: Route.ActionArgs) {
   const service = createAnonymousQuoteListService(env);
 
   try {
+    if (intent === "submit_individual_quote_request") {
+      requireTrustedAuthPost({
+        environment: runtime.environment,
+        request,
+        storefrontOrigin: env.PUBLIC_STOREFRONT_ORIGIN,
+      });
+      const result = await createIndividualQuoteRequestService(
+        env,
+      ).submitIndividual({
+        accuracyConfirmed: form.get("accuracyConfirmed") === "yes",
+        commercialReviewConfirmed:
+          form.get("commercialReviewConfirmed") === "yes",
+        idempotencyKey: textValue(form, "idempotencyKey"),
+        request,
+      });
+      return redirect(
+        `/quote-request/${encodeURIComponent(result.id)}/confirmation`,
+      );
+    }
+
     if (intent === "select_purchasing_context") {
       requireTrustedAuthPost({
         environment: runtime.environment,
@@ -192,6 +217,14 @@ export async function action({ context, request }: Route.ActionArgs) {
         { status: 404 },
       );
     }
+    if (error instanceof IndividualQuoteRequestRejected) {
+      if (error.code === "AUTHENTICATION_REQUIRED") {
+        return redirect(
+          `/sign-in?returnTo=${encodeURIComponent("/quote-list")}`,
+        );
+      }
+      return data({ formError: error.message }, { status: 422 });
+    }
     if (error instanceof QuoteListCommandRejected) {
       return data({ formError: error.message }, { status: 409 });
     }
@@ -205,20 +238,26 @@ function contextName(context: PurchasingContext) {
 }
 
 function RfqPreparation({
+  addresses,
   busy,
   hasBlockedLine,
+  idempotencyKey,
   merchandiseSubtotal,
   purchasingContexts,
   serviceFeeTotal,
 }: {
+  addresses: DeliveryAddress[];
   busy: boolean;
   hasBlockedLine: boolean;
+  idempotencyKey: string;
   merchandiseSubtotal: number;
   purchasingContexts: PurchasingContext[];
   serviceFeeTotal: number;
 }) {
   const selectedContext =
     purchasingContexts.find((context) => context.isSelected) ?? null;
+  const selectedAddress =
+    addresses.find((address) => address.isSelected) ?? null;
   const evaluation = evaluateRfqPreparation({
     amounts: {
       duties: null,
@@ -384,6 +423,81 @@ function RfqPreparation({
         This is not checkout. No payment is collected here, and no delivered
         total is shown before review.
       </p>
+      {outcome.allowed && outcome.code === "INDIVIDUAL_DDP" ? (
+        selectedAddress ? (
+          <Form className="quote-request-form" method="post">
+            <input
+              name="intent"
+              type="hidden"
+              value="submit_individual_quote_request"
+            />
+            <input name="idempotencyKey" type="hidden" value={idempotencyKey} />
+            <div className="quote-request-destination">
+              <strong>Deliver to {selectedAddress.label}</strong>
+              <span>{selectedAddress.recipientName}</span>
+              <span>
+                {selectedAddress.addressLine1}
+                {selectedAddress.addressLine2
+                  ? `, ${selectedAddress.addressLine2}`
+                  : ""}
+              </span>
+              <span>
+                {selectedAddress.city}, {selectedAddress.stateProvince}{" "}
+                {selectedAddress.postalCode}, {selectedAddress.countryCode}
+              </span>
+              <Link to="/account?view=addresses">Change address</Link>
+            </div>
+            <label className="quote-request-confirmation">
+              <input
+                disabled={busy}
+                name="accuracyConfirmed"
+                required
+                type="checkbox"
+                value="yes"
+              />
+              <span>
+                I confirm the products, quantities and configurations shown are
+                correct.
+              </span>
+            </label>
+            <label className="quote-request-confirmation">
+              <input
+                disabled={busy}
+                name="commercialReviewConfirmed"
+                required
+                type="checkbox"
+                value="yes"
+              />
+              <span>
+                I understand this submits a quote request for review. Final
+                price, freight and delivery terms will be confirmed later.
+              </span>
+            </label>
+            <button
+              className="button button-primary quote-request-submit"
+              disabled={busy}
+              type="submit"
+            >
+              <FileText aria-hidden="true" size={18} />
+              {busy ? "Submitting..." : "Request Quote"}
+            </button>
+          </Form>
+        ) : (
+          <div className="quote-request-address-required" role="status">
+            <strong>Add a delivery address to continue</strong>
+            <p>
+              A complete selected destination is required before this request
+              can be submitted.
+            </p>
+            <Link
+              className="button button-secondary"
+              to="/account?view=addresses"
+            >
+              Manage addresses
+            </Link>
+          </div>
+        )
+      ) : null}
     </section>
   );
 }
@@ -829,8 +943,10 @@ export function QuoteListContent({
               </p>
             </aside>
             <RfqPreparation
+              addresses={loaderData.addresses}
               busy={busy}
               hasBlockedLine={hasBlockedLine}
+              idempotencyKey={loaderData.idempotencyKey}
               merchandiseSubtotal={referenceTotal}
               purchasingContexts={loaderData.purchasingContexts}
               serviceFeeTotal={serviceFeeTotal}

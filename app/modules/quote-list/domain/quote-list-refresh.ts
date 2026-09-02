@@ -17,7 +17,7 @@ import {
   type QuoteReferenceDiscount,
 } from "./quote-reference-discount";
 
-function money(value: number) {
+export function quoteMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
@@ -25,13 +25,18 @@ function estimate(input: {
   discount: QuoteReferenceDiscount;
   merchandiseAmount: number | null;
   serviceFeeAmount: number | null;
+  serviceFeeRate: number | null;
+  serviceFeeRecordVersion: number | null;
+  serviceFeeScope: string | null;
   totalReferenceAmount: number | null;
   unitReferencePrice: number | null;
 }): QuoteLineEstimateSnapshot {
   const discountAmount =
     input.merchandiseAmount === null
       ? 0
-      : money(input.merchandiseAmount * (input.discount.discountPercent / 100));
+      : quoteMoney(
+          input.merchandiseAmount * (input.discount.discountPercent / 100),
+        );
   return {
     discountAmount,
     discountPercent: input.discount.discountPercent,
@@ -40,9 +45,12 @@ function estimate(input: {
     discountedMerchandiseAmount:
       input.merchandiseAmount === null
         ? null
-        : money(input.merchandiseAmount - discountAmount),
+        : quoteMoney(input.merchandiseAmount - discountAmount),
     merchandiseAmount: input.merchandiseAmount,
     serviceFeeAmount: input.serviceFeeAmount,
+    serviceFeeRate: input.serviceFeeRate,
+    serviceFeeRecordVersion: input.serviceFeeRecordVersion,
+    serviceFeeScope: input.serviceFeeScope,
     totalReferenceAmount: input.totalReferenceAmount,
     unitReferencePrice: input.unitReferencePrice,
   };
@@ -144,7 +152,7 @@ export function configuredAssemblyServiceFee(input: {
   if (input.basis.assemblyServiceUsd === null || installation === null) {
     return null;
   }
-  return money(
+  return quoteMoney(
     (input.basis.assemblyServiceUsd + installation * pricing.startedFeet) *
       input.quantity,
   );
@@ -174,7 +182,7 @@ export function configuredAssemblyMerchandiseAmount(input: {
         protection.referenceMaterialPricePerFootUsd *
           input.basis.finishedOverallLengthFeet;
   if (protectionMaterial === null) return null;
-  return money(
+  return quoteMoney(
     ((input.basis.hoseCutLengthFeet ?? 0) *
       (input.basis.hosePricePerFootUsd ?? 0) +
       (input.basis.hoseEndAPriceUsd ?? 0) +
@@ -194,11 +202,14 @@ export function formerQuoteLineEstimate(
     const merchandise =
       line.referenceUnitPrice === null
         ? null
-        : money(line.referenceUnitPrice * line.quantity);
+        : quoteMoney(line.referenceUnitPrice * line.quantity);
     return estimate({
       discount,
       merchandiseAmount: merchandise,
       serviceFeeAmount: 0,
+      serviceFeeRate: null,
+      serviceFeeRecordVersion: null,
+      serviceFeeScope: null,
       totalReferenceAmount: merchandise,
       unitReferencePrice: line.referenceUnitPrice,
     });
@@ -208,6 +219,9 @@ export function formerQuoteLineEstimate(
       discount,
       merchandiseAmount: line.estimatedMerchandiseAmount,
       serviceFeeAmount: line.cuttingLabelingFeeAmount,
+      serviceFeeRate: line.cuttingLabelingFeeRate,
+      serviceFeeRecordVersion: null,
+      serviceFeeScope: null,
       totalReferenceAmount: line.currentEstimateAmount,
       unitReferencePrice: line.referenceUnitPrice,
     });
@@ -225,6 +239,10 @@ export function formerQuoteLineEstimate(
       quantity: line.quantity,
       snapshot: line.configuredAssembly.snapshot,
     }),
+    serviceFeeRate: line.configuredAssembly.estimateBasis.assemblyServiceUsd,
+    serviceFeeRecordVersion:
+      line.configuredAssembly.estimateBasis.scheduleRecordVersion,
+    serviceFeeScope: "assembly_estimate_schedule:DEFAULT",
     totalReferenceAmount: line.currentEstimateAmount,
     unitReferencePrice: line.configuredAssembly.unitEstimateAmount,
   });
@@ -250,11 +268,14 @@ export function refreshStandardQuoteLine(input: {
     ? null
     : (input.product?.offer?.referencePrice ?? null);
   const merchandise =
-    price === null ? null : money(price * input.line.quantity);
+    price === null ? null : quoteMoney(price * input.line.quantity);
   const current = estimate({
     discount: input.currentDiscount ?? noQuoteReferenceDiscount,
     merchandiseAmount: merchandise,
     serviceFeeAmount: 0,
+    serviceFeeRate: null,
+    serviceFeeRecordVersion: null,
+    serviceFeeScope: null,
     totalReferenceAmount: merchandise,
     unitReferencePrice: price,
   });
@@ -309,6 +330,9 @@ export function refreshLengthBasedHoseQuoteLine(input: {
     discount: input.currentDiscount ?? noQuoteReferenceDiscount,
     merchandiseAmount: currentCalculation?.estimatedMerchandiseAmount ?? null,
     serviceFeeAmount: currentCalculation?.cuttingLabelingFeeAmount ?? null,
+    serviceFeeRate: ordering?.cuttingLabelingFee.ratePerPiece ?? null,
+    serviceFeeRecordVersion: ordering?.cuttingLabelingFee.version ?? null,
+    serviceFeeScope: ordering?.cuttingLabelingFee.scope ?? null,
     totalReferenceAmount: currentCalculation?.currentEstimateAmount ?? null,
     unitReferencePrice: price,
   });
@@ -382,11 +406,16 @@ export function refreshConfiguredAssemblyQuoteLine(input: {
   const total =
     input.current?.unitEstimateAmount === null || !input.current
       ? null
-      : money(input.current.unitEstimateAmount * input.line.quantity);
+      : quoteMoney(input.current.unitEstimateAmount * input.line.quantity);
   const current = estimate({
     discount: input.currentDiscount ?? noQuoteReferenceDiscount,
     merchandiseAmount: merchandise,
     serviceFeeAmount: serviceFee,
+    serviceFeeRate: input.current?.basis.assemblyServiceUsd ?? null,
+    serviceFeeRecordVersion: input.current?.basis.scheduleRecordVersion ?? null,
+    serviceFeeScope: input.current
+      ? "assembly_estimate_schedule:DEFAULT"
+      : null,
     totalReferenceAmount: total,
     unitReferencePrice: input.current?.unitEstimateAmount ?? null,
   });
@@ -418,7 +447,7 @@ export function refreshConfiguredAssemblyQuoteLine(input: {
 }
 
 export function discountedMerchandiseSubtotal(lines: AnonymousQuoteLine[]) {
-  return money(
+  return quoteMoney(
     lines.reduce(
       (total, line) =>
         total + (line.refresh?.current.discountedMerchandiseAmount ?? 0),

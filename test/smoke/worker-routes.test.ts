@@ -272,7 +272,9 @@ beforeAll(async () => {
         ...process.env,
         CLOUDFLARE_PERSIST_PATH: persistenceDirectory,
       },
-      stdio: "pipe",
+      // Vite and workerd can emit enough request logging to fill an unread pipe
+      // during this long-running suite and stall the preview process.
+      stdio: ["ignore", "ignore", "inherit"],
     },
   );
   previewExit = new Promise((resolve) => preview.once("exit", resolve));
@@ -4885,7 +4887,7 @@ describe("Cloudflare Worker route surfaces", () => {
   it("merges the anonymous Quote List into the verified customer account", async () => {
     const add = new FormData();
     add.set("intent", "add");
-    add.set("sku", "JIC_F_SW_04_04");
+    add.set("sku", "ADP_ST_JIC_M_02_NPT_M_02");
     add.set("quantity", "2");
     const added = await fetch(`${origin}/quote-list`, {
       body: add,
@@ -4919,7 +4921,7 @@ describe("Cloudflare Worker route surfaces", () => {
       headers: { cookie: customerCookie },
     });
     expect(accountList.status).toBe(200);
-    expect(await accountList.text()).toContain("JIC_F_SW_04_04");
+    expect(await accountList.text()).toContain("ADP_ST_JIC_M_02_NPT_M_02");
     expect(accountList.headers.get("set-cookie")).toBeNull();
     expect(
       runLocalD1<{
@@ -4942,6 +4944,514 @@ describe("Cloudflare Worker route surfaces", () => {
       ),
     ).toEqual([{ count: 1 }]);
   });
+
+  it("submits one immutable Individual quote request and clears its list atomically", async () => {
+    const anonymousSubmission = new FormData();
+    anonymousSubmission.set("intent", "submit_individual_quote_request");
+    anonymousSubmission.set("idempotencyKey", crypto.randomUUID());
+    anonymousSubmission.set("accuracyConfirmed", "yes");
+    anonymousSubmission.set("commercialReviewConfirmed", "yes");
+    const unauthenticated = await fetch(`${origin}/quote-list`, {
+      body: anonymousSubmission,
+      headers: { origin },
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(unauthenticated.status).toBe(302);
+    expect(unauthenticated.headers.get("location")).toBe(
+      "/sign-in?returnTo=%2Fquote-list",
+    );
+
+    const requested = await requestEmailOtp({
+      email: "individual-request@example.com",
+      path: "/register",
+    });
+    if (!requested.challenge) throw new Error("Expected registration OTP");
+    const verified = await verifyEmailOtp({
+      challengeId: requested.challenge.challengeId,
+      code: requested.challenge.code,
+      path: "/register",
+      returnTo: "/quote-list",
+    });
+    const customerCookie = cookieHeader(verified);
+
+    const add = new FormData();
+    add.set("intent", "add");
+    add.set("sku", "ADP_ST_JIC_M_02_NPT_M_02");
+    add.set("quantity", "1");
+    expect(
+      (
+        await fetch(`${origin}/quote-list`, {
+          body: add,
+          headers: { cookie: customerCookie },
+          method: "POST",
+          redirect: "manual",
+        })
+      ).status,
+    ).toBe(302);
+
+    const quoteListBeforeAddress = await (
+      await fetch(`${origin}/quote-list`, {
+        headers: { cookie: customerCookie },
+      })
+    ).text();
+    const firstKey = quoteListBeforeAddress.match(
+      /name="idempotencyKey"[^>]*value="([^"]+)"|value="([^"]+)"[^>]*name="idempotencyKey"/,
+    );
+    const keyBeforeAddress =
+      firstKey?.[1] ?? firstKey?.[2] ?? crypto.randomUUID();
+    const submit = (key: string, acknowledgements = true) => {
+      const form = new FormData();
+      form.set("intent", "submit_individual_quote_request");
+      form.set("idempotencyKey", key);
+      if (acknowledgements) {
+        form.set("accuracyConfirmed", "yes");
+        form.set("commercialReviewConfirmed", "yes");
+      }
+      return fetch(`${origin}/quote-list`, {
+        body: form,
+        headers: { cookie: customerCookie, origin },
+        method: "POST",
+        redirect: "manual",
+      });
+    };
+
+    const invalidIdempotencyKey = await submit("too-short");
+    expect(invalidIdempotencyKey.status).toBe(422);
+    expect(renderedText(await invalidIdempotencyKey.text())).toContain(
+      "Refresh the page and try submitting again",
+    );
+
+    const addressMissing = await submit(keyBeforeAddress);
+    expect(addressMissing.status).toBe(422);
+    expect(renderedText(await addressMissing.text())).toContain(
+      "Select a complete delivery address",
+    );
+
+    const address = new FormData();
+    for (const [name, value] of Object.entries({
+      addressLine1: "200 Park Avenue",
+      addressLine2: "Suite 900",
+      city: "New York",
+      countryCode: "US",
+      intent: "create_address",
+      label: "Main delivery",
+      postalCode: "10166",
+      recipientEmail: "individual-request@example.com",
+      recipientName: "Individual Buyer",
+      recipientPhone: "+1 212 555 0144",
+      stateProvince: "New York",
+    })) {
+      address.set(name, value);
+    }
+    expect(
+      (
+        await fetch(`${origin}/account?view=addresses`, {
+          body: address,
+          headers: { cookie: customerCookie, origin },
+          method: "POST",
+          redirect: "manual",
+        })
+      ).status,
+    ).toBe(302);
+
+    const organization = new FormData();
+    for (const [name, value] of Object.entries({
+      intent: "create_organization",
+      legalName: "Individual Request Test LLC",
+      organizationCountryCode: "US",
+      registrationOrTaxId: "",
+      tradeName: "Request Test",
+    })) {
+      organization.set(name, value);
+    }
+    expect(
+      (
+        await fetch(`${origin}/account?view=profile`, {
+          body: organization,
+          headers: { cookie: customerCookie, origin },
+          method: "POST",
+          redirect: "manual",
+        })
+      ).status,
+    ).toBe(302);
+    const contexts = runLocalD1<{ id: string; kind: string }>(
+      `SELECT c.id, c.kind
+       FROM customer_purchasing_contexts c
+       LEFT JOIN customer_profiles individual
+         ON individual.id = c.individual_profile_id
+       LEFT JOIN customer_organization_memberships membership
+         ON membership.organization_id = c.organization_id
+        AND membership.status = 'active'
+       LEFT JOIN customer_profiles member
+         ON member.id = membership.profile_id
+       WHERE individual.email_normalized = 'individual-request@example.com'
+          OR member.email_normalized = 'individual-request@example.com'
+       ORDER BY c.kind`,
+    );
+    const individualContext = contexts.find(
+      ({ kind }) => kind === "individual",
+    );
+    const organizationContext = contexts.find(
+      ({ kind }) => kind === "organization",
+    );
+    if (!individualContext || !organizationContext) {
+      throw new Error("Expected Individual and Organization contexts");
+    }
+    const selectContext = (contextId: string) => {
+      const form = new FormData();
+      form.set("intent", "select_context");
+      form.set("contextId", contextId);
+      return fetch(`${origin}/account?view=profile`, {
+        body: form,
+        headers: { cookie: customerCookie, origin },
+        method: "POST",
+        redirect: "manual",
+      });
+    };
+    expect((await selectContext(organizationContext.id)).status).toBe(302);
+    const organizationSubmission = await submit(crypto.randomUUID());
+    expect(organizationSubmission.status).toBe(422);
+    expect(renderedText(await organizationSubmission.text())).toContain(
+      "Select Individual purchase",
+    );
+    expect((await selectContext(individualContext.id)).status).toBe(302);
+
+    const belowMinimum = await submit(crypto.randomUUID());
+    expect(belowMinimum.status).toBe(422);
+    expect(renderedText(await belowMinimum.text())).toContain(
+      "merchandise subtotal must be at least USD 100.00",
+    );
+
+    const [line] = runLocalD1<{ id: string }>(
+      `SELECT l.id FROM anonymous_quote_lines l
+       INNER JOIN anonymous_quote_sessions s ON s.id = l.session_id
+       INNER JOIN customer_profiles p ON p.id = s.profile_id
+       WHERE p.email_normalized = 'individual-request@example.com'`,
+    );
+    if (!line) throw new Error("Expected account-owned Quote List line");
+
+    runLocalD1(
+      `UPDATE anonymous_quote_lines
+       SET sku = 'TICKET10_UNAVAILABLE', updated_at = CURRENT_TIMESTAMP
+       WHERE id = '${line.id}'`,
+    );
+    const unavailable = await submit(crypto.randomUUID());
+    expect(unavailable.status).toBe(422);
+    expect(renderedText(await unavailable.text())).toContain(
+      "Review the highlighted products before submitting",
+    );
+    runLocalD1(
+      `UPDATE anonymous_quote_lines
+       SET sku = 'ADP_ST_JIC_M_02_NPT_M_02', updated_at = CURRENT_TIMESTAMP
+       WHERE id = '${line.id}'`,
+    );
+
+    const update = new FormData();
+    update.set("intent", "update");
+    update.set("lineId", line.id);
+    update.set("quantity", "100");
+    expect(
+      (
+        await fetch(`${origin}/quote-list`, {
+          body: update,
+          headers: { cookie: customerCookie },
+          method: "POST",
+          redirect: "manual",
+        })
+      ).status,
+    ).toBe(302);
+
+    const readyHtml = await (
+      await fetch(`${origin}/quote-list`, {
+        headers: { cookie: customerCookie },
+      })
+    ).text();
+    const readyKeyMatch = readyHtml.match(
+      /name="idempotencyKey"[^>]*value="([^"]+)"|value="([^"]+)"[^>]*name="idempotencyKey"/,
+    );
+    const idempotencyKey = readyKeyMatch?.[1] ?? readyKeyMatch?.[2];
+    expect(idempotencyKey).toBeTruthy();
+    expect(renderedText(readyHtml)).toContain("Request Quote");
+    expect(renderedText(readyHtml)).toContain("Deliver to Main delivery");
+
+    const aboveLimit = new FormData();
+    aboveLimit.set("intent", "update");
+    aboveLimit.set("lineId", line.id);
+    aboveLimit.set("quantity", "9999");
+    expect(
+      (
+        await fetch(`${origin}/quote-list`, {
+          body: aboveLimit,
+          headers: { cookie: customerCookie },
+          method: "POST",
+          redirect: "manual",
+        })
+      ).status,
+    ).toBe(302);
+    const aboveIndividualLimit = await submit(crypto.randomUUID());
+    expect(aboveIndividualLimit.status).toBe(422);
+    expect(renderedText(await aboveIndividualLimit.text())).toContain(
+      "limited to USD 4,500.00",
+    );
+    update.set("quantity", "100");
+    expect(
+      (
+        await fetch(`${origin}/quote-list`, {
+          body: update,
+          headers: { cookie: customerCookie },
+          method: "POST",
+          redirect: "manual",
+        })
+      ).status,
+    ).toBe(302);
+
+    const missingAcknowledgements = await submit(idempotencyKey ?? "", false);
+    expect(missingAcknowledgements.status).toBe(422);
+    expect(renderedText(await missingAcknowledgements.text())).toContain(
+      "Confirm the request details",
+    );
+
+    const submitted = await submit(idempotencyKey ?? "", true);
+    expect(submitted.status).toBe(302);
+    const confirmationPath = submitted.headers.get("location") ?? "";
+    expect(confirmationPath).toMatch(/^\/quote-request\/[^/]+\/confirmation$/);
+    const confirmation = await fetch(`${origin}${confirmationPath}`, {
+      headers: { cookie: customerCookie },
+    });
+    const confirmationText = renderedText(await confirmation.text());
+    expect(confirmation.status).toBe(200);
+    expect(confirmationText).toContain("We have your request");
+    expect(confirmationText).toContain("Quote request number");
+    expect(confirmationText).toContain("not an order or payment receipt");
+
+    const repeated = await submit(idempotencyKey ?? "", true);
+    expect(repeated.status).toBe(302);
+    expect(repeated.headers.get("location")).toBe(confirmationPath);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM customer_quote_requests r
+         INNER JOIN customer_profiles p ON p.id = r.profile_id
+         WHERE p.email_normalized = 'individual-request@example.com'`,
+      ),
+    ).toEqual([{ count: 1 }]);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM anonymous_quote_lines l
+         INNER JOIN anonymous_quote_sessions s ON s.id = l.session_id
+         INNER JOIN customer_profiles p ON p.id = s.profile_id
+         WHERE p.email_normalized = 'individual-request@example.com'`,
+      ),
+    ).toEqual([{ count: 0 }]);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM anonymous_quote_lines l
+         INNER JOIN anonymous_quote_sessions s ON s.id = l.session_id
+         INNER JOIN customer_profiles p ON p.id = s.profile_id
+         WHERE p.email_normalized = 'quote-list-merge@example.com'`,
+      ),
+    ).toEqual([{ count: 1 }]);
+
+    const emptyList = await submit(crypto.randomUUID());
+    expect(emptyList.status).toBe(422);
+    expect(renderedText(await emptyList.text())).toContain(
+      "Your Quote List is empty",
+    );
+
+    const [stored] = runLocalD1<{
+      reference_number: string;
+      snapshot_json: string;
+    }>(
+      `SELECT r.reference_number, r.snapshot_json
+       FROM customer_quote_requests r
+       INNER JOIN customer_profiles p ON p.id = r.profile_id
+       WHERE p.email_normalized = 'individual-request@example.com'`,
+    );
+    expect(stored?.reference_number).toMatch(/^QR-\d{8}-[A-Z0-9-]+$/);
+    const storedSnapshot = JSON.parse(stored?.snapshot_json ?? "{}");
+    expect(storedSnapshot).toMatchObject({
+      acknowledgements: {
+        accuracyConfirmed: true,
+        commercialReviewConfirmed: true,
+        version: "individual-request-v1",
+      },
+      actor: { email: "individual-request@example.com" },
+      amounts: {
+        currency: "USD",
+        merchandiseSubtotal: expect.any(Number),
+        serviceFeeTotal: expect.any(Number),
+      },
+      destination: {
+        addressLine1: "200 Park Avenue",
+        addressLine2: "Suite 900",
+        city: "New York",
+        countryCode: "US",
+        label: "Main delivery",
+        postalCode: "10166",
+        recipientEmail: "individual-request@example.com",
+        recipientName: "Individual Buyer",
+        recipientPhone: "+1 212 555 0144",
+        stateProvince: "New York",
+      },
+      importResponsibility: {
+        fulfillmentTerm: "DDP",
+        version: "individual-ddp-v1",
+      },
+      lines: [
+        {
+          quantity: 100,
+          refresh: {
+            current: {
+              discountAmount: 0,
+              discountPercent: 0,
+              discountRecordVersion: null,
+              discountedMerchandiseAmount: expect.any(Number),
+              merchandiseAmount: expect.any(Number),
+              serviceFeeAmount: expect.any(Number),
+              serviceFeeRate: null,
+              serviceFeeRecordVersion: null,
+              serviceFeeScope: null,
+              totalReferenceAmount: expect.any(Number),
+              unitReferencePrice: expect.any(Number),
+            },
+            currentCatalogRelease: {
+              id: expect.any(String),
+              number: expect.any(String),
+            },
+            status: "ready",
+          },
+          sku: "ADP_ST_JIC_M_02_NPT_M_02",
+        },
+      ],
+      purchasingContext: {
+        id: individualContext.id,
+        isSelected: true,
+        kind: "individual",
+      },
+      submittedAt: expect.any(String),
+      version: 1,
+    });
+    expect(Date.parse(storedSnapshot.submittedAt)).not.toBeNaN();
+    expect(storedSnapshot.amounts.merchandiseSubtotal).toBeGreaterThanOrEqual(
+      100,
+    );
+    const submittedEstimate = storedSnapshot.lines[0].refresh.current;
+    expect(submittedEstimate.merchandiseAmount).toBeCloseTo(
+      submittedEstimate.unitReferencePrice * 100,
+      2,
+    );
+    expect(submittedEstimate.discountedMerchandiseAmount).toBe(
+      storedSnapshot.amounts.merchandiseSubtotal,
+    );
+    expect(submittedEstimate.totalReferenceAmount).toBe(
+      submittedEstimate.merchandiseAmount,
+    );
+    expect(storedSnapshot.amounts.serviceFeeTotal).toBe(
+      submittedEstimate.serviceFeeAmount,
+    );
+
+    const otherRequested = await requestEmailOtp({
+      email: "individual-request-other@example.com",
+      path: "/register",
+    });
+    if (!otherRequested.challenge) throw new Error("Expected second OTP");
+    const otherVerified = await verifyEmailOtp({
+      challengeId: otherRequested.challenge.challengeId,
+      code: otherRequested.challenge.code,
+      path: "/register",
+    });
+    const otherConfirmation = await fetch(`${origin}${confirmationPath}`, {
+      headers: { cookie: cookieHeader(otherVerified) },
+    });
+    expect(otherConfirmation.status).toBe(404);
+    expect(
+      runLocalD1Failure(
+        `UPDATE customer_quote_requests SET service_fee_total = 99
+         WHERE reference_number = '${stored?.reference_number ?? ""}'`,
+      ),
+    ).toContain("submitted quote requests are immutable");
+    expect(
+      runLocalD1Failure(
+        `DELETE FROM customer_quote_requests
+         WHERE reference_number = '${stored?.reference_number ?? ""}'`,
+      ),
+    ).toContain("submitted quote requests are immutable");
+
+    const rollbackLine = new FormData();
+    rollbackLine.set("intent", "add");
+    rollbackLine.set("sku", "ADP_ST_JIC_M_02_NPT_M_02");
+    rollbackLine.set("quantity", "100");
+    expect(
+      (
+        await fetch(`${origin}/quote-list`, {
+          body: rollbackLine,
+          headers: { cookie: customerCookie },
+          method: "POST",
+          redirect: "manual",
+        })
+      ).status,
+    ).toBe(302);
+    runLocalD1(
+      `CREATE TRIGGER ticket10_force_submission_guard_rejection
+       AFTER INSERT ON customer_quote_request_submission_guards
+       BEGIN
+         DELETE FROM customer_quote_request_submission_guards
+         WHERE id = NEW.id;
+       END`,
+    );
+    try {
+      const changedDuringSubmission = await submit(crypto.randomUUID(), true);
+      expect(changedDuringSubmission.status).toBe(422);
+      expect(renderedText(await changedDuringSubmission.text())).toContain(
+        "Your Quote List changed while it was being submitted",
+      );
+      expect(
+        runLocalD1<{ count: number }>(
+          `SELECT COUNT(*) AS count FROM customer_quote_requests r
+           INNER JOIN customer_profiles p ON p.id = r.profile_id
+           WHERE p.email_normalized = 'individual-request@example.com'`,
+        ),
+      ).toEqual([{ count: 1 }]);
+      expect(
+        runLocalD1<{ count: number }>(
+          `SELECT COUNT(*) AS count FROM anonymous_quote_lines l
+           INNER JOIN anonymous_quote_sessions s ON s.id = l.session_id
+           INNER JOIN customer_profiles p ON p.id = s.profile_id
+           WHERE p.email_normalized = 'individual-request@example.com'`,
+        ),
+      ).toEqual([{ count: 1 }]);
+    } finally {
+      runLocalD1("DROP TRIGGER ticket10_force_submission_guard_rejection");
+    }
+    runLocalD1(
+      `CREATE TRIGGER ticket10_force_quote_list_delete_failure
+       BEFORE DELETE ON anonymous_quote_lines
+       BEGIN
+         SELECT RAISE(ABORT, 'ticket10 forced rollback');
+       END`,
+    );
+    try {
+      const rolledBack = await submit(crypto.randomUUID(), true);
+      expect(rolledBack.status).toBe(500);
+      expect(
+        runLocalD1<{ count: number }>(
+          `SELECT COUNT(*) AS count FROM customer_quote_requests r
+           INNER JOIN customer_profiles p ON p.id = r.profile_id
+           WHERE p.email_normalized = 'individual-request@example.com'`,
+        ),
+      ).toEqual([{ count: 1 }]);
+      expect(
+        runLocalD1<{ count: number }>(
+          `SELECT COUNT(*) AS count FROM anonymous_quote_lines l
+           INNER JOIN anonymous_quote_sessions s ON s.id = l.session_id
+           INNER JOIN customer_profiles p ON p.id = s.profile_id
+           WHERE p.email_normalized = 'individual-request@example.com'`,
+        ),
+      ).toEqual([{ count: 1 }]);
+    } finally {
+      runLocalD1("DROP TRIGGER ticket10_force_quote_list_delete_failure");
+    }
+  }, 120_000);
 
   it("does not expose standalone email draft persistence", async () => {
     const saveResponse = await fetch(`${origin}/api/configurator/save-draft`, {

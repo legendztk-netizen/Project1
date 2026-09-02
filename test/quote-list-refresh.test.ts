@@ -298,6 +298,9 @@ describe("Quote List refresh", () => {
 
     expect(refresh.current.discountedMerchandiseAmount).toBe(220);
     expect(refresh.current.serviceFeeAmount).toBe(3);
+    expect(refresh.current.serviceFeeRate).toBe(1.5);
+    expect(refresh.current.serviceFeeRecordVersion).toBe(3);
+    expect(refresh.current.serviceFeeScope).toBe("global");
     expect(refresh.current.totalReferenceAmount).toBe(223);
   });
 

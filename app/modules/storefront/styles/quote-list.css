@@ -325,6 +325,128 @@
   color: var(--muted);
 }
 
+.quote-request-form,
+.quote-request-address-required {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.quote-request-destination {
+  display: grid;
+  gap: 3px;
+  padding: 12px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  background: #f6f8f9;
+  border-left: 3px solid var(--steel);
+}
+
+.quote-request-destination a {
+  width: fit-content;
+  margin-top: 5px;
+  color: var(--steel);
+  font-weight: 750;
+}
+
+.quote-request-confirmation {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 9px;
+  align-items: start;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.quote-request-confirmation input {
+  width: 17px;
+  height: 17px;
+  margin: 1px 0 0;
+  accent-color: var(--action);
+}
+
+.quote-request-submit,
+.quote-request-address-required .button {
+  width: 100%;
+}
+
+.quote-request-address-required p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.quote-request-confirmation-page {
+  width: min(760px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 48px 0 72px;
+}
+
+.quote-request-confirmation-panel {
+  display: grid;
+  gap: 14px;
+  padding: 32px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-top: 4px solid #2f7658;
+  border-radius: 6px;
+}
+
+.quote-request-confirmation-panel > svg {
+  color: #2f7658;
+}
+
+.quote-request-confirmation-panel h1,
+.quote-request-confirmation-panel p {
+  margin: 0;
+}
+
+.quote-request-confirmation-panel dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 8px 0;
+  background: var(--line);
+  border: 1px solid var(--line);
+}
+
+.quote-request-confirmation-panel dl > div {
+  min-width: 0;
+  padding: 14px;
+  background: var(--surface);
+}
+
+.quote-request-confirmation-panel dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.quote-request-confirmation-panel dd {
+  overflow-wrap: anywhere;
+  margin: 5px 0 0;
+  font-weight: 800;
+}
+
+.quote-request-confirmation-note {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 11px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  background: #f6f8f9;
+}
+
+.quote-request-confirmation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .quote-summary h2 {
   margin: 6px 0 14px;
   font-size: 1.15rem;
@@ -388,6 +510,13 @@
 }
 
 @media (max-width: 760px) {
+  .quote-request-confirmation-panel {
+    padding: 22px 18px;
+  }
+
+  .quote-request-confirmation-panel dl {
+    grid-template-columns: 1fr;
+  }
   .quote-list-page {
     padding: 22px 18px 48px;
   }

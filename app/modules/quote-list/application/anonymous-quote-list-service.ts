@@ -570,6 +570,32 @@ export function createAnonymousQuoteListService(
       };
     },
 
+    async readForSubmission(request: Request) {
+      const profile = await authenticatedProfile(request);
+      if (!profile) return null;
+      const session = await quoteList.findAccountSession(profile.id);
+      if (!session) {
+        return { lines: [], profile, session: null };
+      }
+      const current = time();
+      const touched = await quoteList.touchSession(
+        session.id,
+        current.now,
+        current.expiresAt,
+      );
+      if (!touched) return { lines: [], profile, session: null };
+      const currentSession = await quoteList.findAccountSession(profile.id);
+      if (!currentSession) return { lines: [], profile, session: null };
+      return {
+        lines: await refreshLinesForDisplay(
+          await quoteList.listLines(currentSession.id),
+          current.now,
+        ),
+        profile,
+        session: currentSession,
+      };
+    },
+
     async remove(request: Request, lineId: string) {
       const { created, session } = await ensureSession(request);
       const current = time();

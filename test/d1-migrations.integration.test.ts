@@ -17,6 +17,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { getPlatformProxy } from "wrangler";
 
 import { createD1CustomerIdentityRepository } from "../app/modules/customer-identity/infrastructure/d1-customer-identity-repository";
+import { staleLengthBasedHoseFeeGuardSql } from "../app/modules/quote-request/infrastructure/d1-individual-quote-request-repository";
 
 interface D1QueryResult<T> {
   results: T[];
@@ -731,6 +732,208 @@ describe("real local D1 migration lifecycle", () => {
           )
           .first(),
       ).toEqual({ merged_into_session_id: null, retired_at: null });
+    } finally {
+      await platform.dispose();
+    }
+  }, 60_000);
+
+  it("rejects a length-based hose submission when its fee changes", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "hose-d1-rfq-fee-guard-"));
+    temporaryDirectories.push(directory);
+    const migration = runProjectMigrate(directory);
+    expect(migration.status, `${migration.stdout}\n${migration.stderr}`).toBe(
+      0,
+    );
+    const platform = await getPlatformProxy<{ DB: D1Database }>({
+      configPath: join(projectRoot, "wrangler.jsonc"),
+      persist: { path: join(directory, "v3") },
+      remoteBindings: false,
+    });
+
+    try {
+      const database = platform.env.DB;
+      const now = "2026-09-02T00:00:00.000Z";
+      await database.batch([
+        database
+          .prepare(
+            `INSERT INTO customer_profiles
+               (id, email_normalized, email_display, email_verified_at,
+                created_at, updated_at)
+             VALUES ('fee-profile', 'fee@example.com', 'fee@example.com',
+                     ?, ?, ?)`,
+          )
+          .bind(now, now, now),
+        database
+          .prepare(
+            `INSERT INTO catalog_imports
+               (id, kind, status, created_at, completed_at)
+             VALUES ('fee-import', 'diagnostic', 'completed', ?, ?)`,
+          )
+          .bind(now, now),
+        database.prepare(
+          `INSERT INTO catalog_skus
+             (id, import_id, sku, source_worksheet, product_type, hose_series,
+              catalog_publication_status, rfq_eligibility,
+              technical_data_status, supply_availability)
+           VALUES ('fee-sku', 'fee-import', '601R1_001', '01_胶管', 'hose',
+                   '601R1', 'Published', 'Eligible', 'Complete',
+                   'available_for_quote')`,
+        ),
+        database
+          .prepare(
+            `INSERT INTO catalog_releases
+               (id, release_number, status, source_import_id, created_at,
+                published_at)
+             VALUES ('fee-release', 'FEE-RELEASE', 'published', 'fee-import',
+                     ?, ?)`,
+          )
+          .bind(now, now),
+        database
+          .prepare(
+            `UPDATE catalog_active_release
+             SET release_id = 'fee-release', version = version + 1,
+                 updated_at = ?
+             WHERE singleton = 1`,
+          )
+          .bind(now),
+        database
+          .prepare(
+            `INSERT INTO anonymous_quote_sessions
+               (id, created_at, last_activity_at, expires_at, profile_id)
+             VALUES ('fee-session', ?, ?, '2026-10-02T00:00:00.000Z',
+                     'fee-profile')`,
+          )
+          .bind(now, now),
+        database
+          .prepare(
+            `INSERT INTO anonymous_quote_lines
+               (id, session_id, line_identity, sku, catalog_release_id,
+                display_name, category, quantity, sales_unit, currency,
+                reference_unit_price, created_at, updated_at, line_kind,
+                original_length_value, original_length_unit,
+                normalized_length_ft, piece_count, total_footage,
+                cutting_labeling_fee_rate, cutting_labeling_fee_amount,
+                cutting_labeling_fee_scope, cutting_labeling_fee_version,
+                estimated_merchandise_amount, current_estimate_amount)
+             VALUES
+               ('fee-line', 'fee-session', 'length-hose:601R1_001:50ft',
+                '601R1_001', 'fee-release', '601R1 Hydraulic Hose',
+                'hydraulic-hose', 2, 'ft', 'USD', 2.16, ?, ?,
+                'length_based_hose', 50, 'ft', 50, 2, 100,
+                0, 0, 'global', 1, 216, 216)`,
+          )
+          .bind(now, now),
+        database
+          .prepare(
+            `INSERT INTO customer_quote_request_submission_guards
+               (id, profile_id, session_id, created_at)
+             VALUES ('fee-guard', 'fee-profile', 'fee-session', ?)`,
+          )
+          .bind(now),
+      ]);
+      const expectedGlobal = JSON.stringify([
+        {
+          lineId: "fee-line",
+          ratePerPiece: 0,
+          scope: "global",
+          version: 1,
+        },
+      ]);
+
+      await database
+        .prepare(staleLengthBasedHoseFeeGuardSql)
+        .bind("fee-guard", expectedGlobal, expectedGlobal)
+        .run();
+      expect(
+        await database
+          .prepare(
+            `SELECT COUNT(*) AS count
+             FROM customer_quote_request_submission_guards
+             WHERE id = 'fee-guard'`,
+          )
+          .first<{ count: number }>(),
+      ).toEqual({ count: 1 });
+
+      await database
+        .prepare(
+          `INSERT INTO cutting_labeling_fee_rates
+             (scope_key, hose_series, currency, rate_per_piece, version,
+              updated_at)
+           VALUES ('series:601R1', '601R1', 'USD', 1.25, 2, ?)`,
+        )
+        .bind(now)
+        .run();
+      await database
+        .prepare(staleLengthBasedHoseFeeGuardSql)
+        .bind("fee-guard", expectedGlobal, expectedGlobal)
+        .run();
+      expect(
+        await database
+          .prepare(
+            `SELECT COUNT(*) AS count
+             FROM customer_quote_request_submission_guards
+             WHERE id = 'fee-guard'`,
+          )
+          .first<{ count: number }>(),
+      ).toEqual({ count: 0 });
+
+      await database
+        .prepare(
+          `INSERT INTO customer_quote_request_submission_guards
+             (id, profile_id, session_id, created_at)
+           VALUES ('fee-guard', 'fee-profile', 'fee-session', ?)`,
+        )
+        .bind(now)
+        .run();
+      const expectedSeries = JSON.stringify([
+        {
+          lineId: "fee-line",
+          ratePerPiece: 1.25,
+          scope: "series:601R1",
+          version: 2,
+        },
+      ]);
+      await database
+        .prepare(staleLengthBasedHoseFeeGuardSql)
+        .bind("fee-guard", expectedSeries, expectedSeries)
+        .run();
+      expect(
+        await database
+          .prepare(
+            `SELECT COUNT(*) AS count
+             FROM customer_quote_request_submission_guards
+             WHERE id = 'fee-guard'`,
+          )
+          .first<{ count: number }>(),
+      ).toEqual({ count: 1 });
+      await database
+        .prepare(
+          `UPDATE cutting_labeling_fee_rates
+           SET rate_per_piece = 1.50, version = 3
+           WHERE scope_key = 'series:601R1'`,
+        )
+        .run();
+      await database
+        .prepare(staleLengthBasedHoseFeeGuardSql)
+        .bind("fee-guard", expectedSeries, expectedSeries)
+        .run();
+      expect(
+        await database
+          .prepare(
+            `SELECT COUNT(*) AS count
+             FROM customer_quote_request_submission_guards
+             WHERE id = 'fee-guard'`,
+          )
+          .first<{ count: number }>(),
+      ).toEqual({ count: 0 });
+      expect(
+        await database
+          .prepare(
+            `SELECT COUNT(*) AS count FROM anonymous_quote_lines
+             WHERE id = 'fee-line'`,
+          )
+          .first<{ count: number }>(),
+      ).toEqual({ count: 1 });
     } finally {
       await platform.dispose();
     }

@@ -29,6 +29,10 @@ export default [
     "modules/storefront/routes/configurator-saved-configuration-resource.ts",
   ),
   route("quote-list", "modules/storefront/routes/anonymous-quote-list.tsx"),
+  route(
+    "quote-request/:requestId/confirmation",
+    "modules/storefront/routes/quote-request-confirmation.tsx",
+  ),
   route("register", "modules/customer-identity/routes/register.tsx"),
   route("sign-in", "modules/customer-identity/routes/sign-in.tsx"),
   route("sign-out", "modules/customer-identity/routes/sign-out.ts"),

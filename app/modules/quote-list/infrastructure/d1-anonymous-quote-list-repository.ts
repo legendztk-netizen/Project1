@@ -761,12 +761,13 @@ export function createD1AnonymousQuoteListRepository(database: D1Database) {
     async findAccountSession(profileId: string) {
       return database
         .prepare(
-          `SELECT id, expires_at AS expiresAt
+          `SELECT id, expires_at AS expiresAt,
+                  last_activity_at AS lastActivityAt
            FROM anonymous_quote_sessions
            WHERE profile_id = ? AND retired_at IS NULL`,
         )
         .bind(profileId)
-        .first<AnonymousQuoteSession>();
+        .first<AnonymousQuoteSession & { lastActivityAt: string }>();
     },
 
     async deleteExpiredSessions(now: string) {

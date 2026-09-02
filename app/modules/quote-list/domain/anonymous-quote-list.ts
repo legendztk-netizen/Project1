@@ -40,6 +40,9 @@ export interface QuoteLineEstimateSnapshot {
   discountedMerchandiseAmount: number | null;
   merchandiseAmount: number | null;
   serviceFeeAmount: number | null;
+  serviceFeeRate: number | null;
+  serviceFeeRecordVersion: number | null;
+  serviceFeeScope: string | null;
   totalReferenceAmount: number | null;
   unitReferencePrice: number | null;
 }

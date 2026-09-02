@@ -10,6 +10,8 @@ The initial skeleton exposes three deliberately separate surfaces:
 - `/api/catalog/products/:sku` - public active-release product resource
 - `/quote-list` - server-side anonymous Quote List for Standard Products and
   Length-Based Hose
+- `/quote-request/:requestId/confirmation` - authenticated owner-only
+  confirmation for an immutable Individual RFQ snapshot
 - `/build-a-hose` - guided hose assembly configurator with responsive preview
   and draft exit protection
 - `/admin` - Admin Backoffice shell
@@ -55,7 +57,8 @@ isolation, five-class Storefront search and family routing, availability-driven
 Add to Quote commands, anonymous Quote List lifecycle and revalidation,
 Length-Based Hose input validation, merge rules, fee snapshots and line
 editing, configurator responsive flow and unfinished-draft exit handling,
-public Cost Basis exclusion, and health routes through HTTP. `test:d1`
+Individual RFQ validation, atomic snapshot/list clearing, idempotency and
+immutability, public Cost Basis exclusion, and health routes through HTTP. `test:d1`
 uses persistent local D1 instances rather than a database mock.
 
 ## Environment commands
@@ -144,6 +147,8 @@ production deployment.
 - `app/modules/admin` owns Admin Backoffice routes and UI.
 - `app/modules/catalog` owns catalog domain vocabulary and behavior.
 - `app/modules/quote-list` owns anonymous Quote Sessions and line commands.
+- `app/modules/quote-request` owns immutable RFQ submission commands and
+  snapshots.
 - `app/modules/shared` contains cross-surface UI with no business ownership.
 - `workers` owns the Cloudflare request boundary, health endpoint, and runtime
   context passed into React Router.
