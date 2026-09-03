@@ -3,9 +3,15 @@ import type {
   PurchasingContext,
 } from "../../customer-identity/domain/customer-account";
 import type { CustomerContactProfile } from "../../customer-identity/domain/customer-profile";
+import type {
+  PublicCatalogItem,
+  PublicCatalogSpec,
+  PublicProductType,
+  PublicVariantSelection,
+} from "../../catalog/domain/public-catalog";
 import type { AnonymousQuoteLine } from "../../quote-list/domain/anonymous-quote-list";
 
-export const quoteRequestSnapshotVersion = 1;
+export const quoteRequestSnapshotVersion = 2;
 export const quoteRequestAcknowledgementVersion = "individual-request-v1";
 export const individualDdpExpectationVersion = "individual-ddp-v1";
 export const organizationQuoteRequestAcknowledgementVersion =
@@ -24,6 +30,38 @@ interface QuoteRequestAmounts {
   serviceFeeTotal: number;
 }
 
+export interface QuoteRequestProductSnapshot {
+  category: PublicCatalogItem["category"];
+  familyName: string;
+  mediaKey: string | null;
+  productType: PublicProductType;
+  releaseId: string;
+  releaseNumber: string;
+  specs: PublicCatalogSpec[];
+  variantSelection: PublicVariantSelection | null;
+}
+
+export type QuoteRequestLine = AnonymousQuoteLine & {
+  productSnapshot: QuoteRequestProductSnapshot;
+};
+
+export function captureQuoteRequestProductSnapshot(
+  product: PublicCatalogItem,
+): QuoteRequestProductSnapshot {
+  return {
+    category: product.category,
+    familyName: product.familyName,
+    mediaKey: product.mediaKey,
+    productType: product.productType,
+    releaseId: product.releaseId,
+    releaseNumber: product.releaseNumber,
+    specs: product.specs.map((spec) => ({ ...spec })),
+    variantSelection: product.variantSelection
+      ? structuredClone(product.variantSelection)
+      : null,
+  };
+}
+
 export interface IndividualQuoteRequestSnapshot {
   acknowledgements: {
     accuracyConfirmed: true;
@@ -37,7 +75,7 @@ export interface IndividualQuoteRequestSnapshot {
     fulfillmentTerm: "DDP";
     version: typeof individualDdpExpectationVersion;
   };
-  lines: AnonymousQuoteLine[];
+  lines: QuoteRequestLine[];
   purchasingContext: PurchasingContext & { kind: "individual" };
   submittedAt: string;
   version: typeof quoteRequestSnapshotVersion;
@@ -61,7 +99,7 @@ export interface OrganizationQuoteRequestSnapshot {
         fulfillmentTerm: "DAP";
         version: typeof organizationDapExpectationVersion;
       };
-  lines: AnonymousQuoteLine[];
+  lines: QuoteRequestLine[];
   purchasingContext: PurchasingContext & {
     countryCode: string;
     kind: "organization";

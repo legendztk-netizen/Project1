@@ -5399,6 +5399,21 @@ describe("Cloudflare Worker route surfaces", () => {
       },
       lines: [
         {
+          productSnapshot: {
+            category: "adapters",
+            familyName: expect.any(String),
+            mediaKey: null,
+            productType: "adapter",
+            releaseId: expect.any(String),
+            releaseNumber: expect.any(String),
+            specs: expect.arrayContaining([
+              {
+                label: "Interface 1",
+                value: expect.any(String),
+              },
+            ]),
+            variantSelection: null,
+          },
           quantity: 100,
           refresh: {
             current: {
@@ -5429,7 +5444,7 @@ describe("Cloudflare Worker route surfaces", () => {
         kind: "individual",
       },
       submittedAt: expect.any(String),
-      version: 1,
+      version: 2,
     });
     expect(Date.parse(storedSnapshot.submittedAt)).not.toBeNaN();
     expect(storedSnapshot.amounts.merchandiseSubtotal).toBeGreaterThanOrEqual(
@@ -5941,9 +5956,26 @@ describe("Cloudflare Worker route surfaces", () => {
       lines: [
         {
           catalogReleaseId: "release-ticket49",
+          category: "adapters",
           currency: "USD",
           displayName: "JIC Straight Adapter",
+          id: "line-ticket49-standard",
           lineKind: "standard",
+          productSnapshot: {
+            category: "adapters",
+            familyName: "Straight JIC to NPT Adapter",
+            mediaKey: null,
+            productType: "adapter",
+            releaseId: "release-ticket49",
+            releaseNumber: "CAT-2026-09",
+            specs: [
+              { label: "Interface 1", value: "JIC 37°" },
+              { label: "Size 1", value: "-4" },
+              { label: "Interface 2", value: "NPT" },
+              { label: "Size 2", value: "1/4-18" },
+            ],
+            variantSelection: null,
+          },
           quantity: 2,
           referenceUnitPrice: 8.25,
           salesUnit: "piece",
@@ -5951,10 +5983,12 @@ describe("Cloudflare Worker route surfaces", () => {
         },
         {
           catalogReleaseId: "release-ticket49",
+          category: "hydraulic-hose",
           currency: "USD",
           cuttingLabelingFeeAmount: 4,
           cuttingLabelingFeeRate: 2,
           displayName: "601R1 Hydraulic Hose",
+          id: "line-ticket49-length-hose",
           lengthOrder: {
             normalizedLengthFt: 2.5,
             originalLengthUnit: "in",
@@ -5963,6 +5997,34 @@ describe("Cloudflare Worker route surfaces", () => {
             totalFootage: 5,
           },
           lineKind: "length_based_hose",
+          productSnapshot: {
+            category: "hydraulic-hose",
+            familyName: "601R1 Hydraulic Hose",
+            mediaKey: "601R1",
+            productType: "hose",
+            releaseId: "release-ticket49",
+            releaseNumber: "CAT-2026-09",
+            specs: [
+              { label: "Hose dash", value: "-4" },
+              { label: "Nominal ID", value: "0.25 in" },
+              { label: "Working pressure", value: "225 bar" },
+            ],
+            variantSelection: {
+              dash: "-4",
+              equivalentStandard: "EN 853 1SN",
+              hoseSeries: "601R1",
+              kind: "hose",
+              nominalIdIn: 0.25,
+              performance: {
+                temperatureMaxC: 100,
+                temperatureMinC: -40,
+                workingBar: 225,
+                workingPsi: 3260,
+              },
+              primaryStandard: "SAE 100R1AT",
+              reinforcement: "one-wire braid",
+            },
+          },
           quantity: 2,
           referenceUnitPrice: 3.5,
           salesUnit: "piece",
@@ -5970,6 +6032,7 @@ describe("Cloudflare Worker route surfaces", () => {
         },
         {
           catalogReleaseId: "release-ticket49",
+          category: "hydraulic-hose",
           configuredAssembly: {
             estimateBasis: {
               catalogReleaseId: "release-ticket49",
@@ -6057,6 +6120,7 @@ describe("Cloudflare Worker route surfaces", () => {
                   dash: "-6",
                   equivalentStandard: "EN 853 1SN",
                   familyName: "601R1 Hydraulic Hose",
+                  mediaKey: "601R1",
                   nominalIdIn: 0.375,
                   performance: {
                     temperatureMaxC: 100,
@@ -6105,6 +6169,7 @@ describe("Cloudflare Worker route surfaces", () => {
           },
           currency: "USD",
           displayName: "601R1 Hydraulic Hose Assembly",
+          id: "line-ticket49-assembly",
           lineKind: "configured_assembly",
           quantity: 3,
           referenceUnitPrice: 95.2,
@@ -6118,7 +6183,7 @@ describe("Cloudflare Worker route surfaces", () => {
         kind: "individual",
       },
       submittedAt: "2026-09-03T03:00:00.000Z",
-      version: 1,
+      version: 2,
     };
     const requestId = "ticket49-admin-review";
     runLocalD1(
@@ -6140,7 +6205,8 @@ describe("Cloudflare Worker route surfaces", () => {
     const queueResponse = await fetch(
       `${origin}/admin/quotes?technical=required&sort=technical_first`,
     );
-    const queueText = renderedText(await queueResponse.text());
+    const queueHtml = await queueResponse.text();
+    const queueText = renderedText(queueHtml);
     expect(queueResponse.status).toBe(200);
     expect(queueText).toContain("RFQ 审核队列");
     expect(queueText).toContain("QR-TICKET49-ADMIN");
@@ -6149,6 +6215,7 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(queueText).toContain("$432.10");
     expect(queueText).toContain("需要技术审核");
     expect(queueText).toContain("2026-09-03 11:00 北京时间");
+    expect(queueHtml).toContain("/images/catalog/hose/601R1-structure.jpg");
 
     const before = runLocalD1<{ snapshot_json: string }>(
       `SELECT snapshot_json FROM customer_quote_requests WHERE id = ${sqlText(requestId)}`,
@@ -6161,6 +6228,9 @@ describe("Cloudflare Worker route surfaces", () => {
       "length_based_hose",
       "configured_assembly",
       "ADP-TICKET49",
+      "产品参数（提交时快照）",
+      "胶管内径（Hose Inside Diameter）",
+      "0.25 in",
       "30 in",
       "FERRULE-A-TICKET49",
       "FERRULE-B-TICKET49",

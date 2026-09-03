@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Package } from "lucide-react";
 
 import {
   jsonArray,
@@ -7,6 +8,11 @@ import {
   jsonString,
 } from "../domain/admin-quote-review";
 import { AdminTechnicalTerm } from "../../admin/ui/admin-technical-term";
+import {
+  hoseEndMediaPath,
+  hoseEndMediaPathFromDisplayName,
+  hoseMediaPath,
+} from "../../storefront/ui/catalog-media";
 
 const missing = <span className="snapshot-missing">快照未记录</span>;
 
@@ -48,6 +54,129 @@ function connectionStandard(value: unknown): ReactNode {
       </AdminTechnicalTerm>
       {text.slice(match.index + term.length)}
     </>
+  );
+}
+
+interface SnapshotPreviewPart {
+  alt: string;
+  kind: "end" | "hose" | "product";
+  src: string | null;
+}
+
+function hoseSeriesFromSku(value: unknown) {
+  const sku = jsonString(value);
+  return sku?.split("_", 1)[0]?.trim() || null;
+}
+
+function snapshotPreviewParts(lineValue: unknown): SnapshotPreviewPart[] {
+  const line = jsonObject(lineValue);
+  if (!line) return [];
+  const product = jsonObject(line.productSnapshot);
+  if (line.lineKind === "configured_assembly") {
+    const configuration = jsonObject(
+      jsonPath(line, "configuredAssembly", "snapshot", "configuration"),
+    );
+    const endA = jsonObject(jsonPath(configuration, "endA", "hoseEnd"));
+    const hose = jsonObject(configuration?.hose);
+    const endB = jsonObject(jsonPath(configuration, "endB", "hoseEnd"));
+    return [
+      {
+        alt: `End A：${jsonString(endA?.displayName) ?? "图片未记录"}`,
+        kind: "end",
+        src: hoseEndMediaPath(jsonString(endA?.mediaKey)),
+      },
+      {
+        alt: `${jsonString(hose?.familyName) ?? "胶管"}图片`,
+        kind: "hose",
+        src: hoseMediaPath(jsonString(hose?.mediaKey)),
+      },
+      {
+        alt: `End B：${jsonString(endB?.displayName) ?? "图片未记录"}`,
+        kind: "end",
+        src: hoseEndMediaPath(jsonString(endB?.mediaKey)),
+      },
+    ];
+  }
+
+  const category = jsonString(line.category) ?? jsonString(product?.category);
+  const mediaKey = jsonString(product?.mediaKey);
+  const displayName = jsonString(line.displayName) ?? "商品";
+  if (category === "hydraulic-hose" || line.lineKind === "length_based_hose") {
+    return [
+      {
+        alt: `${displayName}图片`,
+        kind: "hose",
+        src: hoseMediaPath(mediaKey ?? hoseSeriesFromSku(line.sku)),
+      },
+    ];
+  }
+  if (category === "hose-ends") {
+    return [
+      {
+        alt: `${displayName}图片`,
+        kind: "product",
+        src:
+          hoseEndMediaPath(mediaKey) ??
+          hoseEndMediaPathFromDisplayName(displayName),
+      },
+    ];
+  }
+  return [{ alt: `${displayName}图片未记录`, kind: "product", src: null }];
+}
+
+function SnapshotPreviewImage({ part }: { part: SnapshotPreviewPart }) {
+  return (
+    <div className="customer-quote-preview-part" data-kind={part.kind}>
+      {part.src ? (
+        <img alt={part.alt} src={part.src} />
+      ) : (
+        <span aria-label={part.alt} className="customer-quote-preview-fallback">
+          <Package aria-hidden="true" size={20} />
+        </span>
+      )}
+    </div>
+  );
+}
+
+export function AdminQuoteRequestPreview({ snapshot }: { snapshot: unknown }) {
+  const lines = jsonArray(jsonPath(snapshot, "lines")) ?? [];
+  const visibleLines = lines.slice(0, 3);
+  return (
+    <div
+      aria-label={`提交商品图片，共 ${lines.length} 行`}
+      className="admin-quote-request-preview"
+      data-count={visibleLines.length}
+    >
+      {visibleLines.map((line, lineIndex) => {
+        const parts = snapshotPreviewParts(line);
+        return (
+          <figure
+            className="customer-quote-product-preview"
+            data-assembly={parts.length === 3 || undefined}
+            data-compact
+            key={lineIndex}
+          >
+            {parts.length > 0 ? (
+              parts.map((part, partIndex) => (
+                <SnapshotPreviewImage
+                  key={`${part.kind}-${partIndex}`}
+                  part={part}
+                />
+              ))
+            ) : (
+              <SnapshotPreviewImage
+                part={{ alt: "商品图片未记录", kind: "product", src: null }}
+              />
+            )}
+          </figure>
+        );
+      })}
+      {lines.length > visibleLines.length ? (
+        <span className="customer-quote-preview-more">
+          +{lines.length - visibleLines.length}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -398,6 +527,102 @@ function ConfiguredAssemblySnapshot({
   );
 }
 
+const productSpecLabels: Record<string, string> = {
+  "Body material": "主体材料",
+  "Body size": "主体尺寸",
+  "Catalog model": "目录型号",
+  Coating: "表面处理",
+  "Connection form 1": "连接形式 1",
+  "Connection form 2": "连接形式 2",
+  "Connection mechanism": "连接机构",
+  "Connection standard": "连接标准",
+  Cover: "外胶层",
+  "Equivalent standard": "等效标准",
+  "Ferrule series": "套筒系列",
+  "Fluid compatibility": "介质兼容性",
+  Form: "形式",
+  Gender: "公母形式",
+  "Hose construction": "胶管结构",
+  "Hose dash": "胶管 Dash 号",
+  "Hose tail dash": "管尾 Dash 号",
+  "Interface 1": "接口 1",
+  "Interface 2": "接口 2",
+  "Interface family": "接口系列",
+  "Interchange standard": "互换标准",
+  Material: "材料",
+  "Maximum working pressure": "最大工作压力",
+  "Minimum bend radius": "最小弯曲半径",
+  "Minimum bore": "最小通径",
+  "Minimum burst pressure": "最小爆破压力",
+  "Nominal ID": "胶管内径（Hose Inside Diameter）",
+  "Outside diameter": "外径",
+  "Port gender": "端口公母形式",
+  "Port interface": "端口接口",
+  "Port thread": "端口螺纹",
+  "Primary standard": "主要标准",
+  Reinforcement: "增强层",
+  Role: "角色",
+  "Seal material": "密封材料",
+  "Sealing form": "密封形式",
+  "Size 1": "尺寸 1",
+  "Size 2": "尺寸 2",
+  "Skive requirement": "剥胶要求",
+  "Temperature range": "温度范围",
+  Thread: "螺纹",
+  "Tube material": "内胶层材料",
+  "Unit weight": "单件重量",
+  Valving: "阀结构",
+  Weight: "重量",
+  "Working pressure": "工作压力",
+};
+
+function ProductParameterSnapshot({ line }: { line: Record<string, unknown> }) {
+  const product = jsonObject(line.productSnapshot);
+  if (!product) {
+    return (
+      <section className="admin-snapshot-subsection">
+        <h4>产品参数（提交时快照）</h4>
+        <p className="snapshot-warning">
+          该 RFQ 提交时尚未保存产品参数快照，不能使用当前目录数据反推。
+        </p>
+      </section>
+    );
+  }
+  const specs = jsonArray(product.specs) ?? [];
+  return (
+    <section className="admin-snapshot-subsection">
+      <h4>产品参数（提交时快照）</h4>
+      <SnapshotFields>
+        <SnapshotField
+          label="产品类型"
+          value={valueText(product.productType)}
+        />
+        <SnapshotField label="产品系列" value={valueText(product.familyName)} />
+        <SnapshotField
+          label="目录发布版本"
+          value={joined([product.releaseNumber, product.releaseId]) ?? missing}
+        />
+        {specs.map((specValue, index) => {
+          const spec = jsonObject(specValue);
+          const label = jsonString(spec?.label);
+          return (
+            <SnapshotField
+              key={`${label ?? "parameter"}-${index}`}
+              label={
+                label ? (productSpecLabels[label] ?? label) : "参数名称未记录"
+              }
+              value={valueText(spec?.value)}
+            />
+          );
+        })}
+      </SnapshotFields>
+      {specs.length === 0 ? (
+        <p className="snapshot-warning">该商品没有已保存的参数项。</p>
+      ) : null}
+    </section>
+  );
+}
+
 function LengthBasedSnapshot({ line }: { line: Record<string, unknown> }) {
   const length = jsonObject(line.lengthOrder);
   return (
@@ -498,8 +723,12 @@ export function AdminQuoteSnapshotLine({
       </SnapshotFields>
 
       {kind === "length_based_hose" ? (
-        <LengthBasedSnapshot line={line} />
+        <>
+          <ProductParameterSnapshot line={line} />
+          <LengthBasedSnapshot line={line} />
+        </>
       ) : null}
+      {kind === "standard" ? <ProductParameterSnapshot line={line} /> : null}
       {kind === "configured_assembly" ? (
         <ConfiguredAssemblySnapshot line={line} />
       ) : null}

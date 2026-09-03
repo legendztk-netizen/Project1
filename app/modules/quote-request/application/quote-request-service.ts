@@ -1,4 +1,5 @@
 import { createCustomerAccountService } from "../../customer-identity/application/customer-account-service";
+import { createD1PublicCatalogRepository } from "../../catalog/infrastructure/d1-public-catalog-repository";
 import {
   validatedDeliveryAddress,
   validatedOrganization,
@@ -12,6 +13,7 @@ import {
 import { evaluateRfqPreparation } from "../../quote-list/domain/rfq-preparation";
 import {
   individualDdpExpectationVersion,
+  captureQuoteRequestProductSnapshot,
   QuoteRequestRejected,
   organizationDapExpectationVersion,
   organizationDdpExpectationVersion,
@@ -48,6 +50,7 @@ export function createQuoteRequestService(
   } = {},
 ) {
   const quoteLists = createAnonymousQuoteListService(env, dependencies);
+  const catalog = createD1PublicCatalogRepository(env.DB);
   const accounts = createCustomerAccountService(env, dependencies);
   const repository = createD1QuoteRequestRepository(env.DB);
   const generateId = dependencies.generateId ?? (() => crypto.randomUUID());
@@ -194,6 +197,21 @@ export function createQuoteRequestService(
       );
     }
     const expectedCatalogReleaseId = [...currentReleaseIds][0]!;
+    const snapshotLines = await Promise.all(
+      selectedLines.map(async (line) => {
+        const product = await catalog.findItem(line.sku);
+        if (!product || product.releaseId !== expectedCatalogReleaseId) {
+          throw new QuoteRequestRejected(
+            "The catalog changed while this request was being prepared. Review the Quote List and try again.",
+            "LIST_CHANGED",
+          );
+        }
+        return {
+          ...line,
+          productSnapshot: captureQuoteRequestProductSnapshot(product),
+        };
+      }),
+    );
     const expectedLengthBasedHoseFees = selectedLines
       .filter((line) => line.lineKind === "length_based_hose")
       .map((line) => ({
@@ -265,7 +283,7 @@ export function createQuoteRequestService(
           fulfillmentTerm: "DDP",
           version: individualDdpExpectationVersion,
         },
-        lines: selectedLines,
+        lines: snapshotLines,
         purchasingContext: { ...purchasingContext, kind: "individual" },
         submittedAt: submittedAt.toISOString(),
         version: quoteRequestSnapshotVersion,
@@ -292,7 +310,7 @@ export function createQuoteRequestService(
         amounts,
         destination,
         importResponsibility,
-        lines: selectedLines,
+        lines: snapshotLines,
         purchasingContext: {
           ...purchasingContext,
           countryCode: organization.countryCode,

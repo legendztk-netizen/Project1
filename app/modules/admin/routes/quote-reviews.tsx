@@ -8,6 +8,7 @@ import {
   type AdminTechnicalReviewState,
 } from "../../quote-review/domain/admin-quote-review";
 import { createD1AdminQuoteReviewRepository } from "../../quote-review/infrastructure/d1-admin-quote-review-repository";
+import { AdminQuoteRequestPreview } from "../../quote-review/ui/admin-quote-snapshot";
 import { AdminNavigation } from "../ui/admin-navigation";
 import { AdminTechnicalTerm } from "../ui/admin-technical-term";
 import { requireAdminRequestContext } from "../infrastructure/admin-request-context";
@@ -150,6 +151,7 @@ export default function QuoteReviews({ loaderData }: Route.ComponentProps) {
                   </th>
                   <th>客户 / 采购主体</th>
                   <th>目的地</th>
+                  <th>商品图片</th>
                   <th>商品</th>
                   <th>参考商品金额</th>
                   <th>技术标记</th>
@@ -176,6 +178,9 @@ export default function QuoteReviews({ loaderData }: Route.ComponentProps) {
                       </span>
                     </td>
                     <td>{review.destinationSummary ?? "快照未记录"}</td>
+                    <td>
+                      <AdminQuoteRequestPreview snapshot={review.snapshot} />
+                    </td>
                     <td>{review.lineCount ?? "快照未记录"}</td>
                     <td>{money(review.merchandiseReferenceAmount)}</td>
                     <td>
