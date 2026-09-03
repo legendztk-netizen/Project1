@@ -7,6 +7,7 @@ import {
   verifyCloudflareAccessJwt,
   type AdminAccessBindings,
 } from "../workers/admin-access";
+import { adminOperationalPermissions } from "../app/modules/admin/infrastructure/admin-request-context";
 
 const deployedBindings: AdminAccessBindings = {
   ADMIN_AUTH_MODE: "cloudflare-access",
@@ -48,6 +49,17 @@ async function signedAccessToken(email: string) {
 }
 
 describe("Admin route boundary", () => {
+  it("allows both launch Admin accounts to maintain settings but reserves subaccount management for Owner", () => {
+    expect(adminOperationalPermissions(ownerIdentity)).toEqual({
+      canMaintainOperationalSettings: true,
+      canManageSubaccounts: true,
+    });
+    expect(adminOperationalPermissions(subaccountIdentity)).toEqual({
+      canMaintainOperationalSettings: true,
+      canManageSubaccounts: false,
+    });
+  });
+
   it.each([
     ["/admin", true],
     ["/admin.data", true],
@@ -57,6 +69,7 @@ describe("Admin route boundary", () => {
     ["/admin/catalog/releases", true],
     ["/admin/quotes", true],
     ["/admin/quotes/request-1", true],
+    ["/admin/settings/commercial", true],
     ["/administrator", false],
     ["/", false],
   ])("classifies %s", (pathname, expected) => {

@@ -338,6 +338,179 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(admin).toContain("local-development");
   });
 
+  it("versions Admin-only seller identity and payment instructions", async () => {
+    const settingsResponse = await fetch(`${origin}/admin/settings/commercial`);
+    const settings = await settingsResponse.text();
+    expect(settingsResponse.status).toBe(200);
+    expect(settings).toContain("Hangzhou Rongyao Trading Co., Ltd.");
+    expect(settings).toContain("542 Haggard St, Suite 505");
+    expect(settings).toContain("缺少正式注册地址");
+
+    const saveSeller = async (commandId: string, address: string) => {
+      const form = new FormData();
+      form.set("intent", "save_seller_identity");
+      form.set("commandId", commandId);
+      form.set("registeredAddressEn", address);
+      return fetch(`${origin}/admin/settings/commercial`, {
+        body: form,
+        method: "POST",
+        redirect: "manual",
+      });
+    };
+    const [firstSellerSave, duplicateSellerSave] = await Promise.all([
+      saveSeller(
+        "smoke-seller-v2",
+        "Room 101, Test Road, Hangzhou, Zhejiang 310000, China",
+      ),
+      saveSeller(
+        "smoke-seller-v2",
+        "Room 101, Test Road, Hangzhou, Zhejiang 310000, China",
+      ),
+    ]);
+    expect(firstSellerSave.status).toBe(302);
+    expect(duplicateSellerSave.status).toBe(302);
+    const [secondSellerSave, thirdSellerSave] = await Promise.all([
+      saveSeller(
+        "smoke-seller-v3",
+        "Room 202, New Test Road, Hangzhou, Zhejiang 310000, China",
+      ),
+      saveSeller(
+        "smoke-seller-v4",
+        "Room 303, Concurrent Road, Hangzhou, Zhejiang 310000, China",
+      ),
+    ]);
+    expect(secondSellerSave.status).toBe(302);
+    expect(thirdSellerSave.status).toBe(302);
+
+    const sellerVersions = runLocalD1<{
+      registered_address_en: string | null;
+      status: string;
+      version: number;
+    }>(
+      `SELECT version, registered_address_en, status
+       FROM seller_identity_versions ORDER BY version`,
+    );
+    expect(sellerVersions).toHaveLength(4);
+    expect(sellerVersions.map(({ status }) => status)).toEqual([
+      "superseded",
+      "superseded",
+      "superseded",
+      "current",
+    ]);
+    expect(sellerVersions[3]?.registered_address_en).toMatch(
+      /New Test Road|Concurrent Road/,
+    );
+    expect(
+      runLocalD1Failure(
+        `UPDATE seller_identity_versions
+         SET registered_address_en = 'tampered' WHERE version = 2`,
+      ),
+    ).toContain("seller identity versions are immutable");
+
+    const savePayment = async (
+      commandId: string,
+      instructions: string,
+      channel = "bank_transfer",
+    ) => {
+      const form = new FormData();
+      form.set("intent", "save_payment_instructions");
+      form.set("channel", channel);
+      form.set("commandId", commandId);
+      form.set("instructions", instructions);
+      return fetch(`${origin}/admin/settings/commercial`, {
+        body: form,
+        method: "POST",
+        redirect: "manual",
+      });
+    };
+    expect(
+      (
+        await savePayment(
+          "smoke-bank-v1",
+          "Beneficiary: Test One\nAccount: 111",
+        )
+      ).status,
+    ).toBe(302);
+    expect(
+      (
+        await savePayment(
+          "smoke-paypal-v1",
+          "PayPal account: billing.test@example.invalid",
+          "paypal",
+        )
+      ).status,
+    ).toBe(302);
+    expect(
+      (
+        await savePayment(
+          "smoke-bank-v2",
+          "Beneficiary: Test Two\nAccount: 222",
+        )
+      ).status,
+    ).toBe(302);
+
+    const paymentVersions = runLocalD1<{
+      instructions: string;
+      status: string;
+      version: number;
+    }>(
+      `SELECT version, instructions, status
+       FROM seller_payment_instruction_versions
+       WHERE channel = 'bank_transfer' ORDER BY version`,
+    );
+    expect(paymentVersions).toEqual([
+      {
+        instructions: "Beneficiary: Test One\nAccount: 111",
+        status: "superseded",
+        version: 1,
+      },
+      {
+        instructions: "Beneficiary: Test Two\nAccount: 222",
+        status: "current",
+        version: 2,
+      },
+    ]);
+    expect(
+      runLocalD1<{ channel: string; status: string; version: number }>(
+        `SELECT channel, status, version
+         FROM seller_payment_instruction_versions
+         WHERE status = 'current' ORDER BY channel`,
+      ),
+    ).toEqual([
+      { channel: "bank_transfer", status: "current", version: 2 },
+      { channel: "paypal", status: "current", version: 1 },
+    ]);
+    expect(
+      runLocalD1Failure(
+        `UPDATE seller_payment_instruction_versions
+         SET instructions = 'tampered' WHERE version = 1`,
+      ),
+    ).toContain("payment instruction versions are immutable");
+
+    const auditPayloads = runLocalD1<{ payload_json: string }>(
+      `SELECT payload_json FROM admin_audit_events
+       WHERE entity_type IN ('seller_identity_version', 'payment_instruction_version')`,
+    ).map(({ payload_json }) => payload_json);
+    expect(auditPayloads).toHaveLength(6);
+    expect(auditPayloads.join(" ")).not.toContain("Account: 111");
+    expect(auditPayloads.join(" ")).not.toContain("Account: 222");
+    expect(
+      runLocalD1<{ event_type: string }>(
+        `SELECT event_type FROM admin_audit_events
+         WHERE entity_type = 'payment_instruction_version'
+         ORDER BY occurred_at, id`,
+      ).map(({ event_type }) => event_type),
+    ).toEqual([
+      "payment_instructions.version_created",
+      "payment_instructions.version_created",
+      "payment_instructions.version_created",
+    ]);
+
+    const storefront = await (await fetch(origin)).text();
+    expect(storefront).not.toContain("Beneficiary: Test Two");
+    expect(storefront).not.toContain("542 Haggard St, Suite 505");
+  }, 30_000);
+
   it("registers and signs in through a single-use email OTP without leaking plaintext", async () => {
     const registerPage = await (await fetch(`${origin}/register`)).text();
     const signInPage = await (await fetch(`${origin}/sign-in`)).text();

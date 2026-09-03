@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 40,
+  "schemaVersion": 41,
   "migrations": [
     "0000_initial_catalog_release.sql",
     "0001_add_admin_identities.sql",
@@ -40,6 +40,7 @@
     "0036_account_owned_saved_configurations.sql",
     "0037_saved_configuration_command_idempotency.sql",
     "0038_immutable_individual_quote_requests.sql",
-    "0039_individual_quote_request_submission_guards.sql"
+    "0039_individual_quote_request_submission_guards.sql",
+    "0040_seller_commercial_settings.sql"
   ]
 }

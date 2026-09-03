@@ -47,7 +47,12 @@ const adminNavigation = [
     icon: Waypoints,
     to: "/admin/catalog/reference-data",
   },
-  { key: "system", label: "系统", icon: Settings },
+  {
+    key: "system",
+    label: "商业设置",
+    icon: Settings,
+    to: "/admin/settings/commercial",
+  },
 ] as const;
 
 export function AdminNavigation({ active }: { active: AdminNavigationKey }) {

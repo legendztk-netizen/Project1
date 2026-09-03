@@ -63,6 +63,10 @@ export default [
     "admin/quotes/:requestId",
     "modules/admin/routes/quote-review-detail.tsx",
   ),
+  route(
+    "admin/settings/commercial",
+    "modules/admin/routes/commercial-settings.tsx",
+  ),
   route("admin/catalog/import", "modules/admin/routes/catalog-import.tsx"),
   route("admin/catalog/review", "modules/admin/routes/catalog-review.tsx"),
   route("admin/catalog/releases", "modules/admin/routes/catalog-releases.tsx"),
