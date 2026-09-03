@@ -7,6 +7,7 @@ import {
   sellerIdentityReadyForPi,
   validatedEnglishChinaRegisteredAddress,
   validatedPaymentInstructions,
+  validatedReturnLocation,
   type PaymentInstructionVersion,
   type SellerIdentityVersion,
 } from "../app/modules/seller-settings/domain/seller-commercial-settings";
@@ -63,7 +64,7 @@ describe("Seller commercial settings", () => {
       validatedEnglishChinaRegisteredAddress(
         "542 Haggard St, Suite 505\nPlano, TX 75074\nUnited States",
       ),
-    ).toThrow("not the Plano return location");
+    ).toThrow("not a return location");
   });
 
   it("normalizes multiline payment instructions and rejects placeholders", () => {
@@ -86,5 +87,26 @@ describe("Seller commercial settings", () => {
     expect(paymentChannel("bank_transfer")).toBe("bank_transfer");
     expect(paymentChannel("paypal")).toBe("paypal");
     expect(() => paymentChannel("wire")).toThrow("Bank Transfer or PayPal");
+  });
+
+  it("validates editable return locations", () => {
+    expect(
+      validatedReturnLocation({
+        address: "  100 Test Street\r\n Dallas, TX 75001  ",
+        label: "  Dallas   Returns  ",
+        phone: " +1 555 0100 ",
+      }),
+    ).toEqual({
+      address: "100 Test Street\nDallas, TX 75001",
+      label: "Dallas Returns",
+      phone: "+1 555 0100",
+    });
+    expect(() =>
+      validatedReturnLocation({
+        address: "short",
+        label: "A",
+        phone: "1",
+      }),
+    ).toThrow("name must be 2-100 characters");
   });
 });

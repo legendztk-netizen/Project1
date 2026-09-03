@@ -1,4 +1,5 @@
 import {
+  RETURN_LOCATION_PURPOSE,
   SELLER_LEGAL_NAME,
   type PaymentChannel,
   type PaymentInstructionVersion,
@@ -98,6 +99,16 @@ export function createD1SellerCommercialSettingsRepository(
       )
       .all<PaymentInstructionRow>();
     return rows.results.map(paymentInstruction);
+  }
+
+  async function returnLocationCommand(commandId: string) {
+    return database
+      .prepare(
+        `SELECT location_id
+         FROM seller_return_location_commands WHERE command_id = ?`,
+      )
+      .bind(commandId)
+      .first<{ location_id: string }>();
   }
 
   return {
@@ -275,6 +286,101 @@ export function createD1SellerCommercialSettingsRepository(
         }
       }
       throw new Error("Payment Instructions version was not saved");
+    },
+
+    async saveReturnLocation(input: {
+      actorId: string;
+      address: string;
+      commandId: string;
+      id: string;
+      label: string;
+      mode: "create" | "update";
+      now: string;
+      phone: string;
+    }) {
+      const completed = await returnLocationCommand(input.commandId);
+      if (completed) return completed.location_id;
+
+      const existing = await database
+        .prepare(`SELECT id FROM seller_return_locations WHERE id = ?`)
+        .bind(input.id)
+        .first<{ id: string }>();
+      if (input.mode === "create" && existing) {
+        throw new Error("Return location already exists");
+      }
+      if (input.mode === "update" && !existing) {
+        throw new Error("Return location was not found");
+      }
+
+      const write =
+        input.mode === "create"
+          ? database
+              .prepare(
+                `INSERT INTO seller_return_locations (
+                   id, label, address, phone, purpose, updated_at
+                 ) VALUES (?, ?, ?, ?, ?, ?)`,
+              )
+              .bind(
+                input.id,
+                input.label,
+                input.address,
+                input.phone,
+                RETURN_LOCATION_PURPOSE,
+                input.now,
+              )
+          : database
+              .prepare(
+                `UPDATE seller_return_locations
+                 SET label = ?, address = ?, phone = ?, purpose = ?, updated_at = ?
+                 WHERE id = ?`,
+              )
+              .bind(
+                input.label,
+                input.address,
+                input.phone,
+                RETURN_LOCATION_PURPOSE,
+                input.now,
+                input.id,
+              );
+
+      try {
+        await database.batch([
+          write,
+          database
+            .prepare(
+              `INSERT INTO seller_return_location_commands (
+                 command_id, location_id, operation, actor_id, occurred_at
+               ) VALUES (?, ?, ?, ?, ?)`,
+            )
+            .bind(
+              input.commandId,
+              input.id,
+              input.mode,
+              input.actorId,
+              input.now,
+            ),
+          database
+            .prepare(
+              `INSERT INTO admin_audit_events (
+                 id, event_type, entity_type, entity_id, actor_id,
+                 payload_json, occurred_at
+               ) VALUES (?, ?, 'seller_return_location', ?, ?, ?, ?)`,
+            )
+            .bind(
+              `return-location:${input.commandId}`,
+              `seller_return_location.${input.mode}d`,
+              input.id,
+              input.actorId,
+              JSON.stringify({ label: input.label, operation: input.mode }),
+              input.now,
+            ),
+        ]);
+        return input.id;
+      } catch (error) {
+        const duplicate = await returnLocationCommand(input.commandId);
+        if (duplicate) return duplicate.location_id;
+        throw error;
+      }
     },
   };
 }

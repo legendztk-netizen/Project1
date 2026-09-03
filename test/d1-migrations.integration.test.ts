@@ -1061,6 +1061,7 @@ describe("real local D1 migration lifecycle", () => {
       "d1_migrations",
       "seller_identity_versions",
       "seller_payment_instruction_versions",
+      "seller_return_location_commands",
       "seller_return_locations",
     ];
     const tables = queryProjectD1<{ name: string }>(
@@ -1102,6 +1103,7 @@ describe("real local D1 migration lifecycle", () => {
         "d1_migrations",
         "seller_identity_versions",
         "seller_payment_instruction_versions",
+        "seller_return_location_commands",
         "seller_return_locations",
       ]),
     );

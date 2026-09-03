@@ -655,24 +655,40 @@ a {
   line-height: 1.45;
 }
 
-.return-location {
-  display: flex;
+.return-location-list {
+  display: grid;
   gap: 14px;
+}
+
+.return-location-editor {
   padding: 16px;
   border-left: 4px solid #31728a;
   background: #f3f7f8;
 }
 
-.return-location p {
-  margin: 8px 0 0;
-  white-space: pre-line;
+.return-location-editor-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 16px;
 }
 
-.return-location small {
-  display: block;
-  margin-top: 14px;
-  color: var(--muted);
-  line-height: 1.45;
+.return-location-add {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.return-location-add summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: #24667d;
+  font-weight: 750;
+}
+
+.return-location-add[open] summary {
+  margin-bottom: 16px;
 }
 
 .payment-settings {

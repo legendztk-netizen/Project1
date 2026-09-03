@@ -1,4 +1,6 @@
 export const SELLER_LEGAL_NAME = "Hangzhou Rongyao Trading Co., Ltd.";
+export const RETURN_LOCATION_PURPOSE =
+  "Approved returns only; not the seller registered address, warehouse, store, sales office, or pickup point.";
 
 export type PaymentChannel = "bank_transfer" | "paypal";
 export type VersionStatus = "current" | "superseded";
@@ -34,6 +36,12 @@ export interface SellerReturnLocation {
   purpose: string;
 }
 
+export interface ValidatedReturnLocation {
+  address: string;
+  label: string;
+  phone: string;
+}
+
 function normalizedMultiline(value: string) {
   return value
     .replaceAll("\r\n", "\n")
@@ -58,7 +66,7 @@ export function validatedEnglishChinaRegisteredAddress(value: string) {
     /\bUnited States\b|\bPlano\b|542\s+Haggard/iu.test(address)
   ) {
     throw new Error(
-      "Registered address must identify the China legal address, not the Plano return location",
+      "Registered address must identify the China legal address, not a return location",
     );
   }
   return address;
@@ -70,6 +78,26 @@ export function validatedPaymentInstructions(value: string) {
     throw new Error("Payment Instructions must be 5-4000 characters");
   }
   return instructions;
+}
+
+export function validatedReturnLocation(input: {
+  address: string;
+  label: string;
+  phone: string;
+}): ValidatedReturnLocation {
+  const label = input.label.trim().replaceAll(/\s+/gu, " ");
+  const address = normalizedMultiline(input.address);
+  const phone = input.phone.trim().replaceAll(/\s+/gu, " ");
+  if (label.length < 2 || label.length > 100) {
+    throw new Error("Return location name must be 2-100 characters");
+  }
+  if (address.length < 10 || address.length > 1000) {
+    throw new Error("Return address must be 10-1000 characters");
+  }
+  if (phone.length < 5 || phone.length > 50) {
+    throw new Error("Return contact phone must be 5-50 characters");
+  }
+  return { address, label, phone };
 }
 
 export function paymentChannel(value: string): PaymentChannel {

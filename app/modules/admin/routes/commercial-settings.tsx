@@ -1,4 +1,4 @@
-import { CircleAlert, Landmark, Save, ShieldCheck } from "lucide-react";
+import { CircleAlert, Landmark, Plus, Save, ShieldCheck } from "lucide-react";
 import { Form, redirect, useNavigation } from "react-router";
 
 import type { Route } from "./+types/commercial-settings";
@@ -9,6 +9,7 @@ import {
   sellerIdentityReadyForPi,
   validatedEnglishChinaRegisteredAddress,
   validatedPaymentInstructions,
+  validatedReturnLocation,
   type PaymentChannel,
 } from "../../seller-settings/domain/seller-commercial-settings";
 import { createD1SellerCommercialSettingsRepository } from "../../seller-settings/infrastructure/d1-seller-commercial-settings-repository";
@@ -34,7 +35,14 @@ export async function loader({ context, request }: Route.LoaderArgs) {
     adminIdentity,
     commandIds: {
       bankTransfer: crypto.randomUUID(),
+      newReturnLocation: crypto.randomUUID(),
       paypal: crypto.randomUUID(),
+      returnLocations: Object.fromEntries(
+        snapshot.returnLocations.map((location) => [
+          location.id,
+          crypto.randomUUID(),
+        ]),
+      ),
       seller: crypto.randomUUID(),
     },
     environment: env.APP_ENV,
@@ -78,6 +86,26 @@ export async function action({ context, request }: Route.ActionArgs) {
         now: new Date().toISOString(),
       });
       return redirect(`/admin/settings/commercial?saved=${channel}`);
+    }
+    if (intent === "save_return_location") {
+      const mode = formText(form, "mode") === "update" ? "update" : "create";
+      const location = validatedReturnLocation({
+        address: formText(form, "address"),
+        label: formText(form, "label"),
+        phone: formText(form, "phone"),
+      });
+      await repository.saveReturnLocation({
+        actorId: adminIdentity.id,
+        commandId,
+        id:
+          mode === "update"
+            ? formText(form, "locationId")
+            : crypto.randomUUID(),
+        mode,
+        now: new Date().toISOString(),
+        ...location,
+      });
+      return redirect("/admin/settings/commercial?saved=return-location");
     }
     throw new Error("Unknown commercial settings command");
   } catch (error) {
@@ -131,7 +159,10 @@ export default function CommercialSettings({
 
         {loaderData.saved ? (
           <p className="catalog-update-success" role="status">
-            <ShieldCheck size={17} /> 已创建新版本，旧版本保留只读。
+            <ShieldCheck size={17} />{" "}
+            {loaderData.saved === "return-location"
+              ? "退货地址已保存。"
+              : "已创建新版本，旧版本保留只读。"}
           </p>
         ) : null}
         {actionData?.formError ? (
@@ -177,29 +208,115 @@ export default function CommercialSettings({
                 />
               </label>
               <p className="field-note">
-                必须填写中国工商注册地址的英文版本。下方 Plano
-                退货地址不能代替此项。
+                必须填写中国工商注册地址的英文版本。右侧退货地址不能代替此项。
               </p>
               <SubmitButton>保存卖方身份新版本</SubmitButton>
             </Form>
           </article>
 
           <article className="admin-panel commercial-settings-panel return-location-panel">
-            <div>
-              <span className="eyebrow">Separate operational location</span>
-              <h2>Plano 退货地址</h2>
-            </div>
-            {snapshot.returnLocations.map((location) => (
-              <div className="return-location" key={location.id}>
-                <Landmark aria-hidden="true" size={22} />
-                <div>
-                  <strong>{location.label}</strong>
-                  <p>{location.address}</p>
-                  <p>{location.phone}</p>
-                  <small>{location.purpose}</small>
-                </div>
+            <div className="commercial-settings-heading">
+              <div>
+                <span className="eyebrow">Return locations</span>
+                <h2>退货地址</h2>
               </div>
-            ))}
+              <span className="settings-readiness ready">
+                {snapshot.returnLocations.length} 个地址
+              </span>
+            </div>
+            <p className="field-note">
+              可维护多个获批退货地点。这些地址仅用于退货，不能代替中国卖方注册地址。
+            </p>
+            <div className="return-location-list">
+              {snapshot.returnLocations.map((location) => (
+                <section className="return-location-editor" key={location.id}>
+                  <div className="return-location-editor-heading">
+                    <Landmark aria-hidden="true" size={20} />
+                    <strong>{location.label}</strong>
+                  </div>
+                  <Form method="post" className="commercial-settings-form">
+                    <input
+                      name="intent"
+                      type="hidden"
+                      value="save_return_location"
+                    />
+                    <input name="mode" type="hidden" value="update" />
+                    <input
+                      name="locationId"
+                      type="hidden"
+                      value={location.id}
+                    />
+                    <input
+                      name="commandId"
+                      type="hidden"
+                      value={loaderData.commandIds.returnLocations[location.id]}
+                    />
+                    <label>
+                      <span>地址名称</span>
+                      <input
+                        defaultValue={location.label}
+                        name="label"
+                        required
+                      />
+                    </label>
+                    <label>
+                      <span>完整退货地址</span>
+                      <textarea
+                        defaultValue={location.address}
+                        name="address"
+                        required
+                        rows={4}
+                      />
+                    </label>
+                    <label>
+                      <span>联系电话</span>
+                      <input
+                        defaultValue={location.phone}
+                        name="phone"
+                        required
+                      />
+                    </label>
+                    <p className="field-note">{location.purpose}</p>
+                    <SubmitButton>保存此地址</SubmitButton>
+                  </Form>
+                </section>
+              ))}
+            </div>
+            <details className="return-location-add">
+              <summary>
+                <Plus aria-hidden="true" size={17} /> 添加退货地址
+              </summary>
+              <Form method="post" className="commercial-settings-form">
+                <input
+                  name="intent"
+                  type="hidden"
+                  value="save_return_location"
+                />
+                <input name="mode" type="hidden" value="create" />
+                <input
+                  name="commandId"
+                  type="hidden"
+                  value={loaderData.commandIds.newReturnLocation}
+                />
+                <label>
+                  <span>地址名称</span>
+                  <input
+                    name="label"
+                    placeholder="例如：Plano Return Location"
+                    required
+                  />
+                </label>
+                <label>
+                  <span>完整退货地址</span>
+                  <textarea name="address" required rows={4} />
+                </label>
+                <label>
+                  <span>联系电话</span>
+                  <input name="phone" required />
+                </label>
+                <SubmitButton>添加地址</SubmitButton>
+              </Form>
+            </details>
           </article>
         </section>
 

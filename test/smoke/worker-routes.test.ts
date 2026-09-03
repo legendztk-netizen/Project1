@@ -345,6 +345,76 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(settings).toContain("Hangzhou Rongyao Trading Co., Ltd.");
     expect(settings).toContain("542 Haggard St, Suite 505");
     expect(settings).toContain("缺少正式注册地址");
+    expect(settings).toContain("添加退货地址");
+
+    const saveReturnLocation = async (input: {
+      address: string;
+      commandId: string;
+      label: string;
+      locationId?: string;
+      mode: "create" | "update";
+      phone: string;
+    }) => {
+      const form = new FormData();
+      form.set("intent", "save_return_location");
+      form.set("commandId", input.commandId);
+      form.set("mode", input.mode);
+      form.set("label", input.label);
+      form.set("address", input.address);
+      form.set("phone", input.phone);
+      if (input.locationId) form.set("locationId", input.locationId);
+      return fetch(`${origin}/admin/settings/commercial`, {
+        body: form,
+        method: "POST",
+        redirect: "manual",
+      });
+    };
+    expect(
+      (
+        await saveReturnLocation({
+          address: "542 Haggard St, Suite 506\nPlano, TX 75074\nUnited States",
+          commandId: "smoke-return-update",
+          label: "Plano Returns - Suite 506",
+          locationId: "plano-returns",
+          mode: "update",
+          phone: "+1 646 468 5429",
+        })
+      ).status,
+    ).toBe(302);
+    const secondReturnLocation = {
+      address: "100 Test Street\nDallas, TX 75001\nUnited States",
+      commandId: "smoke-return-create",
+      label: "Dallas Return Location",
+      mode: "create" as const,
+      phone: "+1 555 0100",
+    };
+    expect((await saveReturnLocation(secondReturnLocation)).status).toBe(302);
+    expect((await saveReturnLocation(secondReturnLocation)).status).toBe(302);
+    expect(
+      runLocalD1<{
+        address: string;
+        label: string;
+        phone: string;
+      }>(
+        `SELECT label, address, phone FROM seller_return_locations ORDER BY label`,
+      ),
+    ).toEqual([
+      {
+        address: "100 Test Street\nDallas, TX 75001\nUnited States",
+        label: "Dallas Return Location",
+        phone: "+1 555 0100",
+      },
+      {
+        address: "542 Haggard St, Suite 506\nPlano, TX 75074\nUnited States",
+        label: "Plano Returns - Suite 506",
+        phone: "+1 646 468 5429",
+      },
+    ]);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM seller_return_location_commands`,
+      ),
+    ).toEqual([{ count: 2 }]);
 
     const saveSeller = async (commandId: string, address: string) => {
       const form = new FormData();
@@ -508,7 +578,8 @@ describe("Cloudflare Worker route surfaces", () => {
 
     const storefront = await (await fetch(origin)).text();
     expect(storefront).not.toContain("Beneficiary: Test Two");
-    expect(storefront).not.toContain("542 Haggard St, Suite 505");
+    expect(storefront).not.toContain("542 Haggard St, Suite 506");
+    expect(storefront).not.toContain("Dallas Return Location");
   }, 30_000);
 
   it("registers and signs in through a single-use email OTP without leaking plaintext", async () => {
