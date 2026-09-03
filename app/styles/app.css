@@ -561,6 +561,419 @@ a {
   border-radius: 6px;
 }
 
+.admin-technical-term {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
+.admin-quote-review-page,
+.admin-quote-detail-page {
+  width: min(100%, 1540px);
+}
+
+.admin-quote-review-page .admin-topbar p,
+.admin-quote-detail-header p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.admin-quote-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 22px 0;
+}
+
+.admin-quote-metrics article {
+  display: grid;
+  min-height: 104px;
+  align-content: center;
+  gap: 5px;
+  padding: 17px 19px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.admin-quote-metrics span,
+.admin-quote-metrics small {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.admin-quote-metrics strong {
+  font-size: 1.45rem;
+}
+
+.admin-quote-filters {
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.admin-quote-filters > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.admin-quote-filters h2,
+.admin-quote-filters p {
+  margin: 0;
+}
+
+.admin-quote-filters h2 {
+  font-size: 1rem;
+}
+
+.admin-quote-filters p {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.admin-quote-filters form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr)) auto;
+  align-items: end;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.admin-quote-filters label {
+  display: grid;
+  gap: 7px;
+  color: #46545d;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.admin-quote-filters select {
+  min-height: 42px;
+  padding: 0 36px 0 11px;
+  border: 1px solid #aeb8bf;
+  border-radius: 5px;
+  color: var(--ink);
+  background: #ffffff;
+}
+
+.admin-quote-table-wrap {
+  margin-top: 18px;
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.admin-quote-table {
+  width: 100%;
+  min-width: 1120px;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.admin-quote-table th,
+.admin-quote-table td {
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.admin-quote-table th {
+  color: #53616b;
+  background: #f4f6f7;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.admin-quote-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.admin-quote-table td > strong,
+.admin-quote-table td > span:not(.admin-technical-state) {
+  display: block;
+}
+
+.admin-quote-table td > span:not(.admin-technical-state) {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.admin-quote-table .button {
+  min-width: 92px;
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+.admin-technical-state {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid #b8c1c6;
+  border-radius: 4px;
+  color: #43515a;
+  background: #f7f8f8;
+  font-size: 0.74rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.admin-technical-state.required {
+  color: #7d3d12;
+  background: #fff5e8;
+  border-color: #d8a16e;
+}
+
+.admin-technical-state.not_recorded {
+  color: #5b4e28;
+  background: #fffbe9;
+  border-color: #c8b86c;
+}
+
+.admin-quote-empty {
+  background: var(--surface);
+}
+
+.admin-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 18px;
+  color: #315f70;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.admin-quote-detail-header,
+.admin-quote-lines-section > header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.admin-quote-detail-header {
+  padding-bottom: 20px;
+  border-bottom: 1px solid #ccd3d7;
+}
+
+.admin-quote-detail-header h1 {
+  margin: 6px 0 0;
+  font-size: 1.8rem;
+}
+
+.admin-quote-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.admin-quote-section,
+.admin-quote-lines-section {
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.admin-quote-section h2,
+.admin-quote-lines-section h2 {
+  margin: 5px 0 16px;
+  font-size: 1.06rem;
+}
+
+.admin-snapshot-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 18px;
+  margin: 0;
+}
+
+.admin-snapshot-fields div {
+  min-width: 0;
+}
+
+.admin-snapshot-fields dt {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.admin-snapshot-fields dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 0.84rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.admin-quote-address {
+  display: grid;
+  gap: 5px;
+  color: #35434c;
+  font-size: 0.84rem;
+  font-style: normal;
+  line-height: 1.4;
+}
+
+.admin-quote-address small {
+  margin-top: 5px;
+  color: var(--muted);
+}
+
+.admin-technical-reasons,
+.admin-quote-lines-section,
+.admin-readonly-boundary {
+  margin-top: 16px;
+}
+
+.admin-technical-reasons {
+  border-left: 4px solid #c87828;
+}
+
+.admin-technical-reasons ul,
+.admin-review-issue-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.admin-quote-lines-section > header > span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.admin-quote-lines {
+  display: grid;
+  gap: 14px;
+}
+
+.admin-quote-line {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-left: 4px solid #5e727e;
+  border-radius: 5px;
+}
+
+.admin-quote-line > header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.admin-quote-line h3,
+.admin-snapshot-subsection h4 {
+  margin: 4px 0;
+}
+
+.admin-quote-line h3 {
+  font-size: 1rem;
+}
+
+.admin-quote-line header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.admin-line-number {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  color: #ffffff;
+  background: #5e727e;
+  border-radius: 50%;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.admin-configured-snapshot,
+.admin-snapshot-subsection {
+  margin-top: 18px;
+}
+
+.admin-snapshot-subsection {
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.admin-snapshot-subsection h4 {
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+
+.admin-snapshot-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.admin-review-issue-list {
+  margin-top: 15px;
+  color: #714313;
+}
+
+.admin-review-issue-list li span {
+  display: block;
+  margin-top: 2px;
+}
+
+.snapshot-missing,
+.snapshot-warning {
+  color: #87511d;
+  font-weight: 700;
+}
+
+.snapshot-note,
+.admin-readonly-boundary p {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.admin-raw-snapshot {
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.admin-raw-snapshot summary {
+  padding-top: 14px;
+  color: #315f70;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.admin-raw-snapshot pre {
+  max-height: 420px;
+  margin: 12px 0 0;
+  padding: 14px;
+  overflow: auto;
+  background: #171d21;
+  color: #e8edef;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .empty-state {
   display: flex;
   min-height: 180px;
@@ -2581,7 +2994,10 @@ a.customer-auth-switch {
 
   .family-grid,
   .featured-family,
-  .admin-metrics {
+  .admin-metrics,
+  .admin-quote-metrics,
+  .admin-quote-summary-grid,
+  .admin-snapshot-pair {
     grid-template-columns: 1fr;
   }
 
@@ -2644,8 +3060,16 @@ a.customer-auth-switch {
   .catalog-review-filters form,
   .reference-status-grid,
   .reference-data-columns,
-  .reference-data-form {
+  .reference-data-form,
+  .admin-quote-filters form,
+  .admin-snapshot-fields {
     grid-template-columns: 1fr;
+  }
+
+  .admin-quote-detail-header,
+  .admin-quote-lines-section > header {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .catalog-review-header,

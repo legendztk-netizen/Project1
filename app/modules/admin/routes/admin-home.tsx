@@ -3,17 +3,15 @@ import {
   Boxes,
   Database,
   FileUp,
-  LayoutDashboard,
   Rocket,
-  Settings,
   Waypoints,
 } from "lucide-react";
 import { Link } from "react-router";
 
 import type { Route } from "./+types/admin-home";
 import { createD1CatalogPublicationRepository } from "../../catalog/infrastructure/d1-catalog-publication-repository";
-import { BrandMark } from "../../shared/ui/brand-mark";
 import { requireAdminRequestContext } from "../infrastructure/admin-request-context";
+import { AdminNavigation } from "../ui/admin-navigation";
 
 export function meta() {
   return [{ title: "Admin Backoffice | Hydraulic Supply" }];
@@ -27,51 +25,10 @@ export async function loader({ context }: Route.LoaderArgs) {
   return { activeRelease, adminIdentity, environment: env.APP_ENV };
 }
 
-const adminNavigation = [
-  { label: "Overview", icon: LayoutDashboard },
-  { label: "Catalog", icon: Boxes, to: "/admin/catalog/review" },
-  { label: "Imports", icon: FileUp, to: "/admin/catalog/import" },
-  { label: "Releases", icon: Database, to: "/admin/catalog/releases" },
-  {
-    label: "Configurator Data",
-    icon: Waypoints,
-    to: "/admin/catalog/reference-data",
-  },
-  { label: "System", icon: Settings },
-];
-
 export default function AdminHome({ loaderData }: Route.ComponentProps) {
   return (
     <div className="admin-shell" data-surface="admin">
-      <aside className="admin-sidebar">
-        <BrandMark />
-        <nav aria-label="Admin navigation">
-          {adminNavigation.map(({ label, icon: Icon, to }) => {
-            const content = (
-              <>
-                <Icon size={18} />
-                {label}
-              </>
-            );
-            return to ? (
-              <Link className="admin-nav-item" key={label} to={to}>
-                {content}
-              </Link>
-            ) : (
-              <span
-                aria-current={label === "Overview" ? "page" : undefined}
-                className={`admin-nav-item${label === "Overview" ? " active" : ""}`}
-                key={label}
-              >
-                {content}
-              </span>
-            );
-          })}
-        </nav>
-        <Link className="admin-storefront-link" to="/">
-          Open storefront
-        </Link>
-      </aside>
+      <AdminNavigation active="overview" />
 
       <main className="admin-main">
         <header className="admin-topbar">

@@ -83,6 +83,10 @@ function renderedText(html: string) {
     .trim();
 }
 
+function sqlText(value: string) {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
 function otpChallengeFromHtml(html: string) {
   const challengeId = html.match(
     /name="challengeId"[^>]*value="([^"]+)"|value="([^"]+)"[^>]*name="challengeId"/,
@@ -5899,6 +5903,320 @@ describe("Cloudflare Worker route surfaces", () => {
     );
     expect(outsiderDetail.status).toBe(404);
   }, 120_000);
+
+  it("reviews immutable RFQ snapshots in the Admin queue", async () => {
+    const snapshot = {
+      acknowledgements: {
+        accuracyConfirmed: true,
+        commercialReviewConfirmed: true,
+        version: "organization-request-v1",
+      },
+      actor: {
+        email: "admin-review-buyer@example.com",
+        fullName: "Admin Review Buyer",
+        phoneNumber: "+1 212 555 0128",
+        verifiedAt: "2026-09-03T02:55:00.000Z",
+      },
+      amounts: {
+        currency: "USD",
+        merchandiseSubtotal: 432.1,
+        serviceFeeTotal: 12.5,
+      },
+      destination: {
+        addressLine1: "100 Broadway",
+        addressLine2: "Receiving Dock 4",
+        city: "New York",
+        countryCode: "US",
+        label: "Main receiving",
+        postalCode: "10005",
+        recipientEmail: "admin-review-buyer@example.com",
+        recipientName: "Admin Review Buyer",
+        recipientPhone: "+1 212 555 0128",
+        stateProvince: "NY",
+      },
+      importResponsibility: {
+        fulfillmentTerm: "DDP",
+        version: "individual-ddp-v1",
+      },
+      lines: [
+        {
+          catalogReleaseId: "release-ticket49",
+          currency: "USD",
+          displayName: "JIC Straight Adapter",
+          lineKind: "standard",
+          quantity: 2,
+          referenceUnitPrice: 8.25,
+          salesUnit: "piece",
+          sku: "ADP-TICKET49",
+        },
+        {
+          catalogReleaseId: "release-ticket49",
+          currency: "USD",
+          cuttingLabelingFeeAmount: 4,
+          cuttingLabelingFeeRate: 2,
+          displayName: "601R1 Hydraulic Hose",
+          lengthOrder: {
+            normalizedLengthFt: 2.5,
+            originalLengthUnit: "in",
+            originalLengthValue: 30,
+            pieceCount: 2,
+            totalFootage: 5,
+          },
+          lineKind: "length_based_hose",
+          quantity: 2,
+          referenceUnitPrice: 3.5,
+          salesUnit: "piece",
+          sku: "601R1_004",
+        },
+        {
+          catalogReleaseId: "release-ticket49",
+          configuredAssembly: {
+            estimateBasis: {
+              catalogReleaseId: "release-ticket49",
+              protectionRecordVersion: 4,
+              scheduleRecordVersion: 7,
+            },
+            snapshot: {
+              configuration: {
+                applicationRequirements: {
+                  fluidMedium: "Hydraulic oil",
+                  maximumWorkingPressure: {
+                    originalUnit: "psi",
+                    originalValue: 3000,
+                  },
+                  reviewReasons: ["Customer selected Not Sure for temperature"],
+                },
+                catalogRelease: {
+                  id: "release-ticket49",
+                  number: "CAT-2026-09",
+                },
+                clocking: {
+                  convention: {
+                    code: "M08",
+                    recordVersion: 3,
+                    rendererVersion: "clocking-v2",
+                  },
+                  standardToleranceDegrees: 3,
+                  status: "specified",
+                  targetDisplay: "090",
+                },
+                endA: {
+                  assemblyWorkingBar: 210,
+                  compatibilityId: "compat-a-ticket49",
+                  ferrule: {
+                    hoseConstruction: "one-wire braid",
+                    hoseTailDash: "-6",
+                    series: "00110",
+                    skiveRequirement: "non-skive",
+                    sku: "FERRULE-A-TICKET49",
+                  },
+                  hoseEnd: {
+                    angle: "0°",
+                    connectionDash: "-6",
+                    connectionStandard: "JIC 37°",
+                    displayName: "JIC Female Swivel Straight",
+                    hoseTailDash: "-6",
+                    sealingForm: "37° flare",
+                    sku: "END-A-TICKET49",
+                    thread: "9/16-18 UNF",
+                  },
+                },
+                endB: {
+                  assemblyWorkingBar: 210,
+                  compatibilityId: "compat-b-ticket49",
+                  ferrule: {
+                    hoseConstruction: "one-wire braid",
+                    hoseTailDash: "-6",
+                    series: "00110",
+                    skiveRequirement: "non-skive",
+                    sku: "FERRULE-B-TICKET49",
+                  },
+                  hoseEnd: {
+                    angle: "90°",
+                    connectionDash: "-6",
+                    connectionStandard: "BSPP",
+                    displayName: "BSPP Female Swivel 90°",
+                    hoseTailDash: "-6",
+                    sealingForm: "bonded seal",
+                    sku: "END-B-TICKET49",
+                    thread: "G 3/8-19",
+                  },
+                },
+                finishedLength: {
+                  canonicalMm: "762.000",
+                  manualReviewReasons: [],
+                  originalUnit: "in",
+                  originalValue: 30,
+                  path: "reference_quote",
+                  tolerance: {
+                    display: "±3/16 in",
+                    scheduleVersion: 2,
+                  },
+                },
+                hose: {
+                  dash: "-6",
+                  equivalentStandard: "EN 853 1SN",
+                  familyName: "601R1 Hydraulic Hose",
+                  nominalIdIn: 0.375,
+                  performance: {
+                    temperatureMaxC: 100,
+                    temperatureMinC: -40,
+                    workingBar: 180,
+                    workingPsi: 2610,
+                  },
+                  primaryStandard: "SAE 100R1AT",
+                  reinforcement: "one-wire braid",
+                  series: "601R1",
+                  sku: "601R1_004",
+                },
+                installedProtection: {
+                  code: "NYLON",
+                  publicName: "Nylon Protective Sleeving",
+                  recordVersion: 4,
+                },
+                measurementSelection: {
+                  diagram: {
+                    assetVersion: 5,
+                    overlayVersion: "overlay-v3",
+                  },
+                  method: {
+                    code: "M04",
+                    displayName: "Straight to 90 degree elbow",
+                    recordVersion: 6,
+                  },
+                  state: "selected",
+                },
+              },
+              review: {
+                issues: [
+                  {
+                    code: "APPLICATION-NOT-SURE",
+                    kind: "technical_review",
+                    message: "Confirm application temperature with customer.",
+                  },
+                ],
+                outcome: "technical_review",
+              },
+              sourceCatalogRelease: {
+                id: "release-ticket49",
+                number: "CAT-2026-09",
+              },
+            },
+          },
+          currency: "USD",
+          displayName: "601R1 Hydraulic Hose Assembly",
+          lineKind: "configured_assembly",
+          quantity: 3,
+          referenceUnitPrice: 95.2,
+          salesUnit: "assembly",
+          sku: "601R1_004",
+        },
+      ],
+      purchasingContext: {
+        id: "context-ticket49",
+        isSelected: true,
+        kind: "individual",
+      },
+      submittedAt: "2026-09-03T03:00:00.000Z",
+      version: 1,
+    };
+    const requestId = "ticket49-admin-review";
+    runLocalD1(
+      `INSERT INTO customer_quote_requests
+         (id, reference_number, profile_id, purchasing_context_id,
+          source_session_id, source_session_version, source_address_id,
+          purchasing_context_kind, fulfillment_term, currency,
+          merchandise_subtotal, service_fee_total, idempotency_key,
+          snapshot_json, submitted_at)
+       SELECT ${sqlText(requestId)}, 'QR-TICKET49-ADMIN', profile_id,
+              purchasing_context_id, source_session_id, source_session_version,
+              source_address_id, 'individual', 'DDP', 'USD', 432.1, 12.5,
+              'ticket49-admin-review-idempotency', ${sqlText(JSON.stringify(snapshot))},
+              '2026-09-03T03:00:00.000Z'
+       FROM customer_quote_requests
+       ORDER BY submitted_at LIMIT 1`,
+    );
+
+    const queueResponse = await fetch(
+      `${origin}/admin/quotes?technical=required&sort=technical_first`,
+    );
+    const queueText = renderedText(await queueResponse.text());
+    expect(queueResponse.status).toBe(200);
+    expect(queueText).toContain("RFQ 审核队列");
+    expect(queueText).toContain("QR-TICKET49-ADMIN");
+    expect(queueText).toContain("Admin Review Buyer");
+    expect(queueText).toContain("New York, NY, 10005, US");
+    expect(queueText).toContain("$432.10");
+    expect(queueText).toContain("需要技术审核");
+    expect(queueText).toContain("2026-09-03 11:00 北京时间");
+
+    const before = runLocalD1<{ snapshot_json: string }>(
+      `SELECT snapshot_json FROM customer_quote_requests WHERE id = ${sqlText(requestId)}`,
+    );
+    const detailResponse = await fetch(`${origin}/admin/quotes/${requestId}`);
+    const detailText = renderedText(await detailResponse.text());
+    expect(detailResponse.status).toBe(200);
+    for (const expected of [
+      "standard",
+      "length_based_hose",
+      "configured_assembly",
+      "ADP-TICKET49",
+      "30 in",
+      "FERRULE-A-TICKET49",
+      "FERRULE-B-TICKET49",
+      "M04",
+      "M08",
+      "090° clockwise",
+      "Nylon Protective Sleeving",
+      "CAT-2026-09",
+      "100 Broadway",
+      "Receiving Dock 4",
+      "2026-09-03 10:55 北京时间",
+      "2026-09-03 11:00 北京时间",
+      "Confirm application temperature with customer.",
+      "信息准确",
+      "DDP",
+    ]) {
+      expect(detailText).toContain(expected);
+    }
+
+    const writeAttempt = await fetch(`${origin}/admin/quotes/${requestId}`, {
+      method: "POST",
+    });
+    expect(writeAttempt.status).toBe(405);
+    expect(
+      runLocalD1<{ snapshot_json: string }>(
+        `SELECT snapshot_json FROM customer_quote_requests WHERE id = ${sqlText(requestId)}`,
+      ),
+    ).toEqual(before);
+
+    runLocalD1(
+      `INSERT INTO customer_quote_requests
+         (id, reference_number, profile_id, purchasing_context_id,
+          source_session_id, source_session_version, source_address_id,
+          purchasing_context_kind, fulfillment_term, currency,
+          merchandise_subtotal, service_fee_total, idempotency_key,
+          snapshot_json, submitted_at)
+       SELECT 'ticket49-legacy', 'QR-TICKET49-LEGACY', profile_id,
+              purchasing_context_id, source_session_id, source_session_version,
+              source_address_id, purchasing_context_kind, fulfillment_term,
+              currency, merchandise_subtotal, service_fee_total,
+              'ticket49-legacy-idempotency', '{"version":0}',
+              '2026-09-02T03:00:00.000Z'
+       FROM customer_quote_requests
+       ORDER BY submitted_at LIMIT 1`,
+    );
+    const legacyQueue = renderedText(
+      await (
+        await fetch(`${origin}/admin/quotes?technical=not_recorded`)
+      ).text(),
+    );
+    expect(legacyQueue).toContain("QR-TICKET49-LEGACY");
+    expect(legacyQueue).toContain("快照未记录");
+    const legacyDetail = await fetch(`${origin}/admin/quotes/ticket49-legacy`);
+    expect(legacyDetail.status).toBe(200);
+    expect(renderedText(await legacyDetail.text())).toContain("快照未记录");
+  }, 60_000);
 
   it("does not expose standalone email draft persistence", async () => {
     const saveResponse = await fetch(`${origin}/api/configurator/save-draft`, {

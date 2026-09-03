@@ -58,6 +58,11 @@ export default [
     "modules/storefront/routes/assembly-measurement-guide.tsx",
   ),
   route("admin", "modules/admin/routes/admin-home.tsx"),
+  route("admin/quotes", "modules/admin/routes/quote-reviews.tsx"),
+  route(
+    "admin/quotes/:requestId",
+    "modules/admin/routes/quote-review-detail.tsx",
+  ),
   route("admin/catalog/import", "modules/admin/routes/catalog-import.tsx"),
   route("admin/catalog/review", "modules/admin/routes/catalog-review.tsx"),
   route("admin/catalog/releases", "modules/admin/routes/catalog-releases.tsx"),

@@ -54,6 +54,8 @@ describe("Admin route boundary", () => {
     ["/admin/catalog", true],
     ["/admin/catalog/review", true],
     ["/admin/catalog/releases", true],
+    ["/admin/quotes", true],
+    ["/admin/quotes/request-1", true],
     ["/administrator", false],
     ["/", false],
   ])("classifies %s", (pathname, expected) => {
