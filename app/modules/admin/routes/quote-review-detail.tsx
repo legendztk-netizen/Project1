@@ -86,7 +86,6 @@ export default function QuoteReviewDetail({
   const importResponsibility = jsonObject(
     jsonPath(snapshot, "importResponsibility"),
   );
-  const acknowledgements = jsonObject(jsonPath(snapshot, "acknowledgements"));
   const lines = jsonArray(jsonPath(snapshot, "lines"));
 
   return (
@@ -179,24 +178,6 @@ export default function QuoteReviewDetail({
           <section className="admin-quote-section">
             <span className="eyebrow">客户确认</span>
             <h2>客户提交确认</h2>
-            <dl className="admin-snapshot-fields">
-              <SnapshotField
-                label="信息准确"
-                value={text(acknowledgements?.accuracyConfirmed)}
-              />
-              <SnapshotField
-                label="接受报价审核"
-                value={text(acknowledgements?.commercialReviewConfirmed)}
-              />
-              <SnapshotField
-                label="确认规则版本"
-                value={text(acknowledgements?.version)}
-              />
-              <SnapshotField
-                label="快照提交时间"
-                value={adminTimestamp(jsonPath(snapshot, "submittedAt"))}
-              />
-            </dl>
           </section>
         </div>
 

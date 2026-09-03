@@ -6011,6 +6011,14 @@ describe("Cloudflare Worker route surfaces", () => {
               { label: "Hose dash", value: "-4" },
               { label: "Nominal ID", value: "0.25 in" },
               { label: "Working pressure", value: "225 bar" },
+              { label: "Reinforcement", value: "one-wire braid" },
+              { label: "Tube material", value: "synthetic rubber" },
+              { label: "Cover", value: "weather-resistant rubber" },
+              { label: "Minimum bend radius", value: "100 mm" },
+              { label: "Temperature range", value: "-40°C to 100°C" },
+              { label: "Minimum burst pressure", value: "900 bar" },
+              { label: "Weight", value: "0.23 kg/m" },
+              { label: "Fluid compatibility", value: "Hydraulic oil" },
             ],
             variantSelection: {
               dash: "-4",
@@ -6224,7 +6232,8 @@ describe("Cloudflare Worker route surfaces", () => {
       `SELECT snapshot_json FROM customer_quote_requests WHERE id = ${sqlText(requestId)}`,
     );
     const detailResponse = await fetch(`${origin}/admin/quotes/${requestId}`);
-    const detailText = renderedText(await detailResponse.text());
+    const detailHtml = await detailResponse.text();
+    const detailText = renderedText(detailHtml);
     expect(detailResponse.status).toBe(200);
     for (const expected of [
       "standard",
@@ -6241,6 +6250,7 @@ describe("Cloudflare Worker route surfaces", () => {
       "M04",
       "M08",
       "090° clockwise",
+      "角度公差",
       "Nylon Protective Sleeving",
       "CAT-2026-09",
       "100 Broadway",
@@ -6248,10 +6258,37 @@ describe("Cloudflare Worker route surfaces", () => {
       "2026-09-03 10:55 北京时间",
       "2026-09-03 11:00 北京时间",
       "Confirm application temperature with customer.",
-      "信息准确",
       "DDP",
     ]) {
       expect(detailText).toContain(expected);
+    }
+    expect(detailHtml).toContain(
+      'aria-label="Double-elbow Clocking 090 degrees.',
+    );
+    expect(detailHtml).toContain("/images/catalog/hose/601R1-structure.jpg");
+    for (const hiddenLabel of [
+      "信息准确",
+      "接受报价审核",
+      "确认规则版本",
+      "快照提交时间",
+      "增强层",
+      "内胶层材料",
+      "外胶层",
+      "最小弯曲半径",
+      "温度范围",
+      "最小爆破压力",
+      "重量",
+      "介质兼容性",
+      "测量版本",
+      "长度审核路径",
+      "保护层与应用参数",
+      "保护层版本",
+      "介质",
+      "最大工作压力",
+      "工作温度",
+      "应用审核原因",
+    ]) {
+      expect(detailText).not.toContain(hiddenLabel);
     }
 
     const writeAttempt = await fetch(`${origin}/admin/quotes/${requestId}`, {

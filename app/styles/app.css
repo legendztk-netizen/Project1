@@ -904,6 +904,18 @@ a {
   margin-bottom: 18px;
 }
 
+.admin-quote-line .admin-quote-line-preview {
+  width: min(32vw, 300px);
+  height: 86px;
+  flex: 0 1 300px;
+  margin-left: auto;
+}
+
+.admin-clocking-preview {
+  width: min(100%, 560px);
+  margin-top: 16px;
+}
+
 .admin-quote-line h3,
 .admin-snapshot-subsection h4 {
   margin: 4px 0;
@@ -3100,6 +3112,16 @@ a.customer-auth-switch {
   .admin-quote-lines-section > header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .admin-quote-line > header {
+    flex-wrap: wrap;
+  }
+
+  .admin-quote-line .admin-quote-line-preview {
+    width: 100%;
+    flex-basis: 100%;
+    margin-left: 42px;
   }
 
   .catalog-review-header,

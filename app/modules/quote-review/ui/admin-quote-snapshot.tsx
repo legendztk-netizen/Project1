@@ -13,6 +13,8 @@ import {
   hoseEndMediaPathFromDisplayName,
   hoseMediaPath,
 } from "../../storefront/ui/catalog-media";
+import { M08ClockingPreview } from "../../storefront/ui/m08-clocking-preview";
+import "../../storefront/styles/clocking-preview.css";
 
 const missing = <span className="snapshot-missing">快照未记录</span>;
 
@@ -32,6 +34,19 @@ function joined(values: unknown[], separator = " · ") {
     return [];
   });
   return parts.length > 0 ? parts.join(separator) : null;
+}
+
+function submittedClockingAngle(clocking: Record<string, unknown> | null) {
+  if (clocking?.status !== "specified") return null;
+  const storedDegrees = clocking.targetDegrees;
+  const displayDegrees = jsonString(clocking.targetDisplay);
+  const angle =
+    typeof storedDegrees === "number"
+      ? storedDegrees
+      : displayDegrees && /^\d{1,3}$/u.test(displayDegrees)
+        ? Number(displayDegrees)
+        : Number.NaN;
+  return Number.isInteger(angle) && angle >= 0 && angle <= 359 ? angle : null;
 }
 
 function connectionStandard(value: unknown): ReactNode {
@@ -138,6 +153,33 @@ function SnapshotPreviewImage({ part }: { part: SnapshotPreviewPart }) {
   );
 }
 
+function SnapshotProductPreview({
+  className,
+  line,
+}: {
+  className?: string;
+  line: unknown;
+}) {
+  const parts = snapshotPreviewParts(line);
+  return (
+    <figure
+      className={`customer-quote-product-preview${className ? ` ${className}` : ""}`}
+      data-assembly={parts.length === 3 || undefined}
+      data-compact
+    >
+      {parts.length > 0 ? (
+        parts.map((part, partIndex) => (
+          <SnapshotPreviewImage key={`${part.kind}-${partIndex}`} part={part} />
+        ))
+      ) : (
+        <SnapshotPreviewImage
+          part={{ alt: "商品图片未记录", kind: "product", src: null }}
+        />
+      )}
+    </figure>
+  );
+}
+
 export function AdminQuoteRequestPreview({ snapshot }: { snapshot: unknown }) {
   const lines = jsonArray(jsonPath(snapshot, "lines")) ?? [];
   const visibleLines = lines.slice(0, 3);
@@ -148,28 +190,7 @@ export function AdminQuoteRequestPreview({ snapshot }: { snapshot: unknown }) {
       data-count={visibleLines.length}
     >
       {visibleLines.map((line, lineIndex) => {
-        const parts = snapshotPreviewParts(line);
-        return (
-          <figure
-            className="customer-quote-product-preview"
-            data-assembly={parts.length === 3 || undefined}
-            data-compact
-            key={lineIndex}
-          >
-            {parts.length > 0 ? (
-              parts.map((part, partIndex) => (
-                <SnapshotPreviewImage
-                  key={`${part.kind}-${partIndex}`}
-                  part={part}
-                />
-              ))
-            ) : (
-              <SnapshotPreviewImage
-                part={{ alt: "商品图片未记录", kind: "product", src: null }}
-              />
-            )}
-          </figure>
-        );
+        return <SnapshotProductPreview key={lineIndex} line={line} />;
       })}
       {lines.length > visibleLines.length ? (
         <span className="customer-quote-preview-more">
@@ -281,23 +302,17 @@ function ConfiguredAssemblySnapshot({
   const snapshot = jsonObject(assembly?.snapshot);
   const configuration = jsonObject(snapshot?.configuration);
   const hose = jsonObject(configuration?.hose);
-  const performance = jsonObject(hose?.performance);
   const measurement = jsonObject(configuration?.measurementSelection);
   const method = jsonObject(measurement?.method);
-  const diagram = jsonObject(measurement?.diagram);
   const length = jsonObject(configuration?.finishedLength);
   const tolerance = jsonObject(length?.tolerance);
   const clocking = jsonObject(configuration?.clocking);
-  const convention = jsonObject(clocking?.convention);
   const protection = jsonObject(configuration?.installedProtection);
-  const application = jsonObject(configuration?.applicationRequirements);
-  const maxPressure = jsonObject(application?.maximumWorkingPressure);
-  const minTemperature = jsonObject(application?.minimumOperatingTemperature);
-  const maxTemperature = jsonObject(application?.maximumOperatingTemperature);
   const review = jsonObject(snapshot?.review);
   const issues = jsonArray(review?.issues) ?? [];
   const sourceRelease = jsonObject(snapshot?.sourceCatalogRelease);
   const estimate = jsonObject(assembly?.estimateBasis);
+  const clockingAngle = submittedClockingAngle(clocking);
 
   return (
     <div className="admin-configured-snapshot">
@@ -334,27 +349,6 @@ function ConfiguredAssemblySnapshot({
               missing
             }
           />
-          <SnapshotField
-            label="增强层"
-            value={valueText(hose?.reinforcement)}
-          />
-          <SnapshotField
-            label="胶管性能"
-            value={
-              joined([
-                typeof performance?.workingBar === "number"
-                  ? `${performance.workingBar} bar`
-                  : null,
-                typeof performance?.workingPsi === "number"
-                  ? `${performance.workingPsi} psi`
-                  : null,
-                typeof performance?.temperatureMinC === "number" &&
-                typeof performance?.temperatureMaxC === "number"
-                  ? `${performance.temperatureMinC}–${performance.temperatureMaxC} °C`
-                  : null,
-              ]) ?? missing
-            }
-          />
         </SnapshotFields>
       </section>
 
@@ -387,93 +381,44 @@ function ConfiguredAssemblySnapshot({
             }
           />
           <SnapshotField
-            label="测量版本"
-            value={
-              joined([
-                method?.recordVersion,
-                diagram?.assetVersion,
-                diagram?.overlayVersion,
-              ]) ?? missing
-            }
-          />
-          <SnapshotField
             label="长度公差"
             value={
               joined([tolerance?.display, tolerance?.scheduleVersion]) ??
               missing
             }
           />
-          <SnapshotField
-            label="长度审核路径"
-            value={
-              joined([
-                length?.path,
-                ...(jsonArray(length?.manualReviewReasons) ?? []),
-              ]) ?? missing
-            }
-          />
-          <SnapshotField
-            label="接头相对角度"
-            value={
-              clocking?.status === "specified"
-                ? `${valueText(clocking.targetDisplay)}° clockwise · ±${valueText(clocking.standardToleranceDegrees)}°`
-                : clocking?.status === "not_sure"
-                  ? "Not Sure · 需要人工确认"
-                  : "不适用或快照未记录"
-            }
-          />
-          <SnapshotField
-            label="角度规则版本"
-            value={
-              joined([
-                convention?.code,
-                convention?.recordVersion,
-                convention?.rendererVersion,
-              ]) ?? missing
-            }
-          />
+          {clocking?.status === "specified" ? (
+            <>
+              <SnapshotField
+                label="接头相对角度"
+                value={`${valueText(clocking.targetDisplay)}° clockwise`}
+              />
+              <SnapshotField
+                label="角度公差"
+                value={`±${valueText(clocking.standardToleranceDegrees)}°`}
+              />
+            </>
+          ) : clocking?.status === "not_sure" ? (
+            <SnapshotField
+              label="接头相对角度"
+              value="Not Sure · 需要人工确认"
+            />
+          ) : null}
         </SnapshotFields>
+        {clockingAngle !== null ? (
+          <div className="admin-clocking-preview">
+            <M08ClockingPreview angle={clockingAngle} />
+          </div>
+        ) : null}
       </section>
 
       <section className="admin-snapshot-subsection">
-        <h4>保护层与应用参数</h4>
+        <h4>保护层</h4>
         <SnapshotFields>
           <SnapshotField
             label="已安装保护层"
             value={
               joined([protection?.code, protection?.publicName]) ?? missing
-            }
-          />
-          <SnapshotField
-            label="保护层版本"
-            value={valueText(protection?.recordVersion)}
-          />
-          <SnapshotField
-            label="介质"
-            value={valueText(application?.fluidMedium)}
-          />
-          <SnapshotField
-            label="最大工作压力"
-            value={
-              joined([maxPressure?.originalValue, maxPressure?.originalUnit]) ??
-              "未提供（Optional）"
-            }
-          />
-          <SnapshotField
-            label="工作温度"
-            value={
-              joined([
-                minTemperature?.originalValue,
-                maxTemperature?.originalValue,
-                minTemperature?.originalUnit,
-              ]) ?? "未提供（Optional）"
-            }
-          />
-          <SnapshotField
-            label="应用审核原因"
-            value={
-              joined(jsonArray(application?.reviewReasons) ?? []) ??
-              "未提供（Optional）"
             }
           />
         </SnapshotFields>
@@ -576,6 +521,20 @@ const productSpecLabels: Record<string, string> = {
   "Working pressure": "工作压力",
 };
 
+const hiddenProductSpecs = new Set([
+  "Cover",
+  "Fluid compatibility",
+  "Maximum working pressure",
+  "Minimum bend radius",
+  "Minimum burst pressure",
+  "Reinforcement",
+  "Temperature range",
+  "Tube material",
+  "Unit weight",
+  "Weight",
+  "Working pressure",
+]);
+
 function ProductParameterSnapshot({ line }: { line: Record<string, unknown> }) {
   const product = jsonObject(line.productSnapshot);
   if (!product) {
@@ -588,7 +547,12 @@ function ProductParameterSnapshot({ line }: { line: Record<string, unknown> }) {
       </section>
     );
   }
-  const specs = jsonArray(product.specs) ?? [];
+  const savedSpecs = jsonArray(product.specs) ?? [];
+  const specs = savedSpecs.filter((specValue) => {
+    const spec = jsonObject(specValue);
+    const label = jsonString(spec?.label);
+    return !label || !hiddenProductSpecs.has(label);
+  });
   return (
     <section className="admin-snapshot-subsection">
       <h4>产品参数（提交时快照）</h4>
@@ -598,10 +562,6 @@ function ProductParameterSnapshot({ line }: { line: Record<string, unknown> }) {
           value={valueText(product.productType)}
         />
         <SnapshotField label="产品系列" value={valueText(product.familyName)} />
-        <SnapshotField
-          label="目录发布版本"
-          value={joined([product.releaseNumber, product.releaseId]) ?? missing}
-        />
         {specs.map((specValue, index) => {
           const spec = jsonObject(specValue);
           const label = jsonString(spec?.label);
@@ -616,7 +576,7 @@ function ProductParameterSnapshot({ line }: { line: Record<string, unknown> }) {
           );
         })}
       </SnapshotFields>
-      {specs.length === 0 ? (
+      {savedSpecs.length === 0 ? (
         <p className="snapshot-warning">该商品没有已保存的参数项。</p>
       ) : null}
     </section>
@@ -694,6 +654,10 @@ export function AdminQuoteSnapshotLine({
             {valueText(line.sku)}
           </p>
         </div>
+        <SnapshotProductPreview
+          className="admin-quote-line-preview"
+          line={line}
+        />
       </header>
 
       <SnapshotFields>
