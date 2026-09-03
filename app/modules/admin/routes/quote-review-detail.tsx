@@ -44,6 +44,13 @@ function adminTimestamp(value: unknown) {
     : text(value);
 }
 
+function snapshotVersionLabel(snapshot: unknown) {
+  const version = jsonPath(snapshot, "version");
+  if (version === 2) return "版本 2 · 含产品参数快照";
+  if (version === 1) return "版本 1 · 旧快照（未保存产品参数）";
+  return text(version);
+}
+
 function address(snapshot: unknown) {
   const value = jsonObject(jsonPath(snapshot, "destination"));
   if (!value) return <p className="snapshot-warning">目的地资料快照未记录。</p>;
@@ -164,7 +171,7 @@ export default function QuoteReviewDetail({
               />
               <SnapshotField
                 label="询价快照版本"
-                value={text(jsonPath(snapshot, "version"))}
+                value={snapshotVersionLabel(snapshot)}
               />
             </dl>
           </section>

@@ -54,7 +54,11 @@ export class AdminAccessDenied extends Error {
 }
 
 export function isAdminPath(pathname: string) {
-  return pathname === "/admin" || pathname.startsWith("/admin/");
+  return (
+    pathname === "/admin" ||
+    pathname === "/admin.data" ||
+    pathname.startsWith("/admin/")
+  );
 }
 
 function normalizedTeamDomain(teamDomain: string) {

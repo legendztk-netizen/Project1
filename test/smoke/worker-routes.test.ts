@@ -313,12 +313,15 @@ describe("Cloudflare Worker route surfaces", () => {
   });
 
   it("keeps the Storefront and Admin shells distinct", async () => {
-    const [storefrontResponse, adminResponse] = await Promise.all([
-      fetch(origin),
-      fetch(`${origin}/admin`),
-    ]);
+    const [storefrontResponse, adminResponse, adminDataResponse] =
+      await Promise.all([
+        fetch(origin),
+        fetch(`${origin}/admin`),
+        fetch(`${origin}/admin.data`),
+      ]);
     expect(storefrontResponse.status).toBe(200);
     expect(adminResponse.status).toBe(200);
+    expect(adminDataResponse.status).toBe(200);
 
     const [storefront, admin] = await Promise.all([
       storefrontResponse.text(),
@@ -6229,6 +6232,7 @@ describe("Cloudflare Worker route surfaces", () => {
       "configured_assembly",
       "ADP-TICKET49",
       "产品参数（提交时快照）",
+      "版本 2 · 含产品参数快照",
       "胶管内径（Hose Inside Diameter）",
       "0.25 in",
       "30 in",
@@ -6271,7 +6275,7 @@ describe("Cloudflare Worker route surfaces", () => {
               purchasing_context_id, source_session_id, source_session_version,
               source_address_id, purchasing_context_kind, fulfillment_term,
               currency, merchandise_subtotal, service_fee_total,
-              'ticket49-legacy-idempotency', '{"version":0}',
+              'ticket49-legacy-idempotency', '{"version":1}',
               '2026-09-02T03:00:00.000Z'
        FROM customer_quote_requests
        ORDER BY submitted_at LIMIT 1`,
@@ -6285,7 +6289,9 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(legacyQueue).toContain("快照未记录");
     const legacyDetail = await fetch(`${origin}/admin/quotes/ticket49-legacy`);
     expect(legacyDetail.status).toBe(200);
-    expect(renderedText(await legacyDetail.text())).toContain("快照未记录");
+    const legacyDetailText = renderedText(await legacyDetail.text());
+    expect(legacyDetailText).toContain("快照未记录");
+    expect(legacyDetailText).toContain("版本 1 · 旧快照（未保存产品参数）");
   }, 60_000);
 
   it("does not expose standalone email draft persistence", async () => {

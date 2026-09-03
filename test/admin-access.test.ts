@@ -50,6 +50,7 @@ async function signedAccessToken(email: string) {
 describe("Admin route boundary", () => {
   it.each([
     ["/admin", true],
+    ["/admin.data", true],
     ["/admin/", true],
     ["/admin/catalog", true],
     ["/admin/catalog/review", true],
