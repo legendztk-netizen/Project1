@@ -98,7 +98,7 @@ function draftSummary(draft: ValidatedCatalogDraft): CatalogImportSummary {
     ).length,
     ferruleCount: draft.ferrules.length,
     hoseEndCount: draft.hoseEnds.length,
-    hoseSeriesCount: draft.hoseSeries.length,
+    hoseSeriesCount: draft.hoseSeriesRecords.length,
     hoseVariantCount: draft.hoseVariants.length,
     quickCouplerCount: draft.quickCouplers.length,
     referencePriceCount: draft.salesOffers.filter(

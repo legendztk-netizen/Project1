@@ -178,19 +178,19 @@ export interface HoseVariantDraft {
 }
 
 export interface HoseSeriesDraft {
-  coverColor: string;
+  coverColor: string | null;
   coverFinish: string | null;
-  coverMaterial: string;
+  coverMaterial: string | null;
   equivalentStandard: string;
-  fluidCompatibility: string;
+  fluidCompatibility: string | null;
   mainImageReference: string;
   primaryStandard: string;
-  reinforcement: string;
+  reinforcement: string | null;
   seriesCode: string;
   seriesName: string;
   tempMaxC: number;
   tempMinC: number;
-  tubeMaterial: string;
+  tubeMaterial: string | null;
 }
 
 export interface HoseEndDraft {
@@ -292,7 +292,6 @@ export interface ValidatedCatalogDraft {
   ferrules: FerruleDraft[];
   hoseEnds: HoseEndDraft[];
   hoseEndSeries: HoseEndSeriesDraft[];
-  hoseSeries: string[];
   hoseSeriesRecords: HoseSeriesDraft[];
   hoseVariants: HoseVariantDraft[];
   quickCouplers: QuickCouplerDraft[];
@@ -442,7 +441,7 @@ export const catalogWorksheetContracts: readonly CatalogWorksheetContract[] = [
         "EN4SH",
       ]),
       textField("primaryStandard", "* Primary Standard / 主标准", true),
-      textField("equivalentStandard", "Equivalent Standard / 等效标准", false),
+      textField("equivalentStandard", "* Equivalent Standard / 等效标准", true),
       textField("dash", "* Hose Dash / 胶管Dash", true, DASH_VALUES),
       numberField("nominalIdIn", "* Nominal ID in / 公称内径英寸", true),
       numberField("idMm", "* ID mm / 内径毫米", true),
@@ -454,10 +453,10 @@ export const catalogWorksheetContracts: readonly CatalogWorksheetContract[] = [
       numberField("weightKgM", "* Weight kg/m / 米重", true),
       numberField("tempMinC", "* Temp Min °C / 最低温度", true),
       numberField("tempMaxC", "* Temp Max °C / 最高温度", true),
-      textField("tubeMaterial", "* Tube Material / 内胶材料", true),
-      textField("reinforcement", "* Reinforcement / 增强层", true),
-      textField("coverMaterial", "* Cover Material / 外胶材料", true),
-      textField("coverColor", "* Cover Color / 外胶颜色", true),
+      textField("tubeMaterial", "Tube Material / 内胶材料", false),
+      textField("reinforcement", "Reinforcement / 增强层", false),
+      textField("coverMaterial", "Cover Material / 外胶材料", false),
+      textField("coverColor", "Cover Color / 外胶颜色", false),
       textField("coverFinish", "Cover Finish / 表面", false),
       textField(
         "skiveRequirement",
@@ -466,7 +465,7 @@ export const catalogWorksheetContracts: readonly CatalogWorksheetContract[] = [
         SKIVE_REQUIREMENTS,
       ),
       textField("mshaMarking", "MSHA Marking / MSHA标识", false, YES_NO_NA),
-      textField("fluidCompatibility", "* Fluid Compatibility / 介质兼容", true),
+      textField("fluidCompatibility", "Fluid Compatibility / 介质兼容", false),
       textField("origin", "* Country of Origin / 原产国", true),
       textField("source", "* Source Document/Page / 来源文件页码", true),
       textField("notes", "Notes / 备注", false),
@@ -1582,12 +1581,12 @@ function toHoseVariant(row: ParsedRow): HoseVariantDraft {
       row,
       "catalogPublicationStatus",
     ),
-    coverColor: stringValue(row, "coverColor"),
+    coverColor: optionalString(row, "coverColor") ?? "",
     coverFinish: optionalString(row, "coverFinish"),
-    coverMaterial: stringValue(row, "coverMaterial"),
+    coverMaterial: optionalString(row, "coverMaterial") ?? "",
     dash: stringValue(row, "dash"),
     equivalentStandard: optionalString(row, "equivalentStandard"),
-    fluidCompatibility: stringValue(row, "fluidCompatibility"),
+    fluidCompatibility: optionalString(row, "fluidCompatibility") ?? "",
     hoseSeries: stringValue(row, "hoseSeries"),
     idMm: numberValue(row, "idMm"),
     mshaMarking: optionalString(row, "mshaMarking"),
@@ -1596,7 +1595,7 @@ function toHoseVariant(row: ParsedRow): HoseVariantDraft {
     odMm: numberValue(row, "odMm"),
     origin: stringValue(row, "origin"),
     primaryStandard: stringValue(row, "primaryStandard"),
-    reinforcement: stringValue(row, "reinforcement"),
+    reinforcement: optionalString(row, "reinforcement") ?? "",
     rfqEligibility: stringValue<RfqEligibility>(row, "rfqEligibility"),
     skiveRequirement: stringValue(row, "skiveRequirement"),
     sku: row.sku ?? stringValue(row, "sku"),
@@ -1607,7 +1606,7 @@ function toHoseVariant(row: ParsedRow): HoseVariantDraft {
     ),
     tempMaxC: numberValue(row, "tempMaxC"),
     tempMinC: numberValue(row, "tempMinC"),
-    tubeMaterial: stringValue(row, "tubeMaterial"),
+    tubeMaterial: optionalString(row, "tubeMaterial") ?? "",
     weightKgM: numberValue(row, "weightKgM"),
     workingBar: numberValue(row, "workingBar"),
     workingPsi: optionalNumber(row, "workingPsi"),
@@ -1617,19 +1616,19 @@ function toHoseVariant(row: ParsedRow): HoseVariantDraft {
 function toHoseSeries(row: ParsedRow): HoseSeriesDraft {
   const seriesCode = stringValue(row, "hoseSeries");
   return {
-    coverColor: stringValue(row, "coverColor"),
+    coverColor: optionalString(row, "coverColor"),
     coverFinish: optionalString(row, "coverFinish"),
-    coverMaterial: stringValue(row, "coverMaterial"),
+    coverMaterial: optionalString(row, "coverMaterial"),
     equivalentStandard: optionalString(row, "equivalentStandard") || "N/A",
-    fluidCompatibility: stringValue(row, "fluidCompatibility"),
+    fluidCompatibility: optionalString(row, "fluidCompatibility"),
     mainImageReference: hoseMainImageReference(seriesCode)!,
     primaryStandard: stringValue(row, "primaryStandard"),
-    reinforcement: stringValue(row, "reinforcement"),
+    reinforcement: optionalString(row, "reinforcement"),
     seriesCode,
     seriesName: seriesCode,
     tempMaxC: numberValue(row, "tempMaxC"),
     tempMinC: numberValue(row, "tempMinC"),
-    tubeMaterial: stringValue(row, "tubeMaterial"),
+    tubeMaterial: optionalString(row, "tubeMaterial"),
   };
 }
 
@@ -2016,9 +2015,6 @@ export function validateCatalogWorkbook(
       ferrules,
       hoseEnds,
       hoseEndSeries: firstHoseEndRows.map(toHoseEndSeries),
-      hoseSeries: [
-        ...new Set(hoseVariants.map((row) => row.hoseSeries)),
-      ].sort(),
       hoseSeriesRecords: firstHoseRows.map(toHoseSeries),
       hoseVariants,
       quickCouplers,

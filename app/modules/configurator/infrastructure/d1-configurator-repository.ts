@@ -119,22 +119,43 @@ export function compatibleHoseEndCandidateFromRow(
 }
 
 const compatibleHoseEndSql = `
+  WITH eligible_endpoint AS (
+    SELECT DISTINCT release_id, hose_sku,
+           end_a_compatibility_id AS compatibility_id
+    FROM catalog_derived_assembly_combinations
+    UNION ALL
+    SELECT r.id, c.hose_sku, c.compatibility_id
+    FROM catalog_releases r
+    INNER JOIN catalog_compatibilities c
+      ON c.import_id = r.source_import_id
+    WHERE NOT EXISTS (
+      SELECT 1 FROM catalog_derived_assembly_series generated
+      WHERE generated.release_id = r.id
+    )
+  )
   SELECT c.compatibility_id, c.hose_end_sku, c.ferrule_sku,
          c.assembly_working_bar,
-         e.competitor_part_number, e.fitting_series, e.interface_family,
-         e.connection_standard, e.gender, e.swivel_form, e.angle,
-         e.sealing_form, e.thread, e.connection_dash, e.hose_tail_dash,
+         e.competitor_part_number, e.fitting_series, series.interface_family,
+         series.connection_standard, series.gender, series.swivel_form,
+         series.angle, series.sealing_form, e.thread,
+         e.connection_dash, e.hose_tail_dash,
          e.max_working_bar,
          f.ferrule_series, f.hose_construction AS ferrule_hose_construction,
          f.hose_tail_dash AS ferrule_hose_tail_dash,
          f.skive_requirement AS ferrule_skive_requirement
   FROM catalog_releases r
+  INNER JOIN eligible_endpoint derived
+    ON derived.release_id = r.id
   INNER JOIN catalog_compatibilities c
     ON c.import_id = r.source_import_id
+   AND c.hose_sku = derived.hose_sku
+   AND c.compatibility_id = derived.compatibility_id
   INNER JOIN catalog_skus hs
     ON hs.import_id = c.import_id AND hs.sku = c.hose_sku
   INNER JOIN catalog_hose_ends e
     ON e.import_id = c.import_id AND e.sku = c.hose_end_sku
+  INNER JOIN catalog_hose_end_series series
+    ON series.import_id = e.import_id AND series.series_code = e.fitting_series
   INNER JOIN catalog_skus es
     ON es.import_id = e.import_id AND es.sku = e.sku
   INNER JOIN catalog_ferrules f
@@ -158,7 +179,7 @@ const compatibleHoseEndSql = `
     AND fs.catalog_publication_status = 'Published'
     AND fs.rfq_eligibility = 'Eligible'
     AND fs.supply_availability = 'available_for_quote'
-  ORDER BY e.interface_family, e.angle, e.gender, e.swivel_form,
+  ORDER BY series.interface_family, series.angle, series.gender, series.swivel_form,
            e.connection_dash, e.hose_tail_dash, e.sku`;
 
 export function createD1ConfiguratorRepository(database: D1Database) {
@@ -169,6 +190,57 @@ export function createD1ConfiguratorRepository(database: D1Database) {
         .bind(releaseId, hoseSku)
         .all<CompatibleHoseEndRow>();
       return rows.results.map(compatibleHoseEndCandidateFromRow);
+    },
+
+    async hasDerivedAssemblyCombination(input: {
+      endACompatibilityId: string;
+      endBCompatibilityId: string;
+      hoseSku: string;
+      releaseId: string;
+    }) {
+      const row = await database
+        .prepare(
+          `SELECT 1 AS found
+           FROM catalog_releases release
+           WHERE release.id = ?
+             AND release.status IN ('published', 'superseded')
+             AND (
+               EXISTS (
+                 SELECT 1 FROM catalog_derived_assembly_combinations combination
+                 WHERE combination.release_id = release.id
+                   AND combination.hose_sku = ?
+                   AND combination.end_a_compatibility_id = ?
+                   AND combination.end_b_compatibility_id = ?
+               )
+               OR (
+                 NOT EXISTS (
+                   SELECT 1 FROM catalog_derived_assembly_series generated
+                   WHERE generated.release_id = release.id
+                 )
+                 AND EXISTS (
+                   SELECT 1 FROM catalog_compatibilities end_a
+                   INNER JOIN catalog_compatibilities end_b
+                     ON end_b.import_id = end_a.import_id
+                    AND end_b.hose_sku = end_a.hose_sku
+                   WHERE end_a.import_id = release.source_import_id
+                     AND end_a.hose_sku = ?
+                     AND end_a.compatibility_id = ?
+                     AND end_b.compatibility_id = ?
+                 )
+               )
+             )`,
+        )
+        .bind(
+          input.releaseId,
+          input.hoseSku,
+          input.endACompatibilityId,
+          input.endBCompatibilityId,
+          input.hoseSku,
+          input.endACompatibilityId,
+          input.endBCompatibilityId,
+        )
+        .first<{ found: number }>();
+      return Boolean(row);
     },
   };
 }

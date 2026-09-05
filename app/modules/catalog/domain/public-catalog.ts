@@ -57,6 +57,7 @@ export interface PublicCatalogItem {
   familyKey: string;
   familyName: string;
   interfaceGroup: string | null;
+  mainImageUrl?: string | null;
   mediaKey: string | null;
   offer: {
     currency: string;

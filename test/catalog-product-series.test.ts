@@ -11,7 +11,9 @@ describe("Catalog Product Series repository", () => {
     });
     const run = vi
       .fn()
-      .mockRejectedValue(new Error("Series is referenced by variants"));
+      .mockRejectedValue(
+        new Error("catalog_series_in_use: Series is referenced by variants"),
+      );
     const database = {
       prepare: vi
         .fn()

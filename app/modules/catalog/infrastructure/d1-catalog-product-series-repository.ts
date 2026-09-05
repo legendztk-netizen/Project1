@@ -51,7 +51,7 @@ export function createD1CatalogProductSeriesRepository(
       } catch (error) {
         if (error instanceof CatalogProductSeriesRejected) throw error;
         const message = messageFrom(error);
-        if (message.includes("Series is referenced by variants")) {
+        if (message.includes("catalog_series_in_use:")) {
           throw new CatalogProductSeriesRejected(
             "series_in_use",
             "Series is referenced by variants / 系列已被子体引用",

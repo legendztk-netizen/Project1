@@ -62,9 +62,9 @@ describe("01-07 catalog workbook contract", () => {
 
     expect(result.blockingErrors).toEqual([]);
     expect(result.draft).not.toBeNull();
-    expect(result.draft).toMatchObject({
-      hoseSeries: ["601R1", "601R2", "EN1SC", "EN2SC", "EN4SH", "EN4SP"],
-    });
+    expect(
+      result.draft?.hoseSeriesRecords.map((series) => series.seriesCode),
+    ).toEqual(["601R1", "601R2", "EN1SC", "EN2SC", "EN4SP", "EN4SH"]);
     expect(result.draft?.hoseVariants).toHaveLength(61);
     expect(result.draft?.hoseEnds).toHaveLength(329);
     expect(result.draft?.ferrules).toHaveLength(61);

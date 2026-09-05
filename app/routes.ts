@@ -15,6 +15,10 @@ export default [
     "api/catalog/releases/:releaseId/products/:sku",
     "modules/storefront/routes/catalog-release-product-resource.ts",
   ),
+  route(
+    "media/catalog/:mediaVersionId/:variant",
+    "modules/storefront/routes/catalog-main-image-resource.ts",
+  ),
   route("build-a-hose", "modules/storefront/routes/build-a-hose.tsx"),
   route(
     "api/configurator/compatible-end-a",

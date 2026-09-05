@@ -1,46 +1,11 @@
 import { Package } from "lucide-react";
 
+import {
+  hoseEndMediaPath,
+  hoseMediaPath,
+  reviewedHoseEndImages,
+} from "../../catalog/domain/catalog-main-image";
 import type { PublicCatalogItem } from "../../catalog/domain/public-catalog";
-
-const hoseEndMedia: Record<string, string> = {
-  "BSPP-Female-Swivel-0° Straight": "bspp-female-swivel-straight.jpg",
-  "BSPP-Female-Swivel-45°": "bspp-female-swivel-45.jpg",
-  "BSPP-Female-Swivel-90°": "bspp-female-swivel-90.jpg",
-  "BSPP-Male-Fixed-0° Straight": "bspp-male-fixed-straight.jpg",
-  "BSPT-Male-Fixed-0° Straight": "bspt-male-fixed-straight.jpg",
-  "JIC 37°-Female-Swivel-0° Straight": "jic-female-swivel-straight.jpg",
-  "JIC 37°-Female-Swivel-45°": "jic-female-swivel-45.jpg",
-  "JIC 37°-Female-Swivel-90°": "jic-female-swivel-90.jpg",
-  "JIC 37°-Female-Swivel-90°-Long": "jic-female-swivel-90-long.jpg",
-  "JIC 37°-Female-Swivel-90°-Medium": "jic-female-swivel-90-medium.jpg",
-  "JIC 37°-Male-Fixed-0° Straight": "jic-male-fixed-straight.jpg",
-  "NPSM-Female-Swivel-0° Straight": "npsm-female-swivel-straight.jpg",
-  "NPTF-Female-Fixed-0° Straight": "nptf-female-fixed-straight.jpg",
-  "NPTF-Male-Fixed-0° Straight": "nptf-male-fixed-straight.jpg",
-  "NPTF-Male-Swivel-0° Straight": "nptf-male-swivel-straight.jpg",
-  "NPTF-Male-Swivel-90°": "nptf-male-swivel-90.jpg",
-  "ORB-Male-Fixed-0° Straight": "orb-male-fixed-straight.jpg",
-  "ORB-Male-Swivel-0° Straight": "orb-male-swivel-straight.jpg",
-  "ORB-Male-Swivel-90°": "orb-male-swivel-90.jpg",
-  "ORFS-Female-Swivel-0° Straight": "orfs-female-swivel-straight.jpg",
-  "ORFS-Female-Swivel-45°": "orfs-female-swivel-45.jpg",
-  "ORFS-Female-Swivel-90°": "orfs-female-swivel-90.jpg",
-  "ORFS-Female-Swivel-90°-Long": "orfs-female-swivel-90-long.jpg",
-  "ORFS-Female-Swivel-90°-Medium": "orfs-female-swivel-90-medium.jpg",
-  "ORFS-Male-Fixed-0° Straight": "orfs-male-fixed-straight.jpg",
-  "SAE Code 61-Fixed-0° Straight": "code-61-straight.jpg",
-  "SAE Code 61-Fixed-45°": "code-61-45.jpg",
-  "SAE Code 61-Fixed-90°": "code-61-90.jpg",
-};
-
-const hoseMediaKeys = new Set([
-  "601R1",
-  "601R2",
-  "EN1SC",
-  "EN2SC",
-  "EN4SH",
-  "EN4SP",
-]);
 
 function normalizedHoseEndMediaName(value: string) {
   return value
@@ -53,22 +18,16 @@ function normalizedHoseEndMediaName(value: string) {
 }
 
 const hoseEndMediaByDisplayName = new Map(
-  Object.entries(hoseEndMedia).map(([mediaKey, filename]) => [
+  Object.entries(reviewedHoseEndImages).map(([mediaKey, filename]) => [
     normalizedHoseEndMediaName(mediaKey),
     filename,
   ]),
 );
 
-export function hoseMediaPath(mediaKey: string | null | undefined) {
-  if (!mediaKey || !hoseMediaKeys.has(mediaKey)) return null;
-  return `/images/catalog/hose/${mediaKey}-structure.jpg`;
-}
-
-export function hoseEndMediaPath(mediaKey: string | null | undefined) {
-  if (!mediaKey) return null;
-  const filename = hoseEndMedia[mediaKey];
-  return filename ? `/images/catalog/hose-ends/${filename}` : null;
-}
+export {
+  hoseEndMediaPath,
+  hoseMediaPath,
+} from "../../catalog/domain/catalog-main-image";
 
 export function hoseEndMediaPathFromDisplayName(
   displayName: string | null | undefined,
@@ -81,8 +40,9 @@ export function hoseEndMediaPathFromDisplayName(
 }
 
 export function catalogMediaPath(item: PublicCatalogItem) {
+  if (item.mainImageUrl) return item.mainImageUrl;
   if (item.productType === "hose" && item.mediaKey) {
-    return `/images/catalog/hose/${item.mediaKey}-structure.jpg`;
+    return hoseMediaPath(item.mediaKey);
   }
   if (item.productType === "hose_end" && item.mediaKey) {
     return hoseEndMediaPath(item.mediaKey);

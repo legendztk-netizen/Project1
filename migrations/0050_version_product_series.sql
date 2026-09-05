@@ -145,7 +145,7 @@ WHEN EXISTS (
   WHERE `import_id` = OLD.`import_id` AND `hose_series` = OLD.`series_code`
 )
 BEGIN
-  SELECT RAISE(ABORT, 'Series is referenced by variants / 系列已被子体引用');
+  SELECT RAISE(ABORT, 'catalog_series_in_use: Series is referenced by variants / 系列已被子体引用');
 END;
 --> statement-breakpoint
 CREATE TRIGGER `cataloghoseendseries_referenced_delete`
@@ -155,7 +155,7 @@ WHEN EXISTS (
   WHERE `import_id` = OLD.`import_id` AND `fitting_series` = OLD.`series_code`
 )
 BEGIN
-  SELECT RAISE(ABORT, 'Series is referenced by variants / 系列已被子体引用');
+  SELECT RAISE(ABORT, 'catalog_series_in_use: Series is referenced by variants / 系列已被子体引用');
 END;
 --> statement-breakpoint
 CREATE TRIGGER `cataloghoseseries_required_insert`
@@ -241,7 +241,7 @@ BEGIN
 END;
 --> statement-breakpoint
 CREATE TRIGGER `cataloghosevariants_series_reference_update`
-BEFORE UPDATE OF `hose_series` ON `catalog_hose_variants`
+BEFORE UPDATE OF `import_id`, `hose_series` ON `catalog_hose_variants`
 WHEN NOT EXISTS (
   SELECT 1 FROM `catalog_hose_series`
   WHERE `import_id` = NEW.`import_id` AND `series_code` = NEW.`hose_series`
@@ -261,7 +261,7 @@ BEGIN
 END;
 --> statement-breakpoint
 CREATE TRIGGER `cataloghoseends_series_reference_update`
-BEFORE UPDATE OF `fitting_series` ON `catalog_hose_ends`
+BEFORE UPDATE OF `import_id`, `fitting_series` ON `catalog_hose_ends`
 WHEN NOT EXISTS (
   SELECT 1 FROM `catalog_hose_end_series`
   WHERE `import_id` = NEW.`import_id` AND `series_code` = NEW.`fitting_series`

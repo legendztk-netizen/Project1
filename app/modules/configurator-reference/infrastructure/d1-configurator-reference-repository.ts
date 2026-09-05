@@ -1,14 +1,15 @@
-import type {
-  AssemblyEstimateSchedule,
-  ClockingConvention,
-  ConfiguratorReferenceSnapshot,
-  HoseEndEndpointAssignment,
-  InstalledProtection,
-  InstalledProtectionRule,
-  LengthMeasurementMapping,
-  LengthMeasurementMethod,
-  MeasurementEndpointClass,
-  MeasurementMethodCode,
+import {
+  isMeasurementMethodCode,
+  type AssemblyEstimateSchedule,
+  type ClockingConvention,
+  type ConfiguratorReferenceSnapshot,
+  type HoseEndEndpointAssignment,
+  type InstalledProtection,
+  type InstalledProtectionRule,
+  type LengthMeasurementMapping,
+  type LengthMeasurementMethod,
+  type MeasurementEndpointClass,
+  type MeasurementMethodCode,
 } from "../domain/configurator-reference";
 
 export type ConfiguratorRegistryType =
@@ -30,6 +31,29 @@ export interface ConfiguratorRegistryEntryMutation {
   releaseId: string;
   updatedAt: string;
 }
+
+export type GlobalConfiguratorRegistryType =
+  | "assembly_estimate_schedule"
+  | "clocking_convention"
+  | "installed_protection"
+  | "measurement_method";
+
+export interface GlobalConfiguratorRegistryEntryMutation {
+  actorId: string;
+  auditEventId: string;
+  entryKey: string;
+  expectedRecordVersion: number;
+  payload: Record<string, unknown>;
+  registryType: GlobalConfiguratorRegistryType;
+  updatedAt: string;
+}
+
+const globalConfiguratorRegistryTypes = new Set<ConfiguratorRegistryType>([
+  "assembly_estimate_schedule",
+  "clocking_convention",
+  "installed_protection",
+  "measurement_method",
+]);
 
 interface RegistryRow {
   entry_key: string;
@@ -129,9 +153,9 @@ function parsePayload(row: RegistryRow) {
 }
 
 function methodCode(value: string): MeasurementMethodCode {
-  if (!/^M0[1-7]$/.test(value))
+  if (!isMeasurementMethodCode(value))
     throw new Error(`Invalid measurement method ${value}`);
-  return value as MeasurementMethodCode;
+  return value;
 }
 
 function endpointClass(row: RegistryRow): MeasurementEndpointClass {
@@ -403,7 +427,23 @@ function snapshotFromRows(release: ReleaseRow, rows: RegistryRow[]) {
 
 export function createD1ConfiguratorReferenceRepository(database: D1Database) {
   async function findRelease(releaseId?: string | null, draftOnly = false) {
-    const filters = [draftOnly ? "status = 'draft'" : "1 = 1"];
+    const filters = [
+      draftOnly
+        ? `status = 'draft' AND (
+             (SELECT release_id FROM catalog_active_release WHERE singleton = 1) IS NULL
+             OR created_at > COALESCE(
+               (
+                 SELECT active_release.created_at
+                 FROM catalog_active_release active_pointer
+                 INNER JOIN catalog_releases active_release
+                   ON active_release.id = active_pointer.release_id
+                 WHERE active_pointer.singleton = 1
+               ),
+               ''
+             )
+           )`
+        : "1 = 1",
+    ];
     const statement = database.prepare(
       `SELECT id, release_number, status FROM catalog_releases
        WHERE ${filters.join(" AND ")} ${releaseId ? "AND id = ?" : ""}
@@ -417,16 +457,31 @@ export function createD1ConfiguratorReferenceRepository(database: D1Database) {
   async function findSnapshot(releaseId: string) {
     const release = await findRelease(releaseId);
     if (!release) return null;
-    const rows = await database
-      .prepare(
-        `SELECT registry_type, entry_key, payload_json, record_version
-         FROM catalog_configurator_registry_entries
-         WHERE release_id = ?
-         ORDER BY registry_type, entry_key`,
-      )
-      .bind(release.id)
-      .all<RegistryRow>();
-    return snapshotFromRows(release, rows.results);
+    const [releaseRows, globalRows] = await Promise.all([
+      database
+        .prepare(
+          `SELECT registry_type, entry_key, payload_json, record_version
+           FROM catalog_configurator_registry_entries
+           WHERE release_id = ?
+           ORDER BY registry_type, entry_key`,
+        )
+        .bind(release.id)
+        .all<RegistryRow>(),
+      database
+        .prepare(
+          `SELECT registry_type, entry_key, payload_json, record_version
+           FROM configurator_global_registry_entries
+           ORDER BY registry_type, entry_key`,
+        )
+        .all<RegistryRow>(),
+    ]);
+    const rows = [
+      ...releaseRows.results.filter(
+        (row) => !globalConfiguratorRegistryTypes.has(row.registry_type),
+      ),
+      ...globalRows.results,
+    ];
+    return snapshotFromRows(release, rows);
   }
 
   return {
@@ -452,12 +507,15 @@ export function createD1ConfiguratorReferenceRepository(database: D1Database) {
     async listDraftHoseEnds(releaseId: string) {
       const result = await database
         .prepare(
-          `SELECT e.sku, e.interface_family, e.connection_standard, e.angle,
-                  e.sealing_form, e.thread
+          `SELECT e.sku, series.interface_family, series.connection_standard,
+                  series.angle, series.sealing_form, e.thread
            FROM catalog_releases r
            INNER JOIN catalog_hose_ends e ON e.import_id = r.source_import_id
+           INNER JOIN catalog_hose_end_series series
+             ON series.import_id = e.import_id
+            AND series.series_code = e.fitting_series
            WHERE r.id = ? AND r.status = 'draft'
-           ORDER BY e.interface_family, e.sku`,
+           ORDER BY series.interface_family, e.sku`,
         )
         .bind(releaseId)
         .all<{
@@ -530,6 +588,102 @@ export function createD1ConfiguratorReferenceRepository(database: D1Database) {
         .bind(operation.auditEventId)
         .first<{ found: number }>();
       if (!saved) throw new Error("Draft registry entry was not saved");
+    },
+
+    async saveGlobalEntry(operation: GlobalConfiguratorRegistryEntryMutation) {
+      const current = await database
+        .prepare(
+          `SELECT record_version
+           FROM configurator_global_registry_entries
+           WHERE registry_type = ? AND entry_key = ?`,
+        )
+        .bind(operation.registryType, operation.entryKey)
+        .first<{ record_version: number }>();
+      if ((current?.record_version ?? 0) !== operation.expectedRecordVersion) {
+        throw new Error(
+          "This global setting changed after the editor was opened. Reload and try again.",
+        );
+      }
+
+      const payloadJson = JSON.stringify(operation.payload);
+      await database.batch([
+        database
+          .prepare(
+            `INSERT INTO configurator_global_registry_entries (
+               registry_type, entry_key, payload_json, record_version,
+               updated_at, updated_by, last_operation_id
+             ) VALUES (?, ?, ?, 1, ?, ?, ?)
+             ON CONFLICT (registry_type, entry_key) DO UPDATE SET
+               payload_json = excluded.payload_json,
+               record_version = record_version + 1,
+               updated_at = excluded.updated_at,
+               updated_by = excluded.updated_by,
+               last_operation_id = excluded.last_operation_id
+             WHERE configurator_global_registry_entries.record_version = ?`,
+          )
+          .bind(
+            operation.registryType,
+            operation.entryKey,
+            payloadJson,
+            operation.updatedAt,
+            operation.actorId,
+            operation.auditEventId,
+            operation.expectedRecordVersion,
+          ),
+        database
+          .prepare(
+            `INSERT INTO configurator_global_registry_entry_versions (
+               operation_id, registry_type, entry_key, payload_json,
+               record_version, changed_at, changed_by
+             )
+             SELECT last_operation_id, registry_type, entry_key, payload_json,
+                    record_version, updated_at, updated_by
+             FROM configurator_global_registry_entries
+             WHERE last_operation_id = ?`,
+          )
+          .bind(operation.auditEventId),
+        database
+          .prepare(
+            `INSERT INTO admin_audit_events (
+               id, event_type, entity_type, entity_id,
+               actor_id, payload_json, occurred_at
+             )
+             SELECT ?, 'configurator_global_registry.saved',
+                    'configurator_global_registry_entry', ?, ?, ?, ?
+             FROM configurator_global_registry_entries
+             WHERE last_operation_id = ?`,
+          )
+          .bind(
+            operation.auditEventId,
+            `${operation.registryType}:${operation.entryKey}`,
+            operation.actorId,
+            JSON.stringify({
+              entryKey: operation.entryKey,
+              expectedRecordVersion: operation.expectedRecordVersion,
+              registryType: operation.registryType,
+            }),
+            operation.updatedAt,
+            operation.auditEventId,
+          ),
+      ]);
+      const saved = await database
+        .prepare(
+          `SELECT record_version
+           FROM configurator_global_registry_entries
+           WHERE registry_type = ? AND entry_key = ? AND last_operation_id = ?`,
+        )
+        .bind(
+          operation.registryType,
+          operation.entryKey,
+          operation.auditEventId,
+        )
+        .first<{ record_version: number }>();
+      if (!saved) {
+        throw new Error(
+          "This global setting changed while it was being saved. Reload and try again.",
+        );
+      }
+      return { recordVersion: saved.record_version };
     },
   };
 }
