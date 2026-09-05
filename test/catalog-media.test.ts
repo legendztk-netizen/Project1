@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { publicCatalogMainImageUrl } from "../app/modules/catalog/domain/catalog-main-image";
 import type { PublicCatalogItem } from "../app/modules/catalog/domain/public-catalog";
 import {
   catalogMediaPath,
@@ -49,6 +50,24 @@ function hoseEndWithMediaKey(mediaKey: string): PublicCatalogItem {
 }
 
 describe("catalog hose-end media", () => {
+  it("only exposes media URLs that the storefront route can render", () => {
+    expect(
+      publicCatalogMainImageUrl(
+        "approved-v1:hose-series:601R1",
+        "hose-series:601R1",
+      ),
+    ).toContain("/media/catalog/");
+    expect(
+      publicCatalogMainImageUrl("uploaded-v2", null),
+    ).toBe("/media/catalog/uploaded-v2/storefront");
+    expect(
+      publicCatalogMainImageUrl(
+        "approved-v1:catalog-source:ferrule",
+        "catalog-source:62d65f8412ff5.pdf:ferrule:p49-50",
+      ),
+    ).toBeNull();
+  });
+
   it.each(hoseEndMediaCases)(
     "maps %s to an existing website asset",
     (mediaKey, filename) => {

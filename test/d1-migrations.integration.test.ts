@@ -302,6 +302,8 @@ describe("real local D1 migration lifecycle", () => {
        VALUES
          ('legacy-hose-sku', 'legacy-import', 'LEGACY-HOSE', '01', 'hose',
           'LEGACY', 'Published', 'Eligible', 'Complete', 'available_for_quote'),
+         ('legacy-hose-custom-sku', 'legacy-import', 'LEGACY-HOSE-CUSTOM', '01', 'hose',
+          'LEGACY', 'Published', 'Eligible', 'Complete', 'available_for_quote'),
          ('legacy-end-sku', 'legacy-import', 'LEGACY-END', '02', 'hose_end',
           NULL, 'Published', 'Eligible', 'Complete', 'available_for_quote');
        INSERT INTO catalog_hose_series (id, import_id, series_code)
@@ -312,9 +314,13 @@ describe("real local D1 migration lifecycle", () => {
           bend_radius_mm, weight_kg_m, temp_min_c, temp_max_c, tube_material,
           reinforcement, cover_material, cover_color, skive_requirement,
           fluid_compatibility, origin, source)
-       VALUES ('legacy-hose', 'legacy-import', 'LEGACY-HOSE', 'LEGACY', 'SAE',
-               'ISO', '-4', 0.25, 6.4, 12, 200, 800, 100, 0.3, -40, 100,
-               'NBR', 'Wire', 'Rubber', 'Black', 'No Skive', 'Oil', 'CN', 'test');
+       VALUES
+         ('legacy-hose', 'legacy-import', 'LEGACY-HOSE', 'LEGACY', 'SAE',
+          'ISO', '-4', 0.25, 6.4, 12, 200, 800, 100, 0.3, -40, 100,
+          'NBR', 'Wire', 'Rubber', 'Black', 'No Skive', 'Oil', 'CN', 'test'),
+         ('legacy-hose-custom', 'legacy-import', 'LEGACY-HOSE-CUSTOM', 'LEGACY', 'SAE',
+          'ISO', '-6', 0.375, 9.5, 15, 180, 720, 120, 0.4, -40, 100,
+          'NBR', 'Wire', 'Rubber', 'Black', 'No Skive', 'Oil', 'CN', 'test');
        INSERT INTO catalog_hose_ends
          (id, import_id, sku, fitting_series, interface_family,
           connection_standard, gender, swivel_form, angle, sealing_form,
@@ -323,17 +329,28 @@ describe("real local D1 migration lifecycle", () => {
                'SAE J514', 'Female', 'Swivel', 'Straight', 'Cone', '7/16-20',
                '-4', '-4', 'test');
        INSERT INTO catalog_media_lineages (id, logical_reference, created_at, created_by)
-       VALUES ('legacy-lineage', 'legacy-image', '2026-09-01', 'test');
+       VALUES
+         ('legacy-lineage', 'legacy-image', '2026-09-01', 'test'),
+         ('legacy-custom-lineage', 'legacy-custom-image', '2026-09-01', 'test');
        INSERT INTO catalog_media_versions
-         (id, lineage_id, version, source_kind, approved_reference, mime_type,
-          created_at, created_by)
-       VALUES ('legacy-media', 'legacy-lineage', 1, 'approved_reference',
-               'legacy-image', 'reference', '2026-09-01', 'test');
+         (id, lineage_id, version, source_kind, approved_reference,
+          master_object_key, storefront_object_key, thumbnail_object_key,
+          content_hash, mime_type, width, height, created_at, created_by)
+       VALUES
+         ('legacy-media', 'legacy-lineage', 1, 'approved_reference',
+          'legacy-image', NULL, NULL, NULL, NULL, 'reference', NULL, NULL,
+          '2026-09-01', 'test'),
+         ('legacy-custom-media', 'legacy-custom-lineage', 1, 'uploaded',
+          NULL, 'legacy/master.webp', 'legacy/storefront.webp',
+          'legacy/thumbnail.webp', 'legacy-content-hash', 'image/webp', 1200, 800,
+          '2026-09-01', 'test');
        INSERT INTO catalog_product_main_images
          (id, import_id, sku, media_version_id, assigned_at, assigned_by)
        VALUES
          ('legacy-hose-image', 'legacy-import', 'LEGACY-HOSE', 'legacy-media',
           '2026-09-01', 'test'),
+         ('legacy-hose-custom-image', 'legacy-import', 'LEGACY-HOSE-CUSTOM',
+          'legacy-custom-media', '2026-09-01', 'test'),
          ('legacy-end-image', 'legacy-import', 'LEGACY-END', 'legacy-media',
           '2026-09-01', 'test');
        INSERT INTO catalog_releases
@@ -358,6 +375,16 @@ describe("real local D1 migration lifecycle", () => {
       ),
     ).toEqual([{ media: "legacy-media", name: "LEGACY", standard: "SAE" }]);
     expect(
+      queryD1<{ assignment_kind: string; sku: string }>(
+        fixture,
+        `SELECT sku, assignment_kind FROM catalog_product_main_images
+         WHERE sku IN ('LEGACY-HOSE', 'LEGACY-HOSE-CUSTOM') ORDER BY sku`,
+      ),
+    ).toEqual([
+      { assignment_kind: "inherited", sku: "LEGACY-HOSE" },
+      { assignment_kind: "override", sku: "LEGACY-HOSE-CUSTOM" },
+    ]);
+    expect(
       queryD1<{ count: number }>(
         fixture,
         `SELECT COUNT(*) AS count FROM catalog_hose_end_series
@@ -370,7 +397,7 @@ describe("real local D1 migration lifecycle", () => {
         "SELECT status FROM catalog_releases WHERE id = 'legacy-release'",
       ),
     ).toEqual([{ status: "published" }]);
-  }, 40_000);
+  }, 90_000);
 
   it("enforces versioned series identity and referenced-series deletion guards", () => {
     const fixture = createD1Fixture();

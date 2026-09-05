@@ -1,3 +1,6 @@
+import { publicCatalogMainImageUrl } from "../domain/catalog-main-image";
+import type { CatalogFamilyId } from "../domain/catalog-family";
+import { normalizeDashSize } from "../domain/dash-size";
 import {
   categoryByProductType,
   groupCatalogFamilies,
@@ -9,8 +12,6 @@ import {
   type PublicCatalogSpec,
   type PublicProductType,
 } from "../domain/public-catalog";
-import type { CatalogFamilyId } from "../domain/catalog-family";
-import { normalizeDashSize } from "../domain/dash-size";
 
 interface PublicCatalogRow {
   adapter_family_id: string | null;
@@ -59,6 +60,7 @@ interface PublicCatalogRow {
   interface_family: string | null;
   lead_time_days: number | null;
   main_image_version_id: string | null;
+  main_image_approved_reference: string | null;
   length_increment_ft: number | null;
   hose_end_max_working_bar: number | null;
   hose_end_unit_weight_g: number | null;
@@ -431,9 +433,10 @@ export function publicCatalogItemFromRow(
     familyKey: product.familyKey,
     familyName: product.familyName,
     interfaceGroup: interfaceGroup(product.interface),
-    mainImageUrl: row.main_image_version_id
-      ? `/media/catalog/${encodeURIComponent(row.main_image_version_id)}/storefront`
-      : null,
+    mainImageUrl: publicCatalogMainImageUrl(
+      row.main_image_version_id,
+      row.main_image_approved_reference,
+    ),
     mediaKey: product.mediaKey,
     offer:
       row.sales_unit && row.lead_time_days !== null && row.moq !== null
@@ -485,9 +488,8 @@ export function publicCatalogItemFromRow(
 const publicCatalogSql = `
   SELECT r.id AS release_id, r.release_number, s.sku, s.product_type, s.hose_series,
          s.rfq_eligibility, s.supply_availability,
-         COALESCE(image.media_version_id,
-                  hs.representative_media_version_id,
-                  hes.representative_media_version_id) AS main_image_version_id,
+         selected_media.id AS main_image_version_id,
+         selected_media.approved_reference AS main_image_approved_reference,
          o.sales_unit, o.moq, o.lead_time_days, o.currency,
          o.reference_price_usd, o.quantity_input_mode,
          o.minimum_length_per_piece_ft, o.length_increment_ft,
@@ -549,6 +551,10 @@ const publicCatalogSql = `
     ON e.import_id = s.import_id AND e.sku = s.sku
   LEFT JOIN catalog_hose_end_series hes
     ON hes.import_id = e.import_id AND hes.series_code = e.fitting_series
+  LEFT JOIN catalog_media_versions selected_media
+    ON selected_media.id = COALESCE(image.media_version_id,
+                                    hs.representative_media_version_id,
+                                    hes.representative_media_version_id)
   LEFT JOIN catalog_ferrules f
     ON f.import_id = s.import_id AND f.sku = s.sku
   LEFT JOIN catalog_adapters a

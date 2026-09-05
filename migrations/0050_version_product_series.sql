@@ -8,25 +8,7 @@ CHECK (`assignment_kind` IN ('inherited', 'override'));
 --> statement-breakpoint
 DROP TRIGGER `catalogproductmainimages_immutable_update`;
 --> statement-breakpoint
-UPDATE `catalog_product_main_images` AS `image`
-SET `assignment_kind` = 'inherited'
-WHERE EXISTS (
-  SELECT 1 FROM `catalog_skus` AS `product`
-  WHERE `product`.`import_id` = `image`.`import_id`
-    AND `product`.`sku` = `image`.`sku`
-    AND `product`.`product_type` IN ('hose', 'hose_end')
-);
---> statement-breakpoint
-CREATE TRIGGER `catalogproductmainimages_immutable_update`
-BEFORE UPDATE ON `catalog_product_main_images`
-WHEN EXISTS (
-  SELECT 1 FROM `catalog_releases`
-  WHERE `source_import_id` = OLD.`import_id`
-    AND `status` IN ('published', 'superseded')
-)
-BEGIN
-  SELECT RAISE(ABORT, 'published catalog image assignment is immutable');
-END;
+DROP TRIGGER `catalogproductmainimages_draft_update_revision`;
 --> statement-breakpoint
 
 ALTER TABLE `catalog_hose_series` ADD COLUMN `series_name` TEXT;
@@ -149,6 +131,52 @@ WHERE `variant`.`sku` = (
   WHERE `candidate`.`import_id` = `variant`.`import_id`
     AND `candidate`.`fitting_series` = `variant`.`fitting_series`
 );
+--> statement-breakpoint
+
+-- An old product assignment is inherited only when it is the media selected as
+-- that series' representative. Different per-SKU media remains an explicit
+-- override, so upgrading cannot hide previously curated product imagery.
+UPDATE `catalog_product_main_images` AS `image`
+SET `assignment_kind` = 'inherited'
+WHERE EXISTS (
+  SELECT 1
+  FROM `catalog_hose_variants` AS `variant`
+  INNER JOIN `catalog_hose_series` AS `series`
+    ON `series`.`import_id` = `variant`.`import_id`
+   AND `series`.`series_code` = `variant`.`hose_series`
+  WHERE `variant`.`import_id` = `image`.`import_id`
+    AND `variant`.`sku` = `image`.`sku`
+    AND `series`.`representative_media_version_id` = `image`.`media_version_id`
+  UNION ALL
+  SELECT 1
+  FROM `catalog_hose_ends` AS `variant`
+  INNER JOIN `catalog_hose_end_series` AS `series`
+    ON `series`.`import_id` = `variant`.`import_id`
+   AND `series`.`series_code` = `variant`.`fitting_series`
+  WHERE `variant`.`import_id` = `image`.`import_id`
+    AND `variant`.`sku` = `image`.`sku`
+    AND `series`.`representative_media_version_id` = `image`.`media_version_id`
+);
+--> statement-breakpoint
+CREATE TRIGGER `catalogproductmainimages_immutable_update`
+BEFORE UPDATE ON `catalog_product_main_images`
+WHEN EXISTS (
+  SELECT 1 FROM `catalog_releases`
+  WHERE `source_import_id` = OLD.`import_id`
+    AND `status` IN ('published', 'superseded')
+)
+BEGIN
+  SELECT RAISE(ABORT, 'published catalog image assignment is immutable');
+END;
+--> statement-breakpoint
+CREATE TRIGGER `catalogproductmainimages_draft_update_revision`
+AFTER UPDATE ON `catalog_product_main_images`
+BEGIN
+  UPDATE `catalog_releases`
+  SET `version` = `version` + 1
+  WHERE `source_import_id` IN (OLD.`import_id`, NEW.`import_id`)
+    AND `status` = 'draft';
+END;
 --> statement-breakpoint
 
 CREATE TRIGGER `cataloghoseseries_code_immutable`

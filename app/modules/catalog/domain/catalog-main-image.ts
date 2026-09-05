@@ -151,6 +151,21 @@ export function isUploadedMainImageReference(reference: string) {
   return /^media-version:[A-Za-z0-9_-]+$/u.test(reference);
 }
 
+export function publicCatalogMainImageUrl(
+  mediaVersionId: string | null | undefined,
+  approvedReference: string | null | undefined,
+) {
+  if (!mediaVersionId) return null;
+  if (
+    approvedReference &&
+    !approvedReference.startsWith("hose-series:") &&
+    !approvedReference.startsWith("hose-end-shape:")
+  ) {
+    return null;
+  }
+  return `/media/catalog/${encodeURIComponent(mediaVersionId)}/storefront`;
+}
+
 export function hoseMediaPath(hoseSeries: string | null | undefined) {
   if (!hoseSeries || !reviewedHoseSeriesImages.has(hoseSeries)) return null;
   return `/images/catalog/hose/${hoseSeries}-structure.jpg`;

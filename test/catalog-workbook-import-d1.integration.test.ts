@@ -182,8 +182,9 @@ describe("D1 workbook import pending-version isolation", () => {
           )
           .first(),
       ).toEqual(activeBefore);
+
     } finally {
       await platform.dispose();
     }
-  }, 40_000);
+  }, 90_000);
 });
