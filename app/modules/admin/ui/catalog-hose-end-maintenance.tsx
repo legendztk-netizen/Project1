@@ -65,7 +65,18 @@ export function HoseEndMaintenanceActions() {
   return (
     <div aria-label="Hose End maintenance / 压接接头维护" role="group">
       <details className="catalog-product-action-menu">
-        <summary>Hose End / 压接接头</summary>
+        <summary
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            const details = event.currentTarget.parentElement;
+            if (details instanceof HTMLDetailsElement) {
+              details.open = !details.open;
+            }
+          }}
+        >
+          Hose End / 压接接头
+        </summary>
         <div className="catalog-product-action-menu-items">
           <Link to={`${maintenanceBase}&manualAction=series`}>
             <Plus aria-hidden="true" size={16} /> Add Series / 增加系列

@@ -95,7 +95,9 @@ describe("Hose End maintenance bilingual modal forms", () => {
     summary.focus();
     expect(document.activeElement).toBe(summary);
     fireEvent.mouseEnter(summary);
-    fireEvent.click(summary);
+    fireEvent.keyDown(summary, { code: "Enter", key: "Enter" });
+    fireEvent.keyUp(summary, { code: "Enter", key: "Enter" });
+    expect(summary.closest("details")).toHaveProperty("open", true);
     expect(
       within(menu).getByRole("link", { name: "Add Series / 增加系列" }),
     ).toBeTruthy();
