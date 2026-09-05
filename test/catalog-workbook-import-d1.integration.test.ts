@@ -96,6 +96,16 @@ describe("D1 workbook import pending-version isolation", () => {
           )
           .first(),
       ).toEqual({ count: 36 });
+      expect(
+        await database
+          .prepare(
+            `SELECT DISTINCT assignment_kind
+             FROM catalog_product_main_images
+             WHERE import_id = 'workbook-import-1'
+               AND sku IN ('601R1_001', 'JIC_F_SW_04_04')`,
+          )
+          .all(),
+      ).toMatchObject({ results: [{ assignment_kind: "inherited" }] });
 
       const invalid = structuredClone(sheets);
       const compatibility = invalid.find(

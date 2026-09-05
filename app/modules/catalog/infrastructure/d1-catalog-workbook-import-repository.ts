@@ -528,7 +528,14 @@ function workbookImageStatements(
             : product.productType === "adapter"
               ? reviewedAdapterImageReferences[0].reference
               : reviewedQuickCouplerImageReferences[0].reference;
-    return { reference, sku: product.sku };
+    return {
+      assignmentKind:
+        product.productType === "hose" || product.productType === "hose_end"
+          ? "inherited"
+          : "override",
+      reference,
+      sku: product.sku,
+    };
   });
   const references = [
     ...new Set(assignments.map((assignment) => assignment.reference)),
@@ -559,11 +566,13 @@ function workbookImageStatements(
     database
       .prepare(
         `INSERT INTO catalog_product_main_images (
-           id, import_id, sku, media_version_id, assigned_at, assigned_by
+           id, import_id, sku, media_version_id, assigned_at, assigned_by,
+           assignment_kind
          )
          SELECT ? || ':image:' || json_extract(value, '$.sku'), ?,
                 json_extract(value, '$.sku'),
-                'approved-v1:' || json_extract(value, '$.reference'), ?, ?
+                'approved-v1:' || json_extract(value, '$.reference'), ?, ?,
+                json_extract(value, '$.assignmentKind')
          FROM json_each(?)`,
       )
       .bind(

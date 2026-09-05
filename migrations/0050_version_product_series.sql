@@ -2,6 +2,33 @@
 -- catalog records. Existing release snapshots remain intact; shared values and
 -- representative media are backfilled from their existing variants.
 
+ALTER TABLE `catalog_product_main_images`
+ADD COLUMN `assignment_kind` TEXT NOT NULL DEFAULT 'override'
+CHECK (`assignment_kind` IN ('inherited', 'override'));
+--> statement-breakpoint
+DROP TRIGGER `catalogproductmainimages_immutable_update`;
+--> statement-breakpoint
+UPDATE `catalog_product_main_images` AS `image`
+SET `assignment_kind` = 'inherited'
+WHERE EXISTS (
+  SELECT 1 FROM `catalog_skus` AS `product`
+  WHERE `product`.`import_id` = `image`.`import_id`
+    AND `product`.`sku` = `image`.`sku`
+    AND `product`.`product_type` IN ('hose', 'hose_end')
+);
+--> statement-breakpoint
+CREATE TRIGGER `catalogproductmainimages_immutable_update`
+BEFORE UPDATE ON `catalog_product_main_images`
+WHEN EXISTS (
+  SELECT 1 FROM `catalog_releases`
+  WHERE `source_import_id` = OLD.`import_id`
+    AND `status` IN ('published', 'superseded')
+)
+BEGIN
+  SELECT RAISE(ABORT, 'published catalog image assignment is immutable');
+END;
+--> statement-breakpoint
+
 ALTER TABLE `catalog_hose_series` ADD COLUMN `series_name` TEXT;
 --> statement-breakpoint
 ALTER TABLE `catalog_hose_series` ADD COLUMN `primary_standard` TEXT;

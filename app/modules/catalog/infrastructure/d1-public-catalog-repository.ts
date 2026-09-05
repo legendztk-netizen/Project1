@@ -536,6 +536,7 @@ const publicCatalogSql = `
     ON o.import_id = s.import_id AND o.base_sku = s.sku
   LEFT JOIN catalog_product_main_images image
     ON image.import_id = s.import_id AND image.sku = s.sku
+   AND image.assignment_kind = 'override'
   LEFT JOIN cutting_labeling_fee_rates global_fee
     ON global_fee.scope_key = 'global'
   LEFT JOIN cutting_labeling_fee_rates series_fee
