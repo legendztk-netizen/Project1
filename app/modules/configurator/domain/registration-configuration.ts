@@ -1,5 +1,6 @@
 import type { DraftSelectionProvenance } from "./assembly-draft-validation";
 import type { HoseConfigurationDraft } from "./hose-configuration-draft";
+import { isMeasurementMethodCode } from "../../configurator-reference/domain/configurator-reference";
 
 export const registrationConfigurationLifetimeSeconds = 24 * 60 * 60;
 export const registrationConfigurationMaximumBytes = 256 * 1024;
@@ -221,7 +222,7 @@ function validMeasurementSelection(value: unknown) {
     return false;
   }
   return (
-    /^M0[1-7]$/u.test(String(value.method.code)) &&
+    isMeasurementMethodCode(value.method.code) &&
     requiredString(value.method.diagramAssetKey) &&
     requiredString(value.method.diagramAssetVersion) &&
     requiredString(value.method.displayName) &&

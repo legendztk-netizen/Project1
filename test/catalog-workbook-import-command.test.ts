@@ -24,11 +24,14 @@ const workbookPath = fileURLToPath(
 
 let fixture: CatalogWorkbookSheet[];
 
-function repositoryDouble() {
+function repositoryDouble(missingMediaVersionIds: string[] = []) {
   let review: CatalogWorkbookImportReview | null = null;
   let validDraftWrites = 0;
   let failedWrites = 0;
   const repository: CatalogWorkbookImportRepository = {
+    async findMissingMediaVersionIds(ids) {
+      return ids.filter((id) => missingMediaVersionIds.includes(id));
+    },
     async findImportReviewById(id) {
       return review?.id === id ? review : null;
     },
@@ -152,6 +155,46 @@ describe("importCatalogWorkbook", () => {
       row: 5,
       sku: "UNKNOWN_HOSE",
     });
+  });
+
+  it("rejects a new series when its uploaded image version does not exist", async () => {
+    const sheets = structuredClone(fixture);
+    const hoses = sheets.find((sheet) => sheet.sheet === "01_胶管主数据");
+    if (!hoses) throw new Error("Missing hose fixture");
+    const seriesName = hoses.data[3].length;
+    const mainImageReference = seriesName + 1;
+    hoses.data[3][seriesName] = "Hose Series Name / 胶管系列名称";
+    hoses.data[3][mainImageReference] =
+      "Hose Series Main Image Reference / 胶管系列主图引用";
+    hoses.data[4][2] = "NEW-R1";
+    hoses.data[4][seriesName] = "New R1 Series";
+    hoses.data[4][mainImageReference] = "media-version:missing-image";
+    const { counts, repository } = repositoryDouble(["missing-image"]);
+    const ids = ["failed-import", "audit-1"];
+
+    const review = await importCatalogWorkbook(repository, {
+      actorId: "local-owner",
+      fileName: "new-series.xlsx",
+      fileSizeBytes: 500,
+      generateId: () => ids.shift() ?? "unexpected-id",
+      now: () => new Date("2026-08-24T03:00:00.000Z"),
+      sheets,
+    });
+
+    expect(counts()).toEqual({ failedWrites: 1, validDraftWrites: 0 });
+    expect(review).toMatchObject({
+      draftReleaseId: null,
+      errorCount: 1,
+      status: "failed",
+    });
+    expect(review.validationResults).toContainEqual(
+      expect.objectContaining({
+        code: "missing_media_version",
+        field: "Hose Series Main Image Reference / 胶管系列主图引用",
+        sku: "NEW-R1",
+        worksheet: "01_胶管主数据",
+      }),
+    );
   });
 
   it("submits the complete normalized draft in one atomic D1 batch", async () => {

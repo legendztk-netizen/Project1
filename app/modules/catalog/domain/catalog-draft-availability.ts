@@ -21,6 +21,8 @@ export interface DraftCatalogProductReview {
   costBasisCurrency: string | null;
   factoryUnitPrice: number | null;
   hoseSeries: string | null;
+  mainImageReference?: string | null;
+  mainImageVersion?: number | null;
   priceIncoterm: string | null;
   productType: string;
   referencePriceUsd: number | null;
@@ -37,7 +39,20 @@ export interface DraftCatalogReviewFilters {
   sourceWorksheet: string | null;
 }
 
+export interface DraftCompatibilityReview {
+  catalogPublicationStatus: string;
+  compatibilityId: string;
+  ferruleSku: string;
+  hoseEndSku: string;
+  hoseSku: string;
+  productionApprovalStatus: "approved" | "not_approved";
+  qualificationStatus: string;
+  rfqEligibility: string;
+  technicalDataStatus: string;
+}
+
 export interface DraftCatalogReview {
+  compatibilities: DraftCompatibilityReview[];
   filters: DraftCatalogReviewFilters;
   hoseSeriesOptions: string[];
   products: DraftCatalogProductReview[];
@@ -46,9 +61,17 @@ export interface DraftCatalogReview {
     id: string;
     releaseNumber: string;
     sourceImportId: string;
+    status: "draft" | "published";
   };
   totalCount: number;
   worksheetOptions: string[];
+}
+
+export interface CatalogReviewReleaseOption {
+  createdAt: string;
+  id: string;
+  releaseNumber: string;
+  status: "draft" | "published";
 }
 
 export interface DraftAvailabilityChangePreview {

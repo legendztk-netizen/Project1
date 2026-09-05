@@ -41,8 +41,8 @@ import {
   reviewedAdapterImageReferences,
   reviewedFerruleImageReferences,
   reviewedQuickCouplerImageReferences,
-  hoseEndMainImageReferenceFromFields,
 } from "../domain/catalog-main-image";
+import { mediaVersionIdFromReference } from "../domain/catalog-product-image";
 
 type PersistedRow<T> = T & { id: string; importId: string };
 type ColumnMapping<TRow> = readonly [
@@ -510,6 +510,10 @@ function validationRows(review: CatalogWorkbookImportReview) {
   }));
 }
 
+function resolvedMediaVersionId(reference: string) {
+  return mediaVersionIdFromReference(reference) ?? `approved-v1:${reference}`;
+}
+
 function workbookImageStatements(
   database: D1Database,
   operation: SaveValidatedCatalogDraftOperation,
@@ -517,28 +521,46 @@ function workbookImageStatements(
   const { draft, review } = operation;
   const hoseBySku = new Map(draft.hoseVariants.map((row) => [row.sku, row]));
   const endBySku = new Map(draft.hoseEnds.map((row) => [row.sku, row]));
+  const hoseSeriesByCode = new Map(
+    draft.hoseSeriesRecords.map((series) => [series.seriesCode, series]),
+  );
+  const hoseEndSeriesByCode = new Map(
+    draft.hoseEndSeries.map((series) => [series.seriesCode, series]),
+  );
   const assignments = draft.skus.map((product) => {
     const reference =
       product.productType === "hose"
-        ? `hose-series:${hoseBySku.get(product.sku)?.hoseSeries ?? product.hoseSeries}`
+        ? hoseSeriesByCode.get(
+            hoseBySku.get(product.sku)?.hoseSeries ?? product.hoseSeries ?? "",
+          )?.mainImageReference
         : product.productType === "hose_end"
-          ? hoseEndMainImageReferenceFromFields(endBySku.get(product.sku)!)
+          ? hoseEndSeriesByCode.get(
+              endBySku.get(product.sku)?.fittingSeries ?? "",
+            )?.mainImageReference
           : product.productType === "ferrule"
             ? reviewedFerruleImageReferences[0].reference
             : product.productType === "adapter"
               ? reviewedAdapterImageReferences[0].reference
               : reviewedQuickCouplerImageReferences[0].reference;
+    if (!reference) {
+      throw new Error(`Validated product ${product.sku} has no main image`);
+    }
     return {
       assignmentKind:
         product.productType === "hose" || product.productType === "hose_end"
           ? "inherited"
           : "override",
+      mediaVersionId: resolvedMediaVersionId(reference),
       reference,
       sku: product.sku,
     };
   });
   const references = [
-    ...new Set(assignments.map((assignment) => assignment.reference)),
+    ...new Set(
+      assignments
+        .map((assignment) => assignment.reference)
+        .filter((reference) => mediaVersionIdFromReference(reference) === null),
+    ),
   ];
   const mediaStatements: D1PreparedStatement[] = [
     database
@@ -571,7 +593,7 @@ function workbookImageStatements(
          )
          SELECT ? || ':image:' || json_extract(value, '$.sku'), ?,
                 json_extract(value, '$.sku'),
-                'approved-v1:' || json_extract(value, '$.reference'), ?, ?,
+                json_extract(value, '$.mediaVersionId'), ?, ?,
                 json_extract(value, '$.assignmentKind')
          FROM json_each(?)`,
       )
@@ -673,6 +695,19 @@ export function createD1CatalogWorkbookImportRepository(
   database: D1Database,
 ): CatalogWorkbookImportRepository {
   return {
+    async findMissingMediaVersionIds(ids) {
+      if (ids.length === 0) return [];
+      const existing = await database
+        .prepare(
+          `SELECT id FROM catalog_media_versions
+           WHERE id IN (SELECT value FROM json_each(?1))`,
+        )
+        .bind(JSON.stringify(ids))
+        .all<{ id: string }>();
+      const existingIds = new Set(existing.results.map((row) => row.id));
+      return ids.filter((id) => !existingIds.has(id));
+    },
+
     async findImportReviewById(id) {
       return readReview(database, id);
     },
@@ -725,7 +760,9 @@ export function createD1CatalogWorkbookImportRepository(
             ...series,
             id: `${review.id}:series:${series.seriesCode}`,
             importId: review.id,
-            representativeMediaVersionId: `approved-v1:${series.mainImageReference}`,
+            representativeMediaVersionId: resolvedMediaVersionId(
+              series.mainImageReference,
+            ),
           })),
         ),
         ...jsonInsertStatements(
@@ -736,7 +773,9 @@ export function createD1CatalogWorkbookImportRepository(
             ...series,
             id: `${review.id}:hose-end-series:${series.seriesCode}`,
             importId: review.id,
-            representativeMediaVersionId: `approved-v1:${series.mainImageReference}`,
+            representativeMediaVersionId: resolvedMediaVersionId(
+              series.mainImageReference,
+            ),
           })),
         ),
         ...jsonInsertStatements(

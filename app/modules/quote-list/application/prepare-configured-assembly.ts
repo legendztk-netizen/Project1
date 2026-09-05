@@ -184,6 +184,18 @@ export async function prepareConfiguredAssembly(input: {
       "One or both Hose End combinations changed. Review End A and End B and try again.",
     );
   }
+  if (
+    !(await configurator.hasDerivedAssemblyCombination({
+      endACompatibilityId: endA.compatibilityId,
+      endBCompatibilityId: endB.compatibilityId,
+      hoseSku: currentDraft.hose.sku,
+      releaseId: currentDraft.catalogRelease.id,
+    }))
+  ) {
+    reject(
+      "The selected ordered Hose End combination is not available in the current Derived Assembly Data. Review End A and End B and try again.",
+    );
+  }
   let rebuilt = attachEndBToDraft(attachEndAToDraft(currentDraft, endA), endB);
 
   const references = await createD1ConfiguratorReferenceRepository(

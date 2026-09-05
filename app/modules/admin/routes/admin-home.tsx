@@ -1,11 +1,4 @@
-import {
-  Activity,
-  Boxes,
-  Database,
-  FileUp,
-  Rocket,
-  Waypoints,
-} from "lucide-react";
+import { Activity, Boxes, Database, FileUp, Waypoints } from "lucide-react";
 import { Link } from "react-router";
 
 import type { Route } from "./+types/admin-home";
@@ -79,22 +72,16 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
             </div>
           </div>
           <Link className="button button-primary" to="/admin/catalog/import">
-            <FileUp size={17} /> Import product workbook
+            <FileUp size={17} /> 产品数据维护
           </Link>
           <Link className="button button-secondary" to="/admin/catalog/review">
-            <Boxes size={17} /> Review draft products
-          </Link>
-          <Link
-            className="button button-secondary"
-            to="/admin/catalog/releases"
-          >
-            <Rocket size={17} /> Publish Catalog Release
+            <Boxes size={17} /> 产品审核与发布
           </Link>
           <Link
             className="button button-secondary"
             to="/admin/catalog/reference-data"
           >
-            <Waypoints size={17} /> Configurator Reference Data
+            <Waypoints size={17} /> 总成参数配置
           </Link>
           <Link
             className="button button-secondary"

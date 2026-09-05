@@ -4,6 +4,7 @@ import {
   type ValidatedCatalogDraft,
   validateCatalogWorkbook,
 } from "./catalog-workbook";
+import { mediaVersionIdFromReference } from "./catalog-product-image";
 
 export interface CatalogImportSummary {
   adapterCount: number;
@@ -49,6 +50,7 @@ export interface SaveValidatedCatalogDraftOperation {
 }
 
 export interface CatalogWorkbookImportRepository {
+  findMissingMediaVersionIds(ids: string[]): Promise<string[]>;
   findImportReviewById(id: string): Promise<CatalogWorkbookImportReview | null>;
   findLatestImportReview(): Promise<CatalogWorkbookImportReview | null>;
   saveFailedImport(operation: SaveFailedCatalogImportOperation): Promise<void>;
@@ -118,20 +120,63 @@ export async function importCatalogWorkbook(
   const timestamp = now.toISOString();
   const importId = generateId();
   const validation = validateCatalogWorkbook(input.sheets);
+  const validationResults = [...validation.validationResults];
+  if (validation.draft) {
+    const seriesReferences = [
+      ...validation.draft.hoseSeriesRecords.map((series) => ({
+        field: "Hose Series Main Image Reference / 胶管系列主图引用",
+        reference: series.mainImageReference,
+        seriesCode: series.seriesCode,
+        worksheet: "01_胶管主数据",
+      })),
+      ...validation.draft.hoseEndSeries.map((series) => ({
+        field: "Fitting Series Main Image Reference / 接头系列主图引用",
+        reference: series.mainImageReference,
+        seriesCode: series.seriesCode,
+        worksheet: "02_压接接头",
+      })),
+    ];
+    const uploadedMediaIds = [
+      ...new Set(
+        seriesReferences
+          .map(({ reference }) => mediaVersionIdFromReference(reference))
+          .filter((id): id is string => id !== null),
+      ),
+    ];
+    const missingIds = new Set(
+      await repository.findMissingMediaVersionIds(uploadedMediaIds),
+    );
+    for (const series of seriesReferences) {
+      const mediaVersionId = mediaVersionIdFromReference(series.reference);
+      if (!mediaVersionId || !missingIds.has(mediaVersionId)) continue;
+      validationResults.push({
+        code: "missing_media_version",
+        field: series.field,
+        message: `Uploaded reviewed image version "${mediaVersionId}" was not found for series "${series.seriesCode}"`,
+        row: 0,
+        severity: "error",
+        sku: series.seriesCode,
+        worksheet: series.worksheet,
+      });
+    }
+  }
+  const blockingErrors = validationResults.filter(
+    (result) => result.severity === "error",
+  );
   const baseReview = {
     completedAt: timestamp,
     createdAt: timestamp,
-    errorCount: validation.blockingErrors.length,
+    errorCount: blockingErrors.length,
     id: importId,
     sourceFileName: input.fileName,
     sourceFileSizeBytes: input.fileSizeBytes,
-    validationResults: validation.validationResults,
-    warningCount: validation.validationResults.filter(
+    validationResults,
+    warningCount: validationResults.filter(
       (result) => result.severity === "warning",
     ).length,
   };
 
-  if (!validation.draft) {
+  if (!validation.draft || blockingErrors.length > 0) {
     const review: CatalogWorkbookImportReview = {
       ...baseReview,
       draftReleaseId: null,

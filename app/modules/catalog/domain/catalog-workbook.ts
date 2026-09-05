@@ -2,6 +2,7 @@ import {
   hoseEndMainImageReferenceFromFields,
   hoseEndMediaKeyFromMainImageReference,
   hoseMainImageReference,
+  isUploadedMainImageReference,
 } from "./catalog-main-image";
 
 export type CatalogWorkbookCell = string | number | boolean | Date | null;
@@ -432,14 +433,7 @@ export const catalogWorksheetContracts: readonly CatalogWorksheetContract[] = [
     fields: [
       statusFields.publication,
       textField("sku", "* Hose SKU / 胶管SKU", true),
-      textField("hoseSeries", "* Hose Series / 系列", true, [
-        "601R1",
-        "601R2",
-        "EN1SC",
-        "EN2SC",
-        "EN4SP",
-        "EN4SH",
-      ]),
+      textField("hoseSeries", "* Hose Series / 系列", true),
       textField("primaryStandard", "* Primary Standard / 主标准", true),
       textField("equivalentStandard", "* Equivalent Standard / 等效标准", true),
       textField("dash", "* Hose Dash / 胶管Dash", true, DASH_VALUES),
@@ -471,6 +465,12 @@ export const catalogWorksheetContracts: readonly CatalogWorksheetContract[] = [
       textField("notes", "Notes / 备注", false),
       statusFields.rfq,
       statusFields.technical,
+      textField("seriesName", "Hose Series Name / 胶管系列名称", false),
+      textField(
+        "seriesMainImageReference",
+        "Hose Series Main Image Reference / 胶管系列主图引用",
+        false,
+      ),
     ],
   },
   {
@@ -543,6 +543,12 @@ export const catalogWorksheetContracts: readonly CatalogWorksheetContract[] = [
       textField("notes", "Notes / 备注", false),
       statusFields.rfq,
       statusFields.technical,
+      textField("seriesName", "Fitting Series Name / 接头系列名称", false),
+      textField(
+        "seriesMainImageReference",
+        "Fitting Series Main Image Reference / 接头系列主图引用",
+        false,
+      ),
     ],
   },
   {
@@ -935,6 +941,14 @@ function validateWorksheet(
 
   const header = sheet.data[3] ?? [];
   for (const [index, field] of contract.fields.entries()) {
+    const remainingHeader = header.slice(index);
+    if (
+      !field.required &&
+      !hasValue(header[index]) &&
+      remainingHeader.every((value) => !hasValue(value))
+    ) {
+      continue;
+    }
     if (header[index] !== field.header) {
       results.push({
         code: "invalid_header",
@@ -1423,13 +1437,30 @@ function validateMainImageResolution(
 ) {
   for (const row of hoseRows) {
     const hoseSeries = optionalString(row, "hoseSeries");
-    if (hoseSeries !== null && hoseMainImageReference(hoseSeries) === null) {
+    const suppliedReference = optionalString(row, "seriesMainImageReference");
+    if (
+      suppliedReference !== null &&
+      !isUploadedMainImageReference(suppliedReference)
+    ) {
       results.push(
         duplicateResult(
           row,
-          "Main Image / 主图",
+          "Hose Series Main Image Reference / 胶管系列主图引用",
+          "invalid_main_image_reference",
+          "Series image reference must identify an uploaded reviewed image as media-version:<id>",
+        ),
+      );
+    } else if (
+      hoseSeries !== null &&
+      suppliedReference === null &&
+      hoseMainImageReference(hoseSeries) === null
+    ) {
+      results.push(
+        duplicateResult(
+          row,
+          "Hose Series Main Image Reference / 胶管系列主图引用",
           "main_image_required",
-          `Hose Series "${hoseSeries}" does not resolve to a reviewed representative image`,
+          `New Hose Series "${hoseSeries}" requires an uploaded reviewed image reference`,
         ),
       );
     }
@@ -1445,16 +1476,34 @@ function validateMainImageResolution(
       swivelForm: optionalString(row, "swivelForm"),
     };
     if (Object.values(fields).some((value) => value === null)) continue;
-    const reference = hoseEndMainImageReferenceFromFields(
-      fields as Record<keyof typeof fields, string>,
-    );
-    if (hoseEndMediaKeyFromMainImageReference(reference) === null) {
+    const suppliedReference = optionalString(row, "seriesMainImageReference");
+    if (
+      suppliedReference !== null &&
+      !isUploadedMainImageReference(suppliedReference)
+    ) {
       results.push(
         duplicateResult(
           row,
-          "Main Image / 主图",
+          "Fitting Series Main Image Reference / 接头系列主图引用",
+          "invalid_main_image_reference",
+          "Series image reference must identify an uploaded reviewed image as media-version:<id>",
+        ),
+      );
+      continue;
+    }
+    const builtInReference = hoseEndMainImageReferenceFromFields(
+      fields as Record<keyof typeof fields, string>,
+    );
+    if (
+      suppliedReference === null &&
+      hoseEndMediaKeyFromMainImageReference(builtInReference) === null
+    ) {
+      results.push(
+        duplicateResult(
+          row,
+          "Fitting Series Main Image Reference / 接头系列主图引用",
           "main_image_required",
-          "This Hose End shape does not resolve to a reviewed representative image",
+          `New Fitting Series "${fields.fittingSeries}" requires an uploaded reviewed image reference`,
         ),
       );
     }
@@ -1524,6 +1573,11 @@ function validateCompatibilityRelationships(
 }
 
 const HOSE_SERIES_SHARED_FIELDS = [
+  ["seriesName", "Hose Series Name / 胶管系列名称"],
+  [
+    "seriesMainImageReference",
+    "Hose Series Main Image Reference / 胶管系列主图引用",
+  ],
   ["primaryStandard", "Primary Standard / 主标准"],
   ["equivalentStandard", "Equivalent Standard / 等效标准"],
   ["tempMinC", "Temp Min °C / 最低温度"],
@@ -1537,6 +1591,11 @@ const HOSE_SERIES_SHARED_FIELDS = [
 ] as const;
 
 const HOSE_END_SERIES_SHARED_FIELDS = [
+  ["seriesName", "Fitting Series Name / 接头系列名称"],
+  [
+    "seriesMainImageReference",
+    "Fitting Series Main Image Reference / 接头系列主图引用",
+  ],
   ["interfaceFamily", "Interface Family / 接口体系"],
   ["connectionStandard", "Interface Standard / 接口标准"],
   ["gender", "Gender / 公母"],
@@ -1621,11 +1680,13 @@ function toHoseSeries(row: ParsedRow): HoseSeriesDraft {
     coverMaterial: optionalString(row, "coverMaterial"),
     equivalentStandard: optionalString(row, "equivalentStandard") || "N/A",
     fluidCompatibility: optionalString(row, "fluidCompatibility"),
-    mainImageReference: hoseMainImageReference(seriesCode)!,
+    mainImageReference:
+      optionalString(row, "seriesMainImageReference") ??
+      hoseMainImageReference(seriesCode)!,
     primaryStandard: stringValue(row, "primaryStandard"),
     reinforcement: optionalString(row, "reinforcement"),
     seriesCode,
-    seriesName: seriesCode,
+    seriesName: optionalString(row, "seriesName") ?? seriesCode,
     tempMaxC: numberValue(row, "tempMaxC"),
     tempMinC: numberValue(row, "tempMinC"),
     tubeMaterial: optionalString(row, "tubeMaterial"),
@@ -1679,10 +1740,12 @@ function toHoseEndSeries(row: ParsedRow): HoseEndSeriesDraft {
     connectionStandard: hoseEnd.connectionStandard,
     gender: hoseEnd.gender,
     interfaceFamily: hoseEnd.interfaceFamily,
-    mainImageReference: hoseEndMainImageReferenceFromFields(hoseEnd),
+    mainImageReference:
+      optionalString(row, "seriesMainImageReference") ??
+      hoseEndMainImageReferenceFromFields(hoseEnd),
     sealingForm: hoseEnd.sealingForm,
     seriesCode: hoseEnd.fittingSeries,
-    seriesName: hoseEnd.fittingSeries,
+    seriesName: optionalString(row, "seriesName") ?? hoseEnd.fittingSeries,
     swivelForm: hoseEnd.swivelForm,
   };
 }

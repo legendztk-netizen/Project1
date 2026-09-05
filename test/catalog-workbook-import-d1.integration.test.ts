@@ -52,6 +52,49 @@ describe("D1 workbook import pending-version isolation", () => {
         file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength),
       );
       const database = platform.env.DB;
+      const hoses = sheets.find((sheet) => sheet.sheet === "01_胶管主数据");
+      if (!hoses) throw new Error("Missing hose fixture");
+      const seriesName = hoses.data[3].length;
+      const mainImageReference = seriesName + 1;
+      hoses.data[3][seriesName] = "Hose Series Name / 胶管系列名称";
+      hoses.data[3][mainImageReference] =
+        "Hose Series Main Image Reference / 胶管系列主图引用";
+      hoses.data[4][2] = "NEW-R1";
+      hoses.data[4][seriesName] = "New R1 Series";
+      hoses.data[4][mainImageReference] = "media-version:reviewed-new-r1";
+      await database.batch([
+        database
+          .prepare(
+            `INSERT INTO catalog_media_lineages (
+               id, logical_reference, created_at, created_by
+             ) VALUES (?, ?, ?, ?)`,
+          )
+          .bind(
+            "lineage-new-r1",
+            "uploaded:new-r1",
+            "2026-09-04T00:59:00.000Z",
+            "owner-1",
+          ),
+        database
+          .prepare(
+            `INSERT INTO catalog_media_versions (
+               id, lineage_id, version, source_kind, approved_reference,
+               master_object_key, storefront_object_key, thumbnail_object_key,
+               content_hash, mime_type, width, height, created_at, created_by
+             ) VALUES (?, ?, 1, 'uploaded', NULL, ?, ?, ?, ?, 'image/webp',
+                       1200, 800, ?, ?)`,
+          )
+          .bind(
+            "reviewed-new-r1",
+            "lineage-new-r1",
+            "catalog/new-r1/master.webp",
+            "catalog/new-r1/storefront.webp",
+            "catalog/new-r1/thumbnail.webp",
+            "hash-new-r1",
+            "2026-09-04T00:59:00.000Z",
+            "owner-1",
+          ),
+      ]);
       const repository = createD1CatalogWorkbookImportRepository(database);
       const activeBefore = await database
         .prepare(
@@ -86,6 +129,31 @@ describe("D1 workbook import pending-version isolation", () => {
         representative_media_version_id: "approved-v1:hose-series:601R1",
         series_code: "601R1",
         series_name: "601R1",
+      });
+      expect(
+        await database
+          .prepare(
+            `SELECT series_code, series_name, representative_media_version_id
+             FROM catalog_hose_series
+             WHERE import_id = 'workbook-import-1' AND series_code = 'NEW-R1'`,
+          )
+          .first(),
+      ).toMatchObject({
+        representative_media_version_id: "reviewed-new-r1",
+        series_code: "NEW-R1",
+        series_name: "New R1 Series",
+      });
+      expect(
+        await database
+          .prepare(
+            `SELECT media_version_id, assignment_kind
+             FROM catalog_product_main_images
+             WHERE import_id = 'workbook-import-1' AND sku = '601R1_001'`,
+          )
+          .first(),
+      ).toEqual({
+        assignment_kind: "inherited",
+        media_version_id: "reviewed-new-r1",
       });
       expect(
         await database
@@ -182,7 +250,6 @@ describe("D1 workbook import pending-version isolation", () => {
           )
           .first(),
       ).toEqual(activeBefore);
-
     } finally {
       await platform.dispose();
     }

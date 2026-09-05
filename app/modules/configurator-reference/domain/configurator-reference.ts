@@ -1,6 +1,18 @@
 export type CatalogReleaseStatus = "draft" | "published" | "superseded";
 export type MeasurementMethodCode =
-  "M01" | "M02" | "M03" | "M04" | "M05" | "M06" | "M07";
+  | "M01"
+  | "M02"
+  | "M03"
+  | "M04"
+  | "M05"
+  | "M06"
+  | "M07";
+
+export function isMeasurementMethodCode(
+  value: unknown,
+): value is MeasurementMethodCode {
+  return typeof value === "string" && /^M0[1-7]$/u.test(value);
+}
 
 export interface MeasurementEndpointClass {
   code: string;

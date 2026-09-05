@@ -16,8 +16,7 @@ The initial skeleton exposes three deliberately separate surfaces:
   and draft exit protection
 - `/admin` - Admin Backoffice shell
 - `/admin/catalog/import` - authorized seven-worksheet catalog import and review
-- `/admin/catalog/review` - authorized draft product review and bulk Supply Availability changes
-- `/admin/catalog/releases` - authorized release comparison, revalidation, and atomic publication
+- `/admin/catalog/review` - authorized draft review, bulk Supply Availability changes, full-release validation, and atomic publication
 - `/health` - machine-readable Worker health response
 
 ## Prerequisites

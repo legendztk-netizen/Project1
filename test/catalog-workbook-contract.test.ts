@@ -28,6 +28,15 @@ function sheetByName(sheets: CatalogWorkbookSheet[], name: string) {
   return sheet;
 }
 
+function addHoseSeriesColumns(sheet: CatalogWorkbookSheet) {
+  const seriesName = sheet.data[3].length;
+  const mainImageReference = seriesName + 1;
+  sheet.data[3][seriesName] = "Hose Series Name / 胶管系列名称";
+  sheet.data[3][mainImageReference] =
+    "Hose Series Main Image Reference / 胶管系列主图引用";
+  return { mainImageReference, seriesName };
+}
+
 beforeAll(async () => {
   const file = await readFile(workbookPath);
   fixture = await readCatalogWorkbook(
@@ -246,6 +255,65 @@ describe("01-07 catalog workbook contract", () => {
           seriesName: "MPX Hydraulax R1 reference",
         }),
       ]),
+    );
+  });
+
+  it("accepts a complete new Hose Series with an uploaded reviewed image", () => {
+    const sheets = cloneFixture();
+    const hoses = sheetByName(sheets, "01_胶管主数据");
+    const columns = addHoseSeriesColumns(hoses);
+    hoses.data[4][2] = "NEW-R1";
+    hoses.data[4][columns.seriesName] = "New R1 Series";
+    hoses.data[4][columns.mainImageReference] = "media-version:reviewed-new-r1";
+
+    const result = validateCatalogWorkbook(sheets);
+
+    expect(result.blockingErrors).toEqual([]);
+    expect(result.draft?.hoseSeriesRecords).toContainEqual(
+      expect.objectContaining({
+        mainImageReference: "media-version:reviewed-new-r1",
+        seriesCode: "NEW-R1",
+        seriesName: "New R1 Series",
+      }),
+    );
+  });
+
+  it("requires an uploaded reviewed image for a new Hose Series", () => {
+    const sheets = cloneFixture();
+    const hoses = sheetByName(sheets, "01_胶管主数据");
+    hoses.data[4][2] = "NEW-R1";
+
+    const result = validateCatalogWorkbook(sheets);
+
+    expect(result.draft).toBeNull();
+    expect(result.blockingErrors).toContainEqual(
+      expect.objectContaining({
+        code: "main_image_required",
+        field: "Hose Series Main Image Reference / 胶管系列主图引用",
+        row: 5,
+        sku: "601R1_001",
+        worksheet: "01_胶管主数据",
+      }),
+    );
+  });
+
+  it("rejects an unrecognized new-series image reference", () => {
+    const sheets = cloneFixture();
+    const hoses = sheetByName(sheets, "01_胶管主数据");
+    const columns = addHoseSeriesColumns(hoses);
+    hoses.data[4][2] = "NEW-R1";
+    hoses.data[4][columns.mainImageReference] = "https://example.com/image.jpg";
+
+    const result = validateCatalogWorkbook(sheets);
+
+    expect(result.draft).toBeNull();
+    expect(result.blockingErrors).toContainEqual(
+      expect.objectContaining({
+        code: "invalid_main_image_reference",
+        field: "Hose Series Main Image Reference / 胶管系列主图引用",
+        row: 5,
+        worksheet: "01_胶管主数据",
+      }),
     );
   });
 
@@ -474,7 +542,7 @@ describe("01-07 catalog workbook contract", () => {
     expect(result.blockingErrors).toContainEqual(
       expect.objectContaining({
         code: "main_image_required",
-        field: "Main Image / 主图",
+        field: "Fitting Series Main Image Reference / 接头系列主图引用",
         row: 5,
         worksheet: "02_压接接头",
       }),

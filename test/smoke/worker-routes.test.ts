@@ -87,6 +87,81 @@ function sqlText(value: string) {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
+async function publishFromReview(
+  releaseId: string,
+  requestCorrelationId: string,
+) {
+  const form = new FormData();
+  form.set("intent", "update_assembly_and_publish");
+  form.set("releaseId", releaseId);
+  return fetch(`${origin}/admin/catalog/review`, {
+    body: form,
+    headers: {
+      "cf-connecting-ip": "203.0.113.10",
+      "x-request-id": requestCorrelationId,
+    },
+    method: "POST",
+    redirect: "manual",
+  });
+}
+
+function completeFerruleMaintenanceForm(sku: string) {
+  const form = new FormData();
+  const values = {
+    intent: "maintain_component",
+    lifecycleStatus: "online",
+    mainImageReference: "catalog-source:62d65f8412ff5.pdf:ferrule:p49-50",
+    mode: "create",
+    "master.coating": "Zinc plating",
+    "master.ferruleSeries": "601R1",
+    "master.hoseConstruction": "1-wire braid",
+    "master.hoseTailDash": "-4",
+    "master.material": "Carbon steel",
+    "master.skiveRequirement": "Other",
+    "master.sku": sku,
+    "master.source": "Spec 8 Ticket 10 Worker workflow",
+    "master.technicalDataStatus": "Complete",
+    originalSalesSku: "",
+    originalSku: "",
+    productType: "ferrule",
+    "sales.countryOfOrigin": "China",
+    "sales.leadTimeDays": "14",
+    "sales.moq": "1",
+    "sales.quantityInputMode": "Units",
+    "sales.referencePriceUsd": "4.25",
+    "sales.salesSku": sku,
+    "sales.salesUnit": "each",
+    "sales.technicalDataStatus": "Complete",
+    "sales.unitsPerSalesPack": "1",
+  };
+  for (const [key, value] of Object.entries(values)) form.set(key, value);
+  return form;
+}
+
+function assignReviewedImageToPublishedProducts(importId: string) {
+  const [media] = runLocalD1<{ id: string }>(
+    `SELECT id FROM catalog_media_versions ORDER BY created_at, id LIMIT 1`,
+  );
+  expect(media).toBeTruthy();
+  if (!media) throw new Error("Expected one reviewed Catalog image");
+  runLocalD1(
+    `INSERT INTO catalog_product_main_images (
+       id, import_id, sku, media_version_id, assigned_at, assigned_by
+     )
+     SELECT 'smoke-image:' || product.import_id || ':' || product.sku,
+            product.import_id, product.sku, ${sqlText(media.id)},
+            CURRENT_TIMESTAMP, 'local-owner'
+     FROM catalog_skus product
+     WHERE product.import_id = ${sqlText(importId)}
+       AND product.catalog_publication_status = 'Published'
+       AND NOT EXISTS (
+         SELECT 1 FROM catalog_product_main_images existing
+         WHERE existing.import_id = product.import_id
+           AND existing.sku = product.sku
+       )`,
+  );
+}
+
 function otpChallengeFromHtml(html: string) {
   const challengeId = html.match(
     /name="challengeId"[^>]*value="([^"]+)"|value="([^"]+)"[^>]*name="challengeId"/,
@@ -2423,6 +2498,7 @@ describe("Cloudflare Worker route surfaces", () => {
       "test/fixtures/catalog-import/hose-product-data-collection-template-length-ordering.xlsx",
     );
     const form = new FormData();
+    form.set("intent", "import_workbook");
     form.set(
       "workbook",
       new File([workbook], "hose-product-data.xlsx", {
@@ -2469,6 +2545,8 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(review).toContain(">644<");
     expect(review).toContain("All imported SKUs start Temporarily Unavailable");
     expect(review).toContain("only Approved + Complete");
+    expect(review).toContain("New-series reviewed image");
+    expect(review).toContain('value="upload_workbook_series_image"');
 
     expect(
       runLocalD1<{ count: number }>(
@@ -2551,7 +2629,136 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(publicCostBasis.status).toBe(404);
   });
 
-  it("maintains versioned configurator registries only on a draft release", async () => {
+  it("pre-uploads a reviewed image for a complete new workbook series", async () => {
+    const image = await readFile("public/images/601R2-structure.png");
+    const form = new FormData();
+    form.set("intent", "upload_workbook_series_image");
+    form.set(
+      "mainImageUpload",
+      new File([image], "new-series.png", { type: "image/png" }),
+    );
+
+    const response = await fetch(`${origin}/admin/catalog/import`, {
+      body: form,
+      method: "POST",
+      redirect: "manual",
+    });
+
+    expect(response.status, await response.text()).toBe(302);
+    const location = response.headers.get("location");
+    expect(location).toMatch(
+      /^\/admin\/catalog\/import\?mode=excel&seriesImageReference=media-version%3A/,
+    );
+    const reference = new URL(location ?? "", origin).searchParams.get(
+      "seriesImageReference",
+    );
+    expect(reference).toMatch(/^media-version:[A-Za-z0-9_-]+$/u);
+    const mediaVersionId = reference?.slice("media-version:".length) ?? "";
+    expect(
+      runLocalD1<{ source_kind: string }>(
+        `SELECT source_kind FROM catalog_media_versions WHERE id = '${mediaVersionId}'`,
+      ),
+    ).toEqual([{ source_kind: "uploaded" }]);
+
+    const page = await (await fetch(`${origin}${location}`)).text();
+    expect(page).toContain("Workbook reference:");
+    expect(page).toContain(reference);
+  });
+
+  it("loads and edits one exact Hose variant only in the pending version", async () => {
+    const response = await fetch(
+      `${origin}/admin/catalog/import?mode=manual&productType=hose&manualAction=variant&sku=601r1_001`,
+    );
+    const page = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(page).toContain("产品数据维护");
+    expect(page).toContain("批量导入产品");
+    expect(page).toContain("手动新增/编辑产品");
+    expect(page).toContain("Hose Series and Variants / 胶管系列和子体");
+    expect(page).toContain("Edit Hose Variant / 编辑胶管子体");
+    expect(page).toContain('name="variant.sku"');
+    expect(page).toContain('value="601R1_001"');
+    expect(page).toContain('name="variant.bendRadiusMm"');
+    expect(page).toContain('name="mainImageReference"');
+    expect(page).toContain("共享技术参数和代表图来自所选系列");
+
+    const form = new FormData();
+    for (const [key, value] of Object.entries({
+      intent: "maintain_hose_variant",
+      lifecycleStatus: "draft",
+      mainImageReference: "",
+      mode: "edit",
+      originalSku: "601R1_001",
+      "variant.bendRadiusMm": "91",
+      "variant.burstBar": "1000",
+      "variant.dash": "-3",
+      "variant.hoseSeries": "601R1",
+      "variant.idMm": "5",
+      "variant.mshaMarking": "N/A",
+      "variant.nominalIdIn": "0.1875",
+      "variant.notes":
+        "Manual-derived catalog value; confirm production specification and skive requirement before production approval; unresolved values do not block RFQ eligibility.",
+      "variant.odMm": "12.1",
+      "variant.skiveRequirement": "Other",
+      "variant.sku": "601R1_001",
+      "variant.source": "62d65f8412ff5.pdf p.16",
+      "variant.technicalDataStatus": "Pending",
+      "variant.weightKgM": "0.19",
+      "variant.workingBar": "250",
+      "variant.workingPsi": "3626",
+    })) {
+      form.set(key, value);
+    }
+    const saveResponse = await fetch(`${origin}/admin/catalog/import`, {
+      body: form,
+      method: "POST",
+      redirect: "manual",
+    });
+    expect(saveResponse.status, await saveResponse.text()).toBe(302);
+    expect(saveResponse.headers.get("location")).toContain("saved=updated");
+    expect(saveResponse.headers.get("location")).toContain(
+      "identifier=601R1_001",
+    );
+
+    const [draftVariant] = runLocalD1<{
+      actor_id: string;
+      bend_radius_mm: number;
+    }>(
+      `SELECT variant.bend_radius_mm,
+              (SELECT actor_id FROM admin_audit_events
+               WHERE event_type = 'catalog_manual.hose_variant_updated'
+                 AND entity_id = '601R1_001'
+               ORDER BY occurred_at DESC LIMIT 1) AS actor_id
+       FROM catalog_hose_variants variant
+       INNER JOIN catalog_releases release
+         ON release.source_import_id = variant.import_id
+       WHERE release.status = 'draft' AND variant.sku = '601R1_001'
+       ORDER BY release.created_at DESC LIMIT 1`,
+    );
+    expect(draftVariant).toEqual({
+      actor_id: "local-owner",
+      bend_radius_mm: 91,
+    });
+    expect(
+      runLocalD1<{ release_id: string | null }>(
+        "SELECT release_id FROM catalog_active_release WHERE singleton = 1",
+      ),
+    ).toEqual([{ release_id: null }]);
+
+    form.set("variant.bendRadiusMm", "90");
+    expect(
+      (
+        await fetch(`${origin}/admin/catalog/import`, {
+          body: form,
+          method: "POST",
+          redirect: "manual",
+        })
+      ).status,
+    ).toBe(302);
+  });
+
+  it("maintains release-specific mappings and global configurator rules", async () => {
     const [draft] = runLocalD1<{ id: string }>(
       `SELECT catalog_releases.id
        FROM catalog_releases
@@ -2570,11 +2777,14 @@ describe("Cloudflare Worker route surfaces", () => {
     );
     const page = await pageResponse.text();
     expect(pageResponse.status).toBe(200);
-    expect(page).toContain("Configurator Registries");
+    expect(page).toContain("总成参数配置");
     expect(page).toContain("Measurement Methods");
     expect(page).toContain("Clocking Convention");
     expect(page).toContain("Installed Protection");
-    expect(page).toContain("Assembly Estimate Schedule");
+    expect(page).toContain("Assembly service price");
+    expect(page).toContain("Global configurator rules");
+    expect(page).toContain("编辑");
+    expect(page).toContain("新增");
     expect(page).toContain("No additional installed protection");
     expect(page).toContain("View customer measurement guide");
     expect(page).not.toContain("Hose End assignments");
@@ -2694,27 +2904,6 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(await invalidResponse.text()).toContain(
       "Measurement Endpoint Class NOT_REGISTERED is missing",
     );
-
-    runLocalD1(
-      `DELETE FROM catalog_configurator_registry_entries
-       WHERE release_id = '${draft.id}'
-         AND registry_type = 'measurement_method'
-         AND entry_key = 'M07'`,
-    );
-    const invalidPreview = await (
-      await fetch(`${origin}/admin/catalog/releases?release=${draft.id}`)
-    ).text();
-    expect(invalidPreview).toContain("Configurator registry is missing M07");
-    runLocalD1(
-      `INSERT INTO catalog_configurator_registry_entries (
-         release_id, registry_type, entry_key, payload_json,
-         record_version, updated_at
-       )
-       SELECT '${draft.id}', registry_type, entry_key, payload_json, 1,
-              CURRENT_TIMESTAMP
-       FROM configurator_registry_seed_templates
-       WHERE registry_type = 'measurement_method' AND entry_key = 'M07'`,
-    );
   });
 
   it("reviews and changes only draft Supply Availability through confirmation", async () => {
@@ -2743,22 +2932,25 @@ describe("Cloudflare Worker route surfaces", () => {
     );
     const review = await reviewResponse.text();
     expect(reviewResponse.status).toBe(200);
-    expect(review).toContain("Review draft products");
+    expect(review).toContain("产品审核与发布");
     expect(review).toContain("601R1_001");
-    expect(review).toContain("Cost Basis");
+    expect(review).toContain("成本基础");
     expect(review).toContain("USD 1.11");
+    expect(review).not.toContain('href="/admin/catalog/releases"');
 
     const activeImportId = `availability-active-import-${crypto.randomUUID()}`;
     const activeReleaseId = `availability-active-release-${crypto.randomUUID()}`;
     const activeSkuId = `availability-active-sku-${crypto.randomUUID()}`;
     const now = new Date().toISOString();
+    const activeCreatedAt = "2000-01-01T00:00:00.000Z";
     runLocalD1(
       `UPDATE catalog_releases SET status = 'superseded' WHERE status = 'published';
        INSERT INTO catalog_imports (
          id, kind, status, summary_json, error_count, warning_count,
          created_at, completed_at
        ) VALUES (
-         '${activeImportId}', 'workbook', 'completed', '{}', 0, 0, '${now}', '${now}'
+         '${activeImportId}', 'workbook', 'completed', '{}', 0, 0,
+         '${activeCreatedAt}', '${now}'
        );
        INSERT INTO catalog_skus (
          id, import_id, sku, source_worksheet, product_type, hose_series,
@@ -2773,7 +2965,7 @@ describe("Cloudflare Worker route surfaces", () => {
          id, release_number, status, source_import_id, version, created_at, published_at
        ) VALUES (
          '${activeReleaseId}', 'ACTIVE-${activeReleaseId}', 'published',
-         '${activeImportId}', 1, '${now}', '${now}'
+         '${activeImportId}', 1, '${activeCreatedAt}', '${now}'
        );
        UPDATE catalog_active_release
        SET release_id = '${activeReleaseId}', version = version + 1, updated_at = '${now}'
@@ -2798,7 +2990,9 @@ describe("Cloudflare Worker route surfaces", () => {
     });
     const preview = await previewResponse.text();
     expect(previewResponse.status).toBe(200);
-    expect(preview).toContain("Confirm bulk change");
+    expect(preview).toContain("确认批量修改");
+    expect(preview).toContain('value="apply"');
+    expect(preview).toContain("本操作只修改待发布目录版本");
     expect(preview).toContain('data-affected-count="1"');
     expect(preview).toContain('data-matched-count="1"');
     expect(
@@ -2831,7 +3025,7 @@ describe("Cloudflare Worker route surfaces", () => {
       });
       const html = await response.text();
       expect(response.status).toBe(200);
-      expect(html).toContain("Confirm bulk change");
+      expect(html).toContain("确认批量修改");
       expect(html).toMatch(/data-affected-count="[1-9][0-9]*"/);
       expect(html).toMatch(/data-matched-count="[1-9][0-9]*"/);
     }
@@ -2906,635 +3100,286 @@ describe("Cloudflare Worker route surfaces", () => {
     ).text();
     expect(zeroHtml).toContain('data-affected-count="0"');
     expect(zeroHtml).toContain('data-matched-count="1"');
-    expect(zeroHtml).not.toContain("Apply to 0 products");
+    expect(zeroHtml).not.toContain("修改 0 个产品");
     runLocalD1(
       `UPDATE catalog_cost_bases SET factory_unit_price = NULL
        WHERE import_id = '${draft.source_import_id}' AND sales_sku = '601R1_001'`,
     );
   });
 
-  it("atomically publishes one release and rejects stale or invalid publication", async () => {
+  it("publishes atomically through the single combined Product Review command", async () => {
     const [draft] = runLocalD1<{
       id: string;
-      release_number: string;
-      source_import_id: string;
-      version: number;
-    }>(
-      `SELECT id, release_number, source_import_id, version
-       FROM catalog_releases
-       WHERE status = 'draft' AND source_import_id IN (
-         SELECT id FROM catalog_imports WHERE kind = 'workbook' AND status = 'completed'
-       ) ORDER BY created_at DESC LIMIT 1`,
-    );
-    const [activeBefore] = runLocalD1<{
-      active_generation: number;
-      id: string;
-      release_number: string;
       source_import_id: string;
     }>(
-      `SELECT catalog_active_release.version AS active_generation,
-              catalog_releases.id, catalog_releases.release_number,
-              catalog_releases.source_import_id
-       FROM catalog_active_release
-       INNER JOIN catalog_releases ON catalog_releases.id = catalog_active_release.release_id
-       WHERE catalog_active_release.singleton = 1`,
+      `SELECT id, source_import_id FROM catalog_releases
+       WHERE status = 'draft' ORDER BY created_at DESC, id DESC LIMIT 1`,
     );
     expect(draft).toBeTruthy();
-    expect(activeBefore).toBeTruthy();
-    if (!draft || !activeBefore)
-      throw new Error("Expected draft and active releases");
+    if (!draft) throw new Error("Expected one draft release");
 
     runLocalD1(
       `UPDATE catalog_skus
-       SET catalog_publication_status = 'Published'
-       WHERE import_id = '${draft.source_import_id}' AND sku = '601R1_002'`,
+       SET catalog_publication_status = 'Published',
+           rfq_eligibility = 'Eligible'
+       WHERE import_id = ${sqlText(draft.source_import_id)};
+       UPDATE catalog_sales_offers
+       SET catalog_publication_status = 'Published',
+           rfq_eligibility = 'Eligible'
+       WHERE import_id = ${sqlText(draft.source_import_id)};`,
     );
-    const [revalidatedDraftVersion] = runLocalD1<{ version: number }>(
-      `SELECT version FROM catalog_releases WHERE id = '${draft.id}'`,
-    );
-    expect(revalidatedDraftVersion?.version).toBeGreaterThan(draft.version);
-    draft.version = revalidatedDraftVersion?.version ?? draft.version;
+    assignReviewedImageToPublishedProducts(draft.source_import_id);
 
-    const storefrontBefore = await (await fetch(origin)).text();
-    expect(storefrontBefore).toContain("Current catalog");
-    const activeProductBefore = await fetch(
-      `${origin}/api/catalog/products/601R1_001`,
+    const reviewResponse = await fetch(
+      `${origin}/admin/catalog/review?release=${encodeURIComponent(draft.id)}`,
     );
-    expect(activeProductBefore.status).toBe(200);
-    const activeProductBeforePayload = await activeProductBefore.json();
-    expect(activeProductBeforePayload).toMatchObject({
-      product: {
-        canAddToQuote: false,
-        releaseId: activeBefore.id,
-        sku: "601R1_001",
-        supplyAvailability: "temporarily_unavailable",
-      },
-    });
+    const reviewHtml = await reviewResponse.text();
+    expect(reviewResponse.status).toBe(200);
+    expect(reviewHtml).toContain("完整发布差异预览");
+    expect(reviewHtml).toContain("参考价格");
+    expect(reviewHtml).toContain("产品主图");
+    expect(reviewHtml).toContain("兼容关系");
+    expect(reviewHtml).toContain("衍生总成组合");
+    expect(reviewHtml).toContain("受影响的胶管系列");
 
-    const previewResponse = await fetch(
-      `${origin}/admin/catalog/releases?release=${draft.id}`,
+    const [offer] = runLocalD1<{
+      base_sku: string;
+      reference_price_usd: number;
+    }>(
+      `SELECT base_sku, reference_price_usd FROM catalog_sales_offers
+       WHERE import_id = ${sqlText(draft.source_import_id)}
+         AND catalog_publication_status = 'Published'
+       ORDER BY base_sku LIMIT 1`,
     );
-    const previewHtml = await previewResponse.text();
-    expect(previewResponse.status).toBe(200);
-    expect(previewHtml).toContain("Catalog Releases");
-    expect(previewHtml).toContain("Additions");
-    expect(previewHtml).toContain("Changes");
-    expect(previewHtml).toContain("Hose Series 601R1");
-    expect(previewHtml).toContain("View all");
-    expect(previewHtml).toContain("Deactivations");
-    expect(previewHtml).toContain("Warnings");
-    expect(previewHtml).toContain("Blockers");
-    expect(previewHtml).not.toContain("Cost Basis");
-
-    const confirm = new FormData();
-    confirm.set("intent", "confirm");
-    confirm.set("releaseId", draft.id);
-    const confirmationResponse = await fetch(
-      `${origin}/admin/catalog/releases`,
-      { body: confirm, method: "POST" },
+    expect(offer).toBeTruthy();
+    if (!offer) throw new Error("Expected one published sales offer");
+    const [activeBeforeBlocked] = runLocalD1<{ release_id: string | null }>(
+      "SELECT release_id FROM catalog_active_release WHERE singleton = 1",
     );
-    const confirmationHtml = await confirmationResponse.text();
-    expect(confirmationResponse.status).toBe(200);
-    expect(confirmationHtml).toContain("Final confirmation");
-    expect(confirmationHtml).toContain("Publish Catalog Release");
-
     runLocalD1(
-      `DELETE FROM catalog_configurator_registry_entries
-       WHERE release_id = '${draft.id}'
-         AND registry_type = 'measurement_method'
-         AND entry_key = 'M07'`,
+      `UPDATE catalog_sales_offers SET reference_price_usd = NULL
+       WHERE import_id = ${sqlText(draft.source_import_id)}
+         AND base_sku = ${sqlText(offer.base_sku)}`,
     );
-    runLocalD1Failure(
-      `INSERT INTO catalog_release_publications (
-         release_id, previous_release_id, expected_active_version,
-         expected_draft_version, published_by, request_correlation_id, published_at
-       ) VALUES (
-         '${draft.id}', '${activeBefore.id}', ${activeBefore.active_generation},
-         ${draft.version}, 'local-owner', 'invalid-registry-${draft.id}',
-         CURRENT_TIMESTAMP
-       )`,
-    );
+    const blockedRequestId = `blocked-publication-${draft.id}`;
+    const blockedResponse = await publishFromReview(draft.id, blockedRequestId);
+    expect(blockedResponse.status).toBe(200);
+    expect(await blockedResponse.text()).toContain("发布已停止");
     expect(
-      runLocalD1<{ count: number }>(
-        `SELECT COUNT(*) AS count FROM catalog_release_publications
-         WHERE release_id = '${draft.id}'`,
+      runLocalD1<{ release_id: string | null }>(
+        "SELECT release_id FROM catalog_active_release WHERE singleton = 1",
       ),
-    ).toEqual([{ count: 0 }]);
+    ).toEqual([activeBeforeBlocked]);
+    const [rejectionAudit] = runLocalD1<{ payload_json: string }>(
+      `SELECT payload_json FROM admin_audit_events
+       WHERE entity_id = ${sqlText(draft.id)}
+         AND event_type = 'catalog_release.publication_rejected'
+       ORDER BY occurred_at DESC LIMIT 1`,
+    );
+    expect(JSON.parse(rejectionAudit?.payload_json ?? "{}")).toMatchObject({
+      code: "publication_blocked",
+      ipAddress: "203.0.113.10",
+      requestCorrelationId: blockedRequestId,
+    });
+    runLocalD1(
+      `UPDATE catalog_sales_offers SET reference_price_usd = ${offer.reference_price_usd}
+       WHERE import_id = ${sqlText(draft.source_import_id)}
+         AND base_sku = ${sqlText(offer.base_sku)}`,
+    );
+
+    const requestId = `combined-publication-${draft.id}`;
+    const response = await publishFromReview(draft.id, requestId);
+    expect(response.status, await response.text()).toBe(302);
+
     expect(
       runLocalD1<{ release_id: string }>(
         "SELECT release_id FROM catalog_active_release WHERE singleton = 1",
       ),
-    ).toEqual([{ release_id: activeBefore.id }]);
-    runLocalD1(
-      `INSERT INTO catalog_configurator_registry_entries (
-         release_id, registry_type, entry_key, payload_json,
-         record_version, updated_at
-       )
-       SELECT '${draft.id}', registry_type, entry_key, payload_json, 1,
-              CURRENT_TIMESTAMP
-       FROM configurator_registry_seed_templates
-       WHERE registry_type = 'measurement_method' AND entry_key = 'M07'`,
+    ).toEqual([{ release_id: draft.id }]);
+    const [audit] = runLocalD1<{ payload_json: string }>(
+      `SELECT payload_json FROM admin_audit_events
+       WHERE entity_id = ${sqlText(draft.id)}
+         AND event_type = 'catalog_release.published'`,
     );
-    const [draftHoseEnd] = runLocalD1<{ sku: string }>(
-      `SELECT sku FROM catalog_hose_ends
-       WHERE import_id = '${draft.source_import_id}' ORDER BY sku LIMIT 1`,
-    );
-    expect(draftHoseEnd).toBeTruthy();
-    if (!draftHoseEnd) throw new Error("Expected a draft Hose End");
-    runLocalD1(
-      `INSERT INTO catalog_configurator_registry_entries (
-         release_id, registry_type, entry_key, payload_json,
-         record_version, updated_at
-       ) VALUES (
-         '${draft.id}', 'endpoint_assignment', '${draftHoseEnd.sku}',
-         json_object('hoseEndSku', '${draftHoseEnd.sku}',
-                     'endpointClassCode', 'NOT_REGISTERED'),
-         1, CURRENT_TIMESTAMP
-       )`,
-    );
-    runLocalD1Failure(
-      `INSERT INTO catalog_release_publications (
-         release_id, previous_release_id, expected_active_version,
-         expected_draft_version, published_by, request_correlation_id, published_at
-       ) VALUES (
-         '${draft.id}', '${activeBefore.id}', ${activeBefore.active_generation},
-         ${draft.version}, 'local-owner', 'invalid-endpoint-class-${draft.id}',
-         CURRENT_TIMESTAMP
-       )`,
-    );
-    expect(
-      runLocalD1<{ count: number }>(
-        `SELECT COUNT(*) AS count FROM catalog_release_publications
-         WHERE release_id = '${draft.id}'`,
-      ),
-    ).toEqual([{ count: 0 }]);
-    expect(
-      runLocalD1<{ release_id: string }>(
-        "SELECT release_id FROM catalog_active_release WHERE singleton = 1",
-      ),
-    ).toEqual([{ release_id: activeBefore.id }]);
-    runLocalD1(
-      `DELETE FROM catalog_configurator_registry_entries
-       WHERE release_id = '${draft.id}'
-         AND registry_type = 'endpoint_assignment'
-         AND entry_key = '${draftHoseEnd.sku}'`,
-    );
-
-    const registryEdit = new FormData();
-    registryEdit.set("intent", "save_estimate_schedule");
-    registryEdit.set("releaseId", draft.id);
-    registryEdit.set("assemblyServicePriceUsd", "");
-    const registryEditResponse = await fetch(
-      `${origin}/admin/catalog/reference-data`,
-      { body: registryEdit, method: "POST", redirect: "manual" },
-    );
-    expect(registryEditResponse.status).toBe(302);
-
-    const stalePublish = new FormData();
-    stalePublish.set("intent", "publish");
-    stalePublish.set("releaseId", draft.id);
-    stalePublish.set("expectedDraftVersion", String(draft.version));
-    stalePublish.set(
-      "expectedActiveGeneration",
-      String(activeBefore.active_generation),
-    );
-    stalePublish.set("expectedActiveReleaseId", activeBefore.id);
-    const stalePublishResponse = await fetch(
-      `${origin}/admin/catalog/releases`,
-      { body: stalePublish, method: "POST" },
-    );
-    expect(stalePublishResponse.status).toBe(200);
-    expect(await stalePublishResponse.text()).toContain(
-      "The publication preview is stale",
-    );
-    const [currentDraftVersion] = runLocalD1<{ version: number }>(
-      `SELECT version FROM catalog_releases WHERE id = '${draft.id}'`,
-    );
-    expect(currentDraftVersion?.version).toBe(draft.version + 1);
-    draft.version = currentDraftVersion?.version ?? draft.version;
-
-    const publish = new FormData();
-    publish.set("intent", "publish");
-    publish.set("releaseId", draft.id);
-    publish.set("expectedDraftVersion", String(draft.version));
-    publish.set(
-      "expectedActiveGeneration",
-      String(activeBefore.active_generation),
-    );
-    publish.set("expectedActiveReleaseId", activeBefore.id);
-    const publishResponse = await fetch(`${origin}/admin/catalog/releases`, {
-      body: publish,
-      headers: { "x-request-id": `smoke-publish-${draft.id}` },
-      method: "POST",
-      redirect: "manual",
+    expect(JSON.parse(audit?.payload_json ?? "{}")).toMatchObject({
+      ipAddress: "203.0.113.10",
+      requestCorrelationId: requestId,
     });
-    expect(publishResponse.status, await publishResponse.text()).toBe(302);
-    expect(publishResponse.headers.get("location")).toContain(
-      `published=${draft.id}`,
+    const [activeAfter] = runLocalD1<{ version: number }>(
+      "SELECT version FROM catalog_active_release WHERE singleton = 1",
     );
-
-    const releases = runLocalD1<{
-      id: string;
-      published_at: string | null;
-      status: string;
-    }>(
-      `SELECT id, status, published_at FROM catalog_releases
-       WHERE id IN ('${activeBefore.id}', '${draft.id}') ORDER BY id`,
-    );
-    expect(
-      releases.find((release) => release.id === activeBefore.id)?.status,
-    ).toBe("superseded");
-    expect(releases.find((release) => release.id === draft.id)).toMatchObject({
-      status: "published",
-    });
-    expect(
-      releases.find((release) => release.id === draft.id)?.published_at,
-    ).toBeTruthy();
-    const [activeAfter] = runLocalD1<{
-      active_generation: number;
-      release_id: string;
-    }>(
-      `SELECT version AS active_generation, release_id
-       FROM catalog_active_release WHERE singleton = 1`,
-    );
-    expect(activeAfter?.release_id).toBe(draft.id);
-    expect(activeAfter?.active_generation).toBe(
-      activeBefore.active_generation + 1,
-    );
-
-    const audit = runLocalD1<{
-      actor_id: string;
-      payload_json: string;
-    }>(
-      `SELECT actor_id, payload_json FROM admin_audit_events
-       WHERE entity_id = '${draft.id}' AND event_type = 'catalog_release.published'`,
-    );
-    expect(audit).toHaveLength(1);
-    expect(audit[0]?.actor_id).toBe("local-owner");
-    const auditPayload = JSON.parse(audit[0]?.payload_json ?? "{}");
-    expect(auditPayload).toMatchObject({
-      previousReleaseId: activeBefore.id,
-      requestCorrelationId: `smoke-publish-${draft.id}`,
-    });
-    expect(auditPayload).not.toHaveProperty("factoryUnitPrice");
-    expect(auditPayload).not.toHaveProperty("costBasis");
-
-    const storefrontAfter = await (await fetch(origin)).text();
-    expect(storefrontAfter).toContain("Current catalog");
-    expect(storefrontAfter).not.toContain("Cost Basis");
-    const activeProductAfter = await fetch(
-      `${origin}/api/catalog/products/601R1_002`,
-    );
-    expect(activeProductAfter.status).toBe(200);
-    const activeProductAfterText = await activeProductAfter.text();
-    expect(JSON.parse(activeProductAfterText)).toMatchObject({
-      product: {
-        canAddToQuote: false,
-        releaseId: draft.id,
-        sku: "601R1_002",
-        supplyAvailability: "temporarily_unavailable",
-      },
-    });
-    expect(activeProductAfterText).not.toContain("factory_unit_price");
-    expect(activeProductAfterText).not.toContain("costBasis");
-    expect(
-      (await fetch(`${origin}/api/catalog/products/601R1_001`)).status,
-    ).toBe(404);
-    const historicalProduct = await fetch(
-      `${origin}/api/catalog/releases/${activeBefore.id}/products/601R1_001`,
-    );
-    expect(historicalProduct.status).toBe(200);
-    await expect(historicalProduct.json()).resolves.toMatchObject({
-      product: { releaseId: activeBefore.id, sku: "601R1_001" },
-    });
-    expect(
-      runLocalD1<{ count: number }>(
-        `SELECT COUNT(*) AS count FROM catalog_skus
-         WHERE import_id = '${draft.source_import_id}'
-           AND supply_availability = 'temporarily_unavailable'`,
-      )[0]?.count,
-    ).toBeGreaterThan(0);
-    expect(
-      runLocalD1<{ count: number }>(
-        `SELECT COUNT(*) AS count FROM catalog_skus
-         WHERE import_id = '${activeBefore.source_import_id}'`,
-      )[0]?.count,
-    ).toBe(1);
-
-    const immutableSkuBefore = runLocalD1<{ supply_availability: string }>(
-      `SELECT supply_availability FROM catalog_skus
-       WHERE import_id = '${draft.source_import_id}' AND sku = '601R1_002'`,
-    );
-    runLocalD1Failure(
-      `UPDATE catalog_skus SET supply_availability = 'discontinued'
-       WHERE import_id = '${draft.source_import_id}' AND sku = '601R1_002'`,
-    );
-    expect(
-      runLocalD1<{ supply_availability: string }>(
-        `SELECT supply_availability FROM catalog_skus
-         WHERE import_id = '${draft.source_import_id}' AND sku = '601R1_002'`,
-      ),
-    ).toEqual(immutableSkuBefore);
-    const forbiddenSku = `FORBIDDEN_${crypto.randomUUID()}`;
-    runLocalD1Failure(
-      `INSERT INTO catalog_skus (
-         id, import_id, sku, source_worksheet, product_type, hose_series,
-         catalog_publication_status, rfq_eligibility, technical_data_status,
-         supply_availability
-       ) VALUES (
-         'forbidden-${crypto.randomUUID()}', '${draft.source_import_id}',
-         '${forbiddenSku}', '01_胶管主数据', 'hose', '601R1',
-         'Published', 'Eligible', 'Complete', 'available_for_quote'
-       )`,
-    );
-    expect(
-      runLocalD1<{ count: number }>(
-        `SELECT COUNT(*) AS count FROM catalog_skus WHERE sku = '${forbiddenSku}'`,
-      ),
-    ).toEqual([{ count: 0 }]);
-
-    const publishedSkuBefore = runLocalD1<{
-      supply_availability: string;
-    }>(
-      `SELECT supply_availability FROM catalog_skus
-       WHERE import_id = '${draft.source_import_id}' AND sku = '601R1_001'`,
-    );
-    const publishedVersionBefore = runLocalD1<{ version: number }>(
-      `SELECT version FROM catalog_releases WHERE id = '${draft.id}'`,
-    );
-    const forbiddenEdit = new FormData();
-    forbiddenEdit.set("intent", "apply");
-    forbiddenEdit.set("releaseId", draft.id);
-    forbiddenEdit.set("selectorMode", "selected");
-    forbiddenEdit.set("selectedSku", "601R1_001");
-    forbiddenEdit.set("target", "discontinued");
-    const forbiddenEditResponse = await fetch(
-      `${origin}/admin/catalog/review`,
-      { body: forbiddenEdit, method: "POST" },
-    );
-    expect(forbiddenEditResponse.status).toBe(200);
-    expect(await forbiddenEditResponse.text()).toContain(
-      "No draft products require this change",
-    );
-    expect(
-      runLocalD1<{ supply_availability: string }>(
-        `SELECT supply_availability FROM catalog_skus
-         WHERE import_id = '${draft.source_import_id}' AND sku = '601R1_001'`,
-      ),
-    ).toEqual(publishedSkuBefore);
+    const retryResponse = await publishFromReview(draft.id, requestId);
+    expect(retryResponse.status).toBe(302);
     expect(
       runLocalD1<{ version: number }>(
-        `SELECT version FROM catalog_releases WHERE id = '${draft.id}'`,
+        "SELECT version FROM catalog_active_release WHERE singleton = 1",
       ),
-    ).toEqual(publishedVersionBefore);
+    ).toEqual([activeAfter]);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM catalog_release_publications
+         WHERE release_id = ${sqlText(draft.id)}`,
+      ),
+    ).toEqual([{ count: 1 }]);
+    expect((await fetch(`${origin}/admin/catalog/releases`)).status).toBe(404);
+  });
 
-    const workbook = await readFile(
-      "test/fixtures/catalog-import/hose-product-data-collection-template-length-ordering.xlsx",
+  it("runs one external maintenance-to-publication workflow with automatic compatibility", async () => {
+    const ferruleSku = "601R1_1WB_T10_04";
+    const saveResponse = await fetch(
+      `${origin}/admin/catalog/import?mode=manual&productType=ferrule`,
+      {
+        body: completeFerruleMaintenanceForm(ferruleSku),
+        method: "POST",
+        redirect: "manual",
+      },
     );
-    const nextImport = new FormData();
-    nextImport.set(
-      "workbook",
-      new File([workbook], "next-product-data.xlsx", {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      }),
+    expect(saveResponse.status, await saveResponse.text()).toBe(302);
+    expect(saveResponse.headers.get("location")).toContain(
+      `productType=ferrule&saved=created&sku=${ferruleSku}`,
     );
-    const nextImportResponse = await fetch(`${origin}/admin/catalog/import`, {
-      body: nextImport,
-      method: "POST",
-      redirect: "manual",
-    });
-    const nextImportLocation = nextImportResponse.headers.get("location");
-    expect(nextImportResponse.status).toBe(302);
-    const nextImportId = new URL(
-      nextImportLocation ?? "",
-      origin,
-    ).searchParams.get("import");
-    const [nextDraft] = runLocalD1<{
+
+    const [draft] = runLocalD1<{
       id: string;
-      version: number;
+      source_import_id: string;
     }>(
-      `SELECT id, version FROM catalog_releases
-       WHERE source_import_id = '${nextImportId}' AND status = 'draft'`,
+      `SELECT id, source_import_id FROM catalog_releases
+       WHERE status = 'draft' ORDER BY created_at DESC, id DESC LIMIT 1`,
     );
-    expect(nextDraft).toBeTruthy();
-    if (!nextDraft || !activeAfter) throw new Error("Expected next draft");
+    expect(draft).toBeTruthy();
+    if (!draft) throw new Error("Expected maintenance to create one draft");
 
-    const competingImport = new FormData();
-    competingImport.set(
-      "workbook",
-      new File([workbook], "competing-product-data.xlsx", {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      }),
-    );
-    const competingImportResponse = await fetch(
-      `${origin}/admin/catalog/import`,
-      { body: competingImport, method: "POST", redirect: "manual" },
-    );
-    expect(competingImportResponse.status).toBe(302);
-    const competingImportId = new URL(
-      competingImportResponse.headers.get("location") ?? "",
-      origin,
-    ).searchParams.get("import");
-    const [competingDraft] = runLocalD1<{ id: string; version: number }>(
-      `SELECT id, version FROM catalog_releases
-       WHERE source_import_id = '${competingImportId}' AND status = 'draft'`,
-    );
-    expect(competingDraft).toBeTruthy();
-    if (!competingDraft) throw new Error("Expected competing draft");
-
-    const publicationForm = (releaseId: string, releaseVersion: number) => {
-      const form = new FormData();
-      form.set("intent", "publish");
-      form.set("releaseId", releaseId);
-      form.set("expectedDraftVersion", String(releaseVersion));
-      form.set(
-        "expectedActiveGeneration",
-        String(activeAfter.active_generation),
-      );
-      form.set("expectedActiveReleaseId", draft.id);
-      return form;
-    };
-    const competingResponses = await Promise.all(
-      [nextDraft, competingDraft].map((candidate) =>
-        fetch(`${origin}/admin/catalog/releases`, {
-          body: publicationForm(candidate.id, candidate.version),
-          headers: { "x-request-id": `concurrent-${candidate.id}` },
-          method: "POST",
-          redirect: "manual",
-        }),
-      ),
-    );
-    expect(
-      competingResponses.map((response) => response.status).sort(),
-    ).toEqual([200, 302]);
-    const [activeWinner] = runLocalD1<{
-      active_generation: number;
-      release_id: string;
-    }>(
-      `SELECT release_id, version AS active_generation
-       FROM catalog_active_release WHERE singleton = 1`,
-    );
-    expect([nextDraft.id, competingDraft.id]).toContain(
-      activeWinner?.release_id,
-    );
-    const loser =
-      activeWinner?.release_id === nextDraft.id ? competingDraft : nextDraft;
-    const loserImportId =
-      loser.id === nextDraft.id ? nextImportId : competingImportId;
-    expect(loserImportId).toBeTruthy();
-    const candidateReleases = runLocalD1<{ id: string; status: string }>(
-      `SELECT id, status FROM catalog_releases
-       WHERE id IN ('${nextDraft.id}', '${competingDraft.id}') ORDER BY id`,
-    );
-    expect(
-      candidateReleases.find(
-        (release) => release.id === activeWinner?.release_id,
-      )?.status,
-    ).toBe("published");
-    expect(
-      candidateReleases.find((release) => release.id === loser.id)?.status,
-    ).toBe("draft");
-    expect(
-      runLocalD1<{ count: number }>(
-        `SELECT COUNT(*) AS count FROM catalog_release_publications
-         WHERE release_id = '${loser.id}'`,
-      ),
-    ).toEqual([{ count: 0 }]);
-    expect(
-      runLocalD1<{ count: number }>(
-        `SELECT COUNT(*) AS count FROM admin_audit_events
-         WHERE entity_id = '${loser.id}'
-           AND event_type = 'catalog_release.published'`,
-      ),
-    ).toEqual([{ count: 0 }]);
-
-    const [nextImportSummary] = runLocalD1<{ summary_json: string }>(
-      `SELECT summary_json FROM catalog_imports WHERE id = '${loserImportId}'`,
-    );
-    const expectedSalesOfferCount = Number(
-      JSON.parse(nextImportSummary?.summary_json ?? "{}").salesOfferCount,
-    );
-    const [versionBeforeCorruption] = runLocalD1<{ version: number }>(
-      `SELECT version FROM catalog_releases WHERE id = '${loser.id}'`,
-    );
-    runLocalD1(
-      `UPDATE catalog_imports
-       SET summary_json = json_set(summary_json, '$.salesOfferCount', ${expectedSalesOfferCount + 1})
-       WHERE id = '${loserImportId}'`,
-    );
-    const [versionAfterCorruption] = runLocalD1<{ version: number }>(
-      `SELECT version FROM catalog_releases WHERE id = '${loser.id}'`,
-    );
-    expect(versionAfterCorruption?.version).toBe(
-      (versionBeforeCorruption?.version ?? 0) + 1,
-    );
-    runLocalD1Failure(
-      `INSERT INTO catalog_release_publications (
-         release_id, previous_release_id, expected_active_version,
-         expected_draft_version, published_by, request_correlation_id, published_at
-       ) VALUES (
-         '${loser.id}', '${activeWinner?.release_id}', ${activeWinner?.active_generation},
-         ${versionAfterCorruption?.version}, 'local-owner',
-         'invalid-${loser.id}', CURRENT_TIMESTAMP
-       )`,
-    );
-    const blockedResponse = await fetch(
-      `${origin}/admin/catalog/releases?release=${loser.id}`,
-    );
-    const blockedHtml = await blockedResponse.text();
-    expect(blockedHtml).toContain("count_mismatch_salesOfferCount");
-    expect(blockedHtml).toContain("Resolve blockers before publishing");
-    expect(
-      runLocalD1<{ release_id: string }>(
-        "SELECT release_id FROM catalog_active_release WHERE singleton = 1",
-      ),
-    ).toEqual([{ release_id: activeWinner?.release_id }]);
-    expect(
-      runLocalD1<{ count: number }>(
-        `SELECT COUNT(*) AS count FROM catalog_release_publications
-         WHERE release_id = '${loser.id}'`,
-      ),
-    ).toEqual([{ count: 0 }]);
-    runLocalD1(
-      `UPDATE catalog_imports
-       SET summary_json = json_set(summary_json, '$.salesOfferCount', ${expectedSalesOfferCount})
-       WHERE id = '${loserImportId}'`,
-    );
-
-    const sourceImportBefore = runLocalD1<{ source_import_id: string }>(
-      `SELECT source_import_id FROM catalog_releases WHERE id = '${loser.id}'`,
-    );
-    runLocalD1Failure(
-      `UPDATE catalog_releases SET source_import_id = '${draft.source_import_id}'
-       WHERE id = '${loser.id}'`,
-    );
-    expect(
-      runLocalD1<{ source_import_id: string }>(
-        `SELECT source_import_id FROM catalog_releases WHERE id = '${loser.id}'`,
-      ),
-    ).toEqual(sourceImportBefore);
-
-    const [rollbackDraft] = runLocalD1<{ version: number }>(
-      `SELECT version FROM catalog_releases WHERE id = '${loser.id}'`,
-    );
-    const rollbackRequestId = `rollback-${loser.id}`;
-    runLocalD1(
-      `INSERT INTO admin_audit_events (
-         id, event_type, entity_type, entity_id,
-         actor_id, payload_json, occurred_at
-       ) VALUES (
-         'catalog-release-published:${rollbackRequestId}',
-         'catalog_release.rollback_fixture', 'catalog_release', '${loser.id}',
-         'local-owner', '{}', CURRENT_TIMESTAMP
-       )`,
-    );
-    const rollbackForm = new FormData();
-    rollbackForm.set("intent", "publish");
-    rollbackForm.set("releaseId", loser.id);
-    rollbackForm.set("expectedDraftVersion", String(rollbackDraft?.version));
-    rollbackForm.set(
-      "expectedActiveGeneration",
-      String(activeWinner?.active_generation),
-    );
-    rollbackForm.set("expectedActiveReleaseId", activeWinner?.release_id ?? "");
-    const rollbackResponse = await fetch(`${origin}/admin/catalog/releases`, {
-      body: rollbackForm,
-      headers: { "x-request-id": rollbackRequestId },
+    const availability = new FormData();
+    availability.set("intent", "apply");
+    availability.set("releaseId", draft.id);
+    availability.set("selectorMode", "selected");
+    availability.append("selectedSku", "601R1_002");
+    availability.append("selectedSku", "JIC_F_SW_04_04");
+    availability.set("target", "available_for_quote");
+    const availabilityResponse = await fetch(`${origin}/admin/catalog/review`, {
+      body: availability,
       method: "POST",
       redirect: "manual",
     });
-    expect(rollbackResponse.status).toBe(200);
-    expect(await rollbackResponse.text()).toContain(
-      "Catalog Release publication failed.",
+    expect(availabilityResponse.status, await availabilityResponse.text()).toBe(
+      302,
     );
-    expect(
-      runLocalD1<{ release_id: string }>(
-        "SELECT release_id FROM catalog_active_release WHERE singleton = 1",
-      ),
-    ).toEqual([{ release_id: activeWinner?.release_id }]);
-    expect(
-      runLocalD1<{ status: string }>(
-        `SELECT status FROM catalog_releases WHERE id = '${loser.id}'`,
-      ),
-    ).toEqual([{ status: "draft" }]);
-    expect(
-      runLocalD1<{ status: string }>(
-        `SELECT status FROM catalog_releases WHERE id = '${activeWinner?.release_id}'`,
-      ),
-    ).toEqual([{ status: "published" }]);
-    expect(
-      runLocalD1<{ count: number }>(
-        `SELECT COUNT(*) AS count FROM catalog_release_publications
-         WHERE release_id = '${loser.id}'`,
-      ),
-    ).toEqual([{ count: 0 }]);
-  }, 300_000);
+
+    const reviewResponse = await fetch(
+      `${origin}/admin/catalog/review?release=${encodeURIComponent(draft.id)}`,
+    );
+    const reviewHtml = await reviewResponse.text();
+    expect(reviewResponse.status).toBe(200);
+    expect(reviewHtml).toContain(ferruleSku);
+    expect(reviewHtml).toContain("受影响的胶管系列");
+    expect(reviewHtml).toContain("601R1");
+    expect(reviewHtml).toContain("兼容关系");
+    expect(reviewHtml).toContain("衍生总成组合");
+
+    const requestId = `ticket-74-${draft.id}`;
+    const publicationResponse = await publishFromReview(draft.id, requestId);
+    expect(publicationResponse.status, await publicationResponse.text()).toBe(
+      302,
+    );
+
+    const [relationship] = runLocalD1<{
+      assembly_method: string | null;
+      crimp_program: string | null;
+      ferrule_sku: string;
+      final_crimp_diameter_mm: number | null;
+      hose_end_sku: string;
+      hose_sku: string;
+      production_approval_status: string;
+      qualification_status: string;
+      reference_system: string;
+      rfq_eligibility: string;
+      technical_data_status: string;
+    }>(
+      `SELECT assembly_method, crimp_program, ferrule_sku,
+              final_crimp_diameter_mm, hose_end_sku, hose_sku,
+              production_approval_status, qualification_status,
+              reference_system, rfq_eligibility, technical_data_status
+       FROM catalog_compatibilities
+       WHERE import_id = ${sqlText(draft.source_import_id)}
+         AND hose_sku = '601R1_002'
+         AND hose_end_sku = 'JIC_F_SW_04_04'
+         AND ferrule_sku = ${sqlText(ferruleSku)}
+         AND reference_system = 'Automatic catalog compatibility rule'`,
+    );
+    expect(relationship).toEqual({
+      assembly_method: null,
+      crimp_program: null,
+      ferrule_sku: ferruleSku,
+      final_crimp_diameter_mm: null,
+      hose_end_sku: "JIC_F_SW_04_04",
+      hose_sku: "601R1_002",
+      production_approval_status: "not_approved",
+      qualification_status: "Not Tested",
+      reference_system: "Automatic catalog compatibility rule",
+      rfq_eligibility: "Eligible",
+      technical_data_status: "Pending",
+    });
+
+    const [expansionAudit] = runLocalD1<{ payload_json: string }>(
+      `SELECT payload_json FROM admin_audit_events
+       WHERE entity_id = ${sqlText(draft.id)}
+         AND event_type = 'catalog_release.compatibilities_expanded'
+       ORDER BY occurred_at DESC LIMIT 1`,
+    );
+    expect(JSON.parse(expansionAudit?.payload_json ?? "{}")).toMatchObject({
+      affectedSkus: expect.arrayContaining([ferruleSku]),
+      ipAddress: "203.0.113.10",
+      requestCorrelationId: requestId,
+      rule: "hose_end.hose_tail_dash = hose.dash; ferrule series/dash/skive = hose series/dash/skive",
+    });
+    const [regenerationAudit] = runLocalD1<{ payload_json: string }>(
+      `SELECT payload_json FROM admin_audit_events
+       WHERE entity_id = ${sqlText(draft.id)}
+         AND event_type = 'catalog_release.assembly_regenerated'
+       ORDER BY occurred_at DESC LIMIT 1`,
+    );
+    expect(JSON.parse(regenerationAudit?.payload_json ?? "{}")).toMatchObject({
+      affectedSeries: ["601R1"],
+      ipAddress: "203.0.113.10",
+      requestCorrelationId: requestId,
+      status: "succeeded",
+    });
+
+    const compatibleResponse = await fetch(
+      `${origin}/api/configurator/compatible-end-a?release=${encodeURIComponent(draft.id)}&hose=601R1_002`,
+    );
+    expect(compatibleResponse.status).toBe(200);
+    const compatible = (await compatibleResponse.json()) as {
+      candidates: Array<{
+        ferrule: { sku: string };
+        hoseEndSku: string;
+      }>;
+    };
+    expect(compatible.candidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          ferrule: expect.objectContaining({ sku: ferruleSku }),
+          hoseEndSku: "JIC_F_SW_04_04",
+        }),
+      ]),
+    );
+
+    const publicFerruleResponse = await fetch(
+      `${origin}/api/catalog/products/${encodeURIComponent(ferruleSku)}`,
+    );
+    const publicFerrule = await publicFerruleResponse.text();
+    expect(publicFerruleResponse.status).toBe(200);
+    expect(publicFerrule).toContain(ferruleSku);
+    expect(publicFerrule).not.toContain("Cost Basis");
+    expect(publicFerrule).not.toContain("factory_unit_price");
+  });
 
   it("serves the five-class published storefront without exposing cost data", async () => {
     const workbook = await readFile(
       "test/fixtures/catalog-import/hose-product-data-collection-template-length-ordering.xlsx",
     );
     const form = new FormData();
+    form.set("intent", "import_workbook");
     form.set(
       "workbook",
       new File([workbook], "published-storefront-data.xlsx", {
@@ -3557,12 +3402,8 @@ describe("Cloudflare Worker route surfaces", () => {
       `SELECT id, release_number FROM catalog_releases
        WHERE source_import_id = '${importId}' AND status = 'draft'`,
     );
-    const [active] = runLocalD1<{
-      active_generation: number;
-      release_id: string;
-    }>(
-      `SELECT version AS active_generation, release_id
-       FROM catalog_active_release WHERE singleton = 1`,
+    const [active] = runLocalD1<{ release_id: string | null }>(
+      `SELECT release_id FROM catalog_active_release WHERE singleton = 1`,
     );
     expect(draft).toBeTruthy();
     expect(active).toBeTruthy();
@@ -3577,6 +3418,9 @@ describe("Cloudflare Worker route surfaces", () => {
        SET catalog_publication_status = 'Published'
        WHERE import_id = '${importId}'
          AND rfq_eligibility = 'Eligible';
+       UPDATE catalog_sales_offers
+       SET catalog_publication_status = 'Published'
+       WHERE import_id = '${importId}';
        UPDATE catalog_skus
        SET supply_availability = 'available_for_quote'
        WHERE import_id = '${importId}'
@@ -3590,22 +3434,16 @@ describe("Cloudflare Worker route surfaces", () => {
        SET supply_availability = 'discontinued'
        WHERE import_id = '${importId}' AND sku = 'QDC_16028_PLG_04_FNPT_04';`,
     );
+    assignReviewedImageToPublishedProducts(importId);
     const [draftState] = runLocalD1<{ version: number }>(
       `SELECT version FROM catalog_releases WHERE id = '${draft.id}'`,
     );
 
-    const publish = new FormData();
-    publish.set("intent", "publish");
-    publish.set("releaseId", draft.id);
-    publish.set("expectedDraftVersion", String(draftState?.version));
-    publish.set("expectedActiveGeneration", String(active.active_generation));
-    publish.set("expectedActiveReleaseId", active.release_id);
-    const publishResponse = await fetch(`${origin}/admin/catalog/releases`, {
-      body: publish,
-      headers: { "x-request-id": `storefront-${draft.id}` },
-      method: "POST",
-      redirect: "manual",
-    });
+    expect(draftState?.version).toBeGreaterThan(0);
+    const publishResponse = await publishFromReview(
+      draft.id,
+      `storefront-${draft.id}`,
+    );
     expect(publishResponse.status, await publishResponse.text()).toBe(302);
 
     const storefrontResponse = await fetch(origin);
@@ -3709,9 +3547,8 @@ describe("Cloudflare Worker route surfaces", () => {
       registry_type: string;
     }>(
       `SELECT registry_type, entry_key, record_version
-       FROM catalog_configurator_registry_entries
-       WHERE release_id = '${draft.id}'
-         AND (
+       FROM configurator_global_registry_entries
+       WHERE (
            (registry_type = 'measurement_method' AND entry_key = 'M02') OR
            (registry_type = 'installed_protection' AND entry_key = 'NONE') OR
            (registry_type = 'assembly_estimate_schedule' AND entry_key = 'DEFAULT')
@@ -4208,7 +4045,8 @@ describe("Cloudflare Worker route surfaces", () => {
     );
     runLocalD1(
       `UPDATE catalog_active_release
-       SET release_id = '${active.release_id}', version = version + 1
+       SET release_id = ${active.release_id ? sqlText(active.release_id) : "NULL"},
+           version = version + 1
        WHERE singleton = 1`,
     );
     const changedCatalogAdd = await addConfiguredAssembly(
@@ -4777,6 +4615,7 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(remainingCutHoseLines?.count).toBe(1);
 
     const replacementForm = new FormData();
+    replacementForm.set("intent", "import_workbook");
     replacementForm.set(
       "workbook",
       new File([workbook], "replacement-storefront-data.xlsx", {
@@ -4796,18 +4635,14 @@ describe("Cloudflare Worker route surfaces", () => {
       `SELECT id, version FROM catalog_releases
        WHERE source_import_id = '${replacementImportId}' AND status = 'draft'`,
     );
-    const [replacementActive] = runLocalD1<{
-      active_generation: number;
-      release_id: string;
-    }>(
-      `SELECT version AS active_generation, release_id
-       FROM catalog_active_release WHERE singleton = 1`,
-    );
-    if (!replacementImportId || !replacementDraft || !replacementActive) {
+    if (!replacementImportId || !replacementDraft) {
       throw new Error("Expected replacement Catalog Release");
     }
     runLocalD1(
       `UPDATE catalog_skus
+       SET catalog_publication_status = 'Published'
+       WHERE import_id = '${replacementImportId}';
+       UPDATE catalog_sales_offers
        SET catalog_publication_status = 'Published'
        WHERE import_id = '${replacementImportId}';
        UPDATE catalog_skus
@@ -4830,38 +4665,19 @@ describe("Cloudflare Worker route surfaces", () => {
          10, 1, CURRENT_TIMESTAMP
        );`,
     );
+    assignReviewedImageToPublishedProducts(replacementImportId);
     const [replacementDraftState] = runLocalD1<{ version: number }>(
       `SELECT version FROM catalog_releases WHERE id = '${replacementDraft.id}'`,
     );
-    const replacementPublish = new FormData();
-    replacementPublish.set("intent", "publish");
-    replacementPublish.set("releaseId", replacementDraft.id);
-    replacementPublish.set(
-      "expectedDraftVersion",
-      String(replacementDraftState?.version),
+    expect(replacementDraftState?.version).toBeGreaterThan(0);
+    const replacementPublishResponse = await publishFromReview(
+      replacementDraft.id,
+      `quote-availability-${replacementDraft.id}`,
     );
-    replacementPublish.set(
-      "expectedActiveGeneration",
-      String(replacementActive.active_generation),
-    );
-    replacementPublish.set(
-      "expectedActiveReleaseId",
-      replacementActive.release_id,
-    );
-    const replacementPublishResponse = await fetch(
-      `${origin}/admin/catalog/releases`,
-      {
-        body: replacementPublish,
-        headers: {
-          "x-request-id": `quote-availability-${replacementDraft.id}`,
-        },
-        method: "POST",
-        redirect: "manual",
-      },
-    );
+    const replacementPublishBody = await replacementPublishResponse.text();
     expect(
       replacementPublishResponse.status,
-      await replacementPublishResponse.text(),
+      renderedText(replacementPublishBody).slice(0, 2_500),
     ).toBe(302);
     expect(
       runLocalD1Failure(
@@ -5125,6 +4941,7 @@ describe("Cloudflare Worker route surfaces", () => {
         `${origin}/catalog/ferrules/601r1-1-wire-braid-other?sku=601R1_1WB_001`,
       )
     ).text();
+    expect(mediaFallback).not.toContain("/media/catalog/");
     expect(mediaFallback).toContain("Technical image pending");
 
     const hoseVariant = await (
@@ -6620,6 +6437,7 @@ describe("Cloudflare Worker route surfaces", () => {
       type: "buffer",
     });
     const form = new FormData();
+    form.set("intent", "import_workbook");
     form.set(
       "workbook",
       new File([invalidWorkbook], "invalid-product-data.xlsx", {
@@ -6660,4 +6478,128 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(activeAfter).toEqual(activeBefore);
     expect(failedDrafts).toEqual([{ count: 0 }]);
   });
+
+  it("edits and adds global configurator rules without a catalog import", async () => {
+    const versions = runLocalD1<{
+      entry_key: string;
+      record_version: number;
+      registry_type: string;
+    }>(
+      `SELECT registry_type, entry_key, record_version
+       FROM configurator_global_registry_entries
+       WHERE (registry_type = 'assembly_estimate_schedule' AND entry_key = 'DEFAULT')
+          OR (registry_type = 'measurement_method' AND entry_key = 'M01')
+          OR (registry_type = 'clocking_convention' AND entry_key = 'M08')`,
+    );
+    const version = (registryType: string, entryKey: string) => {
+      const row = versions.find(
+        (candidate) =>
+          candidate.registry_type === registryType &&
+          candidate.entry_key === entryKey,
+      );
+      if (!row) throw new Error(`Missing ${registryType}/${entryKey}`);
+      return row.record_version;
+    };
+    async function submit(fields: Record<string, string>) {
+      const form = new FormData();
+      form.set("scope", "global");
+      for (const [key, value] of Object.entries(fields)) form.set(key, value);
+      const response = await fetch(`${origin}/admin/catalog/reference-data`, {
+        body: form,
+        headers: { origin },
+        method: "POST",
+        redirect: "manual",
+      });
+      expect(response.status, await response.text()).toBe(302);
+    }
+
+    await submit({
+      assemblyServicePricePerStartedFootUsd: "0.75",
+      assemblyServicePriceUsd: "4.00",
+      expectedRecordVersion: String(
+        version("assembly_estimate_schedule", "DEFAULT"),
+      ),
+      intent: "save_estimate_schedule",
+    });
+    await submit({
+      diagramAssetKey: "M01-straight-male-to-straight-male.png",
+      diagramAssetVersion: "1.0.1",
+      displayName: "Straight male to straight male",
+      endpointRule: "Straight endpoint to straight endpoint",
+      expectedRecordVersion: String(version("measurement_method", "M01")),
+      intent: "save_measurement_method",
+      methodCode: "M01",
+      overlayVersion: "1.0.2",
+    });
+    await submit({
+      expectedRecordVersion: String(version("clocking_convention", "M08")),
+      intent: "save_clocking",
+      presets: "0, 45, 90, 180, 270",
+      rendererVersion: "1.0.2",
+      standardToleranceDegrees: "3",
+    });
+    await submit({
+      availability: "available",
+      expectedRecordVersion: "0",
+      intent: "save_installed_protection",
+      protectionCode: "TEST_SLEEVE",
+      publicName: "Test protective sleeve",
+      referenceBasePriceUsd: "2.00",
+      referenceInstallationPricePerStartedFootUsd: "0.25",
+      referenceMaterialPricePerFootUsd: "0.50",
+    });
+
+    expect(
+      runLocalD1<{
+        entry_key: string;
+        record_version: number;
+        registry_type: string;
+      }>(
+        `SELECT registry_type, entry_key, record_version
+         FROM configurator_global_registry_entries
+         WHERE (registry_type = 'assembly_estimate_schedule' AND entry_key = 'DEFAULT')
+            OR (registry_type = 'measurement_method' AND entry_key = 'M01')
+            OR (registry_type = 'clocking_convention' AND entry_key = 'M08')
+            OR (registry_type = 'installed_protection' AND entry_key = 'TEST_SLEEVE')
+         ORDER BY registry_type, entry_key`,
+      ),
+    ).toEqual([
+      {
+        entry_key: "DEFAULT",
+        record_version: version("assembly_estimate_schedule", "DEFAULT") + 1,
+        registry_type: "assembly_estimate_schedule",
+      },
+      {
+        entry_key: "M08",
+        record_version: version("clocking_convention", "M08") + 1,
+        registry_type: "clocking_convention",
+      },
+      {
+        entry_key: "TEST_SLEEVE",
+        record_version: 1,
+        registry_type: "installed_protection",
+      },
+      {
+        entry_key: "M01",
+        record_version: version("measurement_method", "M01") + 1,
+        registry_type: "measurement_method",
+      },
+    ]);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM admin_audit_events
+         WHERE event_type = 'configurator_global_registry.saved'`,
+      ),
+    ).toEqual([{ count: 4 }]);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count
+         FROM configurator_global_registry_entry_versions
+         WHERE operation_id IN (
+           SELECT id FROM admin_audit_events
+           WHERE event_type = 'configurator_global_registry.saved'
+         )`,
+      ),
+    ).toEqual([{ count: 4 }]);
+  }, 60_000);
 });

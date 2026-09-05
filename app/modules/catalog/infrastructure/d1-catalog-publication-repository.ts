@@ -1,8 +1,12 @@
 import type {
+  CatalogPublicationAssemblyState,
+  CatalogPublicationDifferences,
   CatalogPublicationFinding,
   CatalogPublicationOperation,
+  CatalogPublicationReceipt,
   CatalogPublicationRelease,
   CatalogPublicationRepository,
+  CatalogPublicationSummary,
 } from "../domain/catalog-publication";
 import type { SupplyAvailability } from "../domain/catalog-draft-availability";
 import type {
@@ -108,7 +112,6 @@ const productDetailTables = [
   { keyColumn: "sku", name: "catalog_ferrules" },
   { keyColumn: "sku", name: "catalog_adapters" },
   { keyColumn: "sku", name: "catalog_quick_couplers" },
-  { keyColumn: "base_sku", name: "catalog_sales_offers" },
 ] as const;
 
 const relationshipTables = [
@@ -116,6 +119,11 @@ const relationshipTables = [
     keyColumn: "series_code",
     label: "Hose Series",
     name: "catalog_hose_series",
+  },
+  {
+    keyColumn: "series_code",
+    label: "Hose End Series",
+    name: "catalog_hose_end_series",
   },
   {
     keyColumn: "adapter_family_id",
@@ -242,6 +250,150 @@ async function publicProductFingerprints(
   );
 }
 
+async function keyedFingerprints(
+  database: D1Database,
+  input: {
+    importId: string | null;
+    keyColumn: string;
+    table: string;
+  },
+) {
+  const fingerprints = new Map<string, string>();
+  if (!input.importId) return fingerprints;
+  const rows = await database
+    .prepare(
+      `SELECT * FROM ${input.table} WHERE import_id = ? ORDER BY ${input.keyColumn}`,
+    )
+    .bind(input.importId)
+    .all<Record<string, unknown>>();
+  for (const row of rows.results) {
+    const key = row[input.keyColumn];
+    if (typeof key === "string") {
+      fingerprints.set(key, JSON.stringify(canonicalValue(row)));
+    }
+  }
+  return fingerprints;
+}
+
+async function imageFingerprints(
+  database: D1Database,
+  importId: string | null,
+) {
+  const fingerprints = new Map<string, string>();
+  if (!importId) return fingerprints;
+  const rows = await database
+    .prepare(
+      `SELECT sku, media_version_id FROM catalog_product_main_images
+       WHERE import_id = ? ORDER BY sku`,
+    )
+    .bind(importId)
+    .all<{ media_version_id: string; sku: string }>();
+  for (const row of rows.results) {
+    fingerprints.set(row.sku, row.media_version_id);
+  }
+  return fingerprints;
+}
+
+async function priceFingerprints(
+  database: D1Database,
+  importId: string | null,
+) {
+  return keyedFingerprints(database, {
+    importId,
+    keyColumn: "base_sku",
+    table: "catalog_sales_offers",
+  });
+}
+
+async function effectiveDerivedReleaseId(
+  database: D1Database,
+  releaseId: string,
+) {
+  const row = await database
+    .prepare(
+      `SELECT CASE WHEN EXISTS (
+         SELECT 1 FROM catalog_derived_assembly_series
+         WHERE release_id = release.id
+       ) THEN release.id ELSE impact.baseline_release_id END AS derived_release_id
+       FROM catalog_releases release
+       LEFT JOIN catalog_assembly_impact_analyses impact
+         ON impact.release_id = release.id
+       WHERE release.id = ?`,
+    )
+    .bind(releaseId)
+    .first<{ derived_release_id: string | null }>();
+  return row?.derived_release_id ?? releaseId;
+}
+
+async function derivedCombinationFingerprints(
+  database: D1Database,
+  releaseId: string | null,
+) {
+  const fingerprints = new Map<string, string>();
+  if (!releaseId) return fingerprints;
+  const effectiveReleaseId = await effectiveDerivedReleaseId(
+    database,
+    releaseId,
+  );
+  const rows = await database
+    .prepare(
+      `SELECT hose_sku, end_a_compatibility_id, end_b_compatibility_id,
+              end_a_hose_end_sku, end_a_ferrule_sku,
+              end_b_hose_end_sku, end_b_ferrule_sku,
+              end_a_relationship_fingerprint,
+              end_b_relationship_fingerprint,
+              combination_fingerprint
+       FROM catalog_derived_assembly_combinations
+       WHERE release_id = ?
+       ORDER BY hose_sku, end_a_compatibility_id, end_b_compatibility_id`,
+    )
+    .bind(effectiveReleaseId)
+    .all<Record<string, unknown>>();
+  for (const row of rows.results) {
+    const key = `${String(row.hose_sku)} / ${String(row.end_a_compatibility_id)} → ${String(row.end_b_compatibility_id)}`;
+    fingerprints.set(key, JSON.stringify(canonicalValue(row)));
+  }
+  return fingerprints;
+}
+
+async function publicationAssemblyState(
+  database: D1Database,
+  releaseId: string,
+): Promise<CatalogPublicationAssemblyState> {
+  const effectiveReleaseId = await effectiveDerivedReleaseId(
+    database,
+    releaseId,
+  );
+  const row = await database
+    .prepare(
+      `SELECT impact.input_fingerprint,
+              (SELECT COUNT(*) FROM catalog_derived_assembly_series
+               WHERE release_id = ?) AS derived_series_count,
+              (SELECT COUNT(*) FROM catalog_derived_assembly_combinations
+               WHERE release_id = ?) AS derived_combination_count,
+              (SELECT group_concat(generation_id, ',') FROM (
+                 SELECT DISTINCT generation_id
+                 FROM catalog_derived_assembly_series
+                 WHERE release_id = ? ORDER BY generation_id
+               )) AS generation_id
+       FROM catalog_assembly_impact_analyses impact
+       WHERE impact.release_id = ?`,
+    )
+    .bind(effectiveReleaseId, effectiveReleaseId, effectiveReleaseId, releaseId)
+    .first<{
+      derived_combination_count: number;
+      derived_series_count: number;
+      generation_id: string | null;
+      input_fingerprint: string;
+    }>();
+  return {
+    derivedCombinationCount: row?.derived_combination_count ?? 0,
+    derivedSeriesCount: row?.derived_series_count ?? 0,
+    generationId: row?.generation_id ?? null,
+    inputFingerprint: row?.input_fingerprint ?? "missing",
+  };
+}
+
 async function relationshipFingerprints(
   database: D1Database,
   importId: string | null,
@@ -310,13 +462,13 @@ async function persistedCounts(database: D1Database, importId: string) {
 function diffFingerprints(
   draft: Map<string, string>,
   active: Map<string, string>,
-) {
+): CatalogPublicationDifferences {
   const additions = [...draft.keys()].filter((sku) => !active.has(sku));
-  const deactivations = [...active.keys()].filter((sku) => !draft.has(sku));
+  const removals = [...active.keys()].filter((sku) => !draft.has(sku));
   const changes = [...draft.keys()].filter(
     (sku) => active.has(sku) && active.get(sku) !== draft.get(sku),
   );
-  return { additions, changes, deactivations };
+  return { additions, changes, removals };
 }
 
 function validationFinding(row: ValidationRow): CatalogPublicationFinding {
@@ -408,6 +560,41 @@ export function createD1CatalogPublicationRepository(
       return row ? publicProduct(row) : null;
     },
 
+    async findPublicationReceipt(requestCorrelationId) {
+      const row = await database
+        .prepare(
+          `SELECT release_id, published_at, summary_json
+           FROM catalog_release_publications
+           WHERE request_correlation_id = ?`,
+        )
+        .bind(requestCorrelationId)
+        .first<{
+          published_at: string;
+          release_id: string;
+          summary_json: string | null;
+        }>();
+      if (!row) return null;
+      let summary: CatalogPublicationSummary = {
+        additionCount: 0,
+        changeCount: 0,
+        deactivationCount: 0,
+        warningCount: 0,
+      };
+      try {
+        if (row.summary_json) {
+          summary = JSON.parse(row.summary_json) as CatalogPublicationSummary;
+        }
+      } catch {
+        // Legacy receipts predate the summary column and intentionally retain
+        // a zero summary rather than making a completed publication retry fail.
+      }
+      return {
+        publishedAt: row.published_at,
+        releaseId: row.release_id,
+        summary,
+      } satisfies CatalogPublicationReceipt;
+    },
+
     async findPublicationPreview(releaseId) {
       const releaseFilter = releaseId ? "AND catalog_releases.id = ?" : "";
       const statement = database.prepare(
@@ -421,6 +608,19 @@ export function createD1CatalogPublicationRepository(
          WHERE catalog_releases.status = 'draft'
            AND catalog_imports.kind = 'workbook'
            AND catalog_imports.status = 'completed'
+           AND (
+             (SELECT release_id FROM catalog_active_release WHERE singleton = 1) IS NULL
+             OR catalog_releases.created_at > COALESCE(
+               (
+                 SELECT active_release.created_at
+                 FROM catalog_active_release active_pointer
+                 INNER JOIN catalog_releases active_release
+                   ON active_release.id = active_pointer.release_id
+                 WHERE active_pointer.singleton = 1
+               ),
+               ''
+             )
+           )
            ${releaseFilter}
          ORDER BY catalog_releases.created_at DESC, catalog_releases.id DESC
          LIMIT 1`,
@@ -504,6 +704,80 @@ export function createD1CatalogPublicationRepository(
         });
       }
 
+      const missingReferencePrices = await database
+        .prepare(
+          `SELECT product.sku
+           FROM catalog_skus product
+           WHERE product.import_id = ?
+             AND product.catalog_publication_status = 'Published'
+             AND NOT EXISTS (
+               SELECT 1 FROM catalog_sales_offers offer
+               WHERE offer.import_id = product.import_id
+                 AND offer.base_sku = product.sku
+                 AND offer.catalog_publication_status = 'Published'
+                 AND offer.currency = 'USD'
+                 AND offer.reference_price_usd IS NOT NULL
+                 AND offer.reference_price_usd >= 0
+             )
+           ORDER BY product.sku`,
+        )
+        .bind(draft.source_import_id)
+        .all<{ sku: string }>();
+      if (missingReferencePrices.results.length > 0) {
+        blockers.push({
+          code: "missing_reference_price",
+          message: `${missingReferencePrices.results.length} publishable SKUs have no published USD Reference Price: ${missingReferencePrices.results
+            .slice(0, 8)
+            .map((row) => row.sku)
+            .join(", ")}.`,
+        });
+      }
+
+      const missingMainImages = await database
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM catalog_skus product
+           LEFT JOIN catalog_product_main_images image
+             ON image.import_id = product.import_id AND image.sku = product.sku
+           LEFT JOIN catalog_media_versions media ON media.id = image.media_version_id
+           WHERE product.import_id = ?
+             AND product.catalog_publication_status = 'Published'
+             AND media.id IS NULL`,
+        )
+        .bind(draft.source_import_id)
+        .first<{ count: number }>();
+      if ((missingMainImages?.count ?? 0) > 0) {
+        blockers.push({
+          code: "missing_main_image",
+          message: `${missingMainImages?.count} publishable SKUs do not resolve exactly one reviewed main image.`,
+        });
+      }
+
+      const impact = await database
+        .prepare(
+          `SELECT input_fingerprint, affected_series_json, status
+           FROM catalog_assembly_impact_analyses WHERE release_id = ?`,
+        )
+        .bind(draft.id)
+        .first<{
+          affected_series_json: string;
+          input_fingerprint: string;
+          status: "current" | "stale";
+        }>();
+      if (!impact) {
+        blockers.push({
+          code: "missing_assembly_impact",
+          message:
+            "Assembly impact must be calculated before this release can publish.",
+        });
+      } else if (impact.status === "stale") {
+        blockers.push({
+          code: "stale_derived_assembly_data",
+          message:
+            "Affected Hose Series are stale. Run Update Assembly Data before publication.",
+        });
+      }
+
       try {
         const snapshot = await createD1ConfiguratorReferenceRepository(
           database,
@@ -549,50 +823,148 @@ export function createD1CatalogPublicationRepository(
       const [
         draftProducts,
         activeProducts,
+        draftPrices,
+        activePrices,
+        draftImages,
+        activeImages,
         draftRelationships,
         activeRelationships,
+        draftDerivedCombinations,
+        activeDerivedCombinations,
+        assemblyState,
       ] = await Promise.all([
         publicProductFingerprints(database, draft.source_import_id),
         publicProductFingerprints(
           database,
           activeRelease?.sourceImportId ?? null,
         ),
+        priceFingerprints(database, draft.source_import_id),
+        priceFingerprints(database, activeRelease?.sourceImportId ?? null),
+        imageFingerprints(database, draft.source_import_id),
+        imageFingerprints(database, activeRelease?.sourceImportId ?? null),
         relationshipFingerprints(database, draft.source_import_id),
         relationshipFingerprints(
           database,
           activeRelease?.sourceImportId ?? null,
         ),
+        derivedCombinationFingerprints(database, draft.id),
+        activeRelease
+          ? derivedCombinationFingerprints(database, activeRelease.id)
+          : Promise.resolve(new Map<string, string>()),
+        publicationAssemblyState(database, draft.id),
       ]);
       const productDifferences = diffFingerprints(
         draftProducts,
         activeProducts,
       );
+      const priceDifferences = diffFingerprints(draftPrices, activePrices);
+      const imageDifferences = diffFingerprints(draftImages, activeImages);
       const relationshipDifferences = diffFingerprints(
         draftRelationships,
         activeRelationships,
+      );
+      const derivedDifferences = diffFingerprints(
+        draftDerivedCombinations,
+        activeDerivedCombinations,
       );
       const differences = {
         additions: productDifferences.additions,
         changes: [
           ...productDifferences.changes,
+          ...priceDifferences.additions.map((key) => `Reference Price ${key}`),
+          ...priceDifferences.changes.map((key) => `Reference Price ${key}`),
+          ...priceDifferences.removals.map((key) => `Reference Price ${key}`),
+          ...imageDifferences.additions.map((key) => `Main Image ${key}`),
+          ...imageDifferences.changes.map((key) => `Main Image ${key}`),
+          ...imageDifferences.removals.map((key) => `Main Image ${key}`),
           ...relationshipDifferences.additions,
           ...relationshipDifferences.changes,
-          ...relationshipDifferences.deactivations,
+          ...relationshipDifferences.removals,
+          ...derivedDifferences.additions.map((key) => `Assembly ${key}`),
+          ...derivedDifferences.changes.map((key) => `Assembly ${key}`),
+          ...derivedDifferences.removals.map((key) => `Assembly ${key}`),
         ],
-        deactivations: productDifferences.deactivations,
+        deactivations: productDifferences.removals,
       };
+      const hoseSeriesCount = await database
+        .prepare(
+          `SELECT COUNT(DISTINCT hose_series) AS count
+           FROM catalog_skus
+           WHERE import_id = ? AND product_type = 'hose'
+             AND hose_series IS NOT NULL`,
+        )
+        .bind(draft.source_import_id)
+        .first<{ count: number }>();
+      if (
+        impact?.status === "current" &&
+        assemblyState.derivedSeriesCount !== (hoseSeriesCount?.count ?? 0)
+      ) {
+        blockers.push({
+          code: "incomplete_derived_assembly_data",
+          message: `Derived Assembly Data covers ${assemblyState.derivedSeriesCount} of ${hoseSeriesCount?.count ?? 0} Hose Series.`,
+        });
+      }
+      let affectedSeries: string[] = [];
+      try {
+        const parsed: unknown = JSON.parse(
+          impact?.affected_series_json ?? "[]",
+        );
+        if (Array.isArray(parsed)) {
+          affectedSeries = parsed.filter(
+            (value): value is string => typeof value === "string",
+          );
+        }
+      } catch {
+        blockers.push({
+          code: "invalid_assembly_impact",
+          message: "Affected Hose Series data is invalid.",
+        });
+      }
       return {
         activeGeneration: activeRow.active_generation,
         activeRelease,
         ...differences,
+        affectedSeries,
+        assemblyState,
         blockers,
+        derivedCombinations: derivedDifferences,
         draftRelease: releaseFromDraft(draft),
+        images: imageDifferences,
+        prices: priceDifferences,
+        products: productDifferences,
+        relationships: relationshipDifferences,
         warnings,
       };
     },
 
+    async recordRejection(input) {
+      await database
+        .prepare(
+          `INSERT OR IGNORE INTO admin_audit_events (
+             id, event_type, entity_type, entity_id,
+             actor_id, payload_json, occurred_at
+           ) VALUES (?, 'catalog_release.publication_rejected',
+                     'catalog_release', ?, ?, ?, ?)`,
+        )
+        .bind(
+          input.auditEventId,
+          input.releaseId,
+          input.actorId,
+          JSON.stringify({
+            code: input.code,
+            ipAddress: input.ipAddress,
+            message: input.message,
+            requestCorrelationId: input.requestCorrelationId,
+          }),
+          input.occurredAt,
+        )
+        .run();
+    },
+
     async publish(operation: CatalogPublicationOperation) {
       const payload = JSON.stringify({
+        differences: operation.differences,
+        ipAddress: operation.ipAddress,
         previousReleaseId: operation.previousReleaseId,
         requestCorrelationId: operation.requestCorrelationId,
         ...operation.summary,
@@ -600,11 +972,83 @@ export function createD1CatalogPublicationRepository(
       await database.batch([
         database
           .prepare(
+            `INSERT INTO catalog_derived_assembly_series (
+               release_id, source_import_id, hose_series, generation_id,
+               input_fingerprint, combination_count, generated_at, generated_by
+             )
+             SELECT ?, target.source_import_id, active_series.hose_series,
+                    active_series.generation_id,
+                    active_series.input_fingerprint,
+                    active_series.combination_count,
+                    active_series.generated_at, active_series.generated_by
+             FROM catalog_releases target
+             INNER JOIN catalog_assembly_impact_analyses impact
+               ON impact.release_id = target.id AND impact.status = 'current'
+             INNER JOIN catalog_derived_assembly_series active_series
+               ON active_series.release_id = impact.baseline_release_id
+             WHERE target.id = ? AND target.status = 'draft'
+               AND EXISTS (
+                 SELECT 1 FROM catalog_skus hose
+                 WHERE hose.import_id = target.source_import_id
+                   AND hose.product_type = 'hose'
+                   AND hose.hose_series = active_series.hose_series
+               )
+               AND NOT EXISTS (
+                 SELECT 1 FROM catalog_derived_assembly_series existing
+                 WHERE existing.release_id = target.id
+                   AND existing.hose_series = active_series.hose_series
+               )`,
+          )
+          .bind(operation.releaseId, operation.releaseId),
+        database
+          .prepare(
+            `INSERT INTO catalog_derived_assembly_combinations (
+               id, release_id, source_import_id, hose_series, hose_sku,
+               end_a_compatibility_id, end_a_hose_end_sku, end_a_ferrule_sku,
+               end_b_compatibility_id, end_b_hose_end_sku, end_b_ferrule_sku,
+               end_a_relationship_fingerprint, end_b_relationship_fingerprint,
+               combination_fingerprint, generated_at
+             )
+             SELECT lower(hex(randomblob(16))), ?, target.source_import_id,
+                    active.hose_series, active.hose_sku,
+                    active.end_a_compatibility_id, active.end_a_hose_end_sku,
+                    active.end_a_ferrule_sku, active.end_b_compatibility_id,
+                    active.end_b_hose_end_sku, active.end_b_ferrule_sku,
+                    active.end_a_relationship_fingerprint,
+                    active.end_b_relationship_fingerprint,
+                    active.combination_fingerprint, active.generated_at
+             FROM catalog_releases target
+             INNER JOIN catalog_assembly_impact_analyses impact
+               ON impact.release_id = target.id AND impact.status = 'current'
+             INNER JOIN catalog_derived_assembly_combinations active
+               ON active.release_id = impact.baseline_release_id
+             INNER JOIN catalog_derived_assembly_series target_series
+               ON target_series.release_id = target.id
+              AND target_series.hose_series = active.hose_series
+             INNER JOIN catalog_derived_assembly_series active_series
+               ON active_series.release_id = impact.baseline_release_id
+              AND active_series.hose_series = active.hose_series
+              AND active_series.generation_id = target_series.generation_id
+              AND active_series.input_fingerprint = target_series.input_fingerprint
+             WHERE target.id = ? AND target.status = 'draft'
+               AND NOT EXISTS (
+                 SELECT 1 FROM catalog_derived_assembly_combinations existing
+                 WHERE existing.release_id = target.id
+                   AND existing.hose_sku = active.hose_sku
+                   AND existing.end_a_compatibility_id = active.end_a_compatibility_id
+                   AND existing.end_b_compatibility_id = active.end_b_compatibility_id
+               )`,
+          )
+          .bind(operation.releaseId, operation.releaseId),
+        database
+          .prepare(
             `INSERT INTO catalog_release_publications (
                release_id, previous_release_id, expected_active_version,
-               expected_draft_version, published_by,
-               request_correlation_id, published_at
-             ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+               expected_draft_version, published_by, request_correlation_id,
+               published_at, expected_assembly_input_fingerprint,
+               expected_assembly_generation_id, expected_derived_series_count,
+               expected_derived_combination_count, summary_json
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .bind(
             operation.releaseId,
@@ -614,6 +1058,14 @@ export function createD1CatalogPublicationRepository(
             operation.actorId,
             operation.requestCorrelationId,
             operation.publishedAt,
+            operation.expectedAssemblyState.inputFingerprint,
+            operation.expectedAssemblyState.generationId,
+            operation.expectedAssemblyState.derivedSeriesCount,
+            operation.expectedAssemblyState.derivedCombinationCount,
+            JSON.stringify({
+              ...operation.summary,
+              differences: operation.differences,
+            }),
           ),
         database
           .prepare(
@@ -622,6 +1074,17 @@ export function createD1CatalogPublicationRepository(
              WHERE id = ? AND status = 'published'`,
           )
           .bind(operation.previousReleaseId),
+        database
+          .prepare(
+            `UPDATE catalog_releases
+             SET status = 'superseded'
+             WHERE status = 'draft'
+               AND id <> ?
+               AND created_at <= (
+                 SELECT created_at FROM catalog_releases WHERE id = ?
+               )`,
+          )
+          .bind(operation.releaseId, operation.releaseId),
         database
           .prepare(
             `UPDATE catalog_releases

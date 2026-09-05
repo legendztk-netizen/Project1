@@ -73,7 +73,6 @@ export default [
   ),
   route("admin/catalog/import", "modules/admin/routes/catalog-import.tsx"),
   route("admin/catalog/review", "modules/admin/routes/catalog-review.tsx"),
-  route("admin/catalog/releases", "modules/admin/routes/catalog-releases.tsx"),
   route(
     "admin/catalog/reference-data",
     "modules/admin/routes/catalog-reference-data.tsx",
