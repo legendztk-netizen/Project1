@@ -156,12 +156,20 @@ export function publicCatalogMainImageUrl(
   approvedReference: string | null | undefined,
 ) {
   if (!mediaVersionId) return null;
-  if (
-    approvedReference &&
-    !approvedReference.startsWith("hose-series:") &&
-    !approvedReference.startsWith("hose-end-shape:")
-  ) {
-    return null;
+  if (approvedReference) {
+    if (approvedReference.startsWith("hose-series:")) {
+      if (!hoseMediaPath(approvedReference.slice("hose-series:".length))) {
+        return null;
+      }
+    } else if (approvedReference.startsWith("hose-end-shape:")) {
+      if (
+        !hoseEndMediaPath(approvedReference.slice("hose-end-shape:".length))
+      ) {
+        return null;
+      }
+    } else {
+      return null;
+    }
   }
   return `/media/catalog/${encodeURIComponent(mediaVersionId)}/storefront`;
 }

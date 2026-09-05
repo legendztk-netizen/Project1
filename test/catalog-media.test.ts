@@ -66,6 +66,12 @@ describe("catalog hose-end media", () => {
         "catalog-source:62d65f8412ff5.pdf:ferrule:p49-50",
       ),
     ).toBeNull();
+    expect(
+      publicCatalogMainImageUrl(
+        "approved-v1:hose-series:UNKNOWN",
+        "hose-series:UNKNOWN",
+      ),
+    ).toBeNull();
   });
 
   it.each(hoseEndMediaCases)(

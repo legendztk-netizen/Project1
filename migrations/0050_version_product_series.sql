@@ -10,6 +10,8 @@ DROP TRIGGER `catalogproductmainimages_immutable_update`;
 --> statement-breakpoint
 DROP TRIGGER `catalogproductmainimages_draft_update_revision`;
 --> statement-breakpoint
+DROP TRIGGER `cataloghoseseries_draft_update_revision`;
+--> statement-breakpoint
 
 ALTER TABLE `catalog_hose_series` ADD COLUMN `series_name` TEXT;
 --> statement-breakpoint
@@ -64,9 +66,11 @@ SET
     INNER JOIN `catalog_product_main_images` AS `image`
       ON `image`.`import_id` = `variant`.`import_id`
      AND `image`.`sku` = `variant`.`sku`
+    INNER JOIN `catalog_media_versions` AS `media`
+      ON `media`.`id` = `image`.`media_version_id`
     WHERE `variant`.`import_id` = `series`.`import_id`
       AND `variant`.`hose_series` = `series`.`series_code`
-    ORDER BY `variant`.`sku`
+    ORDER BY (`media`.`source_kind` = 'uploaded'), `variant`.`sku`
     LIMIT 1
   );
 --> statement-breakpoint
@@ -119,9 +123,11 @@ SELECT
     INNER JOIN `catalog_product_main_images` AS `image`
       ON `image`.`import_id` = `candidate`.`import_id`
      AND `image`.`sku` = `candidate`.`sku`
+    INNER JOIN `catalog_media_versions` AS `media`
+      ON `media`.`id` = `image`.`media_version_id`
     WHERE `candidate`.`import_id` = `variant`.`import_id`
       AND `candidate`.`fitting_series` = `variant`.`fitting_series`
-    ORDER BY `candidate`.`sku`
+    ORDER BY (`media`.`source_kind` = 'uploaded'), `candidate`.`sku`
     LIMIT 1
   )
 FROM `catalog_hose_ends` AS `variant`
@@ -144,19 +150,39 @@ WHERE EXISTS (
   INNER JOIN `catalog_hose_series` AS `series`
     ON `series`.`import_id` = `variant`.`import_id`
    AND `series`.`series_code` = `variant`.`hose_series`
+  INNER JOIN `catalog_media_versions` AS `media`
+    ON `media`.`id` = `image`.`media_version_id`
   WHERE `variant`.`import_id` = `image`.`import_id`
     AND `variant`.`sku` = `image`.`sku`
     AND `series`.`representative_media_version_id` = `image`.`media_version_id`
+    AND `media`.`source_kind` = 'approved_reference'
   UNION ALL
   SELECT 1
   FROM `catalog_hose_ends` AS `variant`
   INNER JOIN `catalog_hose_end_series` AS `series`
     ON `series`.`import_id` = `variant`.`import_id`
    AND `series`.`series_code` = `variant`.`fitting_series`
+  INNER JOIN `catalog_media_versions` AS `media`
+    ON `media`.`id` = `image`.`media_version_id`
   WHERE `variant`.`import_id` = `image`.`import_id`
     AND `variant`.`sku` = `image`.`sku`
     AND `series`.`representative_media_version_id` = `image`.`media_version_id`
+    AND `media`.`source_kind` = 'approved_reference'
 );
+--> statement-breakpoint
+UPDATE `catalog_releases` AS `release`
+SET `version` = `version` + 1
+WHERE `release`.`status` = 'draft'
+  AND (
+    EXISTS (
+      SELECT 1 FROM `catalog_hose_series` AS `series`
+      WHERE `series`.`import_id` = `release`.`source_import_id`
+    )
+    OR EXISTS (
+      SELECT 1 FROM `catalog_hose_ends` AS `variant`
+      WHERE `variant`.`import_id` = `release`.`source_import_id`
+    )
+  );
 --> statement-breakpoint
 CREATE TRIGGER `catalogproductmainimages_immutable_update`
 BEFORE UPDATE ON `catalog_product_main_images`
@@ -167,6 +193,14 @@ WHEN EXISTS (
 )
 BEGIN
   SELECT RAISE(ABORT, 'published catalog image assignment is immutable');
+END;
+--> statement-breakpoint
+CREATE TRIGGER `cataloghoseseries_draft_update_revision`
+AFTER UPDATE ON `catalog_hose_series`
+BEGIN
+  UPDATE `catalog_releases`
+  SET `version` = `version` + 1
+  WHERE `source_import_id` = NEW.`import_id` AND `status` = 'draft';
 END;
 --> statement-breakpoint
 CREATE TRIGGER `catalogproductmainimages_draft_update_revision`

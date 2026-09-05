@@ -302,7 +302,7 @@ describe("real local D1 migration lifecycle", () => {
        VALUES
          ('legacy-hose-sku', 'legacy-import', 'LEGACY-HOSE', '01', 'hose',
           'LEGACY', 'Published', 'Eligible', 'Complete', 'available_for_quote'),
-         ('legacy-hose-custom-sku', 'legacy-import', 'LEGACY-HOSE-CUSTOM', '01', 'hose',
+         ('legacy-hose-custom-sku', 'legacy-import', 'AAA-LEGACY-HOSE-CUSTOM', '01', 'hose',
           'LEGACY', 'Published', 'Eligible', 'Complete', 'available_for_quote'),
          ('legacy-end-sku', 'legacy-import', 'LEGACY-END', '02', 'hose_end',
           NULL, 'Published', 'Eligible', 'Complete', 'available_for_quote');
@@ -318,7 +318,7 @@ describe("real local D1 migration lifecycle", () => {
          ('legacy-hose', 'legacy-import', 'LEGACY-HOSE', 'LEGACY', 'SAE',
           'ISO', '-4', 0.25, 6.4, 12, 200, 800, 100, 0.3, -40, 100,
           'NBR', 'Wire', 'Rubber', 'Black', 'No Skive', 'Oil', 'CN', 'test'),
-         ('legacy-hose-custom', 'legacy-import', 'LEGACY-HOSE-CUSTOM', 'LEGACY', 'SAE',
+         ('legacy-hose-custom', 'legacy-import', 'AAA-LEGACY-HOSE-CUSTOM', 'LEGACY', 'SAE',
           'ISO', '-6', 0.375, 9.5, 15, 180, 720, 120, 0.4, -40, 100,
           'NBR', 'Wire', 'Rubber', 'Black', 'No Skive', 'Oil', 'CN', 'test');
        INSERT INTO catalog_hose_ends
@@ -349,7 +349,7 @@ describe("real local D1 migration lifecycle", () => {
        VALUES
          ('legacy-hose-image', 'legacy-import', 'LEGACY-HOSE', 'legacy-media',
           '2026-09-01', 'test'),
-         ('legacy-hose-custom-image', 'legacy-import', 'LEGACY-HOSE-CUSTOM',
+         ('legacy-hose-custom-image', 'legacy-import', 'AAA-LEGACY-HOSE-CUSTOM',
           'legacy-custom-media', '2026-09-01', 'test'),
          ('legacy-end-image', 'legacy-import', 'LEGACY-END', 'legacy-media',
           '2026-09-01', 'test');
@@ -357,7 +357,37 @@ describe("real local D1 migration lifecycle", () => {
          (id, release_number, status, source_import_id, version, created_at,
           published_at)
        VALUES ('legacy-release', 'LEGACY-1', 'published', 'legacy-import', 1,
-               '2026-09-01', '2026-09-01');`,
+               '2026-09-01', '2026-09-01');
+       INSERT INTO catalog_imports
+         (id, kind, status, summary_json, error_count, warning_count, created_at, completed_at)
+       VALUES ('draft-import', 'diagnostic', 'completed', '{}', 0, 0,
+               '2026-09-02', '2026-09-02');
+       INSERT INTO catalog_skus
+         (id, import_id, sku, source_worksheet, product_type, hose_series,
+          catalog_publication_status, rfq_eligibility, technical_data_status,
+          supply_availability)
+       VALUES ('draft-hose-sku', 'draft-import', 'DRAFT-HOSE', '01', 'hose',
+               'DRAFT-SERIES', 'Draft', 'Eligible', 'Complete',
+               'temporarily_unavailable');
+       INSERT INTO catalog_hose_series (id, import_id, series_code)
+       VALUES ('draft-series', 'draft-import', 'DRAFT-SERIES');
+       INSERT INTO catalog_hose_variants
+         (id, import_id, sku, hose_series, primary_standard, equivalent_standard,
+          dash, nominal_id_in, id_mm, od_mm, working_bar, burst_bar,
+          bend_radius_mm, weight_kg_m, temp_min_c, temp_max_c, tube_material,
+          reinforcement, cover_material, cover_color, skive_requirement,
+          fluid_compatibility, origin, source)
+       VALUES ('draft-hose', 'draft-import', 'DRAFT-HOSE', 'DRAFT-SERIES', 'SAE',
+               'ISO', '-4', 0.25, 6.4, 12, 200, 800, 100, 0.3, -40, 100,
+               'NBR', 'Wire', 'Rubber', 'Black', 'No Skive', 'Oil', 'CN', 'test');
+       INSERT INTO catalog_product_main_images
+         (id, import_id, sku, media_version_id, assigned_at, assigned_by)
+       VALUES ('draft-hose-image', 'draft-import', 'DRAFT-HOSE', 'legacy-media',
+               '2026-09-02', 'test');
+       INSERT INTO catalog_releases
+         (id, release_number, status, source_import_id, version, created_at)
+       VALUES ('draft-release', 'DRAFT-1', 'draft', 'draft-import', 7,
+               '2026-09-02');`,
     );
 
     copyFileSync(
@@ -378,11 +408,11 @@ describe("real local D1 migration lifecycle", () => {
       queryD1<{ assignment_kind: string; sku: string }>(
         fixture,
         `SELECT sku, assignment_kind FROM catalog_product_main_images
-         WHERE sku IN ('LEGACY-HOSE', 'LEGACY-HOSE-CUSTOM') ORDER BY sku`,
+         WHERE sku IN ('LEGACY-HOSE', 'AAA-LEGACY-HOSE-CUSTOM') ORDER BY sku`,
       ),
     ).toEqual([
+      { assignment_kind: "override", sku: "AAA-LEGACY-HOSE-CUSTOM" },
       { assignment_kind: "inherited", sku: "LEGACY-HOSE" },
-      { assignment_kind: "override", sku: "LEGACY-HOSE-CUSTOM" },
     ]);
     expect(
       queryD1<{ count: number }>(
@@ -397,6 +427,12 @@ describe("real local D1 migration lifecycle", () => {
         "SELECT status FROM catalog_releases WHERE id = 'legacy-release'",
       ),
     ).toEqual([{ status: "published" }]);
+    expect(
+      queryD1<{ version: number }>(
+        fixture,
+        "SELECT version FROM catalog_releases WHERE id = 'draft-release'",
+      ),
+    ).toEqual([{ version: 8 }]);
   }, 90_000);
 
   it("enforces versioned series identity and referenced-series deletion guards", () => {
