@@ -113,6 +113,18 @@ export const catalogHoseSeries = sqliteTable(
       .notNull()
       .references(() => catalogImports.id, { onDelete: "cascade" }),
     seriesCode: text("series_code").notNull(),
+    seriesName: text("series_name"),
+    primaryStandard: text("primary_standard"),
+    equivalentStandard: text("equivalent_standard"),
+    tempMinC: real("temp_min_c"),
+    tempMaxC: real("temp_max_c"),
+    tubeMaterial: text("tube_material"),
+    reinforcement: text("reinforcement"),
+    coverMaterial: text("cover_material"),
+    coverColor: text("cover_color"),
+    coverFinish: text("cover_finish"),
+    fluidCompatibility: text("fluid_compatibility"),
+    representativeMediaVersionId: text("representative_media_version_id"),
   },
   (table) => [
     uniqueIndex("catalog_hose_series_import_code_uq").on(
@@ -164,10 +176,43 @@ export const catalogHoseVariants = sqliteTable(
       foreignColumns: [catalogSkus.importId, catalogSkus.sku],
       name: "catalog_hose_variants_catalog_sku_fk",
     }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.importId, table.hoseSeries],
+      foreignColumns: [
+        catalogHoseSeries.importId,
+        catalogHoseSeries.seriesCode,
+      ],
+      name: "catalog_hose_variants_series_fk",
+    }).onDelete("restrict"),
     index("catalog_hose_variants_series_dash_idx").on(
       table.importId,
       table.hoseSeries,
       table.dash,
+    ),
+  ],
+);
+
+export const catalogHoseEndSeries = sqliteTable(
+  "catalog_hose_end_series",
+  {
+    id: text("id").primaryKey(),
+    importId: text("import_id")
+      .notNull()
+      .references(() => catalogImports.id, { onDelete: "cascade" }),
+    seriesCode: text("series_code").notNull(),
+    seriesName: text("series_name").notNull(),
+    interfaceFamily: text("interface_family").notNull(),
+    connectionStandard: text("connection_standard").notNull(),
+    gender: text("gender").notNull(),
+    swivelForm: text("swivel_form").notNull(),
+    angle: text("angle").notNull(),
+    sealingForm: text("sealing_form").notNull(),
+    representativeMediaVersionId: text("representative_media_version_id"),
+  },
+  (table) => [
+    uniqueIndex("catalog_hose_end_series_import_code_uq").on(
+      table.importId,
+      table.seriesCode,
     ),
   ],
 );
@@ -214,6 +259,14 @@ export const catalogHoseEnds = sqliteTable(
       foreignColumns: [catalogSkus.importId, catalogSkus.sku],
       name: "catalog_hose_ends_catalog_sku_fk",
     }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.importId, table.fittingSeries],
+      foreignColumns: [
+        catalogHoseEndSeries.importId,
+        catalogHoseEndSeries.seriesCode,
+      ],
+      name: "catalog_hose_ends_series_fk",
+    }).onDelete("restrict"),
     index("catalog_hose_ends_interface_idx").on(
       table.importId,
       table.interfaceFamily,
@@ -649,13 +702,167 @@ export const catalogReleasePublications = sqliteTable(
     ),
     expectedActiveVersion: integer("expected_active_version").notNull(),
     expectedDraftVersion: integer("expected_draft_version").notNull(),
+    expectedAssemblyInputFingerprint: text(
+      "expected_assembly_input_fingerprint",
+    ),
+    expectedAssemblyGenerationId: text("expected_assembly_generation_id"),
+    expectedDerivedSeriesCount: integer("expected_derived_series_count"),
+    expectedDerivedCombinationCount: integer(
+      "expected_derived_combination_count",
+    ),
     publishedBy: text("published_by").notNull(),
     requestCorrelationId: text("request_correlation_id").notNull(),
     publishedAt: text("published_at").notNull(),
+    summaryJson: text("summary_json"),
   },
   (table) => [
     uniqueIndex("catalog_release_publications_request_uq").on(
       table.requestCorrelationId,
+    ),
+  ],
+);
+
+export const catalogAssemblyImpactAnalyses = sqliteTable(
+  "catalog_assembly_impact_analyses",
+  {
+    releaseId: text("release_id")
+      .primaryKey()
+      .references(() => catalogReleases.id, { onDelete: "cascade" }),
+    baselineReleaseId: text("baseline_release_id").references(
+      () => catalogReleases.id,
+    ),
+    activeGeneration: integer("active_generation").notNull(),
+    sharedRuleFingerprint: text("shared_rule_fingerprint").notNull(),
+    inputFingerprint: text("input_fingerprint").notNull(),
+    affectedSeriesJson: text("affected_series_json").notNull(),
+    sourceChangesJson: text("source_changes_json").notNull(),
+    status: text("status").notNull(),
+    calculatedAt: text("calculated_at").notNull(),
+    calculatedBy: text("calculated_by").notNull(),
+    lastCalculationId: text("last_calculation_id").notNull(),
+  },
+  (table) => [
+    check(
+      "catalog_assembly_impact_status",
+      sql`${table.status} in ('current', 'stale')`,
+    ),
+    uniqueIndex("catalog_assembly_impact_calculation_uq").on(
+      table.lastCalculationId,
+    ),
+    index("catalog_assembly_impact_status_idx").on(
+      table.status,
+      table.releaseId,
+    ),
+  ],
+);
+
+export const catalogDerivedAssemblySeries = sqliteTable(
+  "catalog_derived_assembly_series",
+  {
+    releaseId: text("release_id")
+      .notNull()
+      .references(() => catalogReleases.id, { onDelete: "cascade" }),
+    sourceImportId: text("source_import_id")
+      .notNull()
+      .references(() => catalogImports.id, { onDelete: "cascade" }),
+    hoseSeries: text("hose_series").notNull(),
+    generationId: text("generation_id").notNull(),
+    inputFingerprint: text("input_fingerprint").notNull(),
+    combinationCount: integer("combination_count").notNull(),
+    generatedAt: text("generated_at").notNull(),
+    generatedBy: text("generated_by").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.releaseId, table.hoseSeries],
+      name: "catalog_derived_assembly_series_pk",
+    }),
+    check(
+      "catalog_derived_assembly_series_count",
+      sql`${table.combinationCount} >= 0`,
+    ),
+    index("catalog_derived_assembly_series_generation_idx").on(
+      table.releaseId,
+      table.generationId,
+    ),
+  ],
+);
+
+export const catalogDerivedAssemblyCombinations = sqliteTable(
+  "catalog_derived_assembly_combinations",
+  {
+    id: text("id").primaryKey(),
+    releaseId: text("release_id").notNull(),
+    sourceImportId: text("source_import_id").notNull(),
+    hoseSeries: text("hose_series").notNull(),
+    hoseSku: text("hose_sku").notNull(),
+    endACompatibilityId: text("end_a_compatibility_id").notNull(),
+    endAHoseEndSku: text("end_a_hose_end_sku").notNull(),
+    endAFerruleSku: text("end_a_ferrule_sku").notNull(),
+    endBCompatibilityId: text("end_b_compatibility_id").notNull(),
+    endBHoseEndSku: text("end_b_hose_end_sku").notNull(),
+    endBFerruleSku: text("end_b_ferrule_sku").notNull(),
+    endARelationshipFingerprint: text(
+      "end_a_relationship_fingerprint",
+    ).notNull(),
+    endBRelationshipFingerprint: text(
+      "end_b_relationship_fingerprint",
+    ).notNull(),
+    combinationFingerprint: text("combination_fingerprint").notNull(),
+    generatedAt: text("generated_at").notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.releaseId, table.hoseSeries],
+      foreignColumns: [
+        catalogDerivedAssemblySeries.releaseId,
+        catalogDerivedAssemblySeries.hoseSeries,
+      ],
+      name: "catalog_derived_assembly_combination_series_fk",
+    }).onDelete("cascade"),
+    uniqueIndex("catalog_derived_assembly_combination_tuple_uq").on(
+      table.releaseId,
+      table.hoseSku,
+      table.endACompatibilityId,
+      table.endBCompatibilityId,
+    ),
+    index("catalog_derived_assembly_combinations_series_idx").on(
+      table.releaseId,
+      table.hoseSeries,
+    ),
+  ],
+);
+
+export const catalogAssemblyRegenerations = sqliteTable(
+  "catalog_assembly_regenerations",
+  {
+    id: text("id").primaryKey(),
+    releaseId: text("release_id")
+      .notNull()
+      .references(() => catalogReleases.id, { onDelete: "cascade" }),
+    inputFingerprint: text("input_fingerprint").notNull(),
+    affectedSeriesJson: text("affected_series_json").notNull(),
+    status: text("status").notNull(),
+    additionCount: integer("addition_count").notNull().default(0),
+    changeCount: integer("change_count").notNull().default(0),
+    removalCount: integer("removal_count").notNull().default(0),
+    combinationCount: integer("combination_count").notNull().default(0),
+    actorId: text("actor_id").notNull(),
+    occurredAt: text("occurred_at").notNull(),
+    errorJson: text("error_json"),
+  },
+  (table) => [
+    check(
+      "catalog_assembly_regeneration_status",
+      sql`${table.status} in ('succeeded', 'failed', 'already_current')`,
+    ),
+    check(
+      "catalog_assembly_regeneration_counts",
+      sql`${table.additionCount} >= 0 AND ${table.changeCount} >= 0 AND ${table.removalCount} >= 0`,
+    ),
+    index("catalog_assembly_regenerations_release_idx").on(
+      table.releaseId,
+      table.occurredAt,
     ),
   ],
 );

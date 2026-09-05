@@ -36,6 +36,27 @@ beforeAll(async () => {
 });
 
 describe("01-07 catalog workbook contract", () => {
+  it("rejects an empty template instead of creating an empty pending catalog", () => {
+    const sheets = cloneFixture();
+    for (const sheet of sheets) {
+      if (/^0[1-7]_/u.test(sheet.sheet)) sheet.data.splice(4);
+    }
+
+    const result = validateCatalogWorkbook(sheets);
+
+    expect(result.draft).toBeNull();
+    expect(result.blockingErrors).toContainEqual({
+      code: "empty_workbook",
+      field: "Workbook / 工作簿",
+      message:
+        "At least one concrete product row is required in worksheets 01, 02, 03, 05, or 06",
+      row: 0,
+      severity: "error",
+      sku: null,
+      worksheet: "01-07",
+    });
+  });
+
   it("normalizes the supplied finished workbook without inventing relationships", () => {
     const result = validateCatalogWorkbook(fixture);
 
@@ -206,6 +227,64 @@ describe("01-07 catalog workbook contract", () => {
     );
   });
 
+  it("groups repeated product rows into versioned series records", () => {
+    const result = validateCatalogWorkbook(fixture);
+
+    expect(result.draft?.hoseSeriesRecords).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          primaryStandard: "SAE 100 R1AT",
+          seriesCode: "601R1",
+          seriesName: "601R1",
+        }),
+      ]),
+    );
+    expect(result.draft?.hoseEndSeries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          seriesCode: "MPX Hydraulax R1 reference",
+          seriesName: "MPX Hydraulax R1 reference",
+        }),
+      ]),
+    );
+  });
+
+  it("rejects conflicting shared technical values within one Hose Series", () => {
+    const sheets = cloneFixture();
+    const hoses = sheetByName(sheets, "01_胶管主数据");
+    hoses.data[5][3] = "CONFLICTING STANDARD";
+
+    const result = validateCatalogWorkbook(sheets);
+
+    expect(result.draft).toBeNull();
+    expect(result.blockingErrors).toContainEqual(
+      expect.objectContaining({
+        code: "conflicting_series_value",
+        field: "Primary Standard / 主标准",
+        row: 6,
+        worksheet: "01_胶管主数据",
+      }),
+    );
+  });
+
+  it("rejects conflicting shared technical values within one Hose End Series", () => {
+    const sheets = cloneFixture();
+    const hoseEnds = sheetByName(sheets, "02_压接接头");
+    hoseEnds.data[5][5] = "CONFLICTING STANDARD";
+
+    const result = validateCatalogWorkbook(sheets);
+
+    expect(result.draft).toBeNull();
+    expect(result.blockingErrors).toContainEqual(
+      expect.objectContaining({
+        code: "conflicting_series_value",
+        field: "Interface Standard / 接口标准",
+        row: 6,
+        worksheet: "02_压接接头",
+      }),
+    );
+  });
+
   it("rejects broken exact foreign keys rather than inferring from Dash", () => {
     const sheets = cloneFixture();
     const compatibility = sheetByName(sheets, "04_兼容压接");
@@ -336,6 +415,68 @@ describe("01-07 catalog workbook contract", () => {
         code: "price_currency_required",
         field: "Currency / 币种",
         row: 5,
+      }),
+    );
+  });
+
+  it("requires one worksheet 07 row and a Reference Price for every Published product", () => {
+    const missingRowSheets = cloneFixture();
+    const missingRowPrices = sheetByName(missingRowSheets, "07_价格包装");
+    missingRowPrices.data.splice(4, 1);
+
+    const missingRowResult = validateCatalogWorkbook(missingRowSheets);
+
+    expect(missingRowResult.draft).toBeNull();
+    expect(missingRowResult.blockingErrors).toContainEqual(
+      expect.objectContaining({
+        code: "missing_price_row",
+        field: "Base SKU / 基础SKU",
+        row: 0,
+        sku: "601R1_001",
+        worksheet: "07_价格包装",
+      }),
+    );
+
+    const missingReferenceSheets = cloneFixture();
+    const missingReferencePrices = sheetByName(
+      missingReferenceSheets,
+      "07_价格包装",
+    );
+    const publishedHoses = sheetByName(missingReferenceSheets, "01_胶管主数据");
+    publishedHoses.data[4][0] = "Published";
+    missingReferencePrices.data[4][0] = "Published";
+    missingReferencePrices.data[4][17] = null;
+
+    const missingReferenceResult = validateCatalogWorkbook(
+      missingReferenceSheets,
+    );
+
+    expect(missingReferenceResult.draft).toBeNull();
+    expect(missingReferenceResult.blockingErrors).toContainEqual(
+      expect.objectContaining({
+        code: "reference_price_required",
+        field: "Retail Unit Price USD / 零售单价",
+        row: 5,
+        sku: "601R1_001",
+        worksheet: "07_价格包装",
+      }),
+    );
+  });
+
+  it("rejects a product shape that cannot resolve a reviewed main image", () => {
+    const sheets = cloneFixture();
+    const hoseEnds = sheetByName(sheets, "02_压接接头");
+    hoseEnds.data[4][8] = "Other";
+
+    const result = validateCatalogWorkbook(sheets);
+
+    expect(result.draft).toBeNull();
+    expect(result.blockingErrors).toContainEqual(
+      expect.objectContaining({
+        code: "main_image_required",
+        field: "Main Image / 主图",
+        row: 5,
+        worksheet: "02_压接接头",
       }),
     );
   });

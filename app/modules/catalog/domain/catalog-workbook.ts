@@ -1,3 +1,9 @@
+import {
+  hoseEndMainImageReferenceFromFields,
+  hoseEndMediaKeyFromMainImageReference,
+  hoseMainImageReference,
+} from "./catalog-main-image";
+
 export type CatalogWorkbookCell = string | number | boolean | Date | null;
 
 export interface CatalogWorkbookSheet {
@@ -171,6 +177,22 @@ export interface HoseVariantDraft {
   workingPsi: number | null;
 }
 
+export interface HoseSeriesDraft {
+  coverColor: string;
+  coverFinish: string | null;
+  coverMaterial: string;
+  equivalentStandard: string | null;
+  fluidCompatibility: string;
+  mainImageReference: string;
+  primaryStandard: string;
+  reinforcement: string;
+  seriesCode: string;
+  seriesName: string;
+  tempMaxC: number;
+  tempMinC: number;
+  tubeMaterial: string;
+}
+
 export interface HoseEndDraft {
   angle: string;
   catalogPublicationStatus: CatalogPublicationStatus;
@@ -201,6 +223,18 @@ export interface HoseEndDraft {
   technicalDataStatus: TechnicalDataStatus;
   thread: string;
   unitWeightG: number | null;
+}
+
+export interface HoseEndSeriesDraft {
+  angle: string;
+  connectionStandard: string;
+  gender: string;
+  interfaceFamily: string;
+  mainImageReference: string;
+  sealingForm: string;
+  seriesCode: string;
+  seriesName: string;
+  swivelForm: string;
 }
 
 export interface FerruleDraft {
@@ -257,7 +291,9 @@ export interface ValidatedCatalogDraft {
   costBases: CostBasisDraft[];
   ferrules: FerruleDraft[];
   hoseEnds: HoseEndDraft[];
+  hoseEndSeries: HoseEndSeriesDraft[];
   hoseSeries: string[];
+  hoseSeriesRecords: HoseSeriesDraft[];
   hoseVariants: HoseVariantDraft[];
   quickCouplers: QuickCouplerDraft[];
   salesOffers: SalesOfferDraft[];
@@ -272,7 +308,7 @@ export interface CatalogWorkbookValidation {
 
 type FieldKind = "number" | "text";
 
-interface FieldContract {
+export interface CatalogFieldContract {
   controlledValues?: readonly string[];
   header: string;
   key: string;
@@ -280,8 +316,8 @@ interface FieldContract {
   required: boolean;
 }
 
-interface WorksheetContract {
-  fields: readonly FieldContract[];
+export interface CatalogWorksheetContract {
+  fields: readonly CatalogFieldContract[];
   name: string;
   skuKey: string;
 }
@@ -355,13 +391,19 @@ const textField = (
   header: string,
   required: boolean,
   controlledValues?: readonly string[],
-): FieldContract => ({ controlledValues, header, key, kind: "text", required });
+): CatalogFieldContract => ({
+  controlledValues,
+  header,
+  key,
+  kind: "text",
+  required,
+});
 
 const numberField = (
   key: string,
   header: string,
   required: boolean,
-): FieldContract => ({ header, key, kind: "number", required });
+): CatalogFieldContract => ({ header, key, kind: "number", required });
 
 const statusFields = {
   publication: textField(
@@ -384,7 +426,7 @@ const statusFields = {
   ),
 };
 
-const WORKSHEET_CONTRACTS: readonly WorksheetContract[] = [
+export const catalogWorksheetContracts: readonly CatalogWorksheetContract[] = [
   {
     name: "01_胶管主数据",
     skuKey: "sku",
@@ -789,9 +831,91 @@ function normalizedCell(value: CatalogWorkbookCell | undefined) {
   return typeof value === "string" ? value.trim() : (value ?? null);
 }
 
+export function catalogWorksheetContract(name: string) {
+  const contract = catalogWorksheetContracts.find(
+    (candidate) => candidate.name === name,
+  );
+  if (!contract) throw new Error(`Unknown catalog worksheet ${name}`);
+  return contract;
+}
+
+export function validateCatalogWorksheetRecord(
+  worksheet: string,
+  sourceValues: Record<string, CatalogWorkbookCell | undefined>,
+): CatalogImportValidationResult[] {
+  const contract = catalogWorksheetContract(worksheet);
+  const values = Object.fromEntries(
+    Object.entries(sourceValues).map(([key, value]) => [
+      key,
+      normalizedCell(value),
+    ]),
+  );
+  const rawSku = values[contract.skuKey];
+  const sku = typeof rawSku === "string" && rawSku !== "" ? rawSku : null;
+  const results: CatalogImportValidationResult[] = [];
+
+  for (const field of contract.fields) {
+    const value = values[field.key];
+    if (field.required && !hasValue(value)) {
+      results.push({
+        code: "required",
+        field: fieldLabel(field.header),
+        message: "Required value is missing",
+        row: 0,
+        severity: "error",
+        sku,
+        worksheet,
+      });
+      continue;
+    }
+    if (!hasValue(value)) continue;
+    if (
+      field.kind === "number" &&
+      (typeof value !== "number" || !Number.isFinite(value))
+    ) {
+      results.push({
+        code: "invalid_number",
+        field: fieldLabel(field.header),
+        message: "Expected a number without a unit suffix",
+        row: 0,
+        severity: "error",
+        sku,
+        worksheet,
+      });
+    }
+    if (field.kind === "text" && typeof value !== "string") {
+      results.push({
+        code: "invalid_text",
+        field: fieldLabel(field.header),
+        message: "Expected text",
+        row: 0,
+        severity: "error",
+        sku,
+        worksheet,
+      });
+    }
+    if (
+      field.controlledValues &&
+      typeof value === "string" &&
+      !field.controlledValues.includes(value)
+    ) {
+      results.push({
+        code: "invalid_enum",
+        field: fieldLabel(field.header),
+        message: `Value "${value}" is not a controlled value`,
+        row: 0,
+        severity: "error",
+        sku,
+        worksheet,
+      });
+    }
+  }
+  return results;
+}
+
 function validateWorksheet(
   workbookSheets: CatalogWorkbookSheet[],
-  contract: WorksheetContract,
+  contract: CatalogWorksheetContract,
   results: CatalogImportValidationResult[],
 ) {
   const sheet = workbookSheets.find(
@@ -1258,6 +1382,84 @@ function validatePriceRelationships(
       }
     }
   }
+
+  const pricesByBaseSku = new Map(
+    priceRows.map((row) => [stringValue(row, "baseSku"), row]),
+  );
+  for (const product of productRows) {
+    if (!product.sku) continue;
+    const price = pricesByBaseSku.get(product.sku);
+    if (!price) {
+      results.push({
+        code: "missing_price_row",
+        field: "Base SKU / 基础SKU",
+        message: `Worksheet 07 sales and price data is required for Base SKU "${product.sku}"`,
+        row: 0,
+        severity: "error",
+        sku: product.sku,
+        worksheet: "07_价格包装",
+      });
+      continue;
+    }
+    if (
+      stringValue(product, "catalogPublicationStatus") === "Published" &&
+      optionalNumber(price, "referencePriceUsd") === null
+    ) {
+      results.push(
+        duplicateResult(
+          price,
+          "Retail Unit Price USD / 零售单价",
+          "reference_price_required",
+          "A customer-facing USD Reference Price is required for every Published product",
+        ),
+      );
+    }
+  }
+}
+
+function validateMainImageResolution(
+  hoseRows: ParsedRow[],
+  hoseEndRows: ParsedRow[],
+  results: CatalogImportValidationResult[],
+) {
+  for (const row of hoseRows) {
+    const hoseSeries = optionalString(row, "hoseSeries");
+    if (hoseSeries !== null && hoseMainImageReference(hoseSeries) === null) {
+      results.push(
+        duplicateResult(
+          row,
+          "Main Image / 主图",
+          "main_image_required",
+          `Hose Series "${hoseSeries}" does not resolve to a reviewed representative image`,
+        ),
+      );
+    }
+  }
+
+  for (const row of hoseEndRows) {
+    const fields = {
+      angle: optionalString(row, "angle"),
+      connectionStandard: optionalString(row, "connectionStandard"),
+      fittingSeries: optionalString(row, "fittingSeries"),
+      gender: optionalString(row, "gender"),
+      interfaceFamily: optionalString(row, "interfaceFamily"),
+      swivelForm: optionalString(row, "swivelForm"),
+    };
+    if (Object.values(fields).some((value) => value === null)) continue;
+    const reference = hoseEndMainImageReferenceFromFields(
+      fields as Record<keyof typeof fields, string>,
+    );
+    if (hoseEndMediaKeyFromMainImageReference(reference) === null) {
+      results.push(
+        duplicateResult(
+          row,
+          "Main Image / 主图",
+          "main_image_required",
+          "This Hose End shape does not resolve to a reviewed representative image",
+        ),
+      );
+    }
+  }
 }
 
 function validateCompatibilityRelationships(
@@ -1322,6 +1524,56 @@ function validateCompatibilityRelationships(
   }
 }
 
+const HOSE_SERIES_SHARED_FIELDS = [
+  ["primaryStandard", "Primary Standard / 主标准"],
+  ["equivalentStandard", "Equivalent Standard / 等效标准"],
+  ["tempMinC", "Temp Min °C / 最低温度"],
+  ["tempMaxC", "Temp Max °C / 最高温度"],
+  ["tubeMaterial", "Tube Material / 内胶材料"],
+  ["reinforcement", "Reinforcement / 增强层"],
+  ["coverMaterial", "Cover Material / 外胶材料"],
+  ["coverColor", "Cover Color / 外胶颜色"],
+  ["coverFinish", "Cover Finish / 表面"],
+  ["fluidCompatibility", "Fluid Compatibility / 介质兼容"],
+] as const;
+
+const HOSE_END_SERIES_SHARED_FIELDS = [
+  ["interfaceFamily", "Interface Family / 接口体系"],
+  ["connectionStandard", "Interface Standard / 接口标准"],
+  ["gender", "Gender / 公母"],
+  ["swivelForm", "Swivel/Fixed / 旋转或固定"],
+  ["angle", "Angle / 角度"],
+  ["sealingForm", "Sealing Form / 密封形式"],
+] as const;
+
+function validateSeriesSharedValues(
+  rows: ParsedRow[],
+  seriesKey: "fittingSeries" | "hoseSeries",
+  fields: readonly (readonly [string, string])[],
+  results: CatalogImportValidationResult[],
+) {
+  const firstRows = new Map<string, ParsedRow>();
+  for (const row of rows) {
+    const seriesCode = stringValue(row, seriesKey);
+    const first = firstRows.get(seriesCode);
+    if (!first) {
+      firstRows.set(seriesCode, row);
+      continue;
+    }
+    for (const [key, label] of fields) {
+      if (row.values[key] === first.values[key]) continue;
+      results.push(
+        duplicateResult(
+          row,
+          label,
+          "conflicting_series_value",
+          `Series "${seriesCode}" repeats with conflicting shared value for ${label} / 同一系列的共享参数不一致`,
+        ),
+      );
+    }
+  }
+}
+
 function toHoseVariant(row: ParsedRow): HoseVariantDraft {
   return {
     bendRadiusMm: numberValue(row, "bendRadiusMm"),
@@ -1362,6 +1614,25 @@ function toHoseVariant(row: ParsedRow): HoseVariantDraft {
   };
 }
 
+function toHoseSeries(row: ParsedRow): HoseSeriesDraft {
+  const seriesCode = stringValue(row, "hoseSeries");
+  return {
+    coverColor: stringValue(row, "coverColor"),
+    coverFinish: optionalString(row, "coverFinish"),
+    coverMaterial: stringValue(row, "coverMaterial"),
+    equivalentStandard: optionalString(row, "equivalentStandard"),
+    fluidCompatibility: stringValue(row, "fluidCompatibility"),
+    mainImageReference: hoseMainImageReference(seriesCode)!,
+    primaryStandard: stringValue(row, "primaryStandard"),
+    reinforcement: stringValue(row, "reinforcement"),
+    seriesCode,
+    seriesName: seriesCode,
+    tempMaxC: numberValue(row, "tempMaxC"),
+    tempMinC: numberValue(row, "tempMinC"),
+    tubeMaterial: stringValue(row, "tubeMaterial"),
+  };
+}
+
 function toHoseEnd(row: ParsedRow): HoseEndDraft {
   return {
     angle: stringValue(row, "angle"),
@@ -1399,6 +1670,21 @@ function toHoseEnd(row: ParsedRow): HoseEndDraft {
     ),
     thread: stringValue(row, "thread"),
     unitWeightG: optionalNumber(row, "unitWeightG"),
+  };
+}
+
+function toHoseEndSeries(row: ParsedRow): HoseEndSeriesDraft {
+  const hoseEnd = toHoseEnd(row);
+  return {
+    angle: hoseEnd.angle,
+    connectionStandard: hoseEnd.connectionStandard,
+    gender: hoseEnd.gender,
+    interfaceFamily: hoseEnd.interfaceFamily,
+    mainImageReference: hoseEndMainImageReferenceFromFields(hoseEnd),
+    sealingForm: hoseEnd.sealingForm,
+    seriesCode: hoseEnd.fittingSeries,
+    seriesName: hoseEnd.fittingSeries,
+    swivelForm: hoseEnd.swivelForm,
   };
 }
 
@@ -1640,7 +1926,7 @@ export function validateCatalogWorkbook(
   workbookSheets: CatalogWorkbookSheet[],
 ): CatalogWorkbookValidation {
   const validationResults: CatalogImportValidationResult[] = [];
-  const rowsBySheet = WORKSHEET_CONTRACTS.map((contract) =>
+  const rowsBySheet = catalogWorksheetContracts.map((contract) =>
     validateWorksheet(workbookSheets, contract, validationResults),
   );
   const [
@@ -1662,7 +1948,32 @@ export function validateCatalogWorkbook(
     ...quickCouplerRows,
   ];
 
+  if (productRows.length === 0) {
+    validationResults.push({
+      code: "empty_workbook",
+      field: "Workbook / 工作簿",
+      message:
+        "At least one concrete product row is required in worksheets 01, 02, 03, 05, or 06",
+      row: 0,
+      severity: "error",
+      sku: null,
+      worksheet: "01-07",
+    });
+  }
+
   validateUniqueSkus(productRows, validationResults);
+  validateSeriesSharedValues(
+    hoseRows,
+    "hoseSeries",
+    HOSE_SERIES_SHARED_FIELDS,
+    validationResults,
+  );
+  validateSeriesSharedValues(
+    hoseEndRows,
+    "fittingSeries",
+    HOSE_END_SERIES_SHARED_FIELDS,
+    validationResults,
+  );
   validateCompatibilityRelationships(
     compatibilityRows,
     [hoseRows, hoseEndRows, ferruleRows],
@@ -1671,6 +1982,7 @@ export function validateCatalogWorkbook(
   validateAdapterSkuConventions(concreteAdapterRows, validationResults);
   validateQuickCouplerSkuConventions(quickCouplerRows, validationResults);
   validatePriceRelationships(priceRows, productRows, validationResults);
+  validateMainImageResolution(hoseRows, hoseEndRows, validationResults);
 
   const blockingErrors = validationResults.filter(
     (result) => result.severity === "error",
@@ -1681,6 +1993,16 @@ export function validateCatalogWorkbook(
 
   const hoseVariants = hoseRows.map(toHoseVariant);
   const hoseEnds = hoseEndRows.map(toHoseEnd);
+  const firstHoseRows = [
+    ...new Map(
+      hoseRows.map((row) => [stringValue(row, "hoseSeries"), row]),
+    ).values(),
+  ];
+  const firstHoseEndRows = [
+    ...new Map(
+      hoseEndRows.map((row) => [stringValue(row, "fittingSeries"), row]),
+    ).values(),
+  ];
   const ferrules = ferruleRows.map(toFerrule);
   const adapters = concreteAdapterRows.map(toAdapter);
   const quickCouplers = quickCouplerRows.map(toQuickCoupler);
@@ -1693,9 +2015,11 @@ export function validateCatalogWorkbook(
       costBases: priceRows.map(toCostBasis),
       ferrules,
       hoseEnds,
+      hoseEndSeries: firstHoseEndRows.map(toHoseEndSeries),
       hoseSeries: [
         ...new Set(hoseVariants.map((row) => row.hoseSeries)),
       ].sort(),
+      hoseSeriesRecords: firstHoseRows.map(toHoseSeries),
       hoseVariants,
       quickCouplers,
       salesOffers: priceRows.map(toSalesOffer),

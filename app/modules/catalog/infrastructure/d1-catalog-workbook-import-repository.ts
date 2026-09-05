@@ -16,6 +16,8 @@ import type {
   CostBasisDraft,
   FerruleDraft,
   HoseEndDraft,
+  HoseEndSeriesDraft,
+  HoseSeriesDraft,
   HoseVariantDraft,
   QuickCouplerDraft,
   SalesOfferDraft,
@@ -27,6 +29,7 @@ import {
   catalogCostBases,
   catalogFerrules,
   catalogHoseEnds,
+  catalogHoseEndSeries,
   catalogHoseSeries,
   catalogHoseVariants,
   catalogImportValidationResults,
@@ -34,6 +37,12 @@ import {
   catalogSalesOffers,
   catalogSkus,
 } from "./database-schema";
+import {
+  reviewedAdapterImageReferences,
+  reviewedFerruleImageReferences,
+  reviewedQuickCouplerImageReferences,
+  hoseEndMainImageReferenceFromFields,
+} from "../domain/catalog-main-image";
 
 type PersistedRow<T> = T & { id: string; importId: string };
 type ColumnMapping<TRow> = readonly [
@@ -41,11 +50,13 @@ type ColumnMapping<TRow> = readonly [
   column: string,
 ];
 
-interface HoseSeriesRow {
-  id: string;
-  importId: string;
-  seriesCode: string;
-}
+type HoseSeriesRow = PersistedRow<HoseSeriesDraft> & {
+  representativeMediaVersionId: string;
+};
+
+type HoseEndSeriesRow = PersistedRow<HoseEndSeriesDraft> & {
+  representativeMediaVersionId: string;
+};
 
 interface ValidationRow {
   code: CatalogImportValidationResult["code"];
@@ -360,7 +371,33 @@ const hoseSeriesColumns = [
   ["id", "id"],
   ["importId", "import_id"],
   ["seriesCode", "series_code"],
+  ["seriesName", "series_name"],
+  ["primaryStandard", "primary_standard"],
+  ["equivalentStandard", "equivalent_standard"],
+  ["tempMinC", "temp_min_c"],
+  ["tempMaxC", "temp_max_c"],
+  ["tubeMaterial", "tube_material"],
+  ["reinforcement", "reinforcement"],
+  ["coverMaterial", "cover_material"],
+  ["coverColor", "cover_color"],
+  ["coverFinish", "cover_finish"],
+  ["fluidCompatibility", "fluid_compatibility"],
+  ["representativeMediaVersionId", "representative_media_version_id"],
 ] as const satisfies readonly ColumnMapping<HoseSeriesRow>[];
+
+const hoseEndSeriesColumns = [
+  ["id", "id"],
+  ["importId", "import_id"],
+  ["seriesCode", "series_code"],
+  ["seriesName", "series_name"],
+  ["interfaceFamily", "interface_family"],
+  ["connectionStandard", "connection_standard"],
+  ["gender", "gender"],
+  ["swivelForm", "swivel_form"],
+  ["angle", "angle"],
+  ["sealingForm", "sealing_form"],
+  ["representativeMediaVersionId", "representative_media_version_id"],
+] as const satisfies readonly ColumnMapping<HoseEndSeriesRow>[];
 
 function chunks<T>(rows: T[], size: number) {
   const result: T[][] = [];
@@ -473,6 +510,73 @@ function validationRows(review: CatalogWorkbookImportReview) {
   }));
 }
 
+function workbookImageStatements(
+  database: D1Database,
+  operation: SaveValidatedCatalogDraftOperation,
+) {
+  const { draft, review } = operation;
+  const hoseBySku = new Map(draft.hoseVariants.map((row) => [row.sku, row]));
+  const endBySku = new Map(draft.hoseEnds.map((row) => [row.sku, row]));
+  const assignments = draft.skus.map((product) => {
+    const reference =
+      product.productType === "hose"
+        ? `hose-series:${hoseBySku.get(product.sku)?.hoseSeries ?? product.hoseSeries}`
+        : product.productType === "hose_end"
+          ? hoseEndMainImageReferenceFromFields(endBySku.get(product.sku)!)
+          : product.productType === "ferrule"
+            ? reviewedFerruleImageReferences[0].reference
+            : product.productType === "adapter"
+              ? reviewedAdapterImageReferences[0].reference
+              : reviewedQuickCouplerImageReferences[0].reference;
+    return { reference, sku: product.sku };
+  });
+  const references = [
+    ...new Set(assignments.map((assignment) => assignment.reference)),
+  ];
+  const mediaStatements: D1PreparedStatement[] = [
+    database
+      .prepare(
+        `INSERT OR IGNORE INTO catalog_media_lineages (
+           id, logical_reference, created_at, created_by, source_notes, license_notes
+         )
+         SELECT 'approved:' || value, value, ?, ?, NULL, NULL FROM json_each(?)`,
+      )
+      .bind(review.completedAt, operation.actorId, JSON.stringify(references)),
+    database
+      .prepare(
+        `INSERT OR IGNORE INTO catalog_media_versions (
+           id, lineage_id, version, source_kind, approved_reference,
+           master_object_key, storefront_object_key, thumbnail_object_key,
+           content_hash, mime_type, width, height, created_at, created_by
+         )
+         SELECT 'approved-v1:' || value, 'approved:' || value, 1,
+                'approved_reference', value, NULL, NULL, NULL, NULL,
+                'reference', NULL, NULL, ?, ? FROM json_each(?)`,
+      )
+      .bind(review.completedAt, operation.actorId, JSON.stringify(references)),
+  ];
+  const productAssignmentStatements: D1PreparedStatement[] = [
+    database
+      .prepare(
+        `INSERT INTO catalog_product_main_images (
+           id, import_id, sku, media_version_id, assigned_at, assigned_by
+         )
+         SELECT ? || ':image:' || json_extract(value, '$.sku'), ?,
+                json_extract(value, '$.sku'),
+                'approved-v1:' || json_extract(value, '$.reference'), ?, ?
+         FROM json_each(?)`,
+      )
+      .bind(
+        review.id,
+        review.id,
+        review.completedAt,
+        operation.actorId,
+        JSON.stringify(assignments),
+      ),
+  ];
+  return { mediaStatements, productAssignmentStatements };
+}
+
 interface ImportReviewRow {
   completed_at: string;
   created_at: string;
@@ -515,7 +619,6 @@ async function readReview(database: D1Database, id: string) {
       FROM catalog_imports
       LEFT JOIN catalog_releases
         ON catalog_releases.source_import_id = catalog_imports.id
-        AND catalog_releases.status = 'draft'
       WHERE catalog_imports.id = ?1 AND catalog_imports.kind = 'workbook'`,
     )
     .bind(id)
@@ -591,6 +694,7 @@ export function createD1CatalogWorkbookImportRepository(
 
     async saveValidatedDraft(operation) {
       const { draft, review } = operation;
+      const imageStatements = workbookImageStatements(database, operation);
       await database.batch([
         importStatement(database, review, "pending"),
         ...jsonInsertStatements(
@@ -603,14 +707,27 @@ export function createD1CatalogWorkbookImportRepository(
             importId: review.id,
           })),
         ),
+        ...imageStatements.mediaStatements,
         ...jsonInsertStatements(
           database,
           catalogHoseSeries,
           hoseSeriesColumns,
-          draft.hoseSeries.map((seriesCode) => ({
-            id: `${review.id}:series:${seriesCode}`,
+          draft.hoseSeriesRecords.map((series) => ({
+            ...series,
+            id: `${review.id}:series:${series.seriesCode}`,
             importId: review.id,
-            seriesCode,
+            representativeMediaVersionId: `approved-v1:${series.mainImageReference}`,
+          })),
+        ),
+        ...jsonInsertStatements(
+          database,
+          catalogHoseEndSeries,
+          hoseEndSeriesColumns,
+          draft.hoseEndSeries.map((series) => ({
+            ...series,
+            id: `${review.id}:hose-end-series:${series.seriesCode}`,
+            importId: review.id,
+            representativeMediaVersionId: `approved-v1:${series.mainImageReference}`,
           })),
         ),
         ...jsonInsertStatements(
@@ -709,6 +826,7 @@ export function createD1CatalogWorkbookImportRepository(
           validationColumns,
           validationRows(review),
         ),
+        ...imageStatements.productAssignmentStatements,
         database
           .prepare(
             `UPDATE catalog_imports
@@ -716,6 +834,11 @@ export function createD1CatalogWorkbookImportRepository(
              WHERE id = ?1 AND status = 'pending'`,
           )
           .bind(review.id, review.completedAt),
+        database.prepare(
+          `UPDATE catalog_releases
+           SET status = 'superseded'
+           WHERE status = 'draft'`,
+        ),
         database
           .prepare(
             `INSERT INTO catalog_releases (

@@ -279,6 +279,136 @@ afterEach(() => {
 });
 
 describe("real local D1 migration lifecycle", () => {
+  it("enforces versioned series identity and referenced-series deletion guards", () => {
+    const fixture = createD1Fixture();
+    const migration = applyMigrations(fixture);
+    expect(migration.status, `${migration.stdout}\n${migration.stderr}`).toBe(
+      0,
+    );
+
+    queryD1(
+      fixture,
+      `INSERT INTO catalog_imports
+         (id, kind, status, summary_json, error_count, warning_count, created_at, completed_at)
+       VALUES ('series-import', 'diagnostic', 'completed', '{}', 0, 0,
+               '2026-09-05', '2026-09-05');
+       INSERT INTO catalog_releases
+         (id, release_number, status, source_import_id, version, created_at)
+       VALUES ('series-release', 'SERIES-1', 'draft', 'series-import', 1, '2026-09-05');
+       INSERT INTO catalog_media_lineages
+         (id, logical_reference, created_at, created_by)
+       VALUES ('series-lineage', 'hose-series:TEST', '2026-09-05', 'test');
+       INSERT INTO catalog_media_versions
+         (id, lineage_id, version, source_kind, approved_reference, mime_type,
+          created_at, created_by)
+       VALUES ('series-media', 'series-lineage', 1, 'approved_reference',
+               'hose-series:TEST', 'reference', '2026-09-05', 'test');
+       INSERT INTO catalog_hose_series
+         (id, import_id, series_code, series_name, primary_standard,
+          temp_min_c, temp_max_c, representative_media_version_id)
+       VALUES ('hose-series', 'series-import', 'TEST', 'Test Series', 'TEST STD',
+               -40, 100, 'series-media');
+       INSERT INTO catalog_skus
+         (id, import_id, sku, source_worksheet, product_type, hose_series,
+          catalog_publication_status, rfq_eligibility, technical_data_status,
+          supply_availability)
+       VALUES ('hose-sku', 'series-import', 'TEST_04', '01_胶管主数据', 'hose',
+               'TEST', 'Draft', 'Eligible', 'Complete', 'temporarily_unavailable');
+       INSERT INTO catalog_hose_variants
+         (id, import_id, sku, hose_series, primary_standard, dash, nominal_id_in,
+          id_mm, od_mm, working_bar, burst_bar, bend_radius_mm, weight_kg_m,
+          temp_min_c, temp_max_c, tube_material, reinforcement, cover_material,
+          cover_color, skive_requirement, fluid_compatibility, origin, source)
+       VALUES ('hose-variant', 'series-import', 'TEST_04', 'TEST', 'TEST STD', '-4',
+               0.25, 6.4, 12, 200, 800, 75, 0.2, -40, 100, 'rubber', 'wire',
+               'rubber', 'black', 'No Skive', 'oil', 'CN', 'test');`,
+    );
+
+    const renameCode = runWrangler(fixture, [
+      "d1",
+      "execute",
+      "DB",
+      "--command",
+      "UPDATE catalog_hose_series SET series_code = 'CHANGED' WHERE id = 'hose-series'",
+    ]);
+    expect(renameCode.status).not.toBe(0);
+    expect(`${renameCode.stdout}\n${renameCode.stderr}`).toContain(
+      "Series Code is immutable / 系列编号不可修改",
+    );
+
+    const deleteReferenced = runWrangler(fixture, [
+      "d1",
+      "execute",
+      "DB",
+      "--command",
+      "DELETE FROM catalog_hose_series WHERE id = 'hose-series'",
+    ]);
+    expect(deleteReferenced.status).not.toBe(0);
+    expect(`${deleteReferenced.stdout}\n${deleteReferenced.stderr}`).toContain(
+      "Series is referenced by variants / 系列已被子体引用",
+    );
+
+    expect(
+      queryD1<{ series_name: string }>(
+        fixture,
+        "SELECT series_name FROM catalog_hose_series WHERE id = 'hose-series'",
+      ),
+    ).toEqual([{ series_name: "Test Series" }]);
+  }, 40_000);
+
+  it("archives drafts older than the active catalog during the upgrade", () => {
+    const fixture = createD1Fixture();
+    const archiveMigration = "0043_archive_stale_catalog_drafts.sql";
+    rmSync(join(fixture.directory, "migrations", archiveMigration));
+
+    const beforeUpgrade = applyMigrations(fixture);
+    expect(
+      beforeUpgrade.status,
+      `${beforeUpgrade.stdout}\n${beforeUpgrade.stderr}`,
+    ).toBe(0);
+    expect(
+      runWrangler(fixture, [
+        "d1",
+        "execute",
+        "DB",
+        "--command",
+        `INSERT INTO catalog_imports
+           (id, kind, status, created_at, completed_at)
+         VALUES
+           ('archive-import-old', 'workbook', 'completed', '2026-01-01', '2026-01-01'),
+           ('archive-import-active', 'workbook', 'completed', '2026-02-01', '2026-02-01'),
+           ('archive-import-new', 'workbook', 'completed', '2026-03-01', '2026-03-01');
+         INSERT INTO catalog_releases
+           (id, release_number, status, source_import_id, created_at, published_at)
+         VALUES
+           ('archive-old', 'ARCHIVE-OLD', 'draft', 'archive-import-old', '2026-01-01', NULL),
+           ('archive-active', 'ARCHIVE-ACTIVE', 'published', 'archive-import-active', '2026-02-01', '2026-02-02'),
+           ('archive-new', 'ARCHIVE-NEW', 'draft', 'archive-import-new', '2026-03-01', NULL);
+         UPDATE catalog_active_release
+         SET release_id = 'archive-active', version = version + 1,
+             updated_at = '2026-02-02'
+         WHERE singleton = 1;`,
+      ]).status,
+    ).toBe(0);
+
+    copyFileSync(
+      join(projectRoot, "migrations", archiveMigration),
+      join(fixture.directory, "migrations", archiveMigration),
+    );
+    const upgrade = applyMigrations(fixture);
+    expect(upgrade.status, `${upgrade.stdout}\n${upgrade.stderr}`).toBe(0);
+    expect(
+      queryD1<{ id: string; status: string }>(
+        fixture,
+        `SELECT id, status FROM catalog_releases
+         WHERE id IN ('archive-old', 'archive-new') ORDER BY id`,
+      ),
+    ).toEqual([
+      { id: "archive-new", status: "draft" },
+      { id: "archive-old", status: "superseded" },
+    ]);
+  }, 40_000);
+
   it("transactionally merges anonymous Quote Lists into one account-owned list", async () => {
     const directory = mkdtempSync(
       join(tmpdir(), "hose-d1-account-quote-merge-"),
@@ -1058,6 +1188,8 @@ describe("real local D1 migration lifecycle", () => {
       "catalog_imports",
       "catalog_release_publications",
       "catalog_releases",
+      "configurator_global_registry_entries",
+      "configurator_global_registry_entry_versions",
       "d1_migrations",
       "seller_identity_versions",
       "seller_payment_instruction_versions",
@@ -1100,6 +1232,8 @@ describe("real local D1 migration lifecycle", () => {
         "catalog_imports",
         "catalog_release_publications",
         "catalog_releases",
+        "configurator_global_registry_entries",
+        "configurator_global_registry_entry_versions",
         "d1_migrations",
         "seller_identity_versions",
         "seller_payment_instruction_versions",
@@ -1130,9 +1264,11 @@ describe("real local D1 migration lifecycle", () => {
       "0014_version_measurement_diagram_assets.sql";
     const protectionPricingMigration =
       "0015_length_based_protection_pricing.sql";
+    const globalConfiguratorMigration = "0044_global_configurator_rules.sql";
     rmSync(join(fixture.directory, "migrations", registryMigration));
     rmSync(join(fixture.directory, "migrations", diagramVersionMigration));
     rmSync(join(fixture.directory, "migrations", protectionPricingMigration));
+    rmSync(join(fixture.directory, "migrations", globalConfiguratorMigration));
     const preRegistryMigration = applyMigrations(fixture);
     expect(
       preRegistryMigration.status,
@@ -1170,6 +1306,10 @@ describe("real local D1 migration lifecycle", () => {
       join(projectRoot, "migrations", protectionPricingMigration),
       join(fixture.directory, "migrations", protectionPricingMigration),
     );
+    copyFileSync(
+      join(projectRoot, "migrations", globalConfiguratorMigration),
+      join(fixture.directory, "migrations", globalConfiguratorMigration),
+    );
     const registryUpgrade = applyMigrations(fixture);
     expect(
       registryUpgrade.status,
@@ -1184,6 +1324,12 @@ describe("real local D1 migration lifecycle", () => {
          GROUP BY release_id ORDER BY release_id`,
       ),
     ).toEqual([{ count: 25, release_id: "upgrade-release-draft" }]);
+    expect(
+      queryD1<{ count: number }>(
+        fixture,
+        "SELECT COUNT(*) AS count FROM configurator_global_registry_entries",
+      ),
+    ).toEqual([{ count: 12 }]);
   }, 30_000);
 
   it("selects active and historical registry versions and locks published history", async () => {
@@ -1311,7 +1457,7 @@ describe("real local D1 migration lifecycle", () => {
       expect(activeWorker.response.status).toBe(200);
       await expect(activeWorker.response.json()).resolves.toMatchObject({
         snapshot: {
-          assemblyEstimateSchedule: { assemblyServicePriceUsd: 99 },
+          assemblyEstimateSchedule: { assemblyServicePriceUsd: null },
           release: { id: "registry-release-2", status: "published" },
         },
       });
@@ -1327,7 +1473,7 @@ describe("real local D1 migration lifecycle", () => {
       expect(historicalWorker.response.status).toBe(200);
       await expect(historicalWorker.response.json()).resolves.toMatchObject({
         snapshot: {
-          assemblyEstimateSchedule: { assemblyServicePriceUsd: 12.5 },
+          assemblyEstimateSchedule: { assemblyServicePriceUsd: null },
           release: { id: "registry-release-1", status: "superseded" },
         },
       });
