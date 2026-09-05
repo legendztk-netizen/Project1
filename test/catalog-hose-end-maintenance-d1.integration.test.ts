@@ -75,6 +75,29 @@ describe("D1 Hose End series and variant maintenance", () => {
         "sku-id",
         "variant-id",
       ];
+      const variantInput = {
+        coating: "Zinc nickel",
+        competitorPartNumber: null,
+        connectionDash: "-04",
+        cutoffBMm: 0,
+        dimensionAMm: 45,
+        drawingNumber: null,
+        drawingRevision: null,
+        fittingSeries: "FJX",
+        hex1Mm: 14,
+        hex2Mm: 0,
+        hoseTailDash: "-04",
+        material: "Carbon steel",
+        maxWorkingBar: 350,
+        minimumBoreMm: 5,
+        notes: "Launch size",
+        saltSprayHours: 0,
+        sku: "FJX-04-04",
+        source: null,
+        technicalDataStatus: null,
+        thread: "7/16-20 UNF",
+        unitWeightG: 82,
+      };
       await maintainHoseEndVariant(repository, {
         actorId: "owner-1",
         generateId: () => variantIds.shift() ?? "unexpected-variant-id",
@@ -83,29 +106,7 @@ describe("D1 Hose End series and variant maintenance", () => {
         mode: "create",
         now: () => new Date("2026-09-05T01:10:00.000Z"),
         originalSku: null,
-        variant: {
-          coating: "Zinc nickel",
-          competitorPartNumber: null,
-          connectionDash: "-04",
-          cutoffBMm: 18,
-          dimensionAMm: 45,
-          drawingNumber: null,
-          drawingRevision: null,
-          fittingSeries: "FJX",
-          hex1Mm: 14,
-          hex2Mm: 17,
-          hoseTailDash: "-04",
-          material: "Carbon steel",
-          maxWorkingBar: 350,
-          minimumBoreMm: 5,
-          notes: "Launch size",
-          saltSprayHours: 720,
-          sku: "FJX-04-04",
-          source: null,
-          technicalDataStatus: null,
-          thread: "7/16-20 UNF",
-          unitWeightG: 82,
-        },
+        variant: variantInput,
       });
 
       const editSeriesIds = [
@@ -134,6 +135,49 @@ describe("D1 Hose End series and variant maintenance", () => {
         },
       });
 
+      const overrideIds = [
+        "unused-override-release",
+        "override-audit",
+        "unused-override-import",
+        "override-media-id",
+        "unused-override-sku-id",
+        "unused-override-variant-id",
+      ];
+      await maintainHoseEndVariant(repository, {
+        actorId: "owner-2",
+        generateId: () => overrideIds.shift() ?? "unexpected-override-edit-id",
+        imageOverrideReference: "hose-end-shape:JIC 37°-Female-Swivel-45°",
+        lifecycleStatus: "discontinued",
+        mode: "edit",
+        now: () => new Date("2026-09-05T01:30:00.000Z"),
+        originalSku: "FJX-04-04",
+        variant: { ...variantInput, technicalDataStatus: "Complete" },
+      });
+      expect(await repository.findHoseEndVariant("FJX-04-04")).toMatchObject({
+        imageOverrideReference: "hose-end-shape:JIC 37°-Female-Swivel-45°",
+        lifecycleStatus: "discontinued",
+        technicalDataStatus: "Complete",
+      });
+
+      const inheritIds = [
+        "unused-inherit-release",
+        "inherit-audit",
+        "unused-inherit-import",
+        "unused-inherit-media-id",
+        "unused-inherit-sku-id",
+        "unused-inherit-variant-id",
+      ];
+      await maintainHoseEndVariant(repository, {
+        actorId: "owner-2",
+        generateId: () => inheritIds.shift() ?? "unexpected-inherit-edit-id",
+        imageOverrideReference: null,
+        lifecycleStatus: "draft",
+        mode: "edit",
+        now: () => new Date("2026-09-05T01:40:00.000Z"),
+        originalSku: "FJX-04-04",
+        variant: variantInput,
+      });
+
       expect(await repository.findHoseEndSeries("fjx")).toMatchObject({
         seriesCode: "FJX",
         seriesName: "JIC Female Swivel Updated",
@@ -141,10 +185,16 @@ describe("D1 Hose End series and variant maintenance", () => {
       expect(await repository.findHoseEndVariant("fjx-04-04")).toMatchObject({
         fittingSeries: "FJX",
         imageOverrideReference: null,
-        lifecycleStatus: "online",
+        lifecycleStatus: "draft",
         sku: "FJX-04-04",
         technicalDataStatus: "Pending",
       });
+      expect(
+        await platform.env.DB.prepare(
+          `SELECT COUNT(*) AS count FROM catalog_product_main_images
+           WHERE import_id = 'draft-import' AND sku = 'FJX-04-04'`,
+        ).first(),
+      ).toEqual({ count: 0 });
       expect(
         await platform.env.DB.prepare(
           `SELECT interface_family, connection_standard, gender, swivel_form,

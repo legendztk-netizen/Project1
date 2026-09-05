@@ -174,18 +174,18 @@ function requiredText(
   }
 }
 
-function requiredPositiveNumber(
+function requiredNumber(
   findings: CatalogImportValidationResult[],
   value: number,
   field: string,
   sku: string,
 ) {
-  if (!Number.isFinite(value) || value <= 0) {
+  if (!Number.isFinite(value)) {
     findings.push(
       finding(
         field,
         "invalid_number",
-        `${field} must be greater than zero / ${field}必须大于零`,
+        `${field} must be a valid number / ${field}必须为有效数字`,
         sku,
       ),
     );
@@ -340,7 +340,7 @@ export async function validateHoseEndVariantMaintenance(
     [variant.minimumBoreMm, "Minimum Bore mm / 最小通径"],
     [variant.unitWeightG, "Unit Weight g / 单重"],
   ] as const) {
-    requiredPositiveNumber(findings, value, field, variant.sku);
+    requiredNumber(findings, value, field, variant.sku);
   }
   const override = normalizedText(input.imageOverrideReference);
   if (

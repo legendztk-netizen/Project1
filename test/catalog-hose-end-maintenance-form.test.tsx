@@ -5,16 +5,24 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { createMemoryRouter, RouterProvider } from "react-router";
+import {
+  createMemoryRouter,
+  RouterProvider,
+  useSearchParams,
+} from "react-router";
 
 import {
   CatalogHoseEndMaintenance,
   HoseEndMaintenanceActions,
 } from "../app/modules/admin/ui/catalog-hose-end-maintenance";
-import type { HoseEndSeriesRecord } from "../app/modules/catalog/domain/catalog-hose-end-maintenance";
+import type {
+  HoseEndSeriesRecord,
+  HoseEndVariantRecord,
+} from "../app/modules/catalog/domain/catalog-hose-end-maintenance";
 
 afterEach(cleanup);
 
@@ -31,31 +39,46 @@ const series: HoseEndSeriesRecord = {
   swivelForm: "Swivel",
 };
 
-function renderMaintenance(action: "series" | "variant" | null) {
+function TestHarness({
+  findings = [],
+  variant = null,
+}: {
+  findings?: Parameters<typeof CatalogHoseEndMaintenance>[0]["findings"];
+  variant?: HoseEndVariantRecord | null;
+}) {
+  const [search] = useSearchParams();
+  const action = search.get("manualAction");
+  return (
+    <>
+      <HoseEndMaintenanceActions />
+      <CatalogHoseEndMaintenance
+        action={action === "series" || action === "variant" ? action : null}
+        findings={findings}
+        formError={findings.length > 0 ? "Invalid / 无效" : null}
+        requestedSku=""
+        saved={null}
+        selectedSeries={null}
+        series={[series]}
+        variant={variant}
+      />
+    </>
+  );
+}
+
+function renderMaintenance(
+  action: "series" | "variant" | null,
+  options: Parameters<typeof TestHarness>[0] = {},
+) {
   const router = createMemoryRouter(
     [
       {
-        element: (
-          <>
-            <HoseEndMaintenanceActions />
-            <CatalogHoseEndMaintenance
-              action={action}
-              findings={[]}
-              formError={null}
-              requestedSku=""
-              saved={null}
-              selectedSeries={null}
-              series={[series]}
-              variant={null}
-            />
-          </>
-        ),
+        element: <TestHarness {...options} />,
         path: "/admin/catalog/import",
       },
     ],
     {
       initialEntries: [
-        "/admin/catalog/import?mode=manual&productType=hose_end",
+        `/admin/catalog/import?mode=manual&productType=hose_end${action ? `&manualAction=${action}` : ""}`,
       ],
     },
   );
@@ -68,7 +91,11 @@ describe("Hose End maintenance bilingual modal forms", () => {
     const menu = screen.getByRole("group", {
       name: "Hose End maintenance / 压接接头维护",
     });
-    fireEvent.click(within(menu).getByText("Hose End / 压接接头"));
+    const summary = within(menu).getByText("Hose End / 压接接头");
+    summary.focus();
+    expect(document.activeElement).toBe(summary);
+    fireEvent.mouseEnter(summary);
+    fireEvent.click(summary);
     expect(
       within(menu).getByRole("link", { name: "Add Series / 增加系列" }),
     ).toBeTruthy();
@@ -77,7 +104,7 @@ describe("Hose End maintenance bilingual modal forms", () => {
     ).toBeTruthy();
   });
 
-  it("renders the exact bilingual series contract in a dismissible modal", () => {
+  it("renders the exact bilingual series contract and dismisses the modal", async () => {
     renderMaintenance("series");
     const dialog = screen.getByRole("dialog", {
       name: "Add Hose End Series / 增加压接接头系列",
@@ -94,9 +121,10 @@ describe("Hose End maintenance bilingual modal forms", () => {
       "Representative Image / 系列代表图",
     ])
       expect(within(dialog).getByLabelText(label)).toBeTruthy();
-    expect(
+    fireEvent.click(
       within(dialog).getByRole("link", { name: "Cancel / 取消" }),
-    ).toBeTruthy();
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
   it("renders only the confirmed variant-owned fields, lifecycle and image override", () => {
@@ -125,5 +153,59 @@ describe("Hose End maintenance bilingual modal forms", () => {
     expect(dialog.querySelector('[name*="interfaceFamily"]')).toBeNull();
     expect(dialog.querySelector('[name*="referencePrice"]')).toBeNull();
     expect(dialog.querySelector('[name*="sales"]')).toBeNull();
+  });
+
+  it("selects an existing series, preserves an override, and shows bilingual validation", () => {
+    renderMaintenance("variant", {
+      findings: [
+        {
+          code: "required",
+          field: "Thread / 螺纹",
+          message: "Thread is required / 螺纹为必填项",
+          row: 0,
+          severity: "error",
+          sku: "FJX-04-04",
+          worksheet: "02_压接接头",
+        },
+      ],
+      variant: {
+        coating: "Zinc nickel",
+        competitorPartNumber: null,
+        connectionDash: "-04",
+        cutoffBMm: 0,
+        dimensionAMm: 45,
+        drawingNumber: null,
+        drawingRevision: null,
+        fittingSeries: "FJX",
+        hex1Mm: 14,
+        hex2Mm: 0,
+        hoseTailDash: "-04",
+        imageOverrideReference: "media-version:uploaded-end-1",
+        lifecycleStatus: "online",
+        material: "Carbon steel",
+        maxWorkingBar: 350,
+        minimumBoreMm: 5,
+        notes: "Existing",
+        saltSprayHours: 0,
+        sku: "FJX-04-04",
+        source: null,
+        technicalDataStatus: "Inherited",
+        thread: "7/16-20 UNF",
+        unitWeightG: 82,
+      },
+    });
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("option", { name: /FJX/ })).toHaveProperty(
+      "selected",
+      true,
+    );
+    expect(
+      within(dialog).getByRole("option", {
+        name: "Current uploaded override / 当前上传覆盖图",
+      }),
+    ).toHaveProperty("selected", true);
+    expect(within(dialog).getByRole("alert").textContent).toContain(
+      "Thread is required / 螺纹为必填项",
+    );
   });
 });

@@ -145,4 +145,33 @@ describe("bilingual Hose End series and variant maintenance", () => {
     ).rejects.toMatchObject({ findings: expect.any(Array) });
     expect(incomplete.variantWrites).toHaveLength(0);
   });
+
+  it("accepts completed zero values and maps all three business statuses", async () => {
+    for (const [status, expected] of [
+      ["online", ["Published", "Eligible", "available_for_quote"]],
+      ["draft", ["Draft", "Eligible", "temporarily_unavailable"]],
+      ["discontinued", ["Archived", "Blocked", "discontinued"]],
+    ] as const) {
+      const { repository, variantWrites } = repositoryDouble();
+      await maintainHoseEndVariant(repository, {
+        actorId: "owner-1",
+        imageOverrideReference: null,
+        lifecycleStatus: status,
+        mode: "create",
+        originalSku: null,
+        variant: {
+          ...variant,
+          cutoffBMm: 0,
+          hex2Mm: 0,
+          saltSprayHours: 0,
+          sku: `ZERO-${status}`,
+        },
+      });
+      expect(variantWrites[0]?.lifecycle).toEqual({
+        catalogPublicationStatus: expected[0],
+        rfqEligibility: expected[1],
+        supplyAvailability: expected[2],
+      });
+    }
+  });
 });

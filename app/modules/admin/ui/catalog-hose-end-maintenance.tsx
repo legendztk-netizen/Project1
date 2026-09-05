@@ -591,7 +591,7 @@ export function CatalogHoseEndMaintenance({
             <input
               defaultValue={requestedSku}
               name="sku"
-              placeholder="e.g. FJX-04-04"
+              placeholder="e.g. / 例如 FJX-04-04"
               type="search"
             />
           </label>
@@ -602,7 +602,9 @@ export function CatalogHoseEndMaintenance({
       </div>
       {saved ? (
         <p className="catalog-update-success" role="status">
-          {saved.kind === "series" ? "Hose End Series" : "Hose End Variant"}{" "}
+          {saved.kind === "series"
+            ? "Hose End Series / 压接接头系列"
+            : "Hose End Variant / 压接接头子体"}{" "}
           {saved.identifier} saved to the Catalog draft / 已保存到产品目录草稿
         </p>
       ) : null}
