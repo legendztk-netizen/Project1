@@ -72,6 +72,10 @@ export default [
     "modules/admin/routes/commercial-settings.tsx",
   ),
   route("admin/catalog/import", "modules/admin/routes/catalog-import.tsx"),
+  route(
+    "admin/catalog/commercial",
+    "modules/admin/routes/catalog-commercial.tsx",
+  ),
   route("admin/catalog/review", "modules/admin/routes/catalog-review.tsx"),
   route(
     "admin/catalog/reference-data",

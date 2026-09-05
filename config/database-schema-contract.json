@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 51,
+  "schemaVersion": 52,
   "migrations": [
     "0000_initial_catalog_release.sql",
     "0001_add_admin_identities.sql",
@@ -51,6 +51,7 @@
     "0047_track_assembly_impact.sql",
     "0048_regenerate_derived_assembly_data.sql",
     "0049_atomic_product_assembly_publication.sql",
-    "0050_version_product_series.sql"
+    "0050_version_product_series.sql",
+    "0051_catalog_commercial_maintenance.sql"
   ]
 }

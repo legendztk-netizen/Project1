@@ -33,7 +33,7 @@ function renderForm(
 }
 
 describe("CatalogManualComponentForm", () => {
-  it("renders the worksheet 02 and 07 contract for a Hose End", () => {
+  it("renders product data without retired inline sales fields for a Hose End", () => {
     renderForm("hose_end");
 
     expect(
@@ -47,9 +47,7 @@ describe("CatalogManualComponentForm", () => {
     expect(
       document.querySelector('[name="master.catalogPublicationStatus"]'),
     ).toBeNull();
-    expect(
-      document.querySelector('[name="sales.referencePriceUsd"]'),
-    ).toHaveProperty("required", true);
+    expect(document.querySelector('[name^="sales."]')).toBeNull();
     expect(
       screen.getByRole("option", {
         name: "JIC 37°-Female-Swivel-0° Straight",
@@ -57,7 +55,7 @@ describe("CatalogManualComponentForm", () => {
     ).toBeTruthy();
   });
 
-  it("renders the worksheet 03 and 07 contract for a Ferrule", () => {
+  it("renders product data without retired inline sales fields for a Ferrule", () => {
     renderForm("ferrule");
 
     expect(
@@ -69,9 +67,7 @@ describe("CatalogManualComponentForm", () => {
     expect(
       document.querySelector('[name="master.skiveRequirement"]'),
     ).toBeTruthy();
-    expect(
-      document.querySelector('[name="sales.referencePriceUsd"]'),
-    ).toHaveProperty("required", true);
+    expect(document.querySelector('[name^="sales."]')).toBeNull();
     expect(
       screen.getByRole("option", {
         name: /SANF 2022 catalogue ferrule representative/u,
@@ -79,7 +75,7 @@ describe("CatalogManualComponentForm", () => {
     ).toBeTruthy();
   });
 
-  it("renders the worksheet 05 and 07 contract for an Adapter", () => {
+  it("renders product data without retired inline sales fields for an Adapter", () => {
     renderForm("adapter");
 
     expect(
@@ -88,15 +84,13 @@ describe("CatalogManualComponentForm", () => {
     expect(document.querySelector('[name="master.adapterSku"]')).toBeTruthy();
     expect(document.querySelector('[name="master.interface1"]')).toBeTruthy();
     expect(document.querySelector('[name="master.size2"]')).toBeTruthy();
-    expect(
-      document.querySelector('[name="sales.referencePriceUsd"]'),
-    ).toHaveProperty("required", true);
+    expect(document.querySelector('[name^="sales."]')).toBeNull();
     expect(
       screen.getByRole("option", { name: /DHH 2404 straight JIC male/u }),
     ).toBeTruthy();
   });
 
-  it("renders the worksheet 06 and 07 contract for a Quick Coupler", () => {
+  it("renders product data without retired inline sales fields for a Quick Coupler", () => {
     renderForm("quick_coupler");
 
     expect(
@@ -107,9 +101,7 @@ describe("CatalogManualComponentForm", () => {
     ).toBeTruthy();
     expect(document.querySelector('[name="master.matingSeries"]')).toBeTruthy();
     expect(document.querySelector('[name="master.portThread"]')).toBeTruthy();
-    expect(
-      document.querySelector('[name="sales.referencePriceUsd"]'),
-    ).toHaveProperty("required", true);
+    expect(document.querySelector('[name^="sales."]')).toBeNull();
     expect(
       screen.getByRole("option", {
         name: /SANF 2022 catalogue quick coupler representative/u,

@@ -244,7 +244,7 @@ describe("manual Adapter and Quick Coupler maintenance", () => {
       ...submission,
     });
 
-    expect(writes[0]?.salesOffer.productType).toBe("Quick Plug");
+    expect(writes[0]?.salesOffer?.productType).toBe("Quick Plug");
   });
 
   it.each(["adapter", "quick_coupler"] as const)(

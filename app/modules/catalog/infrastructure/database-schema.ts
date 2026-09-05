@@ -498,6 +498,91 @@ export const catalogSalesOffers = sqliteTable(
   ],
 );
 
+export const catalogSeriesCommercialRules = sqliteTable(
+  "catalog_series_commercial_rules",
+  {
+    id: text("id").primaryKey(),
+    importId: text("import_id")
+      .notNull()
+      .references(() => catalogImports.id, { onDelete: "cascade" }),
+    productType: text("product_type").notNull(),
+    seriesCode: text("series_code").notNull(),
+    salesUnit: text("sales_unit").notNull(),
+    moq: real("moq").notNull(),
+    leadTimeDays: real("lead_time_days").notNull(),
+    countryOfOrigin: text("country_of_origin").notNull(),
+    hsCode: text("hs_code"),
+    notes: text("notes"),
+    quantityInputMode: text("quantity_input_mode").notNull(),
+    minimumLengthPerPieceFt: real("minimum_length_per_piece_ft"),
+    lengthIncrementFt: real("length_increment_ft"),
+    presetLength1Ft: real("preset_length_1_ft"),
+    presetLength2Ft: real("preset_length_2_ft"),
+    presetLength3Ft: real("preset_length_3_ft"),
+    continuousLengthConfirmation: text("continuous_length_confirmation"),
+  },
+  (table) => [
+    check(
+      "catalog_series_commercial_rules_product_type",
+      sql`${table.productType} in ('hose', 'hose_end', 'ferrule', 'adapter', 'quick_coupler')`,
+    ),
+    uniqueIndex("catalog_series_commercial_rules_import_series_uq").on(
+      table.importId,
+      table.productType,
+      table.seriesCode,
+    ),
+  ],
+);
+
+export const catalogSkuPricePackaging = sqliteTable(
+  "catalog_sku_price_packaging",
+  {
+    id: text("id").primaryKey(),
+    importId: text("import_id").notNull(),
+    sku: text("sku").notNull(),
+    salesSku: text("sales_sku").notNull(),
+    referencePriceUsd: real("reference_price_usd"),
+    currency: text("currency").notNull().default("USD"),
+    packageLengthFt: real("package_length_ft"),
+    unitsPerSalesPack: real("units_per_sales_pack"),
+    netUnitWeightKg: real("net_unit_weight_kg"),
+    innerPackQty: real("inner_pack_qty"),
+    masterCartonQty: real("master_carton_qty"),
+    cartonGrossWeightKg: real("carton_gross_weight_kg"),
+    cartonLCm: real("carton_l_cm"),
+    cartonWCm: real("carton_w_cm"),
+    cartonHCm: real("carton_h_cm"),
+    packingBasis: text("packing_basis"),
+  },
+  (table) => [
+    check(
+      "catalog_sku_price_packaging_currency",
+      sql`${table.currency} = 'USD'`,
+    ),
+    check(
+      "catalog_sku_price_packaging_sales_sku",
+      sql`${table.salesSku} = ${table.sku}`,
+    ),
+    uniqueIndex("catalog_sku_price_packaging_import_sku_uq").on(
+      table.importId,
+      table.sku,
+    ),
+    uniqueIndex("catalog_sku_price_packaging_import_sales_sku_uq").on(
+      table.importId,
+      table.salesSku,
+    ),
+    foreignKey({
+      columns: [table.importId, table.sku],
+      foreignColumns: [catalogSkus.importId, catalogSkus.sku],
+      name: "catalog_sku_price_packaging_catalog_sku_fk",
+    }).onDelete("cascade"),
+    index("catalog_sku_price_packaging_public_price_idx").on(
+      table.importId,
+      table.referencePriceUsd,
+    ),
+  ],
+);
+
 export const catalogCostBases = sqliteTable(
   "catalog_cost_bases",
   {

@@ -135,6 +135,26 @@ const activeQuotedProductGuard = `
   INNER JOIN catalog_skus s ON s.import_id = r.source_import_id
   INNER JOIN catalog_sales_offers o
     ON o.import_id = s.import_id AND o.base_sku = s.sku
+  LEFT JOIN catalog_hose_variants commercial_hose
+    ON commercial_hose.import_id = s.import_id AND commercial_hose.sku = s.sku
+  LEFT JOIN catalog_hose_ends commercial_hose_end
+    ON commercial_hose_end.import_id = s.import_id AND commercial_hose_end.sku = s.sku
+  LEFT JOIN catalog_ferrules commercial_ferrule
+    ON commercial_ferrule.import_id = s.import_id AND commercial_ferrule.sku = s.sku
+  LEFT JOIN catalog_adapters commercial_adapter
+    ON commercial_adapter.import_id = s.import_id AND commercial_adapter.sku = s.sku
+  LEFT JOIN catalog_quick_couplers commercial_coupler
+    ON commercial_coupler.import_id = s.import_id AND commercial_coupler.sku = s.sku
+  LEFT JOIN catalog_series_commercial_rules commercial_rule
+    ON commercial_rule.import_id = s.import_id
+   AND commercial_rule.product_type = s.product_type
+   AND commercial_rule.series_code = CASE s.product_type
+     WHEN 'hose' THEN commercial_hose.hose_series
+     WHEN 'hose_end' THEN commercial_hose_end.fitting_series
+     WHEN 'ferrule' THEN commercial_ferrule.ferrule_series
+     WHEN 'adapter' THEN commercial_adapter.adapter_family_id
+     WHEN 'quick_coupler' THEN commercial_coupler.coupler_series
+   END
   WHERE ar.singleton = 1
     AND ar.release_id = ?
     AND r.status = 'published'
@@ -146,13 +166,13 @@ const activeQuotedProductGuard = `
 
 const activeStandardProductGuard = `
   ${activeQuotedProductGuard}
-    AND LOWER(COALESCE(o.quantity_input_mode, '')) NOT LIKE '%length%'
+    AND LOWER(COALESCE(commercial_rule.quantity_input_mode, o.quantity_input_mode, '')) NOT LIKE '%length%'
 `;
 
 const activeLengthBasedHoseGuard = `
   ${activeQuotedProductGuard}
     AND s.product_type = 'hose'
-    AND LOWER(COALESCE(o.quantity_input_mode, '')) LIKE '%length%'
+    AND LOWER(COALESCE(commercial_rule.quantity_input_mode, o.quantity_input_mode, '')) LIKE '%length%'
 `;
 
 const activeConfiguredAssemblyGuard = `

@@ -250,31 +250,6 @@ async function publicProductFingerprints(
   );
 }
 
-async function keyedFingerprints(
-  database: D1Database,
-  input: {
-    importId: string | null;
-    keyColumn: string;
-    table: string;
-  },
-) {
-  const fingerprints = new Map<string, string>();
-  if (!input.importId) return fingerprints;
-  const rows = await database
-    .prepare(
-      `SELECT * FROM ${input.table} WHERE import_id = ? ORDER BY ${input.keyColumn}`,
-    )
-    .bind(input.importId)
-    .all<Record<string, unknown>>();
-  for (const row of rows.results) {
-    const key = row[input.keyColumn];
-    if (typeof key === "string") {
-      fingerprints.set(key, JSON.stringify(canonicalValue(row)));
-    }
-  }
-  return fingerprints;
-}
-
 async function imageFingerprints(
   database: D1Database,
   importId: string | null,
@@ -298,11 +273,73 @@ async function priceFingerprints(
   database: D1Database,
   importId: string | null,
 ) {
-  return keyedFingerprints(database, {
-    importId,
-    keyColumn: "base_sku",
-    table: "catalog_sales_offers",
-  });
+  const fingerprints = new Map<string, string>();
+  if (!importId) return fingerprints;
+  const rows = await database
+    .prepare(
+      `SELECT product.sku,
+              COALESCE(rule.sales_unit, offer.sales_unit) AS sales_unit,
+              COALESCE(rule.moq, offer.moq) AS moq,
+              COALESCE(rule.lead_time_days, offer.lead_time_days) AS lead_time_days,
+              COALESCE(rule.country_of_origin, offer.country_of_origin) AS country_of_origin,
+              CASE WHEN rule.id IS NOT NULL THEN rule.hs_code ELSE offer.hs_code END AS hs_code,
+              CASE WHEN rule.id IS NOT NULL THEN rule.notes ELSE offer.notes END AS notes,
+              COALESCE(rule.quantity_input_mode, offer.quantity_input_mode) AS quantity_input_mode,
+              CASE WHEN rule.id IS NOT NULL THEN rule.minimum_length_per_piece_ft ELSE offer.minimum_length_per_piece_ft END AS minimum_length_per_piece_ft,
+              CASE WHEN rule.id IS NOT NULL THEN rule.length_increment_ft ELSE offer.length_increment_ft END AS length_increment_ft,
+              CASE WHEN rule.id IS NOT NULL THEN rule.preset_length_1_ft ELSE offer.preset_length_1_ft END AS preset_length_1_ft,
+              CASE WHEN rule.id IS NOT NULL THEN rule.preset_length_2_ft ELSE offer.preset_length_2_ft END AS preset_length_2_ft,
+              CASE WHEN rule.id IS NOT NULL THEN rule.preset_length_3_ft ELSE offer.preset_length_3_ft END AS preset_length_3_ft,
+              CASE WHEN rule.id IS NOT NULL THEN rule.continuous_length_confirmation ELSE offer.continuous_length_confirmation END AS continuous_length_confirmation,
+              CASE WHEN exact.id IS NOT NULL THEN exact.currency ELSE offer.currency END AS currency,
+              CASE WHEN exact.id IS NOT NULL THEN exact.reference_price_usd ELSE offer.reference_price_usd END AS reference_price_usd,
+              CASE WHEN exact.id IS NOT NULL THEN exact.package_length_ft ELSE offer.package_length_ft END AS package_length_ft,
+              CASE WHEN exact.id IS NOT NULL THEN exact.units_per_sales_pack ELSE offer.units_per_sales_pack END AS units_per_sales_pack,
+              CASE WHEN exact.id IS NOT NULL THEN exact.net_unit_weight_kg ELSE offer.net_unit_weight_kg END AS net_unit_weight_kg,
+              CASE WHEN exact.id IS NOT NULL THEN exact.inner_pack_qty ELSE offer.inner_pack_qty END AS inner_pack_qty,
+              CASE WHEN exact.id IS NOT NULL THEN exact.master_carton_qty ELSE offer.master_carton_qty END AS master_carton_qty,
+              CASE WHEN exact.id IS NOT NULL THEN exact.carton_gross_weight_kg ELSE offer.carton_gross_weight_kg END AS carton_gross_weight_kg,
+              CASE WHEN exact.id IS NOT NULL THEN exact.carton_l_cm ELSE offer.carton_l_cm END AS carton_l_cm,
+              CASE WHEN exact.id IS NOT NULL THEN exact.carton_w_cm ELSE offer.carton_w_cm END AS carton_w_cm,
+              CASE WHEN exact.id IS NOT NULL THEN exact.carton_h_cm ELSE offer.carton_h_cm END AS carton_h_cm,
+              CASE WHEN exact.id IS NOT NULL THEN exact.packing_basis ELSE offer.packing_basis END AS packing_basis
+       FROM catalog_skus product
+       LEFT JOIN catalog_sales_offers offer
+         ON offer.import_id = product.import_id AND offer.base_sku = product.sku
+       LEFT JOIN catalog_hose_variants hose
+         ON hose.import_id = product.import_id AND hose.sku = product.sku
+       LEFT JOIN catalog_hose_ends hose_end
+         ON hose_end.import_id = product.import_id AND hose_end.sku = product.sku
+       LEFT JOIN catalog_ferrules ferrule
+         ON ferrule.import_id = product.import_id AND ferrule.sku = product.sku
+       LEFT JOIN catalog_adapters adapter
+         ON adapter.import_id = product.import_id AND adapter.sku = product.sku
+       LEFT JOIN catalog_quick_couplers coupler
+         ON coupler.import_id = product.import_id AND coupler.sku = product.sku
+       LEFT JOIN catalog_series_commercial_rules rule
+         ON rule.import_id = product.import_id
+        AND rule.product_type = product.product_type
+        AND rule.series_code = CASE product.product_type
+          WHEN 'hose' THEN hose.hose_series
+          WHEN 'hose_end' THEN hose_end.fitting_series
+          WHEN 'ferrule' THEN ferrule.ferrule_series
+          WHEN 'adapter' THEN adapter.adapter_family_id
+          WHEN 'quick_coupler' THEN coupler.coupler_series
+        END
+       LEFT JOIN catalog_sku_price_packaging exact
+         ON exact.import_id = product.import_id AND exact.sku = product.sku
+       WHERE product.import_id = ? AND product.catalog_publication_status = 'Published'
+       ORDER BY product.sku`,
+    )
+    .bind(importId)
+    .all<Record<string, unknown>>();
+  for (const row of rows.results) {
+    const sku = row.sku;
+    if (typeof sku === "string") {
+      fingerprints.set(sku, JSON.stringify(canonicalValue(row)));
+    }
+  }
+  return fingerprints;
 }
 
 async function effectiveDerivedReleaseId(
@@ -711,6 +748,15 @@ export function createD1CatalogPublicationRepository(
            WHERE product.import_id = ?
              AND product.catalog_publication_status = 'Published'
              AND NOT EXISTS (
+               SELECT 1
+               FROM catalog_sku_price_packaging exact
+               WHERE exact.import_id = product.import_id
+                 AND exact.sku = product.sku
+                 AND exact.currency = 'USD'
+                 AND exact.reference_price_usd IS NOT NULL
+                 AND exact.reference_price_usd >= 0
+             )
+             AND NOT EXISTS (
                SELECT 1 FROM catalog_sales_offers offer
                WHERE offer.import_id = product.import_id
                  AND offer.base_sku = product.sku
@@ -729,7 +775,7 @@ export function createD1CatalogPublicationRepository(
           message: `${missingReferencePrices.results.length} publishable SKUs have no published USD Reference Price: ${missingReferencePrices.results
             .slice(0, 8)
             .map((row) => row.sku)
-            .join(", ")}.`,
+            .join(", ")}. / ${missingReferencePrices.results.length} 个待发布 SKU 缺少已发布的 USD 零售单价。`,
         });
       }
 

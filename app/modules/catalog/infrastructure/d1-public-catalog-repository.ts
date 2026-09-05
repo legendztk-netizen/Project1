@@ -490,10 +490,17 @@ const publicCatalogSql = `
          s.rfq_eligibility, s.supply_availability,
          selected_media.id AS main_image_version_id,
          selected_media.approved_reference AS main_image_approved_reference,
-         o.sales_unit, o.moq, o.lead_time_days, o.currency,
-         o.reference_price_usd, o.quantity_input_mode,
-         o.minimum_length_per_piece_ft, o.length_increment_ft,
-         o.preset_length_1_ft, o.preset_length_2_ft, o.preset_length_3_ft,
+         COALESCE(commercial_rule.sales_unit, o.sales_unit) AS sales_unit,
+         COALESCE(commercial_rule.moq, o.moq) AS moq,
+         COALESCE(commercial_rule.lead_time_days, o.lead_time_days) AS lead_time_days,
+         CASE WHEN exact_price.id IS NOT NULL THEN exact_price.currency ELSE o.currency END AS currency,
+         CASE WHEN exact_price.id IS NOT NULL THEN exact_price.reference_price_usd ELSE o.reference_price_usd END AS reference_price_usd,
+         COALESCE(commercial_rule.quantity_input_mode, o.quantity_input_mode) AS quantity_input_mode,
+         CASE WHEN commercial_rule.id IS NOT NULL THEN commercial_rule.minimum_length_per_piece_ft ELSE o.minimum_length_per_piece_ft END AS minimum_length_per_piece_ft,
+         CASE WHEN commercial_rule.id IS NOT NULL THEN commercial_rule.length_increment_ft ELSE o.length_increment_ft END AS length_increment_ft,
+         CASE WHEN commercial_rule.id IS NOT NULL THEN commercial_rule.preset_length_1_ft ELSE o.preset_length_1_ft END AS preset_length_1_ft,
+         CASE WHEN commercial_rule.id IS NOT NULL THEN commercial_rule.preset_length_2_ft ELSE o.preset_length_2_ft END AS preset_length_2_ft,
+         CASE WHEN commercial_rule.id IS NOT NULL THEN commercial_rule.preset_length_3_ft ELSE o.preset_length_3_ft END AS preset_length_3_ft,
          COALESCE(series_fee.rate_per_piece, global_fee.rate_per_piece) AS cutting_labeling_fee_rate,
          COALESCE(series_fee.scope_key, global_fee.scope_key) AS cutting_labeling_fee_scope,
          COALESCE(series_fee.version, global_fee.version) AS cutting_labeling_fee_version,
@@ -561,6 +568,18 @@ const publicCatalogSql = `
     ON a.import_id = s.import_id AND a.sku = s.sku
   LEFT JOIN catalog_quick_couplers q
     ON q.import_id = s.import_id AND q.sku = s.sku
+  LEFT JOIN catalog_series_commercial_rules commercial_rule
+    ON commercial_rule.import_id = s.import_id
+   AND commercial_rule.product_type = s.product_type
+   AND commercial_rule.series_code = CASE s.product_type
+     WHEN 'hose' THEN h.hose_series
+     WHEN 'hose_end' THEN e.fitting_series
+     WHEN 'ferrule' THEN f.ferrule_series
+     WHEN 'adapter' THEN a.adapter_family_id
+     WHEN 'quick_coupler' THEN q.coupler_series
+   END
+  LEFT JOIN catalog_sku_price_packaging exact_price
+    ON exact_price.import_id = s.import_id AND exact_price.sku = s.sku
   WHERE ar.singleton = 1
     AND r.status = 'published'
     AND s.catalog_publication_status = 'Published'

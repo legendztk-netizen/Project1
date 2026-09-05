@@ -3,7 +3,6 @@ import { Form } from "react-router";
 
 import {
   manualAdapterWorksheet,
-  manualComponentSalesWorksheet,
   manualFerruleWorksheet,
   manualHoseEndWorksheet,
   manualQuickCouplerWorksheet,
@@ -27,20 +26,6 @@ import {
   type CatalogImportValidationResult,
   type CatalogWorkbookCell,
 } from "../../catalog/domain/catalog-workbook";
-
-const hiddenSalesFields = new Set([
-  "baseSku",
-  "catalogPublicationStatus",
-  "currency",
-  "factoryUnitPrice",
-  "incotermPlace",
-  "priceIncoterm",
-  "productType",
-  "rfqEligibility",
-  "technicalDataStatus",
-  "tierPrice",
-  "tierQty",
-]);
 
 const hiddenMasterFields = new Set([
   "catalogPublicationStatus",
@@ -185,16 +170,11 @@ export function CatalogManualComponentForm({
   saved: "created" | "updated" | null;
 }) {
   const settings = productSettings(productType);
-  const contracts = {
-    master: catalogWorksheetContract(settings.worksheet),
-    sales: catalogWorksheetContract(manualComponentSalesWorksheet),
-  };
+  const contracts = { master: catalogWorksheetContract(settings.worksheet) };
   const values = {
     master: record ? { ...record.master } : {},
-    sales: record ? { ...record.salesOffer } : {},
   } as {
     master: Record<string, CatalogWorkbookCell | undefined>;
-    sales: Record<string, CatalogWorkbookCell | undefined>;
   };
   if (record && productType === "adapter") {
     values.master.adapterSku = record.master.sku;
@@ -204,12 +184,6 @@ export function CatalogManualComponentForm({
     values.master.catalogPublicationStatus = "Published";
     values.master.rfqEligibility = "Eligible";
     values.master.technicalDataStatus = "Complete";
-    values.sales.productType = settings.productType;
-    values.sales.salesUnit = "each";
-    values.sales.unitsPerSalesPack = 1;
-    values.sales.moq = 1;
-    values.sales.currency = "USD";
-    values.sales.quantityInputMode = "Units";
   }
   const editMode = Boolean(record);
   const lifecycleStatus = record
@@ -308,11 +282,6 @@ export function CatalogManualComponentForm({
           value={record?.master.sku ?? ""}
         />
         <input
-          name="originalSalesSku"
-          type="hidden"
-          value={record?.salesOffer.salesSku ?? ""}
-        />
-        <input
           name="currentMainImageReference"
           type="hidden"
           value={record?.mainImageReference ?? ""}
@@ -403,34 +372,9 @@ export function CatalogManualComponentForm({
           ) : null}
         </fieldset>
 
-        <fieldset>
-          <legend>07 · Sales and Reference Price</legend>
-          <p>
-            Product type, Base SKU, USD currency, and status are synchronized
-            automatically with the {settings.label} product.
-          </p>
-          <div className="catalog-manual-fields">
-            {contracts.sales.fields
-              .filter((field) => !hiddenSalesFields.has(field.key))
-              .map((field) => (
-                <CatalogField
-                  defaultValue={values.sales[field.key]}
-                  field={
-                    field.key === "referencePriceUsd"
-                      ? { ...field, required: true }
-                      : field
-                  }
-                  key={field.key}
-                  locked={editMode && field.key === "salesSku"}
-                  prefix="sales"
-                />
-              ))}
-          </div>
-        </fieldset>
-
         <div className="catalog-manual-actions">
           <button className="button button-primary" type="submit">
-            <Save size={17} /> Save complete product to pending version
+            <Save size={17} /> Save product data / 保存产品数据
           </button>
         </div>
       </Form>

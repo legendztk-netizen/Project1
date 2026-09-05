@@ -42,20 +42,23 @@ import type {
   TechnicalDataStatus,
 } from "../domain/catalog-workbook";
 
-type ManualDraftOperation =
-  | SaveHoseEndSeriesOperation
-  | SaveHoseEndVariantOperation
-  | SaveHoseSeriesOperation
-  | SaveHoseVariantOperation
-  | SaveManualComponentOperation
-  | SaveManualHoseOperation;
+export interface CatalogDraftOperationIdentity {
+  actorId: string;
+  auditEventId: string;
+  draftImportId: string;
+  draftReleaseId: string;
+  draftReleaseNumber: string;
+  occurredAt: string;
+}
 
-interface ReleaseRow {
+export interface CatalogMaintenanceReleaseRow {
   id: string;
   release_number: string;
   source_import_id: string;
   status: "draft" | "published";
 }
+
+type ReleaseRow = CatalogMaintenanceReleaseRow;
 
 interface IdentityRow {
   catalog_publication_status?: CatalogPublicationStatus;
@@ -233,7 +236,7 @@ interface ComponentSalesRow {
   reference_price_usd: number | null;
   rfq_eligibility: RfqEligibility;
   sales_notes: string | null;
-  sales_sku: string;
+  sales_sku: string | null;
   sales_unit: string;
   sku: string;
   technical_data_status: TechnicalDataStatus;
@@ -598,6 +601,49 @@ const clonedCatalogTables = [
     columns: [
       "id",
       "import_id",
+      "product_type",
+      "series_code",
+      "sales_unit",
+      "moq",
+      "lead_time_days",
+      "country_of_origin",
+      "hs_code",
+      "notes",
+      "quantity_input_mode",
+      "minimum_length_per_piece_ft",
+      "length_increment_ft",
+      "preset_length_1_ft",
+      "preset_length_2_ft",
+      "preset_length_3_ft",
+      "continuous_length_confirmation",
+    ],
+    name: "catalog_series_commercial_rules",
+  },
+  {
+    columns: [
+      "id",
+      "import_id",
+      "sku",
+      "sales_sku",
+      "reference_price_usd",
+      "currency",
+      "package_length_ft",
+      "units_per_sales_pack",
+      "net_unit_weight_kg",
+      "inner_pack_qty",
+      "master_carton_qty",
+      "carton_gross_weight_kg",
+      "carton_l_cm",
+      "carton_w_cm",
+      "carton_h_cm",
+      "packing_basis",
+    ],
+    name: "catalog_sku_price_packaging",
+  },
+  {
+    columns: [
+      "id",
+      "import_id",
       "sales_sku",
       "currency",
       "factory_unit_price",
@@ -930,7 +976,7 @@ function cloneStatement(
 
 function draftCreationStatements(
   database: D1Database,
-  operation: ManualDraftOperation,
+  operation: CatalogDraftOperationIdentity,
   active: ReleaseRow | null,
 ) {
   const sourceImportId = active?.source_import_id ?? null;
@@ -1043,6 +1089,24 @@ function draftCreationStatements(
       ),
   );
   return statements;
+}
+
+export async function prepareCatalogDraftMutation(
+  database: D1Database,
+  operation: CatalogDraftOperationIdentity,
+) {
+  const current = await findCurrentDraft(database);
+  if (current) return { creationStatements: [], draft: current };
+  const active = await findActiveRelease(database);
+  return {
+    creationStatements: draftCreationStatements(database, operation, active),
+    draft: {
+      id: operation.draftReleaseId,
+      release_number: operation.draftReleaseNumber,
+      source_import_id: operation.draftImportId,
+      status: "draft" as const,
+    },
+  };
 }
 
 function skuValues(operation: SaveManualHoseOperation) {
@@ -1346,8 +1410,8 @@ function mutationStatements(
           draftReleaseId: draft.id,
           hoseSeries: hose.hoseSeries,
           mainImageReference: operation.mainImageReference,
-          referencePriceUsd: salesOffer.referencePriceUsd,
-          salesSku: salesOffer.salesSku,
+          referencePriceUsd: salesOffer?.referencePriceUsd ?? null,
+          salesSku: salesOffer?.salesSku ?? null,
         }),
         operation.occurredAt,
       ),
@@ -1384,7 +1448,7 @@ function componentSalesOffer(row: ComponentSalesRow): SalesOfferDraft {
     quantityInputMode: row.quantity_input_mode,
     referencePriceUsd: row.reference_price_usd,
     rfqEligibility: row.rfq_eligibility,
-    salesSku: row.sales_sku,
+    salesSku: row.sales_sku ?? "",
     salesUnit: row.sales_unit,
     technicalDataStatus: row.technical_data_status,
     unitsPerSalesPack: row.units_per_sales_pack,
@@ -1552,7 +1616,7 @@ function toManualComponentRecord(
       releaseNumber: release.release_number,
       status: release.status,
     },
-    salesOffer: componentSalesOffer(row),
+    salesOffer: row.sales_sku ? componentSalesOffer(row) : null,
     supplyAvailability: row.supply_availability,
   };
 }
@@ -1859,10 +1923,11 @@ function componentMutationStatements(
           ),
       );
     }
-    statements.push(
-      database
-        .prepare(
-          `INSERT INTO catalog_sales_offers (
+    if (salesOffer) {
+      statements.push(
+        database
+          .prepare(
+            `INSERT INTO catalog_sales_offers (
              id, import_id, base_sku, sales_sku, product_type, sales_unit,
              package_length_ft, units_per_sales_pack, moq, net_unit_weight_kg,
              lead_time_days, country_of_origin, currency, reference_price_usd,
@@ -1874,26 +1939,27 @@ function componentMutationStatements(
              preset_length_1_ft, preset_length_2_ft, preset_length_3_ft,
              continuous_length_confirmation
            ) VALUES (?, ?, ?, ${Array.from({ length: 30 }, (_, index) => `?${index + 4}`).join(", ")})`,
-        )
-        .bind(
-          operation.salesOfferId,
-          draft.source_import_id,
-          master.sku,
-          ...salesValues(salesOffer),
-        ),
-      database
-        .prepare(
-          `INSERT INTO catalog_cost_bases (
+          )
+          .bind(
+            operation.salesOfferId,
+            draft.source_import_id,
+            master.sku,
+            ...salesValues(salesOffer),
+          ),
+        database
+          .prepare(
+            `INSERT INTO catalog_cost_bases (
              id, import_id, sales_sku, currency, factory_unit_price,
              price_incoterm, incoterm_place, tier_qty, tier_price
            ) VALUES (?, ?, ?, 'USD', NULL, NULL, NULL, NULL, NULL)`,
-        )
-        .bind(
-          operation.costBasisId,
-          draft.source_import_id,
-          salesOffer.salesSku,
-        ),
-    );
+          )
+          .bind(
+            operation.costBasisId,
+            draft.source_import_id,
+            salesOffer.salesSku,
+          ),
+      );
+    }
   } else {
     statements.push(
       database
@@ -1996,10 +2062,11 @@ function componentMutationStatements(
           ),
       );
     }
-    statements.push(
-      database
-        .prepare(
-          `UPDATE catalog_sales_offers
+    if (salesOffer) {
+      statements.push(
+        database
+          .prepare(
+            `UPDATE catalog_sales_offers
            SET sales_sku = ?, product_type = ?, sales_unit = ?,
                package_length_ft = ?, units_per_sales_pack = ?, moq = ?,
                net_unit_weight_kg = ?, lead_time_days = ?, country_of_origin = ?,
@@ -2012,9 +2079,10 @@ function componentMutationStatements(
                preset_length_1_ft = ?, preset_length_2_ft = ?, preset_length_3_ft = ?,
                continuous_length_confirmation = ?
            WHERE import_id = ? AND base_sku = ?`,
-        )
-        .bind(...salesValues(salesOffer), draft.source_import_id, master.sku),
-    );
+          )
+          .bind(...salesValues(salesOffer), draft.source_import_id, master.sku),
+      );
+    }
   }
 
   statements.push(
@@ -2077,8 +2145,8 @@ function componentMutationStatements(
           draftReleaseId: draft.id,
           mainImageReference: operation.mainImageReference,
           productType,
-          referencePriceUsd: salesOffer.referencePriceUsd,
-          salesSku: salesOffer.salesSku,
+          referencePriceUsd: salesOffer?.referencePriceUsd ?? null,
+          salesSku: salesOffer?.salesSku ?? null,
         }),
         operation.occurredAt,
       ),
@@ -2951,7 +3019,7 @@ export function createD1CatalogManualHoseRepository(
            INNER JOIN ${table} component
              ON component.import_id = product.import_id
             AND component.sku = product.sku
-           INNER JOIN catalog_sales_offers offer
+           LEFT JOIN catalog_sales_offers offer
              ON offer.import_id = product.import_id
             AND offer.base_sku = product.sku
            LEFT JOIN catalog_product_main_images image

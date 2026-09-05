@@ -390,6 +390,31 @@ export function createD1QuoteRequestRepository(database: D1Database) {
                    INNER JOIN catalog_sales_offers offer
                      ON offer.import_id = sku.import_id
                     AND offer.base_sku = sku.sku
+                   LEFT JOIN catalog_hose_variants commercial_hose
+                     ON commercial_hose.import_id = sku.import_id
+                    AND commercial_hose.sku = sku.sku
+                   LEFT JOIN catalog_hose_ends commercial_hose_end
+                     ON commercial_hose_end.import_id = sku.import_id
+                    AND commercial_hose_end.sku = sku.sku
+                   LEFT JOIN catalog_ferrules commercial_ferrule
+                     ON commercial_ferrule.import_id = sku.import_id
+                    AND commercial_ferrule.sku = sku.sku
+                   LEFT JOIN catalog_adapters commercial_adapter
+                     ON commercial_adapter.import_id = sku.import_id
+                    AND commercial_adapter.sku = sku.sku
+                   LEFT JOIN catalog_quick_couplers commercial_coupler
+                     ON commercial_coupler.import_id = sku.import_id
+                    AND commercial_coupler.sku = sku.sku
+                   LEFT JOIN catalog_series_commercial_rules commercial_rule
+                     ON commercial_rule.import_id = sku.import_id
+                    AND commercial_rule.product_type = sku.product_type
+                    AND commercial_rule.series_code = CASE sku.product_type
+                      WHEN 'hose' THEN commercial_hose.hose_series
+                      WHEN 'hose_end' THEN commercial_hose_end.fitting_series
+                      WHEN 'ferrule' THEN commercial_ferrule.ferrule_series
+                      WHEN 'adapter' THEN commercial_adapter.adapter_family_id
+                      WHEN 'quick_coupler' THEN commercial_coupler.coupler_series
+                    END
                    WHERE active.singleton = 1 AND active.release_id = ?
                      AND release.status = 'published'
                      AND sku.catalog_publication_status = 'Published'
@@ -397,11 +422,11 @@ export function createD1QuoteRequestRepository(database: D1Database) {
                      AND sku.supply_availability = 'available_for_quote'
                      AND (
                        (line.line_kind = 'standard'
-                         AND LOWER(COALESCE(offer.quantity_input_mode, ''))
+                         AND LOWER(COALESCE(commercial_rule.quantity_input_mode, offer.quantity_input_mode, ''))
                            NOT LIKE '%length%')
                        OR (line.line_kind = 'length_based_hose'
                          AND sku.product_type = 'hose'
-                         AND LOWER(COALESCE(offer.quantity_input_mode, ''))
+                         AND LOWER(COALESCE(commercial_rule.quantity_input_mode, offer.quantity_input_mode, ''))
                            LIKE '%length%')
                        OR (line.line_kind = 'configured_assembly'
                          AND sku.product_type = 'hose')

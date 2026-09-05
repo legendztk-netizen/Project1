@@ -45,7 +45,7 @@ export interface ManualComponentRecord {
     releaseNumber: string;
     status: "draft" | "published";
   };
-  salesOffer: SalesOfferDraft;
+  salesOffer: SalesOfferDraft | null;
   supplyAvailability?:
     "available_for_quote" | "discontinued" | "temporarily_unavailable";
 }
@@ -77,7 +77,7 @@ export interface SaveManualComponentOperation {
   occurredAt: string;
   productType: ManualComponentType;
   replaceSharedImageFrom: string | null;
-  salesOffer: SalesOfferDraft;
+  salesOffer: SalesOfferDraft | null;
   salesOfferId: string;
   skuId: string;
   supplyAvailability?:
@@ -625,6 +625,9 @@ function toSalesOffer(
 function validateSubmission(input: ManualComponentSubmission) {
   const contract = productContract(input.productType);
   const sku = submissionSku(input);
+  const hasLegacySalesValues = Object.values(input.salesValues).some(
+    (value) => value !== undefined && value !== null && value !== "",
+  );
   const salesSku = normalizedSku(input.salesValues.salesSku);
   const expectedSalesProductType =
     input.productType === "quick_coupler" &&
@@ -633,10 +636,12 @@ function validateSubmission(input: ManualComponentSubmission) {
       : contract.productType;
   const results = [
     ...validateCatalogWorksheetRecord(contract.worksheet, input.masterValues),
-    ...validateCatalogWorksheetRecord(
-      manualComponentSalesWorksheet,
-      input.salesValues,
-    ),
+    ...(hasLegacySalesValues
+      ? validateCatalogWorksheetRecord(
+          manualComponentSalesWorksheet,
+          input.salesValues,
+        )
+      : []),
     ...validatePositiveNumbers(
       input.masterValues,
       contract.worksheet,
@@ -647,12 +652,14 @@ function validateSubmission(input: ManualComponentSubmission) {
           ? quickCouplerPositiveFields
           : [],
     ),
-    ...validatePositiveNumbers(
-      input.salesValues,
-      manualComponentSalesWorksheet,
-      sku,
-      salesPositiveFields,
-    ),
+    ...(hasLegacySalesValues
+      ? validatePositiveNumbers(
+          input.salesValues,
+          manualComponentSalesWorksheet,
+          sku,
+          salesPositiveFields,
+        )
+      : []),
   ];
 
   if (input.productType === "adapter") {
@@ -679,7 +686,10 @@ function validateSubmission(input: ManualComponentSubmission) {
     }
   }
 
-  if (normalizedSku(input.salesValues.baseSku) !== sku) {
+  if (
+    hasLegacySalesValues &&
+    normalizedSku(input.salesValues.baseSku) !== sku
+  ) {
     results.push(
       finding(
         manualComponentSalesWorksheet,
@@ -691,6 +701,7 @@ function validateSubmission(input: ManualComponentSubmission) {
     );
   }
   if (
+    hasLegacySalesValues &&
     textValue(input.salesValues, "productType") !== expectedSalesProductType
   ) {
     results.push(
@@ -709,6 +720,7 @@ function validateSubmission(input: ManualComponentSubmission) {
     ["technicalDataStatus", "Technical Data Status / 技术资料状态"],
   ] as const) {
     if (
+      hasLegacySalesValues &&
       textValue(input.masterValues, key) !== textValue(input.salesValues, key)
     ) {
       results.push(
@@ -722,7 +734,10 @@ function validateSubmission(input: ManualComponentSubmission) {
       );
     }
   }
-  if (textValue(input.salesValues, "currency") !== "USD") {
+  if (
+    hasLegacySalesValues &&
+    textValue(input.salesValues, "currency") !== "USD"
+  ) {
     results.push(
       finding(
         manualComponentSalesWorksheet,
@@ -733,7 +748,10 @@ function validateSubmission(input: ManualComponentSubmission) {
       ),
     );
   }
-  if (optionalNumber(input.salesValues, "referencePriceUsd") === null) {
+  if (
+    hasLegacySalesValues &&
+    optionalNumber(input.salesValues, "referencePriceUsd") === null
+  ) {
     results.push(
       finding(
         manualComponentSalesWorksheet,
@@ -781,6 +799,7 @@ function validateSubmission(input: ManualComponentSubmission) {
     );
   }
   if (
+    hasLegacySalesValues &&
     input.mode === "edit" &&
     normalizedSku(input.originalSalesSku) !== salesSku
   ) {
@@ -849,15 +868,21 @@ export async function maintainManualComponent(
     hose_end: () => toHoseEnd(input.masterValues),
     quick_coupler: () => toQuickCoupler(input.masterValues),
   }[input.productType]();
-  const salesOffer = toSalesOffer(input.salesValues);
+  const salesOffer = Object.values(input.salesValues).some(
+    (value) => value !== undefined && value !== null && value !== "",
+  )
+    ? toSalesOffer(input.salesValues)
+    : null;
   const lifecycle = input.lifecycleStatus
     ? productLifecycleState(input.lifecycleStatus)
     : null;
   if (lifecycle) {
     master.catalogPublicationStatus = lifecycle.catalogPublicationStatus;
     master.rfqEligibility = lifecycle.rfqEligibility;
-    salesOffer.catalogPublicationStatus = lifecycle.catalogPublicationStatus;
-    salesOffer.rfqEligibility = lifecycle.rfqEligibility;
+    if (salesOffer) {
+      salesOffer.catalogPublicationStatus = lifecycle.catalogPublicationStatus;
+      salesOffer.rfqEligibility = lifecycle.rfqEligibility;
+    }
   }
   const timestamp = occurredAt.replaceAll(/[-:.]/g, "").slice(0, 15);
   const draftReleaseId = generateId();

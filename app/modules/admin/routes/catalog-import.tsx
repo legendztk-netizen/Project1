@@ -379,22 +379,11 @@ function manualComponentSubmission(form: FormData) {
     },
   }[productType];
   const masterValues = worksheetValues(form, "master", settings.worksheet);
-  const salesValues = worksheetValues(form, "sales", "07_价格包装");
-  salesValues.baseSku =
-    productType === "adapter" ? masterValues.adapterSku : masterValues.sku;
-  salesValues.productType =
-    productType === "quick_coupler" && masterValues.role === "Plug/Nipple"
-      ? "Quick Plug"
-      : settings.productType;
-  salesValues.currency = "USD";
-  for (const key of [
-    "catalogPublicationStatus",
-    "rfqEligibility",
-    "technicalDataStatus",
-  ]) {
-    salesValues[key] = masterValues[key];
-  }
-  const status = applyLifecycle(form, masterValues, salesValues);
+  const salesValues = {};
+  const status = lifecycleStatus(form);
+  const lifecycle = productLifecycleState(status);
+  masterValues.catalogPublicationStatus = lifecycle.catalogPublicationStatus;
+  masterValues.rfqEligibility = lifecycle.rfqEligibility;
   return {
     lifecycleStatus: status,
     mainImageReference: textValue(form, "mainImageReference"),

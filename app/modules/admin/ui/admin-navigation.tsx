@@ -15,7 +15,7 @@ import { BrandMark } from "../../shared/ui/brand-mark";
 export type AdminNavigationKey =
   "catalog" | "configurator" | "imports" | "overview" | "quotes" | "system";
 
-export type CatalogMaintenanceMode = "excel" | "manual";
+export type CatalogMaintenanceMode = "commercial" | "excel" | "manual";
 
 const catalogMaintenanceNavigation = [
   {
@@ -27,6 +27,11 @@ const catalogMaintenanceNavigation = [
     key: "manual",
     label: "手动新增/编辑产品",
     to: "/admin/catalog/import?mode=manual",
+  },
+  {
+    key: "commercial",
+    label: "Sales, Packaging and Price / 销售、包装和价格",
+    to: "/admin/catalog/commercial",
   },
 ] as const;
 
