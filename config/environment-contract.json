@@ -3,7 +3,8 @@
   "bindingNames": {
     "database": "DB",
     "privateFiles": "PRIVATE_FILES",
-    "asyncJobs": "ASYNC_JOBS"
+    "asyncJobs": "ASYNC_JOBS",
+    "images": "IMAGES"
   },
   "placeholderPolicy": {
     "tokens": ["replace-with-"],
@@ -23,7 +24,8 @@
       "resourceNames": {
         "database": "hydraulic-hose-rfq-local",
         "privateFiles": "hydraulic-hose-private-files-local",
-        "asyncJobs": "hydraulic-hose-async-jobs-local"
+        "asyncJobs": "hydraulic-hose-async-jobs-local",
+        "images": "cloudflare-images-local"
       },
       "requiredSecrets": [],
       "vars": {
@@ -44,7 +46,8 @@
       "resourceNames": {
         "database": "hydraulic-hose-rfq-preview",
         "privateFiles": "hydraulic-hose-private-files-preview",
-        "asyncJobs": "hydraulic-hose-async-jobs-preview"
+        "asyncJobs": "hydraulic-hose-async-jobs-preview",
+        "images": "cloudflare-images-preview"
       },
       "requiredSecrets": [
         "PREVIEW_SESSION_SIGNING_KEY",
@@ -68,7 +71,8 @@
       "resourceNames": {
         "database": "hydraulic-hose-rfq-production",
         "privateFiles": "hydraulic-hose-private-files-production",
-        "asyncJobs": "hydraulic-hose-async-jobs-production"
+        "asyncJobs": "hydraulic-hose-async-jobs-production",
+        "images": "cloudflare-images-production"
       },
       "requiredSecrets": [
         "PRODUCTION_SESSION_SIGNING_KEY",

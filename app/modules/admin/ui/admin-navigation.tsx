@@ -1,49 +1,53 @@
 import {
   Boxes,
-  Database,
+  ChevronDown,
   FileText,
   FileUp,
   LayoutDashboard,
   Settings,
   Waypoints,
 } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router";
 
 import { BrandMark } from "../../shared/ui/brand-mark";
 
 export type AdminNavigationKey =
-  | "catalog"
-  | "configurator"
-  | "imports"
-  | "overview"
-  | "quotes"
-  | "releases"
-  | "system";
+  "catalog" | "configurator" | "imports" | "overview" | "quotes" | "system";
+
+export type CatalogMaintenanceMode = "excel" | "manual";
+
+const catalogMaintenanceNavigation = [
+  {
+    key: "excel",
+    label: "批量导入产品",
+    to: "/admin/catalog/import?mode=excel",
+  },
+  {
+    key: "manual",
+    label: "手动新增/编辑产品",
+    to: "/admin/catalog/import?mode=manual",
+  },
+] as const;
 
 const adminNavigation = [
   { key: "overview", label: "总览", icon: LayoutDashboard, to: "/admin" },
   { key: "quotes", label: "询价审核", icon: FileText, to: "/admin/quotes" },
   {
     key: "catalog",
-    label: "产品目录",
+    label: "产品审核与发布",
     icon: Boxes,
     to: "/admin/catalog/review",
   },
   {
+    children: catalogMaintenanceNavigation,
     key: "imports",
-    label: "数据导入",
+    label: "产品数据维护",
     icon: FileUp,
-    to: "/admin/catalog/import",
-  },
-  {
-    key: "releases",
-    label: "目录发布",
-    icon: Database,
-    to: "/admin/catalog/releases",
   },
   {
     key: "configurator",
-    label: "配置器数据",
+    label: "总成参数配置",
     icon: Waypoints,
     to: "/admin/catalog/reference-data",
   },
@@ -55,32 +59,86 @@ const adminNavigation = [
   },
 ] as const;
 
-export function AdminNavigation({ active }: { active: AdminNavigationKey }) {
+export function AdminNavigation({
+  active,
+  maintenanceMode,
+}: {
+  active: AdminNavigationKey;
+  maintenanceMode?: CatalogMaintenanceMode;
+}) {
+  const [openGroup, setOpenGroup] = useState<AdminNavigationKey | null>(
+    active === "imports" ? "imports" : null,
+  );
+
   return (
     <aside className="admin-sidebar">
       <BrandMark />
       <nav aria-label="管理后台导航">
-        {adminNavigation.map(({ key, label, icon: Icon, ...item }) => {
-          const activeItem = key === active;
+        {adminNavigation.map((item) => {
+          const activeItem = item.key === active;
+          const hasChildren = "children" in item;
+          const expanded = hasChildren && openGroup === item.key;
+          const Icon = item.icon;
           const content = (
             <>
               <Icon aria-hidden="true" size={18} />
-              {label}
+              <span>{item.label}</span>
             </>
           );
-          return "to" in item ? (
-            <Link
-              aria-current={activeItem ? "page" : undefined}
-              className={`admin-nav-item${activeItem ? " active" : ""}`}
-              key={key}
-              to={item.to}
-            >
-              {content}
-            </Link>
-          ) : (
-            <span className="admin-nav-item" key={key}>
-              {content}
-            </span>
+          return (
+            <div className="admin-nav-group" key={item.key}>
+              {hasChildren ? (
+                <button
+                  aria-controls={`admin-submenu-${item.key}`}
+                  aria-expanded={expanded}
+                  className={`admin-nav-item admin-nav-toggle${activeItem ? " active" : ""}`}
+                  onClick={() =>
+                    setOpenGroup((current) =>
+                      current === item.key ? null : item.key,
+                    )
+                  }
+                  type="button"
+                >
+                  {content}
+                  <ChevronDown
+                    aria-hidden="true"
+                    className="admin-nav-chevron"
+                    size={16}
+                  />
+                </button>
+              ) : (
+                <Link
+                  aria-current={activeItem ? "page" : undefined}
+                  className={`admin-nav-item${activeItem ? " active" : ""}`}
+                  to={item.to}
+                >
+                  {content}
+                </Link>
+              )}
+              {hasChildren && expanded ? (
+                <div
+                  aria-label={item.label}
+                  className="admin-nav-submenu"
+                  id={`admin-submenu-${item.key}`}
+                  role="group"
+                >
+                  {item.children.map((subitem) => {
+                    const activeSubitem =
+                      activeItem && maintenanceMode === subitem.key;
+                    return (
+                      <Link
+                        aria-current={activeSubitem ? "page" : undefined}
+                        className={`admin-nav-subitem${activeSubitem ? " active" : ""}`}
+                        key={subitem.key}
+                        to={subitem.to}
+                      >
+                        {subitem.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
           );
         })}
       </nav>

@@ -5,6 +5,7 @@ import { validateRuntimeEnvironment } from "../workers/environment";
 const resources = {
   ASYNC_JOBS: {},
   DB: {},
+  IMAGES: {},
   PRIVATE_FILES: {},
 };
 

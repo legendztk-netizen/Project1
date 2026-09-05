@@ -12,6 +12,7 @@ const requiredBindings = [
   [environmentContract.bindingNames.database, "D1 database"],
   [environmentContract.bindingNames.privateFiles, "private R2 bucket"],
   [environmentContract.bindingNames.asyncJobs, "asynchronous job Queue"],
+  [environmentContract.bindingNames.images, "Cloudflare Images transformer"],
 ] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -20,8 +21,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isPlaceholder(value: string) {
   return (
-    environmentContract.placeholderPolicy.tokens.some((token) => value.includes(token)) ||
-    environmentContract.placeholderPolicy.suffixes.some((suffix) => value.endsWith(suffix))
+    environmentContract.placeholderPolicy.tokens.some((token) =>
+      value.includes(token),
+    ) ||
+    environmentContract.placeholderPolicy.suffixes.some((suffix) =>
+      value.endsWith(suffix),
+    )
   );
 }
 
@@ -33,7 +38,8 @@ function validateOrigin(
 ) {
   try {
     const origin = new URL(value);
-    if (origin.origin !== value) errors.push(`${key} must be an origin without a path`);
+    if (origin.origin !== value)
+      errors.push(`${key} must be an origin without a path`);
     if (environment === "local" && origin.protocol !== "http:") {
       errors.push(`${key} must use http in local development`);
     }
@@ -48,10 +54,15 @@ function validateOrigin(
 export function validateRuntimeEnvironment(
   input: unknown,
 ): ValidatedRuntimeEnvironment {
-  if (!isRecord(input)) throw new Error("Invalid runtime configuration: bindings are missing");
+  if (!isRecord(input))
+    throw new Error("Invalid runtime configuration: bindings are missing");
 
   const environment = input.APP_ENV;
-  if (environment !== "local" && environment !== "preview" && environment !== "production") {
+  if (
+    environment !== "local" &&
+    environment !== "preview" &&
+    environment !== "production"
+  ) {
     throw new Error(
       `Invalid runtime configuration: APP_ENV must be local, preview, or production; received ${String(environment)}`,
     );
@@ -74,7 +85,12 @@ export function validateRuntimeEnvironment(
   if (errors.length === 0) {
     const storefrontOrigin = String(input.PUBLIC_STOREFRONT_ORIGIN);
     const adminOrigin = String(input.ADMIN_ORIGIN);
-    validateOrigin("PUBLIC_STOREFRONT_ORIGIN", storefrontOrigin, environment, errors);
+    validateOrigin(
+      "PUBLIC_STOREFRONT_ORIGIN",
+      storefrontOrigin,
+      environment,
+      errors,
+    );
     validateOrigin("ADMIN_ORIGIN", adminOrigin, environment, errors);
 
     if (storefrontOrigin === adminOrigin) {
@@ -89,13 +105,16 @@ export function validateRuntimeEnvironment(
         errors.push("EMAIL_DELIVERY_MODE must be stub in local development");
       }
     } else {
-      for (const variable of environmentContract.placeholderPolicy.deployedVariables) {
+      for (const variable of environmentContract.placeholderPolicy
+        .deployedVariables) {
         if (isPlaceholder(String(input[variable]))) {
           errors.push(`${variable} is still a placeholder for ${environment}`);
         }
       }
       if (input.ADMIN_AUTH_MODE !== "cloudflare-access") {
-        errors.push(`ADMIN_AUTH_MODE must be cloudflare-access for ${environment}`);
+        errors.push(
+          `ADMIN_AUTH_MODE must be cloudflare-access for ${environment}`,
+        );
       }
       if (input.EMAIL_DELIVERY_MODE !== "resend") {
         errors.push(`EMAIL_DELIVERY_MODE must be resend for ${environment}`);

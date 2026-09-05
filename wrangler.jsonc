@@ -40,6 +40,9 @@
       "bucket_name": "hydraulic-hose-private-files-local"
     }
   ],
+  "images": {
+    "binding": "IMAGES"
+  },
   "queues": {
     "producers": [
       {
@@ -84,6 +87,9 @@
           "bucket_name": "hydraulic-hose-private-files-preview"
         }
       ],
+      "images": {
+        "binding": "IMAGES"
+      },
       "queues": {
         "producers": [
           {
@@ -131,6 +137,9 @@
           "bucket_name": "hydraulic-hose-private-files-production"
         }
       ],
+      "images": {
+        "binding": "IMAGES"
+      },
       "queues": {
         "producers": [
           {

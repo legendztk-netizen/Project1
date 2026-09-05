@@ -65,6 +65,7 @@ describe("Admin route boundary", () => {
     ["/admin.data", true],
     ["/admin/", true],
     ["/admin/catalog", true],
+    ["/admin/catalog/import", true],
     ["/admin/catalog/review", true],
     ["/admin/catalog/releases", true],
     ["/admin/quotes", true],
