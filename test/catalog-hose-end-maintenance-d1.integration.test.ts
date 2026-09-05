@@ -108,9 +108,35 @@ describe("D1 Hose End series and variant maintenance", () => {
         },
       });
 
+      const editSeriesIds = [
+        "unused-edit-release",
+        "series-edit-audit",
+        "unused-edit-import",
+        "unused-edit-series-id",
+      ];
+      await maintainHoseEndSeries(repository, {
+        actorId: "owner-2",
+        generateId: () => editSeriesIds.shift() ?? "unexpected-series-edit-id",
+        mode: "edit",
+        now: () => new Date("2026-09-05T01:20:00.000Z"),
+        originalSeriesCode: "FJX",
+        series: {
+          angle: "0° Straight",
+          gender: "Female",
+          interfaceFamily: "JIC 37°",
+          interfaceStandard: "ISO 8434-2",
+          representativeImageReference:
+            "hose-end-shape:JIC 37°-Female-Swivel-0° Straight",
+          sealingForm: "37° flare",
+          seriesCode: "FJX",
+          seriesName: "JIC Female Swivel Updated",
+          swivelForm: "Swivel",
+        },
+      });
+
       expect(await repository.findHoseEndSeries("fjx")).toMatchObject({
         seriesCode: "FJX",
-        seriesName: "JIC Female Swivel",
+        seriesName: "JIC Female Swivel Updated",
       });
       expect(await repository.findHoseEndVariant("fjx-04-04")).toMatchObject({
         fittingSeries: "FJX",
@@ -128,7 +154,7 @@ describe("D1 Hose End series and variant maintenance", () => {
         ).first(),
       ).toEqual({
         angle: "0° Straight",
-        connection_standard: "SAE J514",
+        connection_standard: "ISO 8434-2",
         gender: "Female",
         interface_family: "JIC 37°",
         sealing_form: "37° flare",

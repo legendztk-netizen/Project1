@@ -2361,6 +2361,23 @@ function hoseEndSeriesMutationStatements(
           draft.source_import_id,
           series.seriesCode,
         ),
+      database
+        .prepare(
+          `UPDATE catalog_hose_ends
+           SET interface_family = ?, connection_standard = ?, gender = ?,
+               swivel_form = ?, angle = ?, sealing_form = ?
+           WHERE import_id = ? AND fitting_series = ?`,
+        )
+        .bind(
+          series.interfaceFamily,
+          series.interfaceStandard,
+          series.gender,
+          series.swivelForm,
+          series.angle,
+          series.sealingForm,
+          draft.source_import_id,
+          series.seriesCode,
+        ),
     );
   }
   statements.push(
