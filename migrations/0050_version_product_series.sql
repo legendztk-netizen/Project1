@@ -27,13 +27,20 @@ ALTER TABLE `catalog_hose_series` ADD COLUMN `fluid_compatibility` TEXT;
 ALTER TABLE `catalog_hose_series` ADD COLUMN `representative_media_version_id` TEXT;
 --> statement-breakpoint
 
+-- Temporarily remove the published-snapshot update guard so the migration can
+-- enrich existing active and historical snapshots in place. It is restored
+-- immediately after the deterministic backfill.
+DROP TRIGGER `cataloghoseseries_immutable_update`;
+--> statement-breakpoint
+
 UPDATE `catalog_hose_series` AS `series`
 SET
   `series_name` = `series`.`series_code`,
   (`primary_standard`, `equivalent_standard`, `temp_min_c`, `temp_max_c`,
    `tube_material`, `reinforcement`, `cover_material`, `cover_color`,
    `cover_finish`, `fluid_compatibility`) = (
-    SELECT `primary_standard`, `equivalent_standard`, `temp_min_c`, `temp_max_c`,
+    SELECT `primary_standard`, COALESCE(NULLIF(`equivalent_standard`, ''), 'N/A'),
+           `temp_min_c`, `temp_max_c`,
            `tube_material`, `reinforcement`, `cover_material`, `cover_color`,
            `cover_finish`, `fluid_compatibility`
     FROM `catalog_hose_variants` AS `variant`
@@ -53,6 +60,18 @@ SET
     ORDER BY `variant`.`sku`
     LIMIT 1
   );
+--> statement-breakpoint
+
+CREATE TRIGGER `cataloghoseseries_immutable_update`
+BEFORE UPDATE ON `catalog_hose_series`
+WHEN EXISTS (
+  SELECT 1 FROM `catalog_releases`
+  WHERE `source_import_id` = OLD.`import_id`
+    AND `status` IN ('published', 'superseded')
+)
+BEGIN
+  SELECT RAISE(ABORT, 'published catalog data is immutable');
+END;
 --> statement-breakpoint
 
 CREATE TABLE `catalog_hose_end_series` (
@@ -137,6 +156,78 @@ WHEN EXISTS (
 )
 BEGIN
   SELECT RAISE(ABORT, 'Series is referenced by variants / 系列已被子体引用');
+END;
+--> statement-breakpoint
+CREATE TRIGGER `cataloghoseseries_required_insert`
+BEFORE INSERT ON `catalog_hose_series`
+WHEN NULLIF(trim(NEW.`series_code`), '') IS NULL
+  OR NULLIF(trim(NEW.`series_name`), '') IS NULL
+  OR NULLIF(trim(NEW.`primary_standard`), '') IS NULL
+  OR NULLIF(trim(NEW.`equivalent_standard`), '') IS NULL
+  OR NEW.`temp_min_c` IS NULL OR NEW.`temp_max_c` IS NULL
+  OR NEW.`representative_media_version_id` IS NULL
+  OR NOT EXISTS (
+    SELECT 1 FROM `catalog_media_versions`
+    WHERE `id` = NEW.`representative_media_version_id`
+      AND `source_kind` IN ('approved_reference', 'uploaded')
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'Required Hose Series data or reviewed image is missing / 胶管系列必填资料或已审核图片缺失');
+END;
+--> statement-breakpoint
+CREATE TRIGGER `cataloghoseseries_required_update`
+BEFORE UPDATE ON `catalog_hose_series`
+WHEN NULLIF(trim(NEW.`series_name`), '') IS NULL
+  OR NULLIF(trim(NEW.`primary_standard`), '') IS NULL
+  OR NULLIF(trim(NEW.`equivalent_standard`), '') IS NULL
+  OR NEW.`temp_min_c` IS NULL OR NEW.`temp_max_c` IS NULL
+  OR NEW.`representative_media_version_id` IS NULL
+  OR NOT EXISTS (
+    SELECT 1 FROM `catalog_media_versions`
+    WHERE `id` = NEW.`representative_media_version_id`
+      AND `source_kind` IN ('approved_reference', 'uploaded')
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'Required Hose Series data or reviewed image is missing / 胶管系列必填资料或已审核图片缺失');
+END;
+--> statement-breakpoint
+CREATE TRIGGER `cataloghoseendseries_required_insert`
+BEFORE INSERT ON `catalog_hose_end_series`
+WHEN NULLIF(trim(NEW.`series_code`), '') IS NULL
+  OR NULLIF(trim(NEW.`series_name`), '') IS NULL
+  OR NULLIF(trim(NEW.`interface_family`), '') IS NULL
+  OR NULLIF(trim(NEW.`connection_standard`), '') IS NULL
+  OR NULLIF(trim(NEW.`gender`), '') IS NULL
+  OR NULLIF(trim(NEW.`swivel_form`), '') IS NULL
+  OR NULLIF(trim(NEW.`angle`), '') IS NULL
+  OR NULLIF(trim(NEW.`sealing_form`), '') IS NULL
+  OR NEW.`representative_media_version_id` IS NULL
+  OR NOT EXISTS (
+    SELECT 1 FROM `catalog_media_versions`
+    WHERE `id` = NEW.`representative_media_version_id`
+      AND `source_kind` IN ('approved_reference', 'uploaded')
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'Required Hose End Series data or reviewed image is missing / 压接接头系列必填资料或已审核图片缺失');
+END;
+--> statement-breakpoint
+CREATE TRIGGER `cataloghoseendseries_required_update`
+BEFORE UPDATE ON `catalog_hose_end_series`
+WHEN NULLIF(trim(NEW.`series_name`), '') IS NULL
+  OR NULLIF(trim(NEW.`interface_family`), '') IS NULL
+  OR NULLIF(trim(NEW.`connection_standard`), '') IS NULL
+  OR NULLIF(trim(NEW.`gender`), '') IS NULL
+  OR NULLIF(trim(NEW.`swivel_form`), '') IS NULL
+  OR NULLIF(trim(NEW.`angle`), '') IS NULL
+  OR NULLIF(trim(NEW.`sealing_form`), '') IS NULL
+  OR NEW.`representative_media_version_id` IS NULL
+  OR NOT EXISTS (
+    SELECT 1 FROM `catalog_media_versions`
+    WHERE `id` = NEW.`representative_media_version_id`
+      AND `source_kind` IN ('approved_reference', 'uploaded')
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'Required Hose End Series data or reviewed image is missing / 压接接头系列必填资料或已审核图片缺失');
 END;
 --> statement-breakpoint
 CREATE TRIGGER `cataloghosevariants_series_reference_insert`

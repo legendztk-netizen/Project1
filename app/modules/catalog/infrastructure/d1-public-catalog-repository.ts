@@ -58,6 +58,7 @@ interface PublicCatalogRow {
   interface_2: string | null;
   interface_family: string | null;
   lead_time_days: number | null;
+  main_image_version_id: string | null;
   length_increment_ft: number | null;
   hose_end_max_working_bar: number | null;
   hose_end_unit_weight_g: number | null;
@@ -430,6 +431,9 @@ export function publicCatalogItemFromRow(
     familyKey: product.familyKey,
     familyName: product.familyName,
     interfaceGroup: interfaceGroup(product.interface),
+    mainImageUrl: row.main_image_version_id
+      ? `/media/catalog/${encodeURIComponent(row.main_image_version_id)}/storefront`
+      : null,
     mediaKey: product.mediaKey,
     offer:
       row.sales_unit && row.lead_time_days !== null && row.moq !== null
@@ -481,6 +485,9 @@ export function publicCatalogItemFromRow(
 const publicCatalogSql = `
   SELECT r.id AS release_id, r.release_number, s.sku, s.product_type, s.hose_series,
          s.rfq_eligibility, s.supply_availability,
+         COALESCE(image.media_version_id,
+                  hs.representative_media_version_id,
+                  hes.representative_media_version_id) AS main_image_version_id,
          o.sales_unit, o.moq, o.lead_time_days, o.currency,
          o.reference_price_usd, o.quantity_input_mode,
          o.minimum_length_per_piece_ft, o.length_increment_ft,
@@ -488,17 +495,17 @@ const publicCatalogSql = `
          COALESCE(series_fee.rate_per_piece, global_fee.rate_per_piece) AS cutting_labeling_fee_rate,
          COALESCE(series_fee.scope_key, global_fee.scope_key) AS cutting_labeling_fee_scope,
          COALESCE(series_fee.version, global_fee.version) AS cutting_labeling_fee_version,
-         h.primary_standard, h.equivalent_standard, h.dash,
+         hs.primary_standard, hs.equivalent_standard, h.dash,
          h.nominal_id_in, h.id_mm, h.od_mm, h.working_bar, h.working_psi,
          h.burst_bar, h.bend_radius_mm,
          h.weight_kg_m AS hose_weight_kg_m,
-         h.temp_min_c AS hose_temp_min_c,
-         h.temp_max_c AS hose_temp_max_c, h.tube_material,
-         h.reinforcement, h.cover_material, h.cover_color, h.cover_finish,
-         h.fluid_compatibility,
-         e.fitting_series, e.competitor_part_number, e.interface_family,
-         e.connection_standard, e.gender,
-         e.swivel_form, e.angle, e.sealing_form, e.thread,
+         hs.temp_min_c AS hose_temp_min_c,
+         hs.temp_max_c AS hose_temp_max_c, hs.tube_material,
+         hs.reinforcement, hs.cover_material, hs.cover_color, hs.cover_finish,
+         hs.fluid_compatibility,
+         e.fitting_series, e.competitor_part_number, hes.interface_family,
+         hes.connection_standard, hes.gender,
+         hes.swivel_form, hes.angle, hes.sealing_form, e.thread,
          e.connection_dash, e.hose_tail_dash,
          e.material AS hose_end_material, e.coating AS hose_end_coating,
          e.max_working_bar AS hose_end_max_working_bar,
@@ -527,14 +534,20 @@ const publicCatalogSql = `
   INNER JOIN catalog_skus s ON s.import_id = r.source_import_id
   LEFT JOIN catalog_sales_offers o
     ON o.import_id = s.import_id AND o.base_sku = s.sku
+  LEFT JOIN catalog_product_main_images image
+    ON image.import_id = s.import_id AND image.sku = s.sku
   LEFT JOIN cutting_labeling_fee_rates global_fee
     ON global_fee.scope_key = 'global'
   LEFT JOIN cutting_labeling_fee_rates series_fee
     ON series_fee.scope_key = 'series:' || s.hose_series
   LEFT JOIN catalog_hose_variants h
     ON h.import_id = s.import_id AND h.sku = s.sku
+  LEFT JOIN catalog_hose_series hs
+    ON hs.import_id = h.import_id AND hs.series_code = h.hose_series
   LEFT JOIN catalog_hose_ends e
     ON e.import_id = s.import_id AND e.sku = s.sku
+  LEFT JOIN catalog_hose_end_series hes
+    ON hes.import_id = e.import_id AND hes.series_code = e.fitting_series
   LEFT JOIN catalog_ferrules f
     ON f.import_id = s.import_id AND f.sku = s.sku
   LEFT JOIN catalog_adapters a

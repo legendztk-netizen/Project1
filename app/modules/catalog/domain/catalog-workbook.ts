@@ -181,7 +181,7 @@ export interface HoseSeriesDraft {
   coverColor: string;
   coverFinish: string | null;
   coverMaterial: string;
-  equivalentStandard: string | null;
+  equivalentStandard: string;
   fluidCompatibility: string;
   mainImageReference: string;
   primaryStandard: string;
@@ -1620,7 +1620,7 @@ function toHoseSeries(row: ParsedRow): HoseSeriesDraft {
     coverColor: stringValue(row, "coverColor"),
     coverFinish: optionalString(row, "coverFinish"),
     coverMaterial: stringValue(row, "coverMaterial"),
-    equivalentStandard: optionalString(row, "equivalentStandard"),
+    equivalentStandard: optionalString(row, "equivalentStandard") || "N/A",
     fluidCompatibility: stringValue(row, "fluidCompatibility"),
     mainImageReference: hoseMainImageReference(seriesCode)!,
     primaryStandard: stringValue(row, "primaryStandard"),

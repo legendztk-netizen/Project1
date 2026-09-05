@@ -279,6 +279,99 @@ afterEach(() => {
 });
 
 describe("real local D1 migration lifecycle", () => {
+  it("backfills product series inside published and historical catalog snapshots", () => {
+    const fixture = createD1Fixture();
+    const seriesMigration = "0050_version_product_series.sql";
+    rmSync(join(fixture.directory, "migrations", seriesMigration));
+    const beforeUpgrade = applyMigrations(fixture);
+    expect(
+      beforeUpgrade.status,
+      `${beforeUpgrade.stdout}\n${beforeUpgrade.stderr}`,
+    ).toBe(0);
+
+    queryD1(
+      fixture,
+      `INSERT INTO catalog_imports
+         (id, kind, status, summary_json, error_count, warning_count, created_at, completed_at)
+       VALUES ('legacy-import', 'diagnostic', 'completed', '{}', 0, 0,
+               '2026-09-01', '2026-09-01');
+       INSERT INTO catalog_skus
+         (id, import_id, sku, source_worksheet, product_type, hose_series,
+          catalog_publication_status, rfq_eligibility, technical_data_status,
+          supply_availability)
+       VALUES
+         ('legacy-hose-sku', 'legacy-import', 'LEGACY-HOSE', '01', 'hose',
+          'LEGACY', 'Published', 'Eligible', 'Complete', 'available_for_quote'),
+         ('legacy-end-sku', 'legacy-import', 'LEGACY-END', '02', 'hose_end',
+          NULL, 'Published', 'Eligible', 'Complete', 'available_for_quote');
+       INSERT INTO catalog_hose_series (id, import_id, series_code)
+       VALUES ('legacy-series', 'legacy-import', 'LEGACY');
+       INSERT INTO catalog_hose_variants
+         (id, import_id, sku, hose_series, primary_standard, equivalent_standard,
+          dash, nominal_id_in, id_mm, od_mm, working_bar, burst_bar,
+          bend_radius_mm, weight_kg_m, temp_min_c, temp_max_c, tube_material,
+          reinforcement, cover_material, cover_color, skive_requirement,
+          fluid_compatibility, origin, source)
+       VALUES ('legacy-hose', 'legacy-import', 'LEGACY-HOSE', 'LEGACY', 'SAE',
+               'ISO', '-4', 0.25, 6.4, 12, 200, 800, 100, 0.3, -40, 100,
+               'NBR', 'Wire', 'Rubber', 'Black', 'No Skive', 'Oil', 'CN', 'test');
+       INSERT INTO catalog_hose_ends
+         (id, import_id, sku, fitting_series, interface_family,
+          connection_standard, gender, swivel_form, angle, sealing_form,
+          thread, connection_dash, hose_tail_dash, source)
+       VALUES ('legacy-end', 'legacy-import', 'LEGACY-END', 'END-SERIES', 'JIC',
+               'SAE J514', 'Female', 'Swivel', 'Straight', 'Cone', '7/16-20',
+               '-4', '-4', 'test');
+       INSERT INTO catalog_media_lineages (id, logical_reference, created_at, created_by)
+       VALUES ('legacy-lineage', 'legacy-image', '2026-09-01', 'test');
+       INSERT INTO catalog_media_versions
+         (id, lineage_id, version, source_kind, approved_reference, mime_type,
+          created_at, created_by)
+       VALUES ('legacy-media', 'legacy-lineage', 1, 'approved_reference',
+               'legacy-image', 'reference', '2026-09-01', 'test');
+       INSERT INTO catalog_product_main_images
+         (id, import_id, sku, media_version_id, assigned_at, assigned_by)
+       VALUES
+         ('legacy-hose-image', 'legacy-import', 'LEGACY-HOSE', 'legacy-media',
+          '2026-09-01', 'test'),
+         ('legacy-end-image', 'legacy-import', 'LEGACY-END', 'legacy-media',
+          '2026-09-01', 'test');
+       INSERT INTO catalog_releases
+         (id, release_number, status, source_import_id, version, created_at,
+          published_at)
+       VALUES ('legacy-release', 'LEGACY-1', 'published', 'legacy-import', 1,
+               '2026-09-01', '2026-09-01');`,
+    );
+
+    copyFileSync(
+      join(projectRoot, "migrations", seriesMigration),
+      join(fixture.directory, "migrations", seriesMigration),
+    );
+    const upgrade = applyMigrations(fixture);
+    expect(upgrade.status, `${upgrade.stdout}\n${upgrade.stderr}`).toBe(0);
+    expect(
+      queryD1<{ media: string; name: string; standard: string }>(
+        fixture,
+        `SELECT series_name AS name, primary_standard AS standard,
+                representative_media_version_id AS media
+         FROM catalog_hose_series WHERE id = 'legacy-series'`,
+      ),
+    ).toEqual([{ media: "legacy-media", name: "LEGACY", standard: "SAE" }]);
+    expect(
+      queryD1<{ count: number }>(
+        fixture,
+        `SELECT COUNT(*) AS count FROM catalog_hose_end_series
+         WHERE import_id = 'legacy-import' AND series_code = 'END-SERIES'`,
+      ),
+    ).toEqual([{ count: 1 }]);
+    expect(
+      queryD1<{ status: string }>(
+        fixture,
+        "SELECT status FROM catalog_releases WHERE id = 'legacy-release'",
+      ),
+    ).toEqual([{ status: "published" }]);
+  }, 40_000);
+
   it("enforces versioned series identity and referenced-series deletion guards", () => {
     const fixture = createD1Fixture();
     const migration = applyMigrations(fixture);
@@ -304,9 +397,9 @@ describe("real local D1 migration lifecycle", () => {
        VALUES ('series-media', 'series-lineage', 1, 'approved_reference',
                'hose-series:TEST', 'reference', '2026-09-05', 'test');
        INSERT INTO catalog_hose_series
-         (id, import_id, series_code, series_name, primary_standard,
+         (id, import_id, series_code, series_name, primary_standard, equivalent_standard,
           temp_min_c, temp_max_c, representative_media_version_id)
-       VALUES ('hose-series', 'series-import', 'TEST', 'Test Series', 'TEST STD',
+       VALUES ('hose-series', 'series-import', 'TEST', 'Test Series', 'TEST STD', 'N/A',
                -40, 100, 'series-media');
        INSERT INTO catalog_skus
          (id, import_id, sku, source_worksheet, product_type, hose_series,
