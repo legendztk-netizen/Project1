@@ -32,6 +32,15 @@ import {
   type HoseVariantInput,
 } from "../../catalog/domain/catalog-hose-maintenance";
 import {
+  HoseEndMaintenanceRejected,
+  maintainHoseEndSeries,
+  maintainHoseEndVariant,
+  validateHoseEndSeriesMaintenance,
+  validateHoseEndVariantMaintenance,
+  type HoseEndSeriesRecord,
+  type HoseEndVariantInput,
+} from "../../catalog/domain/catalog-hose-end-maintenance";
+import {
   CatalogImageRejected,
   mediaVersionIdFromReference,
   prepareCatalogImage,
@@ -57,6 +66,10 @@ import {
   CatalogHoseMaintenance,
   HoseMaintenanceActions,
 } from "../ui/catalog-hose-maintenance";
+import {
+  CatalogHoseEndMaintenance,
+  HoseEndMaintenanceActions,
+} from "../ui/catalog-hose-end-maintenance";
 import {
   AdminNavigation,
   type CatalogMaintenanceMode,
@@ -101,7 +114,7 @@ export async function loader({ context, request }: Route.LoaderArgs) {
       .map((sku) => sku.trim())
       .filter(Boolean),
     manualComponent:
-      requestedSku && productType !== "hose"
+      requestedSku && productType !== "hose" && productType !== "hose_end"
         ? await manualRepository.findComponentByExactSku(
             productType,
             requestedSku,
@@ -111,8 +124,19 @@ export async function loader({ context, request }: Route.LoaderArgs) {
       mode === "manual" && productType === "hose"
         ? await manualRepository.listHoseSeries()
         : [],
+    hoseEndSeries:
+      mode === "manual" && productType === "hose_end"
+        ? await manualRepository.listHoseEndSeries()
+        : [],
     manualAction:
-      mode === "manual" && productType === "hose" ? manualAction : null,
+      mode === "manual" &&
+      (productType === "hose" || productType === "hose_end")
+        ? manualAction
+        : null,
+    manualHoseEndVariant:
+      mode === "manual" && requestedSku && productType === "hose_end"
+        ? await manualRepository.findHoseEndVariant(requestedSku)
+        : null,
     manualHoseVariant:
       mode === "manual" && requestedSku && productType === "hose"
         ? await manualRepository.findHoseVariant(requestedSku)
@@ -123,6 +147,10 @@ export async function loader({ context, request }: Route.LoaderArgs) {
     selectedHoseSeries:
       mode === "manual" && requestedSeries && productType === "hose"
         ? await manualRepository.findHoseSeries(requestedSeries)
+        : null,
+    selectedHoseEndSeries:
+      mode === "manual" && requestedSeries && productType === "hose_end"
+        ? await manualRepository.findHoseEndSeries(requestedSeries)
         : null,
     seriesImageReference: url.searchParams.get("seriesImageReference"),
     review: importId
@@ -206,6 +234,58 @@ function hoseVariantSubmission(form: FormData): HoseVariantInput {
     weightKgM: numberValue(form, "variant.weightKgM"),
     workingBar: numberValue(form, "variant.workingBar"),
     workingPsi: numberValue(form, "variant.workingPsi"),
+  };
+}
+
+function hoseEndSeriesSubmission(
+  form: FormData,
+  representativeImageReference: string,
+): HoseEndSeriesRecord {
+  return {
+    angle: textValue(form, "series.angle"),
+    gender: textValue(form, "series.gender"),
+    interfaceFamily: textValue(form, "series.interfaceFamily"),
+    interfaceStandard: textValue(form, "series.interfaceStandard"),
+    representativeImageReference,
+    sealingForm: textValue(form, "series.sealingForm"),
+    seriesCode: textValue(form, "series.seriesCode"),
+    seriesName: textValue(form, "series.seriesName"),
+    swivelForm: textValue(form, "series.swivelForm"),
+  };
+}
+
+function hoseEndVariantSubmission(form: FormData): HoseEndVariantInput {
+  const technicalDataStatus = textValue(form, "variant.technicalDataStatus");
+  return {
+    coating: textValue(form, "variant.coating"),
+    competitorPartNumber: optionalTextValue(
+      form,
+      "variant.competitorPartNumber",
+    ),
+    connectionDash: textValue(form, "variant.connectionDash"),
+    cutoffBMm: numberValue(form, "variant.cutoffBMm"),
+    dimensionAMm: numberValue(form, "variant.dimensionAMm"),
+    drawingNumber: optionalTextValue(form, "variant.drawingNumber"),
+    drawingRevision: optionalTextValue(form, "variant.drawingRevision"),
+    fittingSeries: textValue(form, "variant.fittingSeries"),
+    hex1Mm: numberValue(form, "variant.hex1Mm"),
+    hex2Mm: numberValue(form, "variant.hex2Mm"),
+    hoseTailDash: textValue(form, "variant.hoseTailDash"),
+    material: textValue(form, "variant.material"),
+    maxWorkingBar: numberValue(form, "variant.maxWorkingBar"),
+    minimumBoreMm: numberValue(form, "variant.minimumBoreMm"),
+    notes: textValue(form, "variant.notes"),
+    saltSprayHours: numberValue(form, "variant.saltSprayHours"),
+    sku: textValue(form, "variant.sku"),
+    source: optionalTextValue(form, "variant.source"),
+    technicalDataStatus:
+      technicalDataStatus === "Complete" ||
+      technicalDataStatus === "Inherited" ||
+      technicalDataStatus === "Pending"
+        ? technicalDataStatus
+        : null,
+    thread: textValue(form, "variant.thread"),
+    unitWeightG: numberValue(form, "variant.unitWeightG"),
   };
 }
 
@@ -587,6 +667,119 @@ export async function action({ context, request }: Route.ActionArgs) {
       };
     }
   }
+  if (intent === "maintain_hose_end_series") {
+    let uploadedReference: string | null = null;
+    try {
+      const repository = createD1CatalogManualHoseRepository(env.DB);
+      const input = {
+        actorId: adminIdentity.id,
+        mode:
+          textValue(form, "mode") === "edit"
+            ? ("edit" as const)
+            : ("create" as const),
+        originalSeriesCode: optionalTextValue(form, "originalSeriesCode"),
+        series: hoseEndSeriesSubmission(form, validationImageReference(form)),
+      };
+      await validateHoseEndSeriesMaintenance(repository, input);
+      const representativeImageReference = await uploadedMainImageReference(
+        env,
+        adminIdentity.id,
+        form,
+      );
+      if (hasMainImageUpload(form))
+        uploadedReference = representativeImageReference;
+      const result = await maintainHoseEndSeries(repository, {
+        ...input,
+        series: hoseEndSeriesSubmission(form, representativeImageReference),
+      });
+      const query = new URLSearchParams({
+        identifier: result.seriesCode,
+        mode: "manual",
+        productType: "hose_end",
+        saved: result.mode,
+        savedKind: "series",
+      });
+      return redirect(`/admin/catalog/import?${query.toString()}`);
+    } catch (error) {
+      await discardUploadedMainImage(env, uploadedReference).catch(
+        () => undefined,
+      );
+      if (
+        error instanceof HoseEndMaintenanceRejected ||
+        error instanceof CatalogImageRejected
+      ) {
+        return {
+          formError: error.message,
+          validationFindings:
+            error instanceof HoseEndMaintenanceRejected ? error.findings : [],
+        };
+      }
+      return {
+        formError:
+          error instanceof Error
+            ? error.message
+            : "Hose End Series was not saved / 压接接头系列未保存",
+        validationFindings: [],
+      };
+    }
+  }
+  if (intent === "maintain_hose_end_variant") {
+    let uploadedReference: string | null = null;
+    try {
+      const repository = createD1CatalogManualHoseRepository(env.DB);
+      const input = {
+        actorId: adminIdentity.id,
+        imageOverrideReference: validationImageReference(form) || null,
+        lifecycleStatus: lifecycleStatus(form),
+        mode:
+          textValue(form, "mode") === "edit"
+            ? ("edit" as const)
+            : ("create" as const),
+        originalSku: optionalTextValue(form, "originalSku"),
+        variant: hoseEndVariantSubmission(form),
+      };
+      await validateHoseEndVariantMaintenance(repository, input);
+      const imageOverrideReference = await uploadedMainImageReference(
+        env,
+        adminIdentity.id,
+        form,
+      );
+      if (hasMainImageUpload(form)) uploadedReference = imageOverrideReference;
+      const result = await maintainHoseEndVariant(repository, {
+        ...input,
+        imageOverrideReference: imageOverrideReference || null,
+      });
+      const query = new URLSearchParams({
+        identifier: result.sku,
+        mode: "manual",
+        productType: "hose_end",
+        saved: result.mode,
+        savedKind: "variant",
+      });
+      return redirect(`/admin/catalog/import?${query.toString()}`);
+    } catch (error) {
+      await discardUploadedMainImage(env, uploadedReference).catch(
+        () => undefined,
+      );
+      if (
+        error instanceof HoseEndMaintenanceRejected ||
+        error instanceof CatalogImageRejected
+      ) {
+        return {
+          formError: error.message,
+          validationFindings:
+            error instanceof HoseEndMaintenanceRejected ? error.findings : [],
+        };
+      }
+      return {
+        formError:
+          error instanceof Error
+            ? error.message
+            : "Hose End Variant was not saved / 压接接头子体未保存",
+        validationFindings: [],
+      };
+    }
+  }
   if (intent === "maintain_component") {
     const repository = createD1CatalogManualHoseRepository(env.DB);
     try {
@@ -755,8 +948,8 @@ export default function CatalogImport({
               className="catalog-manual-product-types"
             >
               <HoseMaintenanceActions />
+              <HoseEndMaintenanceActions />
               {[
-                ["hose_end", "压接接头"],
                 ["ferrule", "套筒"],
                 ["adapter", "过渡接头"],
                 ["quick_coupler", "快速接头"],
@@ -783,6 +976,17 @@ export default function CatalogImport({
                 selectedSeries={loaderData.selectedHoseSeries}
                 series={loaderData.hoseSeries}
                 variant={loaderData.manualHoseVariant}
+              />
+            ) : loaderData.productType === "hose_end" ? (
+              <CatalogHoseEndMaintenance
+                action={loaderData.manualAction}
+                findings={findings}
+                formError={formError}
+                requestedSku={loaderData.requestedSku}
+                saved={loaderData.hoseSaved}
+                selectedSeries={loaderData.selectedHoseEndSeries}
+                series={loaderData.hoseEndSeries}
+                variant={loaderData.manualHoseEndVariant}
               />
             ) : (
               <CatalogManualComponentForm

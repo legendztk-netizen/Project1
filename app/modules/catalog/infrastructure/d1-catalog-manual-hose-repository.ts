@@ -10,6 +10,13 @@ import type {
   SaveHoseSeriesOperation,
   SaveHoseVariantOperation,
 } from "../domain/catalog-hose-maintenance";
+import type {
+  CatalogHoseEndMaintenanceRepository,
+  HoseEndSeriesRecord,
+  HoseEndVariantRecord,
+  SaveHoseEndSeriesOperation,
+  SaveHoseEndVariantOperation,
+} from "../domain/catalog-hose-end-maintenance";
 import {
   reviewedAdapterImageReferences,
   reviewedFerruleImageReferences,
@@ -36,6 +43,8 @@ import type {
 } from "../domain/catalog-workbook";
 
 type ManualDraftOperation =
+  | SaveHoseEndSeriesOperation
+  | SaveHoseEndVariantOperation
   | SaveHoseSeriesOperation
   | SaveHoseVariantOperation
   | SaveManualComponentOperation
@@ -154,6 +163,46 @@ interface HoseVariantMaintenanceRow {
   weight_kg_m: number;
   working_bar: number;
   working_psi: number;
+}
+
+interface HoseEndSeriesMaintenanceRow {
+  angle: string;
+  gender: string;
+  interface_family: string;
+  interface_standard: string;
+  representative_image_reference: string;
+  sealing_form: string;
+  series_code: string;
+  series_name: string;
+  swivel_form: string;
+}
+
+interface HoseEndVariantMaintenanceRow {
+  catalog_publication_status: CatalogPublicationStatus;
+  coating: string;
+  competitor_part_number: string | null;
+  connection_dash: string;
+  cutoff_b_mm: number;
+  dimension_a_mm: number;
+  drawing_number: string | null;
+  drawing_revision: string | null;
+  fitting_series: string;
+  hex_1_mm: number;
+  hex_2_mm: number;
+  hose_tail_dash: string;
+  image_override_reference: string | null;
+  material: string;
+  max_working_bar: number;
+  minimum_bore_mm: number;
+  notes: string;
+  salt_spray_hours: number;
+  sku: string;
+  source: string | null;
+  supply_availability:
+    "available_for_quote" | "discontinued" | "temporarily_unavailable";
+  technical_data_status: TechnicalDataStatus;
+  thread: string;
+  unit_weight_g: number;
 }
 
 interface ComponentSalesRow {
@@ -2175,6 +2224,66 @@ const hoseSeriesSelect = `
     ON media.id = series.representative_media_version_id
   WHERE series.import_id = ?`;
 
+function toHoseEndSeriesRecord(
+  row: HoseEndSeriesMaintenanceRow,
+): HoseEndSeriesRecord {
+  return {
+    angle: row.angle,
+    gender: row.gender,
+    interfaceFamily: row.interface_family,
+    interfaceStandard: row.interface_standard,
+    representativeImageReference: row.representative_image_reference,
+    sealingForm: row.sealing_form,
+    seriesCode: row.series_code,
+    seriesName: row.series_name,
+    swivelForm: row.swivel_form,
+  };
+}
+
+function toHoseEndVariantRecord(
+  row: HoseEndVariantMaintenanceRow,
+): HoseEndVariantRecord {
+  return {
+    coating: row.coating,
+    competitorPartNumber: row.competitor_part_number,
+    connectionDash: row.connection_dash,
+    cutoffBMm: row.cutoff_b_mm,
+    dimensionAMm: row.dimension_a_mm,
+    drawingNumber: row.drawing_number,
+    drawingRevision: row.drawing_revision,
+    fittingSeries: row.fitting_series,
+    hex1Mm: row.hex_1_mm,
+    hex2Mm: row.hex_2_mm,
+    hoseTailDash: row.hose_tail_dash,
+    imageOverrideReference: row.image_override_reference,
+    lifecycleStatus: inferProductLifecycleStatus({
+      catalogPublicationStatus: row.catalog_publication_status,
+      supplyAvailability: row.supply_availability,
+    }),
+    material: row.material,
+    maxWorkingBar: row.max_working_bar,
+    minimumBoreMm: row.minimum_bore_mm,
+    notes: row.notes,
+    saltSprayHours: row.salt_spray_hours,
+    sku: row.sku,
+    source: row.source,
+    technicalDataStatus: row.technical_data_status,
+    thread: row.thread,
+    unitWeightG: row.unit_weight_g,
+  };
+}
+
+const hoseEndSeriesSelect = `
+  SELECT series.series_code, series.series_name, series.interface_family,
+         series.connection_standard AS interface_standard, series.gender,
+         series.swivel_form, series.angle, series.sealing_form,
+         COALESCE(media.approved_reference, 'media-version:' || media.id, '')
+           AS representative_image_reference
+  FROM catalog_hose_end_series series
+  INNER JOIN catalog_media_versions media
+    ON media.id = series.representative_media_version_id
+  WHERE series.import_id = ?`;
+
 function catalogSummaryStatement(database: D1Database, importId: string) {
   return database
     .prepare(
@@ -2183,11 +2292,292 @@ function catalogSummaryStatement(database: D1Database, importId: string) {
          summary_json,
          '$.skuCount', (SELECT COUNT(*) FROM catalog_skus WHERE import_id = ?1),
          '$.hoseSeriesCount', (SELECT COUNT(*) FROM catalog_hose_series WHERE import_id = ?1),
-         '$.hoseVariantCount', (SELECT COUNT(*) FROM catalog_hose_variants WHERE import_id = ?1)
+         '$.hoseVariantCount', (SELECT COUNT(*) FROM catalog_hose_variants WHERE import_id = ?1),
+         '$.hoseEndSeriesCount', (SELECT COUNT(*) FROM catalog_hose_end_series WHERE import_id = ?1),
+         '$.hoseEndCount', (SELECT COUNT(*) FROM catalog_hose_ends WHERE import_id = ?1)
        )
        WHERE id = ?1`,
     )
     .bind(importId);
+}
+
+function hoseEndSeriesMutationStatements(
+  database: D1Database,
+  operation: SaveHoseEndSeriesOperation,
+  draft: ReleaseRow,
+) {
+  const { series } = operation;
+  const statements: D1PreparedStatement[] = [
+    ...approvedMediaStatements(
+      database,
+      series.representativeImageReference,
+      operation.actorId,
+      operation.occurredAt,
+    ),
+  ];
+  if (operation.mode === "create") {
+    statements.push(
+      database
+        .prepare(
+          `INSERT INTO catalog_hose_end_series (
+             id, import_id, series_code, series_name, interface_family,
+             connection_standard, gender, swivel_form, angle, sealing_form,
+             representative_media_version_id
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          operation.seriesId,
+          draft.source_import_id,
+          series.seriesCode,
+          series.seriesName,
+          series.interfaceFamily,
+          series.interfaceStandard,
+          series.gender,
+          series.swivelForm,
+          series.angle,
+          series.sealingForm,
+          resolvedMediaVersionId(series.representativeImageReference),
+        ),
+    );
+  } else {
+    statements.push(
+      database
+        .prepare(
+          `UPDATE catalog_hose_end_series
+           SET series_name = ?, interface_family = ?, connection_standard = ?,
+               gender = ?, swivel_form = ?, angle = ?, sealing_form = ?,
+               representative_media_version_id = ?
+           WHERE import_id = ? AND series_code = ?`,
+        )
+        .bind(
+          series.seriesName,
+          series.interfaceFamily,
+          series.interfaceStandard,
+          series.gender,
+          series.swivelForm,
+          series.angle,
+          series.sealingForm,
+          resolvedMediaVersionId(series.representativeImageReference),
+          draft.source_import_id,
+          series.seriesCode,
+        ),
+    );
+  }
+  statements.push(
+    catalogSummaryStatement(database, draft.source_import_id),
+    database
+      .prepare(
+        `INSERT INTO admin_audit_events (
+           id, event_type, entity_type, entity_id,
+           actor_id, payload_json, occurred_at
+         ) VALUES (?, ?, 'catalog_hose_end_series', ?, ?, ?, ?)`,
+      )
+      .bind(
+        operation.auditEventId,
+        operation.mode === "create"
+          ? "catalog_manual.hose_end_series_created"
+          : "catalog_manual.hose_end_series_updated",
+        series.seriesCode,
+        operation.actorId,
+        JSON.stringify({
+          draftReleaseId: draft.id,
+          representativeImageReference: series.representativeImageReference,
+          seriesName: series.seriesName,
+        }),
+        operation.occurredAt,
+      ),
+  );
+  return statements;
+}
+
+function hoseEndVariantMutationStatements(
+  database: D1Database,
+  operation: SaveHoseEndVariantOperation,
+  draft: ReleaseRow,
+) {
+  const { lifecycle, series, variant } = operation;
+  const technicalDataStatus = variant.technicalDataStatus ?? "Pending";
+  const variantValues = [
+    variant.fittingSeries,
+    variant.competitorPartNumber,
+    series.interfaceFamily,
+    series.interfaceStandard,
+    series.gender,
+    series.swivelForm,
+    series.angle,
+    series.sealingForm,
+    variant.thread,
+    variant.connectionDash,
+    variant.hoseTailDash,
+    variant.material,
+    variant.coating,
+    variant.saltSprayHours,
+    variant.maxWorkingBar,
+    variant.dimensionAMm,
+    variant.cutoffBMm,
+    variant.hex1Mm,
+    variant.hex2Mm,
+    variant.minimumBoreMm,
+    variant.unitWeightG,
+    variant.drawingNumber,
+    variant.drawingRevision,
+    variant.source ?? "",
+    variant.notes,
+  ] as const;
+  const statements: D1PreparedStatement[] = [];
+  if (operation.mode === "create") {
+    statements.push(
+      database
+        .prepare(
+          `INSERT INTO catalog_skus (
+             id, import_id, sku, source_worksheet, product_type, hose_series,
+             catalog_publication_status, rfq_eligibility,
+             technical_data_status, supply_availability
+           ) VALUES (?, ?, ?, '02_压接接头', 'hose_end', NULL, ?, ?, ?, ?)`,
+        )
+        .bind(
+          operation.skuId,
+          draft.source_import_id,
+          variant.sku,
+          lifecycle.catalogPublicationStatus,
+          lifecycle.rfqEligibility,
+          technicalDataStatus,
+          lifecycle.supplyAvailability,
+        ),
+      database
+        .prepare(
+          `INSERT INTO catalog_hose_ends (
+             id, import_id, sku, fitting_series, competitor_part_number,
+             interface_family, connection_standard, gender, swivel_form,
+             angle, sealing_form, thread, connection_dash, hose_tail_dash,
+             material, coating, salt_spray_hours, max_working_bar,
+             dimension_a_mm, cutoff_b_mm, hex_1_mm, hex_2_mm,
+             minimum_bore_mm, unit_weight_g, drawing_number,
+             drawing_revision, source, notes
+           ) VALUES (?, ?, ?, ${Array.from({ length: 25 }, (_, index) => `?${index + 4}`).join(", ")})`,
+        )
+        .bind(
+          operation.variantId,
+          draft.source_import_id,
+          variant.sku,
+          ...variantValues,
+        ),
+    );
+  } else {
+    statements.push(
+      database
+        .prepare(
+          `UPDATE catalog_skus
+           SET catalog_publication_status = ?, rfq_eligibility = ?,
+               technical_data_status = ?, supply_availability = ?
+           WHERE import_id = ? AND sku = ? AND product_type = 'hose_end'`,
+        )
+        .bind(
+          lifecycle.catalogPublicationStatus,
+          lifecycle.rfqEligibility,
+          technicalDataStatus,
+          lifecycle.supplyAvailability,
+          draft.source_import_id,
+          variant.sku,
+        ),
+      database
+        .prepare(
+          `UPDATE catalog_hose_ends
+           SET fitting_series = ?, competitor_part_number = ?,
+               interface_family = ?, connection_standard = ?, gender = ?,
+               swivel_form = ?, angle = ?, sealing_form = ?, thread = ?,
+               connection_dash = ?, hose_tail_dash = ?, material = ?,
+               coating = ?, salt_spray_hours = ?, max_working_bar = ?,
+               dimension_a_mm = ?, cutoff_b_mm = ?, hex_1_mm = ?, hex_2_mm = ?,
+               minimum_bore_mm = ?, unit_weight_g = ?, drawing_number = ?,
+               drawing_revision = ?, source = ?, notes = ?
+           WHERE import_id = ? AND sku = ?`,
+        )
+        .bind(...variantValues, draft.source_import_id, variant.sku),
+      database
+        .prepare(
+          `UPDATE catalog_sales_offers
+           SET catalog_publication_status = ?, rfq_eligibility = ?,
+               technical_data_status = ?
+           WHERE import_id = ? AND base_sku = ?`,
+        )
+        .bind(
+          lifecycle.catalogPublicationStatus,
+          lifecycle.rfqEligibility,
+          technicalDataStatus,
+          draft.source_import_id,
+          variant.sku,
+        ),
+    );
+  }
+  if (operation.imageOverrideReference) {
+    statements.push(
+      ...approvedMediaStatements(
+        database,
+        operation.imageOverrideReference,
+        operation.actorId,
+        operation.occurredAt,
+      ),
+      database
+        .prepare(
+          `INSERT INTO catalog_product_main_images (
+             id, import_id, sku, media_version_id, assigned_at, assigned_by,
+             assignment_kind
+           ) VALUES (?, ?, ?, ?, ?, ?, 'override')
+           ON CONFLICT(import_id, sku) DO UPDATE SET
+             media_version_id = excluded.media_version_id,
+             assigned_at = excluded.assigned_at,
+             assigned_by = excluded.assigned_by,
+             assignment_kind = 'override'`,
+        )
+        .bind(
+          operation.mediaAssignmentId,
+          draft.source_import_id,
+          variant.sku,
+          resolvedMediaVersionId(operation.imageOverrideReference),
+          operation.occurredAt,
+          operation.actorId,
+        ),
+    );
+  } else {
+    statements.push(
+      database
+        .prepare(
+          `DELETE FROM catalog_product_main_images
+           WHERE import_id = ? AND sku = ?`,
+        )
+        .bind(draft.source_import_id, variant.sku),
+    );
+  }
+  statements.push(
+    catalogSummaryStatement(database, draft.source_import_id),
+    database
+      .prepare(
+        `INSERT INTO admin_audit_events (
+           id, event_type, entity_type, entity_id,
+           actor_id, payload_json, occurred_at
+         ) VALUES (?, ?, 'catalog_sku', ?, ?, ?, ?)`,
+      )
+      .bind(
+        operation.auditEventId,
+        operation.mode === "create"
+          ? "catalog_manual.hose_end_variant_created"
+          : "catalog_manual.hose_end_variant_updated",
+        variant.sku,
+        operation.actorId,
+        JSON.stringify({
+          draftReleaseId: draft.id,
+          fittingSeries: variant.fittingSeries,
+          imageOverrideReference: operation.imageOverrideReference,
+          lifecycleStatus: inferProductLifecycleStatus({
+            catalogPublicationStatus: lifecycle.catalogPublicationStatus,
+            supplyAvailability: lifecycle.supplyAvailability,
+          }),
+        }),
+        operation.occurredAt,
+      ),
+  );
+  return statements;
 }
 
 function hoseSeriesMutationStatements(
@@ -2484,7 +2874,8 @@ function hoseVariantMutationStatements(
 
 export function createD1CatalogManualHoseRepository(
   database: D1Database,
-): CatalogHoseMaintenanceRepository &
+): CatalogHoseEndMaintenanceRepository &
+  CatalogHoseMaintenanceRepository &
   CatalogManualComponentRepository &
   CatalogManualHoseRepository {
   return {
@@ -2598,6 +2989,53 @@ export function createD1CatalogManualHoseRepository(
       return row ? toManualHoseRecord(row, release) : null;
     },
 
+    async findHoseEndSeries(seriesCode) {
+      const release = await findMaintenanceRelease(database);
+      if (!release) return null;
+      const row = await database
+        .prepare(`${hoseEndSeriesSelect} AND series.series_code = ?`)
+        .bind(release.source_import_id, seriesCode.trim().toUpperCase())
+        .first<HoseEndSeriesMaintenanceRow>();
+      return row ? toHoseEndSeriesRecord(row) : null;
+    },
+
+    async findHoseEndVariant(sku) {
+      const release = await findMaintenanceRelease(database);
+      if (!release) return null;
+      const row = await database
+        .prepare(
+          `SELECT variant.sku, variant.fitting_series, variant.thread,
+                  variant.connection_dash, variant.hose_tail_dash,
+                  variant.material, variant.coating, variant.salt_spray_hours,
+                  variant.max_working_bar, variant.dimension_a_mm,
+                  variant.cutoff_b_mm, variant.hex_1_mm, variant.hex_2_mm,
+                  variant.minimum_bore_mm, variant.unit_weight_g,
+                  variant.competitor_part_number, variant.drawing_number,
+                  variant.drawing_revision, variant.source, variant.notes,
+                  product.catalog_publication_status,
+                  product.technical_data_status,
+                  product.supply_availability,
+                  CASE WHEN image.assignment_kind = 'override'
+                    THEN COALESCE(media.approved_reference,
+                                  'media-version:' || media.id)
+                    ELSE NULL
+                  END AS image_override_reference
+           FROM catalog_hose_ends variant
+           INNER JOIN catalog_skus product
+             ON product.import_id = variant.import_id
+            AND product.sku = variant.sku
+           LEFT JOIN catalog_product_main_images image
+             ON image.import_id = variant.import_id
+            AND image.sku = variant.sku
+           LEFT JOIN catalog_media_versions media ON media.id = image.media_version_id
+           WHERE variant.import_id = ? AND variant.sku = ?
+             AND product.product_type = 'hose_end'`,
+        )
+        .bind(release.source_import_id, sku.trim().toUpperCase())
+        .first<HoseEndVariantMaintenanceRow>();
+      return row ? toHoseEndVariantRecord(row) : null;
+    },
+
     async findHoseSeries(seriesCode) {
       const release = await findMaintenanceRelease(database);
       if (!release) return null;
@@ -2656,6 +3094,123 @@ export function createD1CatalogManualHoseRepository(
         .bind(release.source_import_id)
         .all<HoseSeriesRow>();
       return rows.results.map(toHoseSeriesRecord);
+    },
+
+    async listHoseEndSeries() {
+      const release = await findMaintenanceRelease(database);
+      if (!release) return [];
+      const rows = await database
+        .prepare(`${hoseEndSeriesSelect} ORDER BY series.series_code`)
+        .bind(release.source_import_id)
+        .all<HoseEndSeriesMaintenanceRow>();
+      return rows.results.map(toHoseEndSeriesRecord);
+    },
+
+    async saveHoseEndSeries(operation) {
+      let draft = await findCurrentDraft(database);
+      const active = draft ? null : await findActiveRelease(database);
+      if (
+        mediaVersionIdFromReference(
+          operation.series.representativeImageReference,
+        )
+      ) {
+        const media = await database
+          .prepare(`SELECT id FROM catalog_media_versions WHERE id = ?`)
+          .bind(
+            resolvedMediaVersionId(
+              operation.series.representativeImageReference,
+            ),
+          )
+          .first<{ id: string }>();
+        if (!media) {
+          throw new Error(
+            "Uploaded representative image was not found / 未找到已上传的系列代表图",
+          );
+        }
+      }
+      const statements = draft
+        ? []
+        : draftCreationStatements(database, operation, active);
+      draft ??= {
+        id: operation.draftReleaseId,
+        release_number: operation.draftReleaseNumber,
+        source_import_id: operation.draftImportId,
+        status: "draft",
+      };
+      if (operation.mode === "edit") {
+        const existing = await database
+          .prepare(
+            `SELECT series_code FROM catalog_hose_end_series
+             WHERE import_id = ? AND series_code = ?`,
+          )
+          .bind(draft.source_import_id, operation.series.seriesCode)
+          .first<{ series_code: string }>();
+        if (!existing && statements.length === 0) {
+          throw new Error(
+            "Hose End Series is not present in the current draft / 当前草稿中不存在该压接接头系列",
+          );
+        }
+      }
+      await database.batch([
+        ...statements,
+        ...hoseEndSeriesMutationStatements(database, operation, draft),
+      ]);
+      return {
+        draftReleaseId: draft.id,
+        mode: operation.mode === "create" ? "created" : "updated",
+        seriesCode: operation.series.seriesCode,
+      };
+    },
+
+    async saveHoseEndVariant(operation) {
+      let draft = await findCurrentDraft(database);
+      const active = draft ? null : await findActiveRelease(database);
+      if (
+        operation.imageOverrideReference &&
+        mediaVersionIdFromReference(operation.imageOverrideReference)
+      ) {
+        const media = await database
+          .prepare(`SELECT id FROM catalog_media_versions WHERE id = ?`)
+          .bind(resolvedMediaVersionId(operation.imageOverrideReference))
+          .first<{ id: string }>();
+        if (!media) {
+          throw new Error(
+            "Uploaded image override was not found / 未找到已上传的子体覆盖图",
+          );
+        }
+      }
+      const statements = draft
+        ? []
+        : draftCreationStatements(database, operation, active);
+      draft ??= {
+        id: operation.draftReleaseId,
+        release_number: operation.draftReleaseNumber,
+        source_import_id: operation.draftImportId,
+        status: "draft",
+      };
+      if (operation.mode === "edit") {
+        const existing = await database
+          .prepare(
+            `SELECT sku FROM catalog_skus
+             WHERE import_id = ? AND sku = ? AND product_type = 'hose_end'`,
+          )
+          .bind(draft.source_import_id, operation.variant.sku)
+          .first<{ sku: string }>();
+        if (!existing && statements.length === 0) {
+          throw new Error(
+            "Hose End Variant is not present in the current draft / 当前草稿中不存在该压接接头子体",
+          );
+        }
+      }
+      await database.batch([
+        ...statements,
+        ...hoseEndVariantMutationStatements(database, operation, draft),
+      ]);
+      return {
+        draftReleaseId: draft.id,
+        mode: operation.mode === "create" ? "created" : "updated",
+        sku: operation.variant.sku,
+      };
     },
 
     async saveHoseSeries(operation) {
