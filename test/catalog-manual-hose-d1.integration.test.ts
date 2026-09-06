@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { maintainManualHose } from "../app/modules/catalog/domain/catalog-manual-hose";
 import { createD1CatalogManualHoseRepository } from "../app/modules/catalog/infrastructure/d1-catalog-manual-hose-repository";
+import { createD1CatalogPublicationRepository } from "../app/modules/catalog/infrastructure/d1-catalog-publication-repository";
 
 const projectRoot = join(import.meta.dirname, "..");
 const temporaryDirectories: string[] = [];
@@ -156,6 +157,17 @@ describe("D1 manual Hose maintenance", () => {
                    '2026-09-04T00:00:00.000Z', 'test')`,
         ),
         database.prepare(
+          `INSERT INTO catalog_media_versions
+             (id, lineage_id, version, source_kind, approved_reference,
+              master_object_key, storefront_object_key, thumbnail_object_key,
+              content_hash, mime_type, width, height, created_at, created_by)
+           VALUES ('uploaded-v2', 'approved:hose-series:601R1', 2,
+                   'uploaded', NULL, 'catalog/master/v2.png',
+                   'catalog/storefront/v2.webp', 'catalog/thumb/v2.webp',
+                   'sha256-v2', 'image/webp', 1200, 800,
+                   '2026-09-04T00:30:00.000Z', 'owner-1')`,
+        ),
+        database.prepare(
           `INSERT INTO catalog_skus (
              id, import_id, sku, source_worksheet, product_type, hose_series,
              catalog_publication_status, rfq_eligibility,
@@ -172,6 +184,14 @@ describe("D1 manual Hose maintenance", () => {
            ) VALUES ('active-series', 'active-import', '601R1', '601R1',
                      'SAE 100R1AT', 'EN 853 1SN', -40, 100,
                      'approved-v1:hose-series:601R1')`,
+        ),
+        database.prepare(
+          `INSERT INTO catalog_product_main_images (
+             id, import_id, sku, media_version_id, assigned_at, assigned_by,
+             assignment_kind
+           ) VALUES ('active-image', 'active-import', '601R1_001',
+                     'approved-v1:hose-series:601R1',
+                     '2026-09-04T00:00:00.000Z', 'test', 'inherited')`,
         ),
         database.prepare(
           `INSERT INTO catalog_hose_variants (
@@ -257,12 +277,15 @@ describe("D1 manual Hose maintenance", () => {
           generateId: () => ids.shift() ?? "unexpected",
           now: () => new Date("2026-09-04T01:00:00.000Z"),
           ...validSubmission(4.5),
+          mainImageReference: "media-version:uploaded-v2",
+          replaceSharedImageFrom: "hose-series:601R1",
         },
       );
 
       expect(result).toMatchObject({
         draftReleaseId: "draft-release",
         mode: "updated",
+        imageAffectedSkus: ["601R1_001"],
         sku: "601R1_001",
       });
       expect(
@@ -311,6 +334,64 @@ describe("D1 manual Hose maintenance", () => {
         release: { id: "draft-release", status: "draft" },
         salesOffer: { referencePriceUsd: 4.5 },
       });
+
+      const imageAssignments = await database
+        .prepare(
+          `SELECT release.id AS release_id, image.media_version_id
+           FROM catalog_releases release
+           INNER JOIN catalog_product_main_images image
+             ON image.import_id = release.source_import_id
+           WHERE image.sku = '601R1_001'
+           ORDER BY release.id`,
+        )
+        .all();
+      expect(imageAssignments.results).toEqual([
+        {
+          release_id: "active-release",
+          media_version_id: "approved-v1:hose-series:601R1",
+        },
+        { release_id: "draft-release", media_version_id: "uploaded-v2" },
+      ]);
+      expect(
+        await database
+          .prepare(
+            `SELECT release.id AS release_id,
+                    series.representative_media_version_id AS media_version_id
+             FROM catalog_releases release
+             INNER JOIN catalog_hose_series series
+               ON series.import_id = release.source_import_id
+             WHERE series.series_code = '601R1'
+             ORDER BY release.id`,
+          )
+          .all(),
+      ).toMatchObject({ results: imageAssignments.results });
+      const imagePreview =
+        await createD1CatalogPublicationRepository(
+          database,
+        ).findPublicationPreview("draft-release");
+      expect(imagePreview?.images.changes).toContain("601R1_001");
+      const imageAudit = await database
+        .prepare(
+          `SELECT payload_json FROM admin_audit_events
+           WHERE event_type = 'catalog_media.shared_image_replaced'
+             AND entity_id = 'uploaded-v2'`,
+        )
+        .first<{ payload_json: string }>();
+      expect(JSON.parse(imageAudit?.payload_json ?? "{}")).toEqual({
+        affectedSkus: ["601R1_001"],
+        draftReleaseId: "draft-release",
+        fromReference: "hose-series:601R1",
+        toReference: "media-version:uploaded-v2",
+      });
+      expect(
+        await database
+          .prepare(
+            `SELECT version FROM catalog_media_versions
+             WHERE lineage_id = 'approved:hose-series:601R1'
+             ORDER BY version`,
+          )
+          .all(),
+      ).toMatchObject({ results: [{ version: 1 }, { version: 2 }] });
     } finally {
       await platform.dispose();
     }

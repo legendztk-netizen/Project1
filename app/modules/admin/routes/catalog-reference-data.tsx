@@ -36,7 +36,7 @@ function textValue(form: FormData, key: string) {
 
 function requiredText(form: FormData, key: string) {
   const value = textValue(form, key);
-  if (!value) throw new Error(`${key} is required`);
+  if (!value) throw new Error(`缺少必填字段：${key}`);
   return value;
 }
 
@@ -45,7 +45,7 @@ function normalizedCode(form: FormData, key: string) {
     .toUpperCase()
     .replaceAll(/[^A-Z0-9]+/g, "_")
     .replaceAll(/^_+|_+$/g, "");
-  if (!value) throw new Error(`${key} is invalid`);
+  if (!value) throw new Error(`字段格式无效：${key}`);
   return value;
 }
 
@@ -54,7 +54,7 @@ function nullablePrice(form: FormData, key: string) {
   if (!raw) return null;
   const value = Number(raw);
   if (!Number.isFinite(value) || value < 0)
-    throw new Error(`${key} must be a non-negative USD amount`);
+    throw new Error(`${key} 必须是非负的美元金额`);
   return value;
 }
 
@@ -66,7 +66,7 @@ function presets(form: FormData) {
     values.length === 0 ||
     values.some((value) => !Number.isInteger(value) || value < 0 || value > 359)
   ) {
-    throw new Error("Clocking presets must be whole degrees from 000 to 359");
+    throw new Error("时钟角预设必须是 000 至 359 的整数角度");
   }
   return [...new Set(values)];
 }
@@ -99,7 +99,7 @@ function mutationFromForm(form: FormData) {
   if (intent === "save_measurement_method") {
     const code = requiredText(form, "methodCode").toUpperCase();
     if (!isMeasurementMethodCode(code)) {
-      throw new Error("Method must be M01-M07; M08 is reserved for Clocking");
+      throw new Error("测量方法必须为 M01-M07；M08 专用于时钟角");
     }
     return {
       entryKey: code,
@@ -119,14 +119,14 @@ function mutationFromForm(form: FormData) {
     const endBClassCode = requiredText(form, "endBClassCode");
     const guidanceStatus = requiredText(form, "guidanceStatus");
     if (guidanceStatus !== "guided" && guidanceStatus !== "manual_quote_only") {
-      throw new Error("Guidance status is invalid");
+      throw new Error("引导状态无效");
     }
     const methodCode =
       guidanceStatus === "guided"
         ? requiredText(form, "methodCode").toUpperCase()
         : null;
     if (methodCode !== null && !isMeasurementMethodCode(methodCode)) {
-      throw new Error("Guided mappings require a valid measurement method");
+      throw new Error("引导映射必须选择有效的测量方法");
     }
     const entryKey = `${endAClassCode}:${endBClassCode}`;
     return {
@@ -144,7 +144,7 @@ function mutationFromForm(form: FormData) {
   if (intent === "save_clocking") {
     const tolerance = Number(requiredText(form, "standardToleranceDegrees"));
     if (!Number.isFinite(tolerance) || tolerance <= 0)
-      throw new Error("Standard Clocking tolerance must be positive");
+      throw new Error("标准时钟角公差必须大于零");
     return {
       entryKey: "M08",
       payload: {
@@ -173,7 +173,7 @@ function mutationFromForm(form: FormData) {
       availability !== "temporarily_unavailable" &&
       availability !== "discontinued"
     ) {
-      throw new Error("Installed Protection availability is invalid");
+      throw new Error("安装防护件的供应状态无效");
     }
     const isNoAdditionalProtection =
       code === "NONE" || textValue(form, "isNoAdditionalProtection") === "true";
@@ -209,7 +209,7 @@ function mutationFromForm(form: FormData) {
     const hoseSeries = textValue(form, "hoseSeries") || null;
     const applicationCode = textValue(form, "applicationCode") || null;
     if (hoseSeries === null && applicationCode === null)
-      throw new Error("A protection rule needs a Hose Series or application");
+      throw new Error("防护规则必须指定胶管系列或应用场景");
     const entryKey = normalizedCode(form, "ruleCode");
     return {
       entryKey,
@@ -240,7 +240,7 @@ function mutationFromForm(form: FormData) {
       registryType: "assembly_estimate_schedule" as const,
     };
   }
-  throw new Error("Unknown configurator registry command");
+  throw new Error("未知的总成参数配置操作");
 }
 
 export async function loader({ context, request }: Route.LoaderArgs) {
@@ -271,8 +271,15 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 export async function action({ context, request }: Route.ActionArgs) {
   const { adminIdentity, env } = requireAdminRequestContext(context);
   if (request.method !== "POST")
-    throw new Response("Method not allowed", { status: 405 });
+    throw new Response("不允许使用此请求方法", { status: 405 });
   const form = await request.formData();
+  const auditContext = {
+    ipAddress: request.headers.get("cf-connecting-ip") ?? "local",
+    requestCorrelationId:
+      request.headers.get("x-request-id") ??
+      request.headers.get("cf-ray") ??
+      `local-${crypto.randomUUID()}`,
+  };
   try {
     const mutation = mutationFromForm(form);
     const repository = createD1ConfiguratorReferenceRepository(env.DB);
@@ -283,7 +290,7 @@ export async function action({ context, request }: Route.ActionArgs) {
         mutation.registryType !== "installed_protection" &&
         mutation.registryType !== "measurement_method"
       ) {
-        throw new Error("This setting cannot be changed globally");
+        throw new Error("此设置不能作为全局设置修改");
       }
       const expectedRecordVersion = Number(
         requiredText(form, "expectedRecordVersion"),
@@ -292,14 +299,16 @@ export async function action({ context, request }: Route.ActionArgs) {
         !Number.isInteger(expectedRecordVersion) ||
         expectedRecordVersion < 0
       ) {
-        throw new Error("The global setting version is invalid");
+        throw new Error("全局设置版本无效");
       }
       await repository.saveGlobalEntry({
         actorId: adminIdentity.id,
         auditEventId: crypto.randomUUID(),
         entryKey: mutation.entryKey,
         expectedRecordVersion,
+        ipAddress: auditContext.ipAddress,
         payload: mutation.payload,
+        requestCorrelationId: auditContext.requestCorrelationId,
         registryType: mutation.registryType,
         updatedAt: new Date().toISOString(),
       });
@@ -310,21 +319,21 @@ export async function action({ context, request }: Route.ActionArgs) {
 
     const releaseId = requiredText(form, "releaseId");
     const snapshot = await repository.findDraftSnapshot(releaseId);
-    if (!snapshot) throw new Error("Draft Catalog Release was not found");
+    if (!snapshot) throw new Error("未找到目录草稿版本");
 
     if (mutation.registryType === "endpoint_assignment") {
       const hoseEndSku = String(mutation.payload.hoseEndSku);
       const endpointClassCode = String(mutation.payload.endpointClassCode);
       const hoseEnds = await repository.listDraftHoseEnds(releaseId);
       if (!hoseEnds.some((hoseEnd) => hoseEnd.sku === hoseEndSku)) {
-        throw new Error("Hose End SKU is not part of this draft release");
+        throw new Error("接头 SKU 不属于此目录草稿版本");
       }
       if (
         !snapshot.endpointClasses.some(
           (endpointClass) => endpointClass.code === endpointClassCode,
         )
       ) {
-        throw new Error("Measurement Endpoint Class is not registered");
+        throw new Error("测量端点类别尚未登记");
       }
     }
 
@@ -338,7 +347,7 @@ export async function action({ context, request }: Route.ActionArgs) {
             (endpointClass) => endpointClass.code === classCode,
           )
         ) {
-          throw new Error(`Measurement Endpoint Class ${classCode} is missing`);
+          throw new Error(`缺少测量端点类别 ${classCode}`);
         }
       }
       if (
@@ -347,7 +356,7 @@ export async function action({ context, request }: Route.ActionArgs) {
           (method) => method.code === methodCode,
         )
       ) {
-        throw new Error(`Measurement Method ${String(methodCode)} is missing`);
+        throw new Error(`缺少测量方法 ${String(methodCode)}`);
       }
     }
 
@@ -355,7 +364,9 @@ export async function action({ context, request }: Route.ActionArgs) {
       actorId: adminIdentity.id,
       auditEventId: crypto.randomUUID(),
       ...mutation,
+      ipAddress: auditContext.ipAddress,
       releaseId,
+      requestCorrelationId: auditContext.requestCorrelationId,
       updatedAt: new Date().toISOString(),
     });
     return redirect(
@@ -363,8 +374,7 @@ export async function action({ context, request }: Route.ActionArgs) {
     );
   } catch (error) {
     return {
-      formError:
-        error instanceof Error ? error.message : "Reference data was not saved",
+      formError: error instanceof Error ? error.message : "总成参数未保存",
     };
   }
 }
@@ -399,14 +409,14 @@ function GlobalRegistryForm({
           onClick={onCancel}
           type="button"
         >
-          Cancel
+          取消
         </button>
         <button
           className="button button-primary"
           disabled={saving}
           type="submit"
         >
-          <Save size={16} /> {saving ? "Applying..." : "Apply globally"}
+          <Save size={16} /> {saving ? "正在应用…" : "应用全局设置"}
         </button>
       </div>
     </Form>
@@ -450,7 +460,7 @@ function ReferenceDialog({
         <header>
           <h2 id="reference-dialog-title">{title}</h2>
           <button
-            aria-label="Close editor"
+            aria-label="关闭编辑器"
             className="icon-button"
             onClick={onClose}
             ref={closeRef}
@@ -522,13 +532,13 @@ function ScheduleEditor({
   schedule: AssemblyEstimateSchedule | null;
 }) {
   return (
-    <ReferenceDialog onClose={onClose} title="编辑 Assembly service price">
+    <ReferenceDialog onClose={onClose} title="编辑总成服务参考价">
       <GlobalRegistryForm
         expectedRecordVersion={schedule?.recordVersion ?? 0}
         intent="save_estimate_schedule"
         onCancel={onClose}
       >
-        <Field label="Base assembly service price USD (optional)">
+        <Field label="总成基础服务价 USD（可选）">
           <input
             defaultValue={schedule?.assemblyServicePriceUsd ?? ""}
             min="0"
@@ -537,7 +547,7 @@ function ScheduleEditor({
             type="number"
           />
         </Field>
-        <Field label="Service price per started ft USD (optional)">
+        <Field label="每起算英尺服务价 USD（可选）">
           <input
             defaultValue={schedule?.assemblyServicePricePerStartedFootUsd ?? ""}
             min="0"
@@ -572,7 +582,7 @@ function MeasurementMethodEditor({
     >
       {editing ? (
         <label className="reference-dialog-selector">
-          <span>Measurement method</span>
+          <span>测量方法</span>
           <select
             onChange={(event) => {
               const code = event.currentTarget.value;
@@ -594,7 +604,7 @@ function MeasurementMethodEditor({
         key={editing ? selectedCode : "new"}
         onCancel={onClose}
       >
-        <Field label="Method code">
+        <Field label="方法代码">
           {editing ? (
             <input name="methodCode" readOnly value={method?.code ?? ""} />
           ) : (
@@ -606,21 +616,21 @@ function MeasurementMethodEditor({
             />
           )}
         </Field>
-        <Field label="Display name">
+        <Field label="显示名称">
           <input
             defaultValue={editing ? (method?.displayName ?? "") : ""}
             name="displayName"
             required
           />
         </Field>
-        <Field label="Endpoint rule">
+        <Field label="端点规则">
           <input
             defaultValue={editing ? (method?.endpointRule ?? "") : ""}
             name="endpointRule"
             required
           />
         </Field>
-        <Field label="Diagram asset key">
+        <Field label="示意图资源键">
           <input
             defaultValue={editing ? (method?.diagramAssetKey ?? "") : ""}
             name="diagramAssetKey"
@@ -628,7 +638,7 @@ function MeasurementMethodEditor({
             required
           />
         </Field>
-        <Field label="Diagram asset version">
+        <Field label="示意图资源版本">
           <input
             defaultValue={
               editing ? (method?.diagramAssetVersion ?? "1.0.0") : "1.0.0"
@@ -637,7 +647,7 @@ function MeasurementMethodEditor({
             required
           />
         </Field>
-        <Field label="Overlay version">
+        <Field label="标注层版本">
           <input
             defaultValue={
               editing ? (method?.overlayVersion ?? "1.0.0") : "1.0.0"
@@ -659,20 +669,20 @@ function ClockingEditor({
   onClose: () => void;
 }) {
   return (
-    <ReferenceDialog onClose={onClose} title="编辑 M08 Clocking">
+    <ReferenceDialog onClose={onClose} title="编辑 M08 时钟角规则">
       <GlobalRegistryForm
         expectedRecordVersion={clocking?.recordVersion ?? 0}
         intent="save_clocking"
         onCancel={onClose}
       >
-        <Field label="Preset degrees">
+        <Field label="预设角度">
           <input
             defaultValue={clocking?.presets.join(", ") ?? ""}
             name="presets"
             required
           />
         </Field>
-        <Field label="Standard tolerance (degrees)">
+        <Field label="标准公差（度）">
           <input
             defaultValue={clocking?.standardToleranceDegrees ?? 3}
             min="0.1"
@@ -682,7 +692,7 @@ function ClockingEditor({
             type="number"
           />
         </Field>
-        <Field label="Renderer version">
+        <Field label="渲染器版本">
           <input
             defaultValue={clocking?.rendererVersion ?? "1.0.0"}
             name="rendererVersion"
@@ -711,11 +721,11 @@ function ProtectionEditor({
   return (
     <ReferenceDialog
       onClose={onClose}
-      title={editing ? "编辑 Assembly option" : "新增 Assembly option"}
+      title={editing ? "编辑总成选项" : "新增总成选项"}
     >
       {editing ? (
         <label className="reference-dialog-selector">
-          <span>Installed Protection</span>
+          <span>安装防护件</span>
           <select
             onChange={(event) => setSelectedCode(event.currentTarget.value)}
             value={selectedCode}
@@ -734,7 +744,7 @@ function ProtectionEditor({
         key={editing ? selectedCode : "new"}
         onCancel={onClose}
       >
-        <Field label="Code">
+        <Field label="代码">
           <input
             name="protectionCode"
             readOnly={editing}
@@ -742,26 +752,24 @@ function ProtectionEditor({
             value={editing ? (option?.code ?? "") : undefined}
           />
         </Field>
-        <Field label="Customer option">
+        <Field label="客户选项">
           <input
             defaultValue={editing ? (option?.publicName ?? "") : ""}
             name="publicName"
             required
           />
         </Field>
-        <Field label="Availability">
+        <Field label="供应状态">
           <select
             defaultValue={editing ? option?.availability : "available"}
             name="availability"
           >
-            <option value="available">Available</option>
-            <option value="temporarily_unavailable">
-              Temporarily Unavailable
-            </option>
-            <option value="discontinued">Discontinued</option>
+            <option value="available">可用</option>
+            <option value="temporarily_unavailable">暂不可用</option>
+            <option value="discontinued">已停产</option>
           </select>
         </Field>
-        <Field label="Base price USD (optional)">
+        <Field label="基础价 USD（可选）">
           <input
             defaultValue={editing ? (option?.referenceBasePriceUsd ?? "") : ""}
             min="0"
@@ -770,7 +778,7 @@ function ProtectionEditor({
             type="number"
           />
         </Field>
-        <Field label="Material price per exact ft USD (optional)">
+        <Field label="每实际英尺材料价 USD（可选）">
           <input
             defaultValue={
               editing ? (option?.referenceMaterialPricePerFootUsd ?? "") : ""
@@ -781,7 +789,7 @@ function ProtectionEditor({
             type="number"
           />
         </Field>
-        <Field label="Installation price per started ft USD (optional)">
+        <Field label="每起算英尺安装价 USD（可选）">
           <input
             defaultValue={
               editing
@@ -826,13 +834,13 @@ export default function CatalogReferenceData({
         <AdminNavigation active="configurator" />
         <main className="reference-data-page">
           <Link className="button button-secondary" to="/admin">
-            <ArrowLeft size={17} /> Back to overview
+            <ArrowLeft size={17} /> 返回总览
           </Link>
           <div className="empty-state">
             <Database size={24} />
             <div>
-              <strong>No editable Catalog Release</strong>
-              <p>Import a workbook to create a draft release first.</p>
+              <strong>没有可编辑的目录版本</strong>
+              <p>请先导入工作簿并创建目录草稿版本。</p>
             </div>
           </div>
         </main>
@@ -848,30 +856,27 @@ export default function CatalogReferenceData({
       <main className="reference-data-page">
         <div className="diagnostic-toolbar">
           <Link className="button button-secondary" to="/admin">
-            <ArrowLeft size={17} /> Back to overview
+            <ArrowLeft size={17} /> 返回总览
           </Link>
           <Link
             className="button button-secondary"
             to="/assembly-measurement-guide"
           >
-            <Ruler size={17} /> View customer measurement guide
+            <Ruler size={17} /> 查看客户测量指南
           </Link>
         </div>
         <header className="catalog-review-header">
           <div>
-            <span className="eyebrow">Global configurator rules</span>
+            <span className="eyebrow">全局配置器规则</span>
             <h1>总成参数配置</h1>
-            <p>
-              These settings apply across the customer configurator and future
-              product catalog releases.
-            </p>
+            <p>这些设置适用于客户配置器及后续所有产品目录版本。</p>
           </div>
-          <span className="release-status active">Global</span>
+          <span className="release-status active">全局</span>
         </header>
 
         {loaderData.saved ? (
           <p className="catalog-update-success" role="status">
-            <ShieldCheck size={17} /> Saved{" "}
+            <ShieldCheck size={17} /> 已保存{" "}
             {loaderData.saved.replaceAll("_", " ")}.
           </p>
         ) : null}
@@ -884,35 +889,32 @@ export default function CatalogReferenceData({
         <section className="reference-section">
           <div className="reference-section-heading">
             <div>
-              <span className="eyebrow">Admin-only pricing</span>
-              <h2>Assembly service price</h2>
-              <p>
-                Component prices come from Sales Offers. These service amounts
-                are global reference-price inputs.
-              </p>
+              <span className="eyebrow">仅管理员可见的定价</span>
+              <h2>总成服务参考价</h2>
+              <p>零部件价格来自销售报价；以下服务金额作为全局参考价输入。</p>
             </div>
             <SectionActions onEdit={() => setEditor("schedule")} />
           </div>
           <dl className="reference-readonly-values">
             <div>
-              <dt>Base service price</dt>
+              <dt>基础服务价</dt>
               <dd>
                 {schedule?.assemblyServicePriceUsd === null || !schedule
-                  ? "Not supplied"
+                  ? "未提供"
                   : `$${schedule.assemblyServicePriceUsd.toFixed(2)}`}
               </dd>
             </div>
             <div>
-              <dt>Per started ft</dt>
+              <dt>每起算英尺</dt>
               <dd>
                 {schedule?.assemblyServicePricePerStartedFootUsd === null ||
                 !schedule
-                  ? "Not supplied"
+                  ? "未提供"
                   : `$${schedule.assemblyServicePricePerStartedFootUsd.toFixed(2)}`}
               </dd>
             </div>
             <div>
-              <dt>Current version</dt>
+              <dt>当前版本</dt>
               <dd>v{schedule?.recordVersion ?? 0}</dd>
             </div>
           </dl>
@@ -922,10 +924,10 @@ export default function CatalogReferenceData({
           <div className="reference-section-heading">
             <div>
               <span className="eyebrow">M01-M07</span>
-              <h2>Measurement Methods</h2>
+              <h2>测量方法</h2>
               <p>
-                Customers review all methods and select the one they used. Not
-                Sure routes the assembly to manual review.
+                客户查看全部方法并选择实际使用的方法；选择 Not
+                Sure（不确定）时转人工审核。
               </p>
             </div>
             <SectionActions
@@ -937,11 +939,11 @@ export default function CatalogReferenceData({
             <table>
               <thead>
                 <tr>
-                  <th>Method</th>
-                  <th>Name</th>
-                  <th>Diagram</th>
-                  <th>Asset version</th>
-                  <th>Version</th>
+                  <th>方法</th>
+                  <th>名称</th>
+                  <th>示意图</th>
+                  <th>资源版本</th>
+                  <th>记录版本</th>
                 </tr>
               </thead>
               <tbody>
@@ -963,30 +965,28 @@ export default function CatalogReferenceData({
           <div className="reference-section-heading">
             <div>
               <span className="eyebrow">M08</span>
-              <h2>Clocking Convention</h2>
+              <h2>时钟角规则</h2>
               <p>
-                Any whole degree from 000-359 is accepted. Not Sure and tighter
-                tolerance requests require manual review.
+                接受 000-359 的任意整数角度；Not
+                Sure（不确定）和更严公差要求转人工审核。
               </p>
             </div>
             <SectionActions onEdit={() => setEditor("clocking")} />
           </div>
           <dl className="reference-readonly-values">
             <div>
-              <dt>Preset degrees</dt>
-              <dd>{clocking?.presets.join(", ") || "Not supplied"}</dd>
+              <dt>预设角度</dt>
+              <dd>{clocking?.presets.join(", ") || "未提供"}</dd>
             </div>
             <div>
-              <dt>Standard tolerance</dt>
+              <dt>标准公差</dt>
               <dd>
-                {clocking
-                  ? `±${clocking.standardToleranceDegrees}°`
-                  : "Not supplied"}
+                {clocking ? `±${clocking.standardToleranceDegrees}°` : "未提供"}
               </dd>
             </div>
             <div>
-              <dt>Renderer version</dt>
-              <dd>{clocking?.rendererVersion || "Not supplied"}</dd>
+              <dt>渲染器版本</dt>
+              <dd>{clocking?.rendererVersion || "未提供"}</dd>
             </div>
           </dl>
         </section>
@@ -994,12 +994,9 @@ export default function CatalogReferenceData({
         <section className="reference-section">
           <div className="reference-section-heading">
             <div>
-              <span className="eyebrow">Assembly options</span>
-              <h2>Installed Protection</h2>
-              <p>
-                Standard Export Packaging is mandatory and remains separate from
-                these installed sleeves and guards.
-              </p>
+              <span className="eyebrow">总成选项</span>
+              <h2>安装防护件</h2>
+              <p>标准出口包装为必选项，并与这些套管和护具选项分别管理。</p>
             </div>
             <SectionActions
               onAdd={() => setEditor("protection-add")}
@@ -1010,10 +1007,10 @@ export default function CatalogReferenceData({
             <table>
               <thead>
                 <tr>
-                  <th>Code</th>
-                  <th>Customer option</th>
-                  <th>Availability</th>
-                  <th>Length-based reference price</th>
+                  <th>代码</th>
+                  <th>客户选项</th>
+                  <th>供应状态</th>
+                  <th>按长度计算的参考价</th>
                 </tr>
               </thead>
               <tbody>
@@ -1021,7 +1018,13 @@ export default function CatalogReferenceData({
                   <tr key={option.code}>
                     <td>{option.code}</td>
                     <td>{option.publicName}</td>
-                    <td>{option.availability}</td>
+                    <td>
+                      {{
+                        available: "可用",
+                        discontinued: "已停产",
+                        temporarily_unavailable: "暂不可用",
+                      }[option.availability] ?? option.availability}
+                    </td>
                     <td>
                       {option.isNoAdditionalProtection
                         ? "$0.00"
@@ -1029,8 +1032,8 @@ export default function CatalogReferenceData({
                             option.referenceMaterialPricePerFootUsd === null ||
                             option.referenceInstallationPricePerStartedFootUsd ===
                               null
-                          ? "Not supplied"
-                          : `$${option.referenceBasePriceUsd.toFixed(2)} + $${option.referenceMaterialPricePerFootUsd.toFixed(2)}/exact ft + $${option.referenceInstallationPricePerStartedFootUsd.toFixed(2)}/started ft`}
+                          ? "未提供"
+                          : `$${option.referenceBasePriceUsd.toFixed(2)} + $${option.referenceMaterialPricePerFootUsd.toFixed(2)}/实际英尺 + $${option.referenceInstallationPricePerStartedFootUsd.toFixed(2)}/起算英尺`}
                     </td>
                   </tr>
                 ))}

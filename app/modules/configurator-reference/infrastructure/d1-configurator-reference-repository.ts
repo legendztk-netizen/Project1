@@ -29,6 +29,8 @@ export interface ConfiguratorRegistryEntryMutation {
   payload: Record<string, unknown>;
   registryType: ConfiguratorRegistryType;
   releaseId: string;
+  ipAddress: string;
+  requestCorrelationId: string;
   updatedAt: string;
 }
 
@@ -45,6 +47,8 @@ export interface GlobalConfiguratorRegistryEntryMutation {
   expectedRecordVersion: number;
   payload: Record<string, unknown>;
   registryType: GlobalConfiguratorRegistryType;
+  ipAddress: string;
+  requestCorrelationId: string;
   updatedAt: string;
 }
 
@@ -531,6 +535,14 @@ export function createD1ConfiguratorReferenceRepository(database: D1Database) {
 
     async saveDraftEntry(operation: ConfiguratorRegistryEntryMutation) {
       const payloadJson = JSON.stringify(operation.payload);
+      const current = await database
+        .prepare(
+          `SELECT payload_json, record_version
+           FROM catalog_configurator_registry_entries
+           WHERE release_id = ? AND registry_type = ? AND entry_key = ?`,
+        )
+        .bind(operation.releaseId, operation.registryType, operation.entryKey)
+        .first<{ payload_json: string; record_version: number }>();
       await database.batch([
         database
           .prepare(
@@ -575,7 +587,13 @@ export function createD1ConfiguratorReferenceRepository(database: D1Database) {
             `${operation.releaseId}:${operation.registryType}:${operation.entryKey}`,
             operation.actorId,
             JSON.stringify({
+              after: operation.payload,
+              afterRecordVersion: (current?.record_version ?? 0) + 1,
+              before: current ? JSON.parse(current.payload_json) : null,
+              beforeRecordVersion: current?.record_version ?? 0,
               entryKey: operation.entryKey,
+              ipAddress: operation.ipAddress,
+              requestCorrelationId: operation.requestCorrelationId,
               registryType: operation.registryType,
               releaseId: operation.releaseId,
             }),
@@ -587,22 +605,20 @@ export function createD1ConfiguratorReferenceRepository(database: D1Database) {
         .prepare(`SELECT 1 AS found FROM admin_audit_events WHERE id = ?`)
         .bind(operation.auditEventId)
         .first<{ found: number }>();
-      if (!saved) throw new Error("Draft registry entry was not saved");
+      if (!saved) throw new Error("目录草稿参数未保存");
     },
 
     async saveGlobalEntry(operation: GlobalConfiguratorRegistryEntryMutation) {
       const current = await database
         .prepare(
-          `SELECT record_version
+          `SELECT payload_json, record_version
            FROM configurator_global_registry_entries
            WHERE registry_type = ? AND entry_key = ?`,
         )
         .bind(operation.registryType, operation.entryKey)
-        .first<{ record_version: number }>();
+        .first<{ payload_json: string; record_version: number }>();
       if ((current?.record_version ?? 0) !== operation.expectedRecordVersion) {
-        throw new Error(
-          "This global setting changed after the editor was opened. Reload and try again.",
-        );
+        throw new Error("打开编辑器后此全局设置已发生变化，请刷新后重试。");
       }
 
       const payloadJson = JSON.stringify(operation.payload);
@@ -658,8 +674,14 @@ export function createD1ConfiguratorReferenceRepository(database: D1Database) {
             `${operation.registryType}:${operation.entryKey}`,
             operation.actorId,
             JSON.stringify({
+              after: operation.payload,
+              afterRecordVersion: operation.expectedRecordVersion + 1,
+              before: current ? JSON.parse(current.payload_json) : null,
+              beforeRecordVersion: operation.expectedRecordVersion,
               entryKey: operation.entryKey,
               expectedRecordVersion: operation.expectedRecordVersion,
+              ipAddress: operation.ipAddress,
+              requestCorrelationId: operation.requestCorrelationId,
               registryType: operation.registryType,
             }),
             operation.updatedAt,

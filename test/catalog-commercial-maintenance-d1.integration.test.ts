@@ -212,6 +212,18 @@ describe("D1 catalog commercial maintenance", () => {
       expect(await commercial.findSkuPricePackaging("601R1_002")).toBeNull();
       expect(
         await platform.env.DB.prepare(
+          `SELECT currency, factory_unit_price, price_incoterm, tier_price
+           FROM catalog_cost_bases
+           WHERE import_id = 'draft-import' AND sales_sku = '601R1_001'`,
+        ).first(),
+      ).toEqual({
+        currency: "USD",
+        factory_unit_price: null,
+        price_incoterm: null,
+        tier_price: null,
+      });
+      expect(
+        await platform.env.DB.prepare(
           `SELECT COUNT(*) AS count FROM catalog_series_commercial_rules
            WHERE import_id = 'draft-import' AND series_code = '601R1'`,
         ).first(),

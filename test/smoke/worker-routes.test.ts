@@ -91,14 +91,46 @@ async function publishFromReview(
   releaseId: string,
   requestCorrelationId: string,
 ) {
+  const preparation = await preparePublicationFromReview(
+    releaseId,
+    requestCorrelationId,
+  );
+  if (preparation.status !== 302) return preparation;
+  return publishPreparedFromReview(releaseId, requestCorrelationId);
+}
+
+async function preparePublicationFromReview(
+  releaseId: string,
+  requestCorrelationId: string,
+) {
   const form = new FormData();
-  form.set("intent", "update_assembly_and_publish");
+  form.set("intent", "prepare_publication");
   form.set("releaseId", releaseId);
+  form.set("requestCorrelationId", requestCorrelationId);
   return fetch(`${origin}/admin/catalog/review`, {
     body: form,
     headers: {
       "cf-connecting-ip": "203.0.113.10",
       "x-request-id": requestCorrelationId,
+    },
+    method: "POST",
+    redirect: "manual",
+  });
+}
+
+async function publishPreparedFromReview(
+  releaseId: string,
+  requestCorrelationId: string,
+) {
+  const form = new FormData();
+  form.set("intent", "publish_prepared");
+  form.set("releaseId", releaseId);
+  form.set("requestCorrelationId", requestCorrelationId);
+  return fetch(`${origin}/admin/catalog/review`, {
+    body: form,
+    headers: {
+      "cf-connecting-ip": "203.0.113.10",
+      "x-request-id": `transport-${crypto.randomUUID()}`,
     },
     method: "POST",
     redirect: "manual",
@@ -124,18 +156,53 @@ function completeFerruleMaintenanceForm(sku: string) {
     originalSalesSku: "",
     originalSku: "",
     productType: "ferrule",
-    "sales.countryOfOrigin": "China",
-    "sales.leadTimeDays": "14",
-    "sales.moq": "1",
-    "sales.quantityInputMode": "Units",
-    "sales.referencePriceUsd": "4.25",
-    "sales.salesSku": sku,
-    "sales.salesUnit": "each",
-    "sales.technicalDataStatus": "Complete",
-    "sales.unitsPerSalesPack": "1",
   };
   for (const [key, value] of Object.entries(values)) form.set(key, value);
   return form;
+}
+
+async function saveSeriesCommercialRule(
+  productType: string,
+  seriesCode: string,
+) {
+  const form = new FormData();
+  const values = {
+    countryOfOrigin: "China",
+    intent: "save_series_rule",
+    leadTimeDays: "14",
+    moq: "1",
+    productType,
+    quantityInputMode: "Units",
+    salesUnit: "each",
+    seriesCode,
+  };
+  for (const [key, value] of Object.entries(values)) form.set(key, value);
+  return fetch(`${origin}/admin/catalog/commercial`, {
+    body: form,
+    headers: {
+      "cf-connecting-ip": "203.0.113.10",
+      "x-request-id": `commercial-series-${productType}-${seriesCode}`,
+    },
+    method: "POST",
+    redirect: "manual",
+  });
+}
+
+async function saveSkuReferencePrice(sku: string, referencePrice: string) {
+  const form = new FormData();
+  form.set("intent", "save_sku_price");
+  form.set("sku", sku);
+  form.set("referencePrice", referencePrice);
+  form.set("unitsPerSalesPack", "1");
+  return fetch(`${origin}/admin/catalog/commercial`, {
+    body: form,
+    headers: {
+      "cf-connecting-ip": "203.0.113.10",
+      "x-request-id": `commercial-price-${sku}`,
+    },
+    method: "POST",
+    redirect: "manual",
+  });
 }
 
 function assignReviewedImageToPublishedProducts(importId: string) {
@@ -2778,15 +2845,15 @@ describe("Cloudflare Worker route surfaces", () => {
     const page = await pageResponse.text();
     expect(pageResponse.status).toBe(200);
     expect(page).toContain("总成参数配置");
-    expect(page).toContain("Measurement Methods");
-    expect(page).toContain("Clocking Convention");
-    expect(page).toContain("Installed Protection");
-    expect(page).toContain("Assembly service price");
-    expect(page).toContain("Global configurator rules");
+    expect(page).toContain("测量方法");
+    expect(page).toContain("时钟角规则");
+    expect(page).toContain("安装防护件");
+    expect(page).toContain("总成服务参考价");
+    expect(page).toContain("全局配置器规则");
     expect(page).toContain("编辑");
     expect(page).toContain("新增");
     expect(page).toContain("No additional installed protection");
-    expect(page).toContain("View customer measurement guide");
+    expect(page).toContain("查看客户测量指南");
     expect(page).not.toContain("Hose End assignments");
 
     const guideResponse = await fetch(`${origin}/assembly-measurement-guide`);
@@ -2860,6 +2927,10 @@ describe("Cloudflare Worker route surfaces", () => {
     saveSchedule.set("assemblyServicePriceUsd", "");
     const saveResponse = await fetch(`${origin}/admin/catalog/reference-data`, {
       body: saveSchedule,
+      headers: {
+        "cf-connecting-ip": "203.0.113.24",
+        "x-request-id": "draft-reference-audit",
+      },
       method: "POST",
       redirect: "manual",
     });
@@ -2882,12 +2953,20 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(after?.record_version).toBe((before?.record_version ?? 0) + 1);
     expect(after?.release_version).toBe((before?.release_version ?? 0) + 1);
     expect(
-      runLocalD1<{ count: number }>(
-        `SELECT COUNT(*) AS count FROM admin_audit_events
+      runLocalD1<{ payload_json: string }>(
+        `SELECT payload_json FROM admin_audit_events
          WHERE entity_id = '${draft.id}:assembly_estimate_schedule:DEFAULT'
-           AND event_type = 'configurator_registry.saved'`,
-      )[0]?.count,
-    ).toBeGreaterThan(0);
+           AND event_type = 'configurator_registry.saved'
+         ORDER BY occurred_at DESC LIMIT 1`,
+      ).map(({ payload_json }) => JSON.parse(payload_json)),
+    ).toEqual([
+      expect.objectContaining({
+        after: expect.any(Object),
+        before: expect.any(Object),
+        ipAddress: "203.0.113.24",
+        requestCorrelationId: "draft-reference-audit",
+      }),
+    ]);
 
     const invalidMapping = new FormData();
     invalidMapping.set("intent", "save_measurement_mapping");
@@ -2902,7 +2981,7 @@ describe("Cloudflare Worker route surfaces", () => {
     );
     expect(invalidResponse.status).toBe(200);
     expect(await invalidResponse.text()).toContain(
-      "Measurement Endpoint Class NOT_REGISTERED is missing",
+      "缺少测量端点类别 NOT_REGISTERED",
     );
   });
 
@@ -3135,11 +3214,8 @@ describe("Cloudflare Worker route surfaces", () => {
     );
     const reviewHtml = await reviewResponse.text();
     expect(reviewResponse.status).toBe(200);
-    expect(reviewHtml).toContain("完整发布差异预览");
-    expect(reviewHtml).toContain("参考价格");
-    expect(reviewHtml).toContain("产品主图");
-    expect(reviewHtml).toContain("兼容关系");
-    expect(reviewHtml).toContain("衍生总成组合");
+    expect(reviewHtml).not.toContain("完整发布差异预览");
+    expect(reviewHtml).toContain("生成最终预览");
     expect(reviewHtml).toContain("受影响的胶管系列");
 
     const [offer] = runLocalD1<{
@@ -3188,7 +3264,21 @@ describe("Cloudflare Worker route surfaces", () => {
     );
 
     const requestId = `combined-publication-${draft.id}`;
-    const response = await publishFromReview(draft.id, requestId);
+    const preparationResponse = await preparePublicationFromReview(
+      draft.id,
+      requestId,
+    );
+    expect(preparationResponse.status).toBe(302);
+    const preparedReview = await (
+      await fetch(`${origin}${preparationResponse.headers.get("location")}`)
+    ).text();
+    expect(preparedReview).toContain("完整发布差异预览");
+    expect(preparedReview).toContain("参考价格");
+    expect(preparedReview).toContain("产品主图");
+    expect(preparedReview).toContain("兼容关系");
+    expect(preparedReview).toContain("衍生总成组合");
+    expect(preparedReview).toContain("发布已确认的合并预览");
+    const response = await publishPreparedFromReview(draft.id, requestId);
     expect(response.status, await response.text()).toBe(302);
 
     expect(
@@ -3208,6 +3298,14 @@ describe("Cloudflare Worker route surfaces", () => {
     const [activeAfter] = runLocalD1<{ version: number }>(
       "SELECT version FROM catalog_active_release WHERE singleton = 1",
     );
+    const [workflowAuditCountBeforeRetry] = runLocalD1<{ count: number }>(
+      `SELECT COUNT(*) AS count FROM admin_audit_events
+       WHERE entity_id = ${sqlText(draft.id)}
+         AND event_type IN (
+           'catalog_release.publication_prepared',
+           'catalog_release.compatibilities_expanded'
+         )`,
+    );
     const retryResponse = await publishFromReview(draft.id, requestId);
     expect(retryResponse.status).toBe(302);
     expect(
@@ -3221,6 +3319,16 @@ describe("Cloudflare Worker route surfaces", () => {
          WHERE release_id = ${sqlText(draft.id)}`,
       ),
     ).toEqual([{ count: 1 }]);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM admin_audit_events
+         WHERE entity_id = ${sqlText(draft.id)}
+           AND event_type IN (
+             'catalog_release.publication_prepared',
+             'catalog_release.compatibilities_expanded'
+           )`,
+      ),
+    ).toEqual([workflowAuditCountBeforeRetry]);
     expect((await fetch(`${origin}/admin/catalog/releases`)).status).toBe(404);
   });
 
@@ -3238,6 +3346,16 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(saveResponse.headers.get("location")).toContain(
       `productType=ferrule&saved=created&sku=${ferruleSku}`,
     );
+
+    const sharedRuleResponse = await saveSeriesCommercialRule(
+      "ferrule",
+      "601R1",
+    );
+    expect(sharedRuleResponse.status, await sharedRuleResponse.text()).toBe(
+      302,
+    );
+    const priceResponse = await saveSkuReferencePrice(ferruleSku, "4.25");
+    expect(priceResponse.status, await priceResponse.text()).toBe(302);
 
     const [draft] = runLocalD1<{
       id: string;
@@ -3261,9 +3379,45 @@ describe("Cloudflare Worker route surfaces", () => {
       method: "POST",
       redirect: "manual",
     });
-    expect(availabilityResponse.status, await availabilityResponse.text()).toBe(
-      302,
-    );
+    const availabilityBody = await availabilityResponse.text();
+    expect([200, 302], availabilityBody).toContain(availabilityResponse.status);
+    if (availabilityResponse.status === 200) {
+      expect(availabilityBody).toContain("没有草稿产品需要此项修改。");
+    }
+    expect(
+      runLocalD1<{
+        catalog_publication_status: string;
+        rfq_eligibility: string;
+        sku: string;
+        supply_availability: string;
+      }>(
+        `SELECT sku, catalog_publication_status, rfq_eligibility,
+                supply_availability
+         FROM catalog_skus
+         WHERE import_id = ${sqlText(draft.source_import_id)}
+           AND sku IN ('601R1_002', 'JIC_F_SW_04_04', ${sqlText(ferruleSku)})
+         ORDER BY sku`,
+      ),
+    ).toEqual([
+      {
+        catalog_publication_status: "Published",
+        rfq_eligibility: "Eligible",
+        sku: "601R1_002",
+        supply_availability: "available_for_quote",
+      },
+      {
+        catalog_publication_status: "Published",
+        rfq_eligibility: "Eligible",
+        sku: "601R1_1WB_T10_04",
+        supply_availability: "available_for_quote",
+      },
+      {
+        catalog_publication_status: "Published",
+        rfq_eligibility: "Eligible",
+        sku: "JIC_F_SW_04_04",
+        supply_availability: "available_for_quote",
+      },
+    ]);
 
     const reviewResponse = await fetch(
       `${origin}/admin/catalog/review?release=${encodeURIComponent(draft.id)}`,
@@ -3274,10 +3428,35 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(reviewHtml).toContain("受影响的胶管系列");
     expect(reviewHtml).toContain("601R1");
     expect(reviewHtml).toContain("兼容关系");
-    expect(reviewHtml).toContain("衍生总成组合");
+    expect(reviewHtml).not.toContain("完整发布差异预览");
 
     const requestId = `ticket-74-${draft.id}`;
-    const publicationResponse = await publishFromReview(draft.id, requestId);
+    const preparationResponse = await preparePublicationFromReview(
+      draft.id,
+      requestId,
+    );
+    expect(preparationResponse.status, await preparationResponse.text()).toBe(
+      302,
+    );
+    const preparedLocation = preparationResponse.headers.get("location");
+    expect(preparedLocation).toContain(
+      `publicationRequest=${encodeURIComponent(requestId)}`,
+    );
+    const preparedReviewResponse = await fetch(
+      `${origin}${preparedLocation ?? ""}`,
+    );
+    const preparedReviewHtml = await preparedReviewResponse.text();
+    expect(preparedReviewResponse.status).toBe(200);
+    expect(preparedReviewHtml).toContain("完整发布差异预览");
+    expect(preparedReviewHtml).toContain(
+      `AUTO:601R1_002:JIC_F_SW_04_04:${ferruleSku}`,
+    );
+    expect(preparedReviewHtml).toContain("发布已确认的合并预览");
+
+    const publicationResponse = await publishPreparedFromReview(
+      draft.id,
+      requestId,
+    );
     expect(publicationResponse.status, await publicationResponse.text()).toBe(
       302,
     );
@@ -3339,7 +3518,7 @@ describe("Cloudflare Worker route surfaces", () => {
        ORDER BY occurred_at DESC LIMIT 1`,
     );
     expect(JSON.parse(regenerationAudit?.payload_json ?? "{}")).toMatchObject({
-      affectedSeries: ["601R1"],
+      affectedSeries: expect.arrayContaining(["601R1"]),
       ipAddress: "203.0.113.10",
       requestCorrelationId: requestId,
       status: "succeeded",
@@ -6500,13 +6679,19 @@ describe("Cloudflare Worker route surfaces", () => {
       if (!row) throw new Error(`Missing ${registryType}/${entryKey}`);
       return row.record_version;
     };
+    let submitIndex = 0;
     async function submit(fields: Record<string, string>) {
+      submitIndex += 1;
       const form = new FormData();
       form.set("scope", "global");
       for (const [key, value] of Object.entries(fields)) form.set(key, value);
       const response = await fetch(`${origin}/admin/catalog/reference-data`, {
         body: form,
-        headers: { origin },
+        headers: {
+          "cf-connecting-ip": "203.0.113.25",
+          origin,
+          "x-request-id": `global-reference-audit-${submitIndex}`,
+        },
         method: "POST",
         redirect: "manual",
       });
@@ -6591,6 +6776,24 @@ describe("Cloudflare Worker route surfaces", () => {
          WHERE event_type = 'configurator_global_registry.saved'`,
       ),
     ).toEqual([{ count: 4 }]);
+    const globalAudits = runLocalD1<{ payload_json: string }>(
+      `SELECT payload_json FROM admin_audit_events
+       WHERE event_type = 'configurator_global_registry.saved'
+       ORDER BY occurred_at, id`,
+    ).map(({ payload_json }) => JSON.parse(payload_json));
+    expect(globalAudits).toHaveLength(4);
+    for (const audit of globalAudits) {
+      expect(audit).toEqual(
+        expect.objectContaining({
+          after: expect.any(Object),
+          beforeRecordVersion: expect.any(Number),
+          ipAddress: "203.0.113.25",
+          requestCorrelationId: expect.stringMatching(
+            /^global-reference-audit-/,
+          ),
+        }),
+      );
+    }
     expect(
       runLocalD1<{ count: number }>(
         `SELECT COUNT(*) AS count

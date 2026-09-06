@@ -3,6 +3,7 @@ import type {
   CatalogPublicationDifferences,
   CatalogPublicationFinding,
   CatalogPublicationOperation,
+  CatalogPublicationPreview,
   CatalogPublicationReceipt,
   CatalogPublicationRelease,
   CatalogPublicationRepository,
@@ -76,6 +77,15 @@ interface PublicCatalogProductRow {
   sku: string;
   supply_availability: SupplyAvailability;
   technical_data_status: TechnicalDataStatus;
+}
+
+export interface CatalogPublicationPreparationReceipt {
+  activeGeneration: number;
+  activeReleaseId: string | null;
+  assemblyState: CatalogPublicationAssemblyState;
+  draftVersion: number;
+  preparedAt: string;
+  releaseId: string;
 }
 
 export interface PublicCatalogProduct {
@@ -525,6 +535,22 @@ export function createD1CatalogPublicationRepository(
     releaseId: string,
     sku: string,
   ): Promise<PublicCatalogProduct | null>;
+  findPublicationPreparation(
+    requestCorrelationId: string,
+  ): Promise<CatalogPublicationPreparationReceipt | null>;
+  recordPublicationPreparation(input: {
+    actorId: string;
+    ipAddress: string;
+    preview: CatalogPublicationPreview;
+    releaseId: string;
+    requestCorrelationId: string;
+  }): Promise<void>;
+  synchronizeDraftSalesOfferLifecycle(input: {
+    actorId: string;
+    ipAddress: string;
+    releaseId: string;
+    requestCorrelationId: string;
+  }): Promise<number>;
 } {
   async function findActiveRow() {
     return database
@@ -630,6 +656,170 @@ export function createD1CatalogPublicationRepository(
         releaseId: row.release_id,
         summary,
       } satisfies CatalogPublicationReceipt;
+    },
+
+    async findPublicationPreparation(requestCorrelationId: string) {
+      const row = await database
+        .prepare(
+          `SELECT entity_id, payload_json, occurred_at
+           FROM admin_audit_events
+           WHERE id = ?
+             AND event_type = 'catalog_release.publication_prepared'`,
+        )
+        .bind(`catalog-release-prepared:${requestCorrelationId}`)
+        .first<{
+          entity_id: string;
+          occurred_at: string;
+          payload_json: string;
+        }>();
+      if (!row) return null;
+      const payload = JSON.parse(row.payload_json) as {
+        activeGeneration: number;
+        activeReleaseId: string | null;
+        assemblyState: CatalogPublicationAssemblyState;
+        draftVersion: number;
+      };
+      return {
+        ...payload,
+        preparedAt: row.occurred_at,
+        releaseId: row.entity_id,
+      } satisfies CatalogPublicationPreparationReceipt;
+    },
+
+    async recordPublicationPreparation(input: {
+      actorId: string;
+      ipAddress: string;
+      preview: CatalogPublicationPreview;
+      releaseId: string;
+      requestCorrelationId: string;
+    }) {
+      const occurredAt = new Date().toISOString();
+      await database
+        .prepare(
+          `INSERT OR IGNORE INTO admin_audit_events (
+             id, event_type, entity_type, entity_id,
+             actor_id, payload_json, occurred_at
+           ) VALUES (?, 'catalog_release.publication_prepared',
+                     'catalog_release', ?, ?, ?, ?)`,
+        )
+        .bind(
+          `catalog-release-prepared:${input.requestCorrelationId}`,
+          input.releaseId,
+          input.actorId,
+          JSON.stringify({
+            activeGeneration: input.preview.activeGeneration,
+            activeReleaseId: input.preview.activeRelease?.id ?? null,
+            assemblyState: input.preview.assemblyState,
+            differences: {
+              affectedSeries: input.preview.affectedSeries,
+              derivedCombinations: input.preview.derivedCombinations,
+              images: input.preview.images,
+              prices: input.preview.prices,
+              products: input.preview.products,
+              relationships: input.preview.relationships,
+            },
+            draftVersion: input.preview.draftRelease.version,
+            ipAddress: input.ipAddress,
+            requestCorrelationId: input.requestCorrelationId,
+          }),
+          occurredAt,
+        )
+        .run();
+    },
+
+    async synchronizeDraftSalesOfferLifecycle(input: {
+      actorId: string;
+      ipAddress: string;
+      releaseId: string;
+      requestCorrelationId: string;
+    }) {
+      const changes = await database
+        .prepare(
+          `SELECT offer.base_sku,
+                  offer.catalog_publication_status AS before_publication_status,
+                  product.catalog_publication_status AS after_publication_status,
+                  offer.rfq_eligibility AS before_rfq_eligibility,
+                  product.rfq_eligibility AS after_rfq_eligibility,
+                  offer.technical_data_status AS before_technical_data_status,
+                  product.technical_data_status AS after_technical_data_status
+           FROM catalog_sales_offers offer
+           INNER JOIN catalog_releases release
+             ON release.source_import_id = offer.import_id
+            AND release.id = ? AND release.status = 'draft'
+           INNER JOIN catalog_skus product
+             ON product.import_id = offer.import_id
+            AND product.sku = offer.base_sku
+           WHERE product.catalog_publication_status <> offer.catalog_publication_status
+              OR product.rfq_eligibility <> offer.rfq_eligibility
+              OR product.technical_data_status <> offer.technical_data_status
+           ORDER BY offer.base_sku`,
+        )
+        .bind(input.releaseId)
+        .all<Record<string, string>>();
+      if (changes.results.length === 0) return 0;
+
+      const auditEventId = `catalog-sales-offer-lifecycle-synchronized:${input.requestCorrelationId}`;
+      const occurredAt = new Date().toISOString();
+      await database.batch([
+        database
+          .prepare(
+            `UPDATE catalog_sales_offers AS offer
+             SET catalog_publication_status = (
+                   SELECT product.catalog_publication_status
+                   FROM catalog_skus product
+                   WHERE product.import_id = offer.import_id
+                     AND product.sku = offer.base_sku
+                 ),
+                 rfq_eligibility = (
+                   SELECT product.rfq_eligibility
+                   FROM catalog_skus product
+                   WHERE product.import_id = offer.import_id
+                     AND product.sku = offer.base_sku
+                 ),
+                 technical_data_status = (
+                   SELECT product.technical_data_status
+                   FROM catalog_skus product
+                   WHERE product.import_id = offer.import_id
+                     AND product.sku = offer.base_sku
+                 )
+             WHERE offer.import_id = (
+               SELECT source_import_id FROM catalog_releases
+               WHERE id = ? AND status = 'draft'
+             )
+               AND EXISTS (
+                 SELECT 1 FROM catalog_skus product
+                 WHERE product.import_id = offer.import_id
+                   AND product.sku = offer.base_sku
+                   AND (
+                     product.catalog_publication_status <> offer.catalog_publication_status
+                     OR product.rfq_eligibility <> offer.rfq_eligibility
+                     OR product.technical_data_status <> offer.technical_data_status
+                   )
+          )`,
+          )
+          .bind(input.releaseId),
+        database
+          .prepare(
+            `INSERT OR IGNORE INTO admin_audit_events (
+               id, event_type, entity_type, entity_id,
+               actor_id, payload_json, occurred_at
+             ) VALUES (?, 'catalog_release.sales_offer_lifecycle_synchronized',
+                       'catalog_release', ?, ?, ?, ?)`,
+          )
+          .bind(
+            auditEventId,
+            input.releaseId,
+            input.actorId,
+            JSON.stringify({
+              affectedCount: changes.results.length,
+              changes: changes.results,
+              ipAddress: input.ipAddress,
+              requestCorrelationId: input.requestCorrelationId,
+            }),
+            occurredAt,
+          ),
+      ]);
+      return changes.results.length;
     },
 
     async findPublicationPreview(releaseId) {
@@ -775,7 +965,9 @@ export function createD1CatalogPublicationRepository(
           message: `${missingReferencePrices.results.length} publishable SKUs have no published USD Reference Price: ${missingReferencePrices.results
             .slice(0, 8)
             .map((row) => row.sku)
-            .join(", ")}. / ${missingReferencePrices.results.length} 个待发布 SKU 缺少已发布的 USD 零售单价。`,
+            .join(
+              ", ",
+            )}. / ${missingReferencePrices.results.length} 个待发布 SKU 缺少已发布的 USD 零售单价。`,
         });
       }
 

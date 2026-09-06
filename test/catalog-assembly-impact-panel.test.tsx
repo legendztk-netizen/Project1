@@ -33,7 +33,13 @@ describe("Assembly impact review panel", () => {
     const router = createMemoryRouter(
       [
         {
-          element: <AssemblyImpactPanel busy={false} impact={impact(status)} />,
+          element: (
+            <AssemblyImpactPanel
+              busy={false}
+              impact={impact(status)}
+              requestCorrelationId="prepare-operation-1"
+            />
+          ),
           path: "/admin/catalog/review",
         },
       ],
@@ -42,11 +48,11 @@ describe("Assembly impact review panel", () => {
     render(<RouterProvider router={router} />);
   }
 
-  it("offers one validation, regeneration, and publication action", () => {
+  it("prepares the final combined preview before publication", () => {
     renderPanel("stale");
     expect(
       screen.getByRole("button", {
-        name: "校验、更新总成并发布",
+        name: "校验、更新总成并生成最终预览",
       }),
     ).toBeTruthy();
     expect(screen.getByText("SERIES-A")).toBeTruthy();
@@ -57,12 +63,43 @@ describe("Assembly impact review panel", () => {
     );
   });
 
-  it("keeps the publication action available when assembly data is current", () => {
+  it("keeps final-preview preparation available when assembly data is current", () => {
     renderPanel("current");
     expect(screen.getByText("总成数据已是最新")).toBeTruthy();
     expect(
-      screen.getByRole("button", { name: "校验、更新总成并发布" }),
+      screen.getByRole("button", {
+        name: "校验、更新总成并生成最终预览",
+      }),
     ).toBeTruthy();
+  });
+
+  it("publishes only a current prepared preview", () => {
+    const router = createMemoryRouter(
+      [
+        {
+          element: (
+            <AssemblyImpactPanel
+              busy={false}
+              impact={impact("current")}
+              preparation={{
+                current: true,
+                requestCorrelationId: "durable-operation-1",
+              }}
+              requestCorrelationId="durable-operation-1"
+            />
+          ),
+          path: "/admin/catalog/review",
+        },
+      ],
+      { initialEntries: ["/admin/catalog/review"] },
+    );
+    render(<RouterProvider router={router} />);
+    expect(
+      screen.getByRole("button", { name: "发布已确认的合并预览" }),
+    ).toBeTruthy();
+    expect(
+      document.querySelector('[name="requestCorrelationId"]'),
+    ).toHaveProperty("value", "durable-operation-1");
   });
 
   it("shows additions, changes, and removals for every publication domain", () => {

@@ -495,6 +495,18 @@ export function createD1CatalogCommercialMaintenanceRepository(
           ),
         database
           .prepare(
+            `INSERT OR IGNORE INTO catalog_cost_bases (
+               id, import_id, sales_sku, currency, factory_unit_price,
+               price_incoterm, incoterm_place, tier_qty, tier_price
+             ) VALUES (?, ?, ?, 'USD', NULL, NULL, NULL, NULL, NULL)`,
+          )
+          .bind(
+            `${operation.pricePackagingId}:cost-basis`,
+            draft.source_import_id,
+            exact.salesSku,
+          ),
+        database
+          .prepare(
             `INSERT INTO admin_audit_events (
                id, event_type, entity_type, entity_id, actor_id, payload_json, occurred_at
              ) VALUES (?, 'catalog_commercial.sku_price_packaging_saved',
@@ -522,7 +534,13 @@ export function createD1CatalogCommercialMaintenanceRepository(
                  (SELECT COUNT(*) FROM catalog_sales_offers WHERE import_id = ?1),
                '$.referencePriceCount',
                  (SELECT COUNT(*) FROM catalog_sales_offers
-                  WHERE import_id = ?1 AND reference_price_usd IS NOT NULL)
+                  WHERE import_id = ?1 AND reference_price_usd IS NOT NULL),
+               '$.costBasisCount',
+                 (SELECT COUNT(*) FROM catalog_cost_bases WHERE import_id = ?1),
+               '$.costBasisPriceCount',
+                 (SELECT COUNT(*) FROM catalog_cost_bases
+                  WHERE import_id = ?1
+                    AND (factory_unit_price IS NOT NULL OR tier_price IS NOT NULL))
              )
              WHERE id = ?1`,
           )

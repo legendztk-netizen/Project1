@@ -209,6 +209,53 @@ describe("Spec 8 atomic product and Assembly Data publication", () => {
         .first<{ reference_price_usd: number }>();
       expect(oldPrice).toBeTruthy();
 
+      const submittedSnapshot = JSON.stringify({
+        catalogReleaseId: first.releaseId,
+        lines: [
+          {
+            estimatedAmount: oldPrice?.reference_price_usd,
+            sku: "601R1_001",
+          },
+        ],
+        submittedAt: "2026-09-04T02:00:00.000Z",
+      });
+      await database.batch([
+        database.prepare(
+          `INSERT INTO customer_profiles (
+             id, email_normalized, email_display, email_verified_at,
+             created_at, updated_at
+           ) VALUES ('price-snapshot-profile', 'price@example.com',
+                     'price@example.com', '2026-09-04T02:00:00.000Z',
+                     '2026-09-04T02:00:00.000Z',
+                     '2026-09-04T02:00:00.000Z')`,
+        ),
+        database.prepare(
+          `INSERT INTO customer_purchasing_contexts (
+             id, kind, individual_profile_id, organization_id,
+             created_at, updated_at
+           ) VALUES ('price-snapshot-context', 'individual',
+                     'price-snapshot-profile', NULL,
+                     '2026-09-04T02:00:00.000Z',
+                     '2026-09-04T02:00:00.000Z')`,
+        ),
+        database
+          .prepare(
+            `INSERT INTO customer_quote_requests (
+               id, reference_number, profile_id, purchasing_context_id,
+               source_session_id, source_session_version, source_address_id,
+               purchasing_context_kind, fulfillment_term, currency,
+               merchandise_subtotal, service_fee_total, idempotency_key,
+               snapshot_json, submitted_at
+             ) VALUES ('price-snapshot-rfq', 'RFQ-PRICE-SNAPSHOT',
+                       'price-snapshot-profile', 'price-snapshot-context',
+                       'submitted-session', 'v1', 'submitted-address',
+                       'individual', 'DDP', 'USD', ?, 0,
+                       'price-snapshot-idempotency', ?,
+                       '2026-09-04T02:00:00.000Z')`,
+          )
+          .bind(oldPrice?.reference_price_usd ?? 0, submittedSnapshot),
+      ]);
+
       const second = await importDraft(database, sheets, "second");
       const newPrice = (oldPrice?.reference_price_usd ?? 0) + 1;
       await database
@@ -254,6 +301,14 @@ describe("Spec 8 atomic product and Assembly Data publication", () => {
       const currentProduct =
         await createD1PublicCatalogRepository(database).findItem("601R1_001");
       expect(currentProduct?.offer?.referencePrice).toBe(newPrice);
+      expect(
+        await database
+          .prepare(
+            `SELECT snapshot_json FROM customer_quote_requests
+             WHERE id = 'price-snapshot-rfq'`,
+          )
+          .first(),
+      ).toEqual({ snapshot_json: submittedSnapshot });
       expect(
         await database
           .prepare(
