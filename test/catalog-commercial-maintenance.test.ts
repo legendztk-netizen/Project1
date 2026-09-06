@@ -149,19 +149,26 @@ describe("Catalog commercial maintenance", () => {
 
   it("preserves the catalog's canonical series code across product types", async () => {
     const { repository, savedRules } = repositoryStub();
-    repository.findSeries = async () => ({
-      productType: "ferrule",
-      seriesCode: "Series 2000",
-      seriesName: "Series 2000",
-    });
+    let lookedUpSeriesCode = "";
+    repository.findSeries = async (_productType, seriesCode) => {
+      lookedUpSeriesCode = seriesCode;
+      return seriesCode === "Series 2000"
+        ? {
+            productType: "ferrule",
+            seriesCode: "Series 2000",
+            seriesName: "Series 2000",
+          }
+        : null;
+    };
     await maintainSeriesCommercialRule(repository, {
       actorId: "owner-1",
       rule: {
         ...rule,
         productType: "ferrule",
-        seriesCode: "series 2000",
+        seriesCode: " Series 2000 ",
       },
     });
+    expect(lookedUpSeriesCode).toBe("Series 2000");
     expect(savedRules[0]).toMatchObject({
       rule: { productType: "ferrule", seriesCode: "Series 2000" },
     });

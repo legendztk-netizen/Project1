@@ -146,7 +146,7 @@ export function createD1CatalogCommercialMaintenanceRepository(
       const row = await database
         .prepare(
           `SELECT product_type, series_code, series_name FROM (${seriesSelect()})
-           WHERE product_type = ?2 AND UPPER(series_code) = UPPER(?3)`,
+           WHERE product_type = ?2 AND series_code = ?3`,
         )
         .bind(importId, productType, seriesCode.trim())
         .first<{
@@ -169,8 +169,7 @@ export function createD1CatalogCommercialMaintenanceRepository(
       const row = await database
         .prepare(
           `SELECT * FROM catalog_series_commercial_rules
-           WHERE import_id = ? AND product_type = ?
-             AND UPPER(series_code) = UPPER(?)`,
+           WHERE import_id = ? AND product_type = ? AND series_code = ?`,
         )
         .bind(importId, productType, seriesCode.trim())
         .first<SeriesRuleRow>();
@@ -205,13 +204,13 @@ export function createD1CatalogCommercialMaintenanceRepository(
            LEFT JOIN catalog_quick_couplers coupler
              ON coupler.import_id = product.import_id AND coupler.sku = product.sku
            WHERE offer.import_id = ? AND product.product_type = ?
-             AND UPPER(CASE product.product_type
+             AND CASE product.product_type
                WHEN 'hose' THEN hose.hose_series
                WHEN 'hose_end' THEN hose_end.fitting_series
                WHEN 'ferrule' THEN ferrule.ferrule_series
                WHEN 'adapter' THEN adapter.adapter_family_id
                WHEN 'quick_coupler' THEN coupler.coupler_series
-             END) = UPPER(?)
+             END = ?
            ORDER BY product.sku LIMIT 1`,
         )
         .bind(importId, productType, seriesCode.trim())

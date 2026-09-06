@@ -207,7 +207,7 @@ function normalizeRule(rule: SeriesCommercialRule): SeriesCommercialRule {
       "Quantity Input Mode / 数量输入方式",
     ),
     salesUnit: requiredText(rule.salesUnit, "Sales Unit / 销售单位"),
-    seriesCode: normalizedCode(rule.seriesCode),
+    seriesCode: requiredText(rule.seriesCode, "Series / 系列"),
   };
 }
 
