@@ -87,8 +87,11 @@ function seriesSelect() {
     SELECT 'ferrule', ferrule_series, ferrule_series
     FROM catalog_ferrules WHERE import_id = ?1 GROUP BY ferrule_series
     UNION ALL
-    SELECT 'adapter', adapter_family_id, COALESCE(website_product_name, adapter_family_id)
-    FROM catalog_adapter_families WHERE import_id = ?1 GROUP BY adapter_family_id
+    SELECT 'adapter', adapter.adapter_family_id,
+           COALESCE(MAX(adapter.website_product_name), adapter.adapter_family_id)
+    FROM catalog_adapters adapter
+    WHERE adapter.import_id = ?1
+    GROUP BY adapter.adapter_family_id
     UNION ALL
     SELECT 'quick_coupler', coupler_series, coupler_series
     FROM catalog_quick_couplers WHERE import_id = ?1 GROUP BY coupler_series`;
@@ -143,9 +146,9 @@ export function createD1CatalogCommercialMaintenanceRepository(
       const row = await database
         .prepare(
           `SELECT product_type, series_code, series_name FROM (${seriesSelect()})
-           WHERE product_type = ?2 AND series_code = ?3`,
+           WHERE product_type = ?2 AND UPPER(series_code) = UPPER(?3)`,
         )
-        .bind(importId, productType, seriesCode.trim().toUpperCase())
+        .bind(importId, productType, seriesCode.trim())
         .first<{
           product_type: CommercialProductType;
           series_code: string;
@@ -166,9 +169,10 @@ export function createD1CatalogCommercialMaintenanceRepository(
       const row = await database
         .prepare(
           `SELECT * FROM catalog_series_commercial_rules
-           WHERE import_id = ? AND product_type = ? AND series_code = ?`,
+           WHERE import_id = ? AND product_type = ?
+             AND UPPER(series_code) = UPPER(?)`,
         )
-        .bind(importId, productType, seriesCode.trim().toUpperCase())
+        .bind(importId, productType, seriesCode.trim())
         .first<SeriesRuleRow>();
       if (row) return toRule(row);
       const legacy = await database
@@ -201,16 +205,16 @@ export function createD1CatalogCommercialMaintenanceRepository(
            LEFT JOIN catalog_quick_couplers coupler
              ON coupler.import_id = product.import_id AND coupler.sku = product.sku
            WHERE offer.import_id = ? AND product.product_type = ?
-             AND CASE product.product_type
+             AND UPPER(CASE product.product_type
                WHEN 'hose' THEN hose.hose_series
                WHEN 'hose_end' THEN hose_end.fitting_series
                WHEN 'ferrule' THEN ferrule.ferrule_series
                WHEN 'adapter' THEN adapter.adapter_family_id
                WHEN 'quick_coupler' THEN coupler.coupler_series
-             END = ?
+             END) = UPPER(?)
            ORDER BY product.sku LIMIT 1`,
         )
-        .bind(importId, productType, seriesCode.trim().toUpperCase())
+        .bind(importId, productType, seriesCode.trim())
         .first<SeriesRuleRow>();
       return legacy ? toRule(legacy) : null;
     },

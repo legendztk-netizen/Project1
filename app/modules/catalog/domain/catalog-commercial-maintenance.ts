@@ -272,12 +272,17 @@ export async function maintainSeriesCommercialRule(
 ) {
   const generateId = input.generateId ?? (() => crypto.randomUUID());
   const now = input.now ?? (() => new Date());
-  const rule = normalizeRule(input.rule);
-  if (!(await repository.findSeries(rule.productType, rule.seriesCode))) {
+  const normalizedRule = normalizeRule(input.rule);
+  const series = await repository.findSeries(
+    normalizedRule.productType,
+    normalizedRule.seriesCode,
+  );
+  if (!series) {
     throw new CatalogCommercialMaintenanceRejected(
       "Series does not exist / 系列不存在",
     );
   }
+  const rule = { ...normalizedRule, seriesCode: series.seriesCode };
   const identity = operationIdentity(input.actorId, generateId, now);
   return repository.saveSeriesRule({
     ...identity,

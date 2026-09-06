@@ -146,4 +146,24 @@ describe("Catalog commercial maintenance", () => {
       rule: { productType: "hose", seriesCode: "601R1" },
     });
   });
+
+  it("preserves the catalog's canonical series code across product types", async () => {
+    const { repository, savedRules } = repositoryStub();
+    repository.findSeries = async () => ({
+      productType: "ferrule",
+      seriesCode: "Series 2000",
+      seriesName: "Series 2000",
+    });
+    await maintainSeriesCommercialRule(repository, {
+      actorId: "owner-1",
+      rule: {
+        ...rule,
+        productType: "ferrule",
+        seriesCode: "series 2000",
+      },
+    });
+    expect(savedRules[0]).toMatchObject({
+      rule: { productType: "ferrule", seriesCode: "Series 2000" },
+    });
+  });
 });
