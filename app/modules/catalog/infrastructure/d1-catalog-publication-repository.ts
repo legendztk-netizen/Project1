@@ -18,6 +18,7 @@ import type {
 } from "../domain/catalog-workbook";
 import { validateConfiguratorReferenceSnapshot } from "../../configurator-reference/domain/configurator-reference";
 import { createD1ConfiguratorReferenceRepository } from "../../configurator-reference/infrastructure/d1-configurator-reference-repository";
+import { publicCatalogMainImageUrl } from "../domain/catalog-main-image";
 
 interface DraftReleaseRow {
   created_at: string;
@@ -70,6 +71,8 @@ interface PublicProductRow extends Record<string, unknown> {
 interface PublicCatalogProductRow {
   catalog_publication_status: CatalogPublicationStatus;
   hose_series: string | null;
+  main_image_approved_reference: string | null;
+  main_image_version_id: string | null;
   product_type: CatalogSkuDraft["productType"];
   release_id: string;
   release_number: string;
@@ -92,6 +95,7 @@ export interface PublicCatalogProduct {
   canAddToQuote: boolean;
   catalogPublicationStatus: CatalogPublicationStatus;
   hoseSeries: string | null;
+  mainImageUrl: string | null;
   productType: CatalogSkuDraft["productType"];
   releaseId: string;
   releaseNumber: string;
@@ -122,6 +126,21 @@ const productDetailTables = [
   { keyColumn: "sku", name: "catalog_ferrules" },
   { keyColumn: "sku", name: "catalog_adapters" },
   { keyColumn: "sku", name: "catalog_quick_couplers" },
+] as const;
+
+const inheritedProductDetailTables = [
+  {
+    seriesKey: "series_code",
+    seriesTable: "catalog_hose_series",
+    variantSeriesKey: "hose_series",
+    variantTable: "catalog_hose_variants",
+  },
+  {
+    seriesKey: "series_code",
+    seriesTable: "catalog_hose_end_series",
+    variantSeriesKey: "fitting_series",
+    variantTable: "catalog_hose_ends",
+  },
 ] as const;
 
 const relationshipTables = [
@@ -252,6 +271,30 @@ async function publicProductFingerprints(
     }
   }
 
+  for (const table of inheritedProductDetailTables) {
+    const rows = await database
+      .prepare(
+        `SELECT variant.sku AS inherited_sku, series.*
+         FROM ${table.variantTable} variant
+         INNER JOIN ${table.seriesTable} series
+           ON series.import_id = variant.import_id
+          AND series.${table.seriesKey} = variant.${table.variantSeriesKey}
+         WHERE variant.import_id = ?`,
+      )
+      .bind(importId)
+      .all<Record<string, unknown>>();
+    for (const row of rows.results) {
+      const sku = row.inherited_sku;
+      if (typeof sku !== "string") continue;
+      const product = fingerprints.get(sku);
+      if (!product) continue;
+      const series = Object.fromEntries(
+        Object.entries(row).filter(([key]) => key !== "inherited_sku"),
+      );
+      product[table.seriesTable] = canonicalValue(series);
+    }
+  }
+
   return new Map(
     [...fingerprints].map(([sku, value]) => [
       sku,
@@ -268,13 +311,34 @@ async function imageFingerprints(
   if (!importId) return fingerprints;
   const rows = await database
     .prepare(
-      `SELECT sku, media_version_id FROM catalog_product_main_images
-       WHERE import_id = ? ORDER BY sku`,
+      `SELECT product.sku,
+              COALESCE(image.media_version_id,
+                       hose_series.representative_media_version_id,
+                       hose_end_series.representative_media_version_id)
+                AS media_version_id
+       FROM catalog_skus product
+       LEFT JOIN catalog_product_main_images image
+         ON image.import_id = product.import_id
+        AND image.sku = product.sku
+        AND image.assignment_kind = 'override'
+       LEFT JOIN catalog_hose_variants hose
+         ON hose.import_id = product.import_id AND hose.sku = product.sku
+       LEFT JOIN catalog_hose_series hose_series
+         ON hose_series.import_id = hose.import_id
+        AND hose_series.series_code = hose.hose_series
+       LEFT JOIN catalog_hose_ends hose_end
+         ON hose_end.import_id = product.import_id
+        AND hose_end.sku = product.sku
+       LEFT JOIN catalog_hose_end_series hose_end_series
+         ON hose_end_series.import_id = hose_end.import_id
+        AND hose_end_series.series_code = hose_end.fitting_series
+       WHERE product.import_id = ?
+       ORDER BY product.sku`,
     )
     .bind(importId)
-    .all<{ media_version_id: string; sku: string }>();
+    .all<{ media_version_id: string | null; sku: string }>();
   for (const row of rows.results) {
-    fingerprints.set(row.sku, row.media_version_id);
+    fingerprints.set(row.sku, row.media_version_id ?? "");
   }
   return fingerprints;
 }
@@ -474,6 +538,10 @@ function publicProduct(row: PublicCatalogProductRow): PublicCatalogProduct {
       row.supply_availability === "available_for_quote",
     catalogPublicationStatus: row.catalog_publication_status,
     hoseSeries: row.hose_series,
+    mainImageUrl: publicCatalogMainImageUrl(
+      row.main_image_version_id,
+      row.main_image_approved_reference,
+    ),
     productType: row.product_type,
     releaseId: row.release_id,
     releaseNumber: row.release_number,
@@ -583,12 +651,36 @@ export function createD1CatalogPublicationRepository(
                   catalog_skus.catalog_publication_status,
                   catalog_skus.rfq_eligibility,
                   catalog_skus.technical_data_status,
-                  catalog_skus.supply_availability
+                  catalog_skus.supply_availability,
+                  media.id AS main_image_version_id,
+                  media.approved_reference AS main_image_approved_reference
            FROM catalog_active_release
            INNER JOIN catalog_releases
              ON catalog_releases.id = catalog_active_release.release_id
            INNER JOIN catalog_skus
              ON catalog_skus.import_id = catalog_releases.source_import_id
+           LEFT JOIN catalog_product_main_images image
+             ON image.import_id = catalog_skus.import_id
+            AND image.sku = catalog_skus.sku
+            AND image.assignment_kind = 'override'
+           LEFT JOIN catalog_hose_variants hose
+             ON hose.import_id = catalog_skus.import_id
+            AND hose.sku = catalog_skus.sku
+           LEFT JOIN catalog_hose_series hose_series
+             ON hose_series.import_id = hose.import_id
+            AND hose_series.series_code = hose.hose_series
+           LEFT JOIN catalog_hose_ends hose_end
+             ON hose_end.import_id = catalog_skus.import_id
+            AND hose_end.sku = catalog_skus.sku
+           LEFT JOIN catalog_hose_end_series hose_end_series
+             ON hose_end_series.import_id = hose_end.import_id
+            AND hose_end_series.series_code = hose_end.fitting_series
+           LEFT JOIN catalog_media_versions media
+             ON media.id = COALESCE(
+               image.media_version_id,
+               hose_series.representative_media_version_id,
+               hose_end_series.representative_media_version_id
+             )
            WHERE catalog_active_release.singleton = 1
              AND catalog_releases.status = 'published'
              AND catalog_skus.catalog_publication_status = 'Published'
@@ -609,10 +701,34 @@ export function createD1CatalogPublicationRepository(
                   catalog_skus.catalog_publication_status,
                   catalog_skus.rfq_eligibility,
                   catalog_skus.technical_data_status,
-                  catalog_skus.supply_availability
+                  catalog_skus.supply_availability,
+                  media.id AS main_image_version_id,
+                  media.approved_reference AS main_image_approved_reference
            FROM catalog_releases
            INNER JOIN catalog_skus
              ON catalog_skus.import_id = catalog_releases.source_import_id
+           LEFT JOIN catalog_product_main_images image
+             ON image.import_id = catalog_skus.import_id
+            AND image.sku = catalog_skus.sku
+            AND image.assignment_kind = 'override'
+           LEFT JOIN catalog_hose_variants hose
+             ON hose.import_id = catalog_skus.import_id
+            AND hose.sku = catalog_skus.sku
+           LEFT JOIN catalog_hose_series hose_series
+             ON hose_series.import_id = hose.import_id
+            AND hose_series.series_code = hose.hose_series
+           LEFT JOIN catalog_hose_ends hose_end
+             ON hose_end.import_id = catalog_skus.import_id
+            AND hose_end.sku = catalog_skus.sku
+           LEFT JOIN catalog_hose_end_series hose_end_series
+             ON hose_end_series.import_id = hose_end.import_id
+            AND hose_end_series.series_code = hose_end.fitting_series
+           LEFT JOIN catalog_media_versions media
+             ON media.id = COALESCE(
+               image.media_version_id,
+               hose_series.representative_media_version_id,
+               hose_end_series.representative_media_version_id
+             )
            WHERE catalog_releases.id = ?
              AND catalog_releases.status IN ('published', 'superseded')
              AND catalog_skus.catalog_publication_status = 'Published'
@@ -709,7 +825,15 @@ export function createD1CatalogPublicationRepository(
           JSON.stringify({
             activeGeneration: input.preview.activeGeneration,
             activeReleaseId: input.preview.activeRelease?.id ?? null,
+            after: {
+              activeGeneration: input.preview.activeGeneration,
+              activeReleaseId: input.preview.activeRelease?.id ?? null,
+              assemblyState: input.preview.assemblyState,
+              draftVersion: input.preview.draftRelease.version,
+              prepared: true,
+            },
             assemblyState: input.preview.assemblyState,
+            before: { prepared: false },
             differences: {
               affectedSeries: input.preview.affectedSeries,
               derivedCombinations: input.preview.derivedCombinations,
@@ -931,43 +1055,110 @@ export function createD1CatalogPublicationRepository(
         });
       }
 
-      const missingReferencePrices = await database
+      const missingSeriesReferences = await database
         .prepare(
           `SELECT product.sku
            FROM catalog_skus product
+           LEFT JOIN catalog_hose_variants hose
+             ON hose.import_id = product.import_id AND hose.sku = product.sku
+           LEFT JOIN catalog_hose_series hose_series
+             ON hose_series.import_id = hose.import_id
+            AND hose_series.series_code = hose.hose_series
+           LEFT JOIN catalog_hose_ends hose_end
+             ON hose_end.import_id = product.import_id AND hose_end.sku = product.sku
+           LEFT JOIN catalog_hose_end_series hose_end_series
+             ON hose_end_series.import_id = hose_end.import_id
+            AND hose_end_series.series_code = hose_end.fitting_series
            WHERE product.import_id = ?
              AND product.catalog_publication_status = 'Published'
-             AND NOT EXISTS (
-               SELECT 1
-               FROM catalog_sku_price_packaging exact
-               WHERE exact.import_id = product.import_id
-                 AND exact.sku = product.sku
-                 AND exact.currency = 'USD'
-                 AND exact.reference_price_usd IS NOT NULL
-                 AND exact.reference_price_usd >= 0
-             )
-             AND NOT EXISTS (
-               SELECT 1 FROM catalog_sales_offers offer
-               WHERE offer.import_id = product.import_id
-                 AND offer.base_sku = product.sku
-                 AND offer.catalog_publication_status = 'Published'
-                 AND offer.currency = 'USD'
-                 AND offer.reference_price_usd IS NOT NULL
-                 AND offer.reference_price_usd >= 0
+             AND (
+               (product.product_type = 'hose' AND hose_series.id IS NULL)
+               OR
+               (product.product_type = 'hose_end' AND hose_end_series.id IS NULL)
              )
            ORDER BY product.sku`,
         )
         .bind(draft.source_import_id)
         .all<{ sku: string }>();
-      if (missingReferencePrices.results.length > 0) {
+      if (missingSeriesReferences.results.length > 0) {
         blockers.push({
-          code: "missing_reference_price",
-          message: `${missingReferencePrices.results.length} publishable SKUs have no published USD Reference Price: ${missingReferencePrices.results
+          code: "missing_series_reference",
+          message: `${missingSeriesReferences.results.length} publishable variants do not resolve a valid series: ${missingSeriesReferences.results
             .slice(0, 8)
             .map((row) => row.sku)
             .join(
               ", ",
-            )}. / ${missingReferencePrices.results.length} 个待发布 SKU 缺少已发布的 USD 零售单价。`,
+            )}. / ${missingSeriesReferences.results.length} 个待发布子体无法解析有效系列。`,
+        });
+      }
+
+      const invalidCommercialRows = await database
+        .prepare(
+          `SELECT product.sku,
+                  CASE WHEN exact.id IS NOT NULL
+                    THEN exact.sales_sku ELSE offer.sales_sku END AS sales_sku,
+                  CASE WHEN exact.id IS NOT NULL
+                    THEN exact.currency ELSE offer.currency END AS currency,
+                  CASE WHEN exact.id IS NOT NULL
+                    THEN exact.reference_price_usd ELSE offer.reference_price_usd
+                  END AS reference_price_usd
+           FROM catalog_skus product
+           LEFT JOIN catalog_sku_price_packaging exact
+             ON exact.import_id = product.import_id AND exact.sku = product.sku
+           LEFT JOIN catalog_sales_offers offer
+             ON offer.import_id = product.import_id AND offer.base_sku = product.sku
+           WHERE product.import_id = ?
+             AND product.catalog_publication_status = 'Published'
+           ORDER BY product.sku`,
+        )
+        .bind(draft.source_import_id)
+        .all<{
+          currency: string | null;
+          reference_price_usd: number | null;
+          sales_sku: string | null;
+          sku: string;
+        }>();
+      const invalidSalesSkus = invalidCommercialRows.results.filter(
+        (row) => row.sales_sku !== row.sku,
+      );
+      if (invalidSalesSkus.length > 0) {
+        blockers.push({
+          code: "invalid_sales_sku",
+          message: `${invalidSalesSkus.length} publishable SKUs do not have the generated Sales SKU: ${invalidSalesSkus
+            .slice(0, 8)
+            .map((row) => row.sku)
+            .join(
+              ", ",
+            )}. / ${invalidSalesSkus.length} 个待发布 SKU 缺少与产品 SKU 一致的自动生成销售 SKU。`,
+        });
+      }
+      const invalidCurrencies = invalidCommercialRows.results.filter(
+        (row) => row.currency !== "USD",
+      );
+      if (invalidCurrencies.length > 0) {
+        blockers.push({
+          code: "invalid_retail_currency",
+          message: `${invalidCurrencies.length} publishable SKUs do not use USD retail pricing: ${invalidCurrencies
+            .slice(0, 8)
+            .map((row) => row.sku)
+            .join(
+              ", ",
+            )}. / ${invalidCurrencies.length} 个待发布 SKU 的零售价格币种不是 USD。`,
+        });
+      }
+      const missingReferencePrices = invalidCommercialRows.results.filter(
+        (row) =>
+          row.reference_price_usd === null || row.reference_price_usd < 0,
+      );
+      if (missingReferencePrices.length > 0) {
+        blockers.push({
+          code: "missing_reference_price",
+          message: `${missingReferencePrices.length} publishable SKUs have no published USD Reference Price: ${missingReferencePrices
+            .slice(0, 8)
+            .map((row) => row.sku)
+            .join(
+              ", ",
+            )}. / ${missingReferencePrices.length} 个待发布 SKU 缺少已发布的 USD 零售单价。`,
         });
       }
 
@@ -976,18 +1167,47 @@ export function createD1CatalogPublicationRepository(
           `SELECT COUNT(*) AS count
            FROM catalog_skus product
            LEFT JOIN catalog_product_main_images image
-             ON image.import_id = product.import_id AND image.sku = product.sku
-           LEFT JOIN catalog_media_versions media ON media.id = image.media_version_id
+             ON image.import_id = product.import_id
+            AND image.sku = product.sku
+            AND image.assignment_kind = 'override'
+           LEFT JOIN catalog_hose_variants hose
+             ON hose.import_id = product.import_id AND hose.sku = product.sku
+           LEFT JOIN catalog_hose_series hose_series
+             ON hose_series.import_id = hose.import_id
+            AND hose_series.series_code = hose.hose_series
+           LEFT JOIN catalog_hose_ends hose_end
+             ON hose_end.import_id = product.import_id
+            AND hose_end.sku = product.sku
+           LEFT JOIN catalog_hose_end_series hose_end_series
+             ON hose_end_series.import_id = hose_end.import_id
+            AND hose_end_series.series_code = hose_end.fitting_series
+           LEFT JOIN catalog_media_versions media
+             ON media.id = COALESCE(
+               image.media_version_id,
+               hose_series.representative_media_version_id,
+               hose_end_series.representative_media_version_id
+             )
            WHERE product.import_id = ?
              AND product.catalog_publication_status = 'Published'
-             AND media.id IS NULL`,
+             AND (
+               media.id IS NULL
+               OR (
+                 media.approved_reference IS NULL
+                 AND media.storefront_object_key IS NULL
+               )
+               OR (
+                 media.approved_reference IS NOT NULL
+                 AND media.approved_reference NOT LIKE 'hose-series:%'
+                 AND media.approved_reference NOT LIKE 'hose-end-shape:%'
+               )
+             )`,
         )
         .bind(draft.source_import_id)
         .first<{ count: number }>();
       if ((missingMainImages?.count ?? 0) > 0) {
         blockers.push({
           code: "missing_main_image",
-          message: `${missingMainImages?.count} publishable SKUs do not resolve exactly one reviewed main image.`,
+          message: `${missingMainImages?.count} publishable SKUs do not resolve exactly one web-renderable reviewed representative or override image. / ${missingMainImages?.count} 个待发布 SKU 无法解析唯一且可在客户页面显示的已审核系列代表图或子体覆盖图。`,
         });
       }
 
@@ -1201,6 +1421,11 @@ export function createD1CatalogPublicationRepository(
 
     async publish(operation: CatalogPublicationOperation) {
       const payload = JSON.stringify({
+        after: {
+          activeReleaseId: operation.releaseId,
+          differences: operation.differences,
+        },
+        before: { activeReleaseId: operation.previousReleaseId },
         differences: operation.differences,
         ipAddress: operation.ipAddress,
         previousReleaseId: operation.previousReleaseId,

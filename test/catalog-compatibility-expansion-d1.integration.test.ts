@@ -477,20 +477,49 @@ describe("automatic Catalog compatibility expansion", () => {
            ORDER BY occurred_at LIMIT 1`,
         )
         .first<{ payload_json: string }>();
-      expect(JSON.parse(audit?.payload_json ?? "{}")).toMatchObject({
+      const auditPayload = JSON.parse(audit?.payload_json ?? "{}") as {
+        after: unknown[];
+        before: unknown[];
+      };
+      expect(auditPayload).toMatchObject({
         affectedSkus: first?.affectedSkus,
         afterAutomaticRelationshipCount: 2,
         beforeAutomaticRelationshipCount: 1,
         ipAddress: "203.0.113.10",
         requestCorrelationId: "request-compatibility-expansion-1",
       });
+      expect(auditPayload.before).toHaveLength(1);
+      expect(auditPayload.after).toHaveLength(2);
+      expect(auditPayload.after).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            catalogPublicationStatus: "Published",
+            referenceSystem: "Automatic catalog compatibility rule",
+            rfqEligibility: "Eligible",
+            skiveRequirement: "No Skive",
+            technicalDataStatus: "Pending",
+          }),
+        ]),
+      );
 
-      await expandDraftCatalogCompatibilities(database, {
+      const versionBeforeRetry = await database
+        .prepare(
+          `SELECT version FROM catalog_releases WHERE id = 'draft-release'`,
+        )
+        .first<{ version: number }>();
+      const auditCountBeforeRetry = await database
+        .prepare(
+          `SELECT COUNT(*) AS count FROM admin_audit_events
+           WHERE event_type = 'catalog_release.compatibilities_expanded'`,
+        )
+        .first<{ count: number }>();
+      const retry = await expandDraftCatalogCompatibilities(database, {
         actorId: "owner-1",
         ipAddress: "203.0.113.10",
         releaseId: "draft-release",
         requestCorrelationId: "request-compatibility-expansion-2",
       });
+      expect(retry).toMatchObject({ addedCount: 0, removedCount: 0 });
       const count = await database
         .prepare(
           `SELECT COUNT(*) AS count FROM catalog_compatibilities
@@ -498,6 +527,21 @@ describe("automatic Catalog compatibility expansion", () => {
         )
         .first<{ count: number }>();
       expect(count?.count).toBe(2);
+      expect(
+        await database
+          .prepare(
+            `SELECT version FROM catalog_releases WHERE id = 'draft-release'`,
+          )
+          .first(),
+      ).toEqual(versionBeforeRetry);
+      expect(
+        await database
+          .prepare(
+            `SELECT COUNT(*) AS count FROM admin_audit_events
+             WHERE event_type = 'catalog_release.compatibilities_expanded'`,
+          )
+          .first(),
+      ).toEqual(auditCountBeforeRetry);
     } finally {
       await platform.dispose();
     }

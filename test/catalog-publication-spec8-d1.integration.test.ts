@@ -57,12 +57,38 @@ async function importDraft(
       fileSizeBytes: 1,
       generateId: idGenerator(prefix),
       now: () =>
-        new Date(`2026-09-04T0${prefix === "first" ? "1" : "2"}:00:00.000Z`),
+        new Date(
+          `2026-09-04T0${prefix === "first" ? "1" : prefix === "second" ? "2" : "4"}:00:00.000Z`,
+        ),
       sheets,
     },
   );
   if (!result.draftReleaseId) throw new Error("Expected a valid draft");
   await database.batch([
+    database.prepare(
+      `INSERT OR IGNORE INTO catalog_media_lineages (
+         id, logical_reference, created_at, created_by, source_notes,
+         license_notes
+       ) VALUES (
+         'spec8-renderable-lineage', 'uploaded:spec8-renderable-lineage',
+         '2026-09-04T00:00:00.000Z', 'owner-1', 'integration fixture',
+         'test-only'
+       )`,
+    ),
+    database.prepare(
+      `INSERT OR IGNORE INTO catalog_media_versions (
+         id, lineage_id, version, source_kind, approved_reference,
+         master_object_key, storefront_object_key, thumbnail_object_key,
+         content_hash, mime_type, width, height, created_at, created_by,
+         source_notes, license_notes
+       ) VALUES (
+         'spec8-renderable-media', 'spec8-renderable-lineage', 1, 'uploaded',
+         NULL, 'test/master.webp', 'test/storefront.webp',
+         'test/thumbnail.webp', 'spec8-test-content', 'image/webp', 800, 800,
+         '2026-09-04T00:00:00.000Z', 'owner-1', 'integration fixture',
+         'test-only'
+       )`,
+    ),
     database
       .prepare(
         `UPDATE catalog_skus
@@ -86,6 +112,18 @@ async function importDraft(
          SET catalog_publication_status = 'Published',
              rfq_eligibility = 'Eligible'
          WHERE import_id = ?`,
+      )
+      .bind(result.id),
+    database
+      .prepare(
+        `INSERT OR REPLACE INTO catalog_product_main_images (
+           id, import_id, sku, media_version_id, assigned_at, assigned_by,
+           assignment_kind
+         )
+         SELECT import_id || ':spec8-renderable:' || sku, import_id, sku,
+                'spec8-renderable-media', '2026-09-04T00:00:00.000Z',
+                'owner-1', 'override'
+         FROM catalog_skus WHERE import_id = ?`,
       )
       .bind(result.id),
   ]);
@@ -165,12 +203,36 @@ describe("Spec 8 atomic product and Assembly Data publication", () => {
         generateId: () => "first-assembly-generation",
         releaseId: first.releaseId,
       });
+      const inheritedSeriesImage = await database
+        .prepare(
+          `SELECT series.representative_media_version_id AS media_version_id
+           FROM catalog_hose_variants variant
+           INNER JOIN catalog_hose_series series
+             ON series.import_id = variant.import_id
+            AND series.series_code = variant.hose_series
+           WHERE variant.import_id = ? AND variant.sku = '601R1_001'`,
+        )
+        .bind(first.importId)
+        .first<{ media_version_id: string | null }>();
+      expect(inheritedSeriesImage?.media_version_id).toBeTruthy();
+      await database
+        .prepare(
+          `DELETE FROM catalog_product_main_images
+           WHERE import_id = ? AND sku = '601R1_001'`,
+        )
+        .bind(first.importId)
+        .run();
       const firstPreview = await previewOrThrow(database, first.releaseId);
       expect(firstPreview.blockers).toEqual([]);
       expect(
         firstPreview.assemblyState.derivedCombinationCount,
       ).toBeGreaterThan(0);
       await publishPreview(database, firstPreview, "publish-first");
+      await expect(
+        createD1PublicCatalogRepository(database).findItem("601R1_001"),
+      ).resolves.toMatchObject({
+        mainImageUrl: `/media/catalog/${encodeURIComponent(inheritedSeriesImage?.media_version_id ?? "")}/storefront`,
+      });
       const publicationRecord = await database
         .prepare(
           `SELECT summary_json FROM catalog_release_publications
@@ -196,6 +258,11 @@ describe("Spec 8 atomic product and Assembly Data publication", () => {
         .bind(first.releaseId)
         .first<{ payload_json: string }>();
       expect(JSON.parse(publicationAudit?.payload_json ?? "{}")).toMatchObject({
+        after: {
+          activeReleaseId: first.releaseId,
+          differences: expect.any(Object),
+        },
+        before: { activeReleaseId: null },
         ipAddress: "203.0.113.10",
         requestCorrelationId: "publish-first",
       });
@@ -257,6 +324,13 @@ describe("Spec 8 atomic product and Assembly Data publication", () => {
       ]);
 
       const second = await importDraft(database, sheets, "second");
+      await database
+        .prepare(
+          `DELETE FROM catalog_product_main_images
+           WHERE import_id = ? AND sku = '601R1_001'`,
+        )
+        .bind(second.importId)
+        .run();
       const newPrice = (oldPrice?.reference_price_usd ?? 0) + 1;
       await database
         .prepare(
@@ -335,6 +409,31 @@ describe("Spec 8 atomic product and Assembly Data publication", () => {
       ).toEqual({
         count: secondPreview.assemblyState.derivedCombinationCount,
       });
+
+      const inheritedDraft = await importDraft(database, sheets, "inherited");
+      await database
+        .prepare(
+          `UPDATE catalog_hose_series
+           SET primary_standard = primary_standard || ' REV'
+           WHERE import_id = ? AND series_code = '601R1'`,
+        )
+        .bind(inheritedDraft.importId)
+        .run();
+      const inheritedPreview = await previewOrThrow(
+        database,
+        inheritedDraft.releaseId,
+      );
+      const inheritedHoseSkus = await database
+        .prepare(
+          `SELECT sku FROM catalog_hose_variants
+           WHERE import_id = ? AND hose_series = '601R1' ORDER BY sku`,
+        )
+        .bind(inheritedDraft.importId)
+        .all<{ sku: string }>();
+      expect(inheritedHoseSkus.results.length).toBeGreaterThan(1);
+      expect(inheritedPreview.products.changes).toEqual(
+        expect.arrayContaining(inheritedHoseSkus.results.map((row) => row.sku)),
+      );
     } finally {
       await platform.dispose();
     }
@@ -406,6 +505,154 @@ describe("Spec 8 atomic product and Assembly Data publication", () => {
         )
         .bind(draft.importId)
         .run();
+      await database
+        .prepare(
+          `UPDATE catalog_sales_offers
+           SET currency = 'EUR'
+           WHERE import_id = ? AND base_sku = '601R1_001'`,
+        )
+        .bind(draft.importId)
+        .run();
+      const invalidCommercial = await previewOrThrow(database, draft.releaseId);
+      expect(invalidCommercial.blockers).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: "invalid_retail_currency" }),
+        ]),
+      );
+      await database
+        .prepare(
+          `UPDATE catalog_sales_offers
+           SET currency = 'USD'
+           WHERE import_id = ? AND base_sku = '601R1_001'`,
+        )
+        .bind(draft.importId)
+        .run();
+      const mainImage = await database
+        .prepare(
+          `SELECT id, sku, media_version_id, assigned_at, assigned_by,
+                  assignment_kind
+           FROM catalog_product_main_images
+           WHERE import_id = ? AND sku = '601R1_001'`,
+        )
+        .bind(draft.importId)
+        .first<{
+          assigned_at: string;
+          assigned_by: string;
+          assignment_kind: "inherited" | "override";
+          id: string;
+          media_version_id: string;
+          sku: string;
+        }>();
+      expect(mainImage).toBeTruthy();
+      await database
+        .prepare(
+          `DELETE FROM catalog_product_main_images
+           WHERE import_id = ? AND sku = '601R1_001'`,
+        )
+        .bind(draft.importId)
+        .run();
+      expect(
+        await database
+          .prepare(
+            `SELECT product.catalog_publication_status,
+                    COUNT(image.id) AS image_count
+             FROM catalog_skus product
+             LEFT JOIN catalog_product_main_images image
+               ON image.import_id = product.import_id AND image.sku = product.sku
+             WHERE product.import_id = ? AND product.sku = '601R1_001'
+             GROUP BY product.catalog_publication_status`,
+          )
+          .bind(draft.importId)
+          .first(),
+      ).toEqual({ catalog_publication_status: "Published", image_count: 0 });
+      const inheritedImage = await previewOrThrow(database, draft.releaseId);
+      expect(
+        inheritedImage.blockers.some(
+          (finding) => finding.code === "missing_main_image",
+        ),
+      ).toBe(false);
+      const inheritedMedia = await database
+        .prepare(
+          `SELECT media.id, media.approved_reference
+           FROM catalog_hose_variants variant
+           INNER JOIN catalog_hose_series series
+             ON series.import_id = variant.import_id
+            AND series.series_code = variant.hose_series
+           INNER JOIN catalog_media_versions media
+             ON media.id = series.representative_media_version_id
+           WHERE variant.import_id = ? AND variant.sku = '601R1_001'`,
+        )
+        .bind(draft.importId)
+        .first<{ approved_reference: string | null; id: string }>();
+      expect(inheritedMedia).toBeTruthy();
+      await database.batch([
+        database.prepare(
+          `INSERT INTO catalog_media_lineages (
+             id, logical_reference, created_at, created_by, source_notes,
+             license_notes
+           ) VALUES (
+             'non-renderable-lineage', 'catalog-source:non-renderable',
+             '2026-09-04T00:00:00.000Z', 'owner-1', 'integration fixture',
+             'test-only'
+           )`,
+        ),
+        database.prepare(
+          `INSERT INTO catalog_media_versions (
+             id, lineage_id, version, source_kind, approved_reference,
+             master_object_key, storefront_object_key, thumbnail_object_key,
+             content_hash, mime_type, width, height, created_at, created_by,
+             source_notes, license_notes
+           ) VALUES (
+             'non-renderable-media', 'non-renderable-lineage', 1,
+             'approved_reference', 'catalog-source:non-renderable', NULL, NULL,
+             NULL, NULL, 'reference', NULL, NULL,
+             '2026-09-04T00:00:00.000Z', 'owner-1', 'integration fixture',
+             'test-only'
+           )`,
+        ),
+        database
+          .prepare(
+            `UPDATE catalog_hose_series
+             SET representative_media_version_id = 'non-renderable-media'
+             WHERE import_id = ? AND series_code = '601R1'`,
+          )
+          .bind(draft.importId),
+      ]);
+      const nonRenderableImage = await previewOrThrow(
+        database,
+        draft.releaseId,
+      );
+      expect(nonRenderableImage.blockers).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: "missing_main_image" }),
+        ]),
+      );
+      await database
+        .prepare(
+          `UPDATE catalog_hose_series SET representative_media_version_id = ?
+           WHERE import_id = ? AND series_code = '601R1'`,
+        )
+        .bind(inheritedMedia?.id, draft.importId)
+        .run();
+      if (mainImage) {
+        await database
+          .prepare(
+            `INSERT INTO catalog_product_main_images (
+               id, import_id, sku, media_version_id, assigned_at, assigned_by,
+               assignment_kind
+             ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .bind(
+            `${mainImage.id}:restored`,
+            draft.importId,
+            mainImage.sku,
+            mainImage.media_version_id,
+            mainImage.assigned_at,
+            mainImage.assigned_by,
+            mainImage.assignment_kind,
+          )
+          .run();
+      }
       await database
         .prepare(
           `UPDATE catalog_compatibilities SET assembly_working_bar = 99

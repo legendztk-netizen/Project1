@@ -343,6 +343,21 @@ export function createD1CatalogAssemblyRegenerationRepository(
       const auditPayload = JSON.stringify({
         additionCount: operation.additionCount,
         affectedSeries: operation.affectedSeries,
+        after: {
+          combinationCount: operation.generatedCombinations.length,
+          combinationIdentitySample: operation.generatedCombinations
+            .slice(0, 20)
+            .map((combination) => combination.identityKey),
+          generatedSeries: operation.generatedSeries,
+          generationId: operation.generationId,
+          inputFingerprint: operation.inputFingerprint,
+        },
+        before: {
+          combinationCount: operation.beforeAffectedCombinations.length,
+          combinationIdentitySample: operation.beforeAffectedCombinations
+            .slice(0, 20)
+            .map((combination) => combination.identityKey),
+        },
         changeCount: operation.changeCount,
         combinationCount: operation.combinationCount,
         inputFingerprint: operation.inputFingerprint,

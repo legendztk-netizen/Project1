@@ -314,7 +314,16 @@ export function createD1CatalogAssemblyImpactRepository(database: D1Database) {
       const auditPayload = JSON.stringify({
         activeGeneration: comparison.active_generation,
         affectedSeries: calculated.affectedSeries,
+        after: {
+          activeGeneration: comparison.active_generation,
+          affectedSeries: calculated.affectedSeries,
+          baselineReleaseId: comparison.baseline_release_id,
+          inputFingerprint,
+          sourceChanges: calculated.sourceChanges,
+          status,
+        },
         baselineReleaseId: comparison.baseline_release_id,
+        before: existing,
         inputFingerprint,
         ipAddress: input.ipAddress,
         requestCorrelationId: input.requestCorrelationId,

@@ -269,9 +269,15 @@ describe("D1 affected Assembly Series persistence", () => {
            ORDER BY occurred_at LIMIT 1`,
         )
         .first<{ payload_json: string }>();
-      expect(JSON.parse(impactAudit?.payload_json ?? "{}")).toMatchObject(
-        auditContext,
-      );
+      expect(JSON.parse(impactAudit?.payload_json ?? "{}")).toMatchObject({
+        ...auditContext,
+        after: expect.objectContaining({
+          affectedSeries: expect.any(Array),
+          inputFingerprint: expect.any(String),
+          status: expect.any(String),
+        }),
+        before: null,
+      });
 
       await database
         .prepare(

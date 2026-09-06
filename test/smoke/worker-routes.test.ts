@@ -91,20 +91,8 @@ async function publishFromReview(
   releaseId: string,
   requestCorrelationId: string,
 ) {
-  const preparation = await preparePublicationFromReview(
-    releaseId,
-    requestCorrelationId,
-  );
-  if (preparation.status !== 302) return preparation;
-  return publishPreparedFromReview(releaseId, requestCorrelationId);
-}
-
-async function preparePublicationFromReview(
-  releaseId: string,
-  requestCorrelationId: string,
-) {
   const form = new FormData();
-  form.set("intent", "prepare_publication");
+  form.set("intent", "publish_catalog");
   form.set("releaseId", releaseId);
   form.set("requestCorrelationId", requestCorrelationId);
   return fetch(`${origin}/admin/catalog/review`, {
@@ -118,31 +106,15 @@ async function preparePublicationFromReview(
   });
 }
 
-async function publishPreparedFromReview(
-  releaseId: string,
-  requestCorrelationId: string,
+function completeFerruleMaintenanceForm(
+  sku: string,
+  mainImageReference = "catalog-source:62d65f8412ff5.pdf:ferrule:p49-50",
 ) {
-  const form = new FormData();
-  form.set("intent", "publish_prepared");
-  form.set("releaseId", releaseId);
-  form.set("requestCorrelationId", requestCorrelationId);
-  return fetch(`${origin}/admin/catalog/review`, {
-    body: form,
-    headers: {
-      "cf-connecting-ip": "203.0.113.10",
-      "x-request-id": `transport-${crypto.randomUUID()}`,
-    },
-    method: "POST",
-    redirect: "manual",
-  });
-}
-
-function completeFerruleMaintenanceForm(sku: string) {
   const form = new FormData();
   const values = {
     intent: "maintain_component",
     lifecycleStatus: "online",
-    mainImageReference: "catalog-source:62d65f8412ff5.pdf:ferrule:p49-50",
+    mainImageReference,
     mode: "create",
     "master.coating": "Zinc plating",
     "master.ferruleSeries": "601R1",
@@ -159,6 +131,29 @@ function completeFerruleMaintenanceForm(sku: string) {
   };
   for (const [key, value] of Object.entries(values)) form.set(key, value);
   return form;
+}
+
+async function uploadReviewedCatalogImage() {
+  const image = await readFile("public/images/601R2-structure.png");
+  const form = new FormData();
+  form.set("intent", "upload_workbook_series_image");
+  form.set(
+    "mainImageUpload",
+    new File([image], "ticket-74-reviewed-image.png", { type: "image/png" }),
+  );
+  const response = await fetch(`${origin}/admin/catalog/import`, {
+    body: form,
+    method: "POST",
+    redirect: "manual",
+  });
+  expect(response.status, await response.text()).toBe(302);
+  const location = response.headers.get("location") ?? "";
+  const reference = new URL(location, origin).searchParams.get(
+    "seriesImageReference",
+  );
+  expect(reference).toMatch(/^media-version:[A-Za-z0-9_-]+$/u);
+  if (!reference) throw new Error("Expected uploaded reviewed image reference");
+  return reference;
 }
 
 async function saveSeriesCommercialRule(
@@ -205,27 +200,20 @@ async function saveSkuReferencePrice(sku: string, referencePrice: string) {
   });
 }
 
-function assignReviewedImageToPublishedProducts(importId: string) {
-  const [media] = runLocalD1<{ id: string }>(
-    `SELECT id FROM catalog_media_versions ORDER BY created_at, id LIMIT 1`,
-  );
-  expect(media).toBeTruthy();
-  if (!media) throw new Error("Expected one reviewed Catalog image");
+async function assignReviewedImageToPublishedProducts(importId: string) {
+  const reference = await uploadReviewedCatalogImage();
+  const mediaVersionId = reference.slice("media-version:".length);
   runLocalD1(
-    `INSERT INTO catalog_product_main_images (
-       id, import_id, sku, media_version_id, assigned_at, assigned_by
+    `INSERT OR REPLACE INTO catalog_product_main_images (
+       id, import_id, sku, media_version_id, assigned_at, assigned_by,
+       assignment_kind
      )
      SELECT 'smoke-image:' || product.import_id || ':' || product.sku,
-            product.import_id, product.sku, ${sqlText(media.id)},
-            CURRENT_TIMESTAMP, 'local-owner'
+            product.import_id, product.sku, ${sqlText(mediaVersionId)},
+            CURRENT_TIMESTAMP, 'local-owner', 'override'
      FROM catalog_skus product
      WHERE product.import_id = ${sqlText(importId)}
-       AND product.catalog_publication_status = 'Published'
-       AND NOT EXISTS (
-         SELECT 1 FROM catalog_product_main_images existing
-         WHERE existing.import_id = product.import_id
-           AND existing.sku = product.sku
-       )`,
+       AND product.catalog_publication_status = 'Published'`,
   );
 }
 
@@ -3207,7 +3195,7 @@ describe("Cloudflare Worker route surfaces", () => {
            rfq_eligibility = 'Eligible'
        WHERE import_id = ${sqlText(draft.source_import_id)};`,
     );
-    assignReviewedImageToPublishedProducts(draft.source_import_id);
+    await assignReviewedImageToPublishedProducts(draft.source_import_id);
 
     const reviewResponse = await fetch(
       `${origin}/admin/catalog/review?release=${encodeURIComponent(draft.id)}`,
@@ -3215,7 +3203,7 @@ describe("Cloudflare Worker route surfaces", () => {
     const reviewHtml = await reviewResponse.text();
     expect(reviewResponse.status).toBe(200);
     expect(reviewHtml).not.toContain("完整发布差异预览");
-    expect(reviewHtml).toContain("生成最终预览");
+    expect(reviewHtml).toContain("校验、更新总成并发布");
     expect(reviewHtml).toContain("受影响的胶管系列");
 
     const [offer] = runLocalD1<{
@@ -3264,21 +3252,7 @@ describe("Cloudflare Worker route surfaces", () => {
     );
 
     const requestId = `combined-publication-${draft.id}`;
-    const preparationResponse = await preparePublicationFromReview(
-      draft.id,
-      requestId,
-    );
-    expect(preparationResponse.status).toBe(302);
-    const preparedReview = await (
-      await fetch(`${origin}${preparationResponse.headers.get("location")}`)
-    ).text();
-    expect(preparedReview).toContain("完整发布差异预览");
-    expect(preparedReview).toContain("参考价格");
-    expect(preparedReview).toContain("产品主图");
-    expect(preparedReview).toContain("兼容关系");
-    expect(preparedReview).toContain("衍生总成组合");
-    expect(preparedReview).toContain("发布已确认的合并预览");
-    const response = await publishPreparedFromReview(draft.id, requestId);
+    const response = await publishFromReview(draft.id, requestId);
     expect(response.status, await response.text()).toBe(302);
 
     expect(
@@ -3334,10 +3308,14 @@ describe("Cloudflare Worker route surfaces", () => {
 
   it("runs one external maintenance-to-publication workflow with automatic compatibility", async () => {
     const ferruleSku = "601R1_1WB_T10_04";
+    const uploadedImageReference = await uploadReviewedCatalogImage();
     const saveResponse = await fetch(
       `${origin}/admin/catalog/import?mode=manual&productType=ferrule`,
       {
-        body: completeFerruleMaintenanceForm(ferruleSku),
+        body: completeFerruleMaintenanceForm(
+          ferruleSku,
+          uploadedImageReference,
+        ),
         method: "POST",
         redirect: "manual",
       },
@@ -3430,33 +3408,104 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(reviewHtml).toContain("兼容关系");
     expect(reviewHtml).not.toContain("完整发布差异预览");
 
-    const requestId = `ticket-74-${draft.id}`;
-    const preparationResponse = await preparePublicationFromReview(
+    const activeBeforeRejections = runLocalD1<{
+      release_id: string | null;
+      version: number;
+    }>(
+      "SELECT release_id, version FROM catalog_active_release WHERE singleton = 1",
+    );
+    const [draftImage] = runLocalD1<{
+      assigned_at: string;
+      assigned_by: string;
+      id: string;
+      media_version_id: string;
+    }>(
+      `SELECT id, media_version_id, assigned_at, assigned_by
+       FROM catalog_product_main_images
+       WHERE import_id = ${sqlText(draft.source_import_id)}
+         AND sku = ${sqlText(ferruleSku)}`,
+    );
+    expect(draftImage).toBeTruthy();
+    if (!draftImage) throw new Error("Expected the Ferrule main image");
+    runLocalD1(
+      `DELETE FROM catalog_product_main_images
+       WHERE import_id = ${sqlText(draft.source_import_id)}
+         AND sku = ${sqlText(ferruleSku)}`,
+    );
+    const missingImageResponse = await publishFromReview(
       draft.id,
-      requestId,
+      `ticket-74-missing-image-${draft.id}`,
     );
-    expect(preparationResponse.status, await preparationResponse.text()).toBe(
-      302,
+    const missingImageBody = await missingImageResponse.text();
+    expect(missingImageResponse.status).toBe(200);
+    expect(renderedText(missingImageBody)).toContain("主图");
+    expect(
+      runLocalD1<{
+        release_id: string | null;
+        version: number;
+      }>(
+        "SELECT release_id, version FROM catalog_active_release WHERE singleton = 1",
+      ),
+    ).toEqual(activeBeforeRejections);
+    runLocalD1(
+      `INSERT INTO catalog_product_main_images (
+         id, import_id, sku, media_version_id, assigned_at, assigned_by
+       ) VALUES (
+         ${sqlText(draftImage.id)}, ${sqlText(draft.source_import_id)},
+         ${sqlText(ferruleSku)}, ${sqlText(draftImage.media_version_id)},
+         ${sqlText(draftImage.assigned_at)}, ${sqlText(draftImage.assigned_by)}
+       )`,
     );
-    const preparedLocation = preparationResponse.headers.get("location");
-    expect(preparedLocation).toContain(
-      `publicationRequest=${encodeURIComponent(requestId)}`,
-    );
-    const preparedReviewResponse = await fetch(
-      `${origin}${preparedLocation ?? ""}`,
-    );
-    const preparedReviewHtml = await preparedReviewResponse.text();
-    expect(preparedReviewResponse.status).toBe(200);
-    expect(preparedReviewHtml).toContain("完整发布差异预览");
-    expect(preparedReviewHtml).toContain(
-      `AUTO:601R1_002:JIC_F_SW_04_04:${ferruleSku}`,
-    );
-    expect(preparedReviewHtml).toContain("发布已确认的合并预览");
 
-    const publicationResponse = await publishPreparedFromReview(
-      draft.id,
-      requestId,
+    runLocalD1(
+      `UPDATE catalog_ferrules SET skive_requirement = 'Skive'
+       WHERE import_id = ${sqlText(draft.source_import_id)}
+         AND sku = ${sqlText(ferruleSku)};
+       CREATE TRIGGER ticket74_force_regeneration_failure
+       BEFORE DELETE ON catalog_derived_assembly_combinations
+       BEGIN
+         SELECT RAISE(ABORT, 'TICKET74_FORCED_REGENERATION_FAILURE');
+       END`,
     );
+    const failedRegenerationResponse = await publishFromReview(
+      draft.id,
+      `ticket-74-failed-regeneration-${draft.id}`,
+    );
+    const failedRegenerationBody = await failedRegenerationResponse.text();
+    expect(failedRegenerationResponse.status).toBe(200);
+    expect(renderedText(failedRegenerationBody)).toContain("总成数据更新失败");
+    expect(
+      runLocalD1<{
+        release_id: string | null;
+        version: number;
+      }>(
+        "SELECT release_id, version FROM catalog_active_release WHERE singleton = 1",
+      ),
+    ).toEqual(activeBeforeRejections);
+    runLocalD1(
+      `DROP TRIGGER ticket74_force_regeneration_failure;
+       UPDATE catalog_ferrules SET skive_requirement = 'Other'
+       WHERE import_id = ${sqlText(draft.source_import_id)}
+         AND sku = ${sqlText(ferruleSku)}`,
+    );
+
+    expect(
+      runLocalD1<{ code: string }>(
+        `SELECT json_extract(payload_json, '$.code') AS code
+         FROM admin_audit_events
+         WHERE entity_id = ${sqlText(draft.id)}
+           AND event_type = 'catalog_release.publication_rejected'
+         ORDER BY occurred_at`,
+      ).map(({ code }) => code),
+    ).toEqual(
+      expect.arrayContaining([
+        "assembly_regeneration_failed",
+        "publication_blocked",
+      ]),
+    );
+
+    const requestId = `ticket-74-${draft.id}`;
+    const publicationResponse = await publishFromReview(draft.id, requestId);
     expect(publicationResponse.status, await publicationResponse.text()).toBe(
       302,
     );
@@ -3505,12 +3554,15 @@ describe("Cloudflare Worker route surfaces", () => {
          AND event_type = 'catalog_release.compatibilities_expanded'
        ORDER BY occurred_at DESC LIMIT 1`,
     );
-    expect(JSON.parse(expansionAudit?.payload_json ?? "{}")).toMatchObject({
+    const expansionAuditPayload = JSON.parse(
+      expansionAudit?.payload_json ?? "{}",
+    );
+    expect(expansionAuditPayload).toMatchObject({
       affectedSkus: expect.arrayContaining([ferruleSku]),
       ipAddress: "203.0.113.10",
-      requestCorrelationId: requestId,
       rule: "hose_end.hose_tail_dash = hose.dash; ferrule series/dash/skive = hose series/dash/skive",
     });
+    expect(expansionAuditPayload.requestCorrelationId).toMatch(/^ticket-74-/);
     const [regenerationAudit] = runLocalD1<{ payload_json: string }>(
       `SELECT payload_json FROM admin_audit_events
        WHERE entity_id = ${sqlText(draft.id)}
@@ -3543,6 +3595,95 @@ describe("Cloudflare Worker route surfaces", () => {
       ]),
     );
 
+    const automaticCompatibilityId = `AUTO:601R1_002:JIC_F_SW_04_04:${ferruleSku}`;
+    const registryRows = runLocalD1<{
+      entry_key: string;
+      record_version: number;
+      registry_type: string;
+    }>(
+      `SELECT registry_type, entry_key, record_version
+       FROM configurator_global_registry_entries
+       WHERE (registry_type = 'measurement_method' AND entry_key = 'M02')
+          OR (registry_type = 'installed_protection' AND entry_key = 'NONE')
+          OR (registry_type = 'assembly_estimate_schedule' AND entry_key = 'DEFAULT')`,
+    );
+    const versionFor = (registryType: string, entryKey: string) =>
+      registryRows.find(
+        (row) =>
+          row.registry_type === registryType && row.entry_key === entryKey,
+      )?.record_version;
+    const automaticAssembly = {
+      catalogRelease: { id: draft.id },
+      endA: {
+        compatibilityId: automaticCompatibilityId,
+        ferrule: { sku: ferruleSku },
+        hoseEnd: { sku: "JIC_F_SW_04_04" },
+      },
+      endB: {
+        compatibilityId: automaticCompatibilityId,
+        ferrule: { sku: ferruleSku },
+        hoseEnd: { sku: "JIC_F_SW_04_04" },
+      },
+      finishedLength: {
+        originalUnit: "in",
+        originalValue: "24",
+        requestedTighterTolerance: false,
+        tolerance: {
+          scheduleCode: "SAE_J517_ASSEMBLY_LENGTH",
+          scheduleVersion: "1.0.0",
+        },
+      },
+      hose: { sku: "601R1_002" },
+      installedProtection: {
+        code: "NONE",
+        recordVersion: versionFor("installed_protection", "NONE"),
+      },
+      lengthReferencePricing: {
+        scheduleRecordVersion: versionFor(
+          "assembly_estimate_schedule",
+          "DEFAULT",
+        ),
+      },
+      measurementSelection: {
+        method: {
+          code: "M02",
+          recordVersion: versionFor("measurement_method", "M02"),
+        },
+        state: "selected",
+      },
+    };
+    const quoteForm = new FormData();
+    quoteForm.set("draft", JSON.stringify(automaticAssembly));
+    quoteForm.set("quantity", "1");
+    const quoteResponse = await fetch(
+      `${origin}/api/configurator/quote-assembly`,
+      { body: quoteForm, method: "POST" },
+    );
+    expect(quoteResponse.status, await quoteResponse.text()).toBe(200);
+    const automaticQuoteCookie = cookieHeader(quoteResponse);
+    const quoteSessionId = sessionIdFromCookie(automaticQuoteCookie);
+    const [quotedAssembly] = runLocalD1<{
+      configured_estimate_inputs_json: string;
+      configured_snapshot_json: string;
+      configured_unit_estimate_amount: number;
+      line_kind: string;
+    }>(
+      `SELECT line_kind, configured_snapshot_json,
+              configured_estimate_inputs_json, configured_unit_estimate_amount
+       FROM anonymous_quote_lines
+       WHERE session_id = ${sqlText(quoteSessionId)}`,
+    );
+    expect(quotedAssembly?.line_kind).toBe("configured_assembly");
+    expect(
+      JSON.parse(quotedAssembly?.configured_snapshot_json ?? "{}"),
+    ).toMatchObject({
+      configuration: {
+        endA: { compatibilityId: automaticCompatibilityId },
+        endB: { compatibilityId: automaticCompatibilityId },
+      },
+      sourceCatalogRelease: { id: draft.id },
+    });
+
     const publicFerruleResponse = await fetch(
       `${origin}/api/catalog/products/${encodeURIComponent(ferruleSku)}`,
     );
@@ -3551,6 +3692,442 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(publicFerrule).toContain(ferruleSku);
     expect(publicFerrule).not.toContain("Cost Basis");
     expect(publicFerrule).not.toContain("factory_unit_price");
+
+    const estimateInputs = JSON.parse(
+      quotedAssembly?.configured_estimate_inputs_json ?? "{}",
+    ) as {
+      hoseCutLengthFeet: number;
+      hosePricePerFootUsd: number;
+    };
+    expect(quotedAssembly?.configured_unit_estimate_amount).toBeTypeOf(
+      "number",
+    );
+    expect(estimateInputs.hoseCutLengthFeet).toBeGreaterThan(0);
+    const derivedBeforePriceEdit = runLocalD1<{
+      identity_key: string;
+    }>(
+      `SELECT combination_fingerprint AS identity_key
+       FROM catalog_derived_assembly_combinations
+       WHERE release_id = ${sqlText(draft.id)}
+       ORDER BY combination_fingerprint`,
+    );
+
+    const priceOnlyResponse = await saveSkuReferencePrice("601R1_002", "9.99");
+    expect(priceOnlyResponse.status, await priceOnlyResponse.text()).toBe(302);
+    const [priceOnlyDraft] = runLocalD1<{
+      id: string;
+      source_import_id: string;
+    }>(
+      `SELECT id, source_import_id FROM catalog_releases
+       WHERE status = 'draft' ORDER BY created_at DESC, id DESC LIMIT 1`,
+    );
+    expect(priceOnlyDraft).toBeTruthy();
+    if (!priceOnlyDraft) throw new Error("Expected one price-only draft");
+
+    const pricePublicationResponse = await publishFromReview(
+      priceOnlyDraft.id,
+      `ticket-74-price-only-${priceOnlyDraft.id}`,
+    );
+    expect(
+      pricePublicationResponse.status,
+      await pricePublicationResponse.text(),
+    ).toBe(302);
+    expect(
+      runLocalD1<{ count: number }>(
+        `SELECT COUNT(*) AS count FROM admin_audit_events
+         WHERE entity_id = ${sqlText(priceOnlyDraft.id)}
+           AND event_type = 'catalog_release.assembly_regenerated'`,
+      ),
+    ).toEqual([{ count: 0 }]);
+    expect(
+      runLocalD1<{ identity_key: string }>(
+        `SELECT combination_fingerprint AS identity_key
+         FROM catalog_derived_assembly_combinations
+         WHERE release_id = ${sqlText(priceOnlyDraft.id)}
+         ORDER BY combination_fingerprint`,
+      ),
+    ).toEqual(derivedBeforePriceEdit);
+
+    const formerEstimate = quotedAssembly?.configured_unit_estimate_amount ?? 0;
+    const repricedEstimate =
+      Math.round(
+        (formerEstimate +
+          (9.99 - estimateInputs.hosePricePerFootUsd) *
+            estimateInputs.hoseCutLengthFeet +
+          Number.EPSILON) *
+          100,
+      ) / 100;
+    const refreshedAutomaticQuoteResponse = await fetch(
+      `${origin}/quote-list`,
+      { headers: { cookie: automaticQuoteCookie } },
+    );
+    const refreshedAutomaticQuote =
+      await refreshedAutomaticQuoteResponse.text();
+    expect(refreshedAutomaticQuoteResponse.status).toBe(200);
+    expect(refreshedAutomaticQuote).toContain("Estimate updated");
+    expect(refreshedAutomaticQuote).toContain(
+      `USD ${repricedEstimate.toFixed(2)} / assembly`,
+    );
+    expect(
+      runLocalD1<{ configured_unit_estimate_amount: number }>(
+        `SELECT configured_unit_estimate_amount FROM anonymous_quote_lines
+         WHERE session_id = ${sqlText(quoteSessionId)}`,
+      ),
+    ).toEqual([{ configured_unit_estimate_amount: formerEstimate }]);
+
+    const repricedQuoteForm = new FormData();
+    repricedQuoteForm.set(
+      "draft",
+      JSON.stringify({
+        ...automaticAssembly,
+        catalogRelease: { id: priceOnlyDraft.id },
+      }),
+    );
+    repricedQuoteForm.set("quantity", "1");
+    const repricedQuoteResponse = await fetch(
+      `${origin}/api/configurator/quote-assembly`,
+      { body: repricedQuoteForm, method: "POST" },
+    );
+    expect(
+      repricedQuoteResponse.status,
+      await repricedQuoteResponse.text(),
+    ).toBe(200);
+    const repricedQuoteSessionId = sessionIdFromCookie(
+      cookieHeader(repricedQuoteResponse),
+    );
+    expect(
+      runLocalD1<{ configured_unit_estimate_amount: number }>(
+        `SELECT configured_unit_estimate_amount FROM anonymous_quote_lines
+         WHERE session_id = ${sqlText(repricedQuoteSessionId)}`,
+      ),
+    ).toEqual([{ configured_unit_estimate_amount: repricedEstimate }]);
+  });
+
+  it("publishes the remaining product types and an ordinary edit through the external maintenance seam", async () => {
+    const hoseEndSeries = "T74-JIC-FSW";
+    const hoseEndSku = "T74-JIC-FSW-32-32";
+    const adapterSeries = "ADP-T74-JIC-NPT";
+    const adapterSku = "ADP_ST_JIC_M_T74_NPT_M_T74";
+    const sharedAdapterSku = "ADP_ST_JIC_M_T75_NPT_M_T75";
+    const couplerSeries = "T74-FEM";
+    const couplerSku = "QDC_5675_SOC_04_FNPT_16";
+    const uploadedImageReference = await uploadReviewedCatalogImage();
+
+    const catalogStateBeforeInvalidSubmission = {
+      active: runLocalD1<{ release_id: string | null; version: number }>(
+        "SELECT release_id, version FROM catalog_active_release WHERE singleton = 1",
+      ),
+      drafts: runLocalD1<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM catalog_releases WHERE status = 'draft'",
+      ),
+    };
+    const incompleteProduct = new FormData();
+    incompleteProduct.set("intent", "maintain_component");
+    incompleteProduct.set("lifecycleStatus", "online");
+    incompleteProduct.set("mode", "create");
+    incompleteProduct.set("productType", "adapter");
+    const incompleteResponse = await fetch(
+      `${origin}/admin/catalog/import?mode=manual&productType=adapter`,
+      { body: incompleteProduct, method: "POST", redirect: "manual" },
+    );
+    const incompleteBody = renderedText(await incompleteResponse.text());
+    expect(incompleteResponse.status).toBe(200);
+    expect(incompleteBody.toLowerCase()).toContain("required");
+    expect({
+      active: runLocalD1<{ release_id: string | null; version: number }>(
+        "SELECT release_id, version FROM catalog_active_release WHERE singleton = 1",
+      ),
+      drafts: runLocalD1<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM catalog_releases WHERE status = 'draft'",
+      ),
+    }).toEqual(catalogStateBeforeInvalidSubmission);
+
+    const hoseEndSeriesForm = new FormData();
+    for (const [key, value] of Object.entries({
+      intent: "maintain_hose_end_series",
+      mainImageReference: "hose-end-shape:JIC 37°-Female-Swivel-0° Straight",
+      mode: "create",
+      originalSeriesCode: "",
+      "series.angle": "0° Straight",
+      "series.gender": "Female",
+      "series.interfaceFamily": "JIC 37°",
+      "series.interfaceStandard": "SAE J514",
+      "series.sealingForm": "37° cone",
+      "series.seriesCode": hoseEndSeries,
+      "series.seriesName": "Ticket 74 JIC Female Swivel",
+      "series.swivelForm": "Swivel",
+    })) {
+      hoseEndSeriesForm.set(key, value);
+    }
+    const hoseEndSeriesResponse = await fetch(
+      `${origin}/admin/catalog/import?mode=manual&productType=hose_end`,
+      { body: hoseEndSeriesForm, method: "POST", redirect: "manual" },
+    );
+    expect(
+      hoseEndSeriesResponse.status,
+      await hoseEndSeriesResponse.text(),
+    ).toBe(302);
+
+    const hoseEndVariantForm = new FormData();
+    for (const [key, value] of Object.entries({
+      intent: "maintain_hose_end_variant",
+      lifecycleStatus: "online",
+      mainImageReference: "",
+      mode: "create",
+      originalSku: "",
+      "variant.coating": "Zinc plating",
+      "variant.competitorPartNumber": "T74-HE-32",
+      "variant.connectionDash": "-32",
+      "variant.cutoffBMm": "40",
+      "variant.dimensionAMm": "90",
+      "variant.drawingNumber": "T74-HE-DWG",
+      "variant.drawingRevision": "A",
+      "variant.fittingSeries": hoseEndSeries,
+      "variant.hex1Mm": "41",
+      "variant.hex2Mm": "46",
+      "variant.hoseTailDash": "-32",
+      "variant.material": "Carbon steel",
+      "variant.maxWorkingBar": "250",
+      "variant.minimumBoreMm": "25",
+      "variant.notes": "Ticket 74 remaining product-type variant",
+      "variant.saltSprayHours": "96",
+      "variant.sku": hoseEndSku,
+      "variant.source": "Spec 8 Ticket 10 Worker workflow",
+      "variant.technicalDataStatus": "Complete",
+      "variant.thread": "2 1/2-12 UN",
+      "variant.unitWeightG": "650",
+    })) {
+      hoseEndVariantForm.set(key, value);
+    }
+    const hoseEndVariantResponse = await fetch(
+      `${origin}/admin/catalog/import?mode=manual&productType=hose_end`,
+      { body: hoseEndVariantForm, method: "POST", redirect: "manual" },
+    );
+    expect(
+      hoseEndVariantResponse.status,
+      await hoseEndVariantResponse.text(),
+    ).toBe(302);
+
+    const adapterForm = new FormData();
+    for (const [key, value] of Object.entries({
+      intent: "maintain_component",
+      lifecycleStatus: "online",
+      mainImageReference: uploadedImageReference,
+      mode: "create",
+      "master.adapterFamilyId": adapterSeries,
+      "master.adapterSku": adapterSku,
+      "master.catalogModel": "T74-2404",
+      "master.connectionForm1": "M",
+      "master.connectionForm2": "M",
+      "master.interface1": "JIC",
+      "master.interface2": "NPT",
+      "master.shapeCode": "ST",
+      "master.size1": "T74",
+      "master.size2": "T74",
+      "master.skuTemplate": "ADP_ST_JIC_M_{SIZE1}_NPT_M_{SIZE2}",
+      "master.source": "Spec 8 Ticket 10 Worker workflow",
+      "master.technicalDataStatus": "Complete",
+      "master.websiteDisplay": "Ticket 74 straight JIC to NPT adapter",
+      "master.websiteProductName": "Ticket 74 Straight Adapter",
+      originalSalesSku: "",
+      originalSku: "",
+      productType: "adapter",
+    })) {
+      adapterForm.set(key, value);
+    }
+    const adapterResponse = await fetch(
+      `${origin}/admin/catalog/import?mode=manual&productType=adapter`,
+      { body: adapterForm, method: "POST", redirect: "manual" },
+    );
+    expect(adapterResponse.status, await adapterResponse.text()).toBe(302);
+
+    const sharedAdapterForm = new FormData();
+    for (const [key, value] of adapterForm.entries()) {
+      sharedAdapterForm.set(key, value);
+    }
+    sharedAdapterForm.set("master.adapterSku", sharedAdapterSku);
+    sharedAdapterForm.set("master.catalogModel", "T74-2404-SHARED");
+    sharedAdapterForm.set("master.size1", "T75");
+    sharedAdapterForm.set("master.size2", "T75");
+    const sharedAdapterResponse = await fetch(
+      `${origin}/admin/catalog/import?mode=manual&productType=adapter`,
+      { body: sharedAdapterForm, method: "POST", redirect: "manual" },
+    );
+    expect(
+      sharedAdapterResponse.status,
+      await sharedAdapterResponse.text(),
+    ).toBe(302);
+
+    const couplerForm = new FormData();
+    for (const [key, value] of Object.entries({
+      intent: "maintain_component",
+      lifecycleStatus: "online",
+      mainImageReference: uploadedImageReference,
+      mode: "create",
+      "master.bodyMaterial": "Carbon steel",
+      "master.bodySize": "1/4 in",
+      "master.connectionMechanism": "Push-to-connect",
+      "master.couplerSeries": couplerSeries,
+      "master.interchangeStandard": "ISO 5675",
+      "master.matingSeries": couplerSeries,
+      "master.maxWorkingBar": "250",
+      "master.portGender": "Female",
+      "master.portInterface": "NPTF",
+      "master.portThread": "1-11.5 NPTF",
+      "master.role": "Coupler/Socket",
+      "master.sku": couplerSku,
+      "master.source": "Spec 8 Ticket 10 Worker workflow",
+      "master.technicalDataStatus": "Complete",
+      "master.valving": "Flat face",
+      originalSalesSku: "",
+      originalSku: "",
+      productType: "quick_coupler",
+    })) {
+      couplerForm.set(key, value);
+    }
+    const couplerResponse = await fetch(
+      `${origin}/admin/catalog/import?mode=manual&productType=quick_coupler`,
+      { body: couplerForm, method: "POST", redirect: "manual" },
+    );
+    expect(couplerResponse.status, await couplerResponse.text()).toBe(302);
+
+    for (const [productType, seriesCode, sku, price] of [
+      ["hose_end", hoseEndSeries, hoseEndSku, "18.50"],
+      ["adapter", adapterSeries, adapterSku, "22.75"],
+      ["adapter", adapterSeries, sharedAdapterSku, "23.75"],
+      ["quick_coupler", couplerSeries, couplerSku, "31.25"],
+    ] as const) {
+      const ruleResponse = await saveSeriesCommercialRule(
+        productType,
+        seriesCode,
+      );
+      expect(ruleResponse.status, await ruleResponse.text()).toBe(302);
+      const priceResponse = await saveSkuReferencePrice(sku, price);
+      expect(priceResponse.status, await priceResponse.text()).toBe(302);
+    }
+
+    const [draft] = runLocalD1<{ id: string }>(
+      `SELECT id FROM catalog_releases WHERE status = 'draft'
+       ORDER BY created_at DESC, id DESC LIMIT 1`,
+    );
+    expect(draft).toBeTruthy();
+    if (!draft) throw new Error("Expected remaining-product-types draft");
+    const publication = await publishFromReview(
+      draft.id,
+      `ticket-74-product-types-${draft.id}`,
+    );
+    expect(publication.status, await publication.text()).toBe(302);
+    for (const sku of [hoseEndSku, adapterSku, sharedAdapterSku, couplerSku]) {
+      const response = await fetch(
+        `${origin}/api/catalog/products/${encodeURIComponent(sku)}`,
+      );
+      const body = await response.text();
+      expect(response.status, body).toBe(200);
+      expect(body).toContain(sku);
+      expect(body).not.toContain("factory_unit_price");
+      expect(body).not.toContain("Cost Basis");
+    }
+    const originalAdapterProducts = await Promise.all(
+      [adapterSku, sharedAdapterSku].map(async (sku) => {
+        const response = await fetch(
+          `${origin}/api/catalog/products/${encodeURIComponent(sku)}`,
+        );
+        expect(response.status).toBe(200);
+        return (await response.json()) as {
+          product: { mainImageUrl: string | null };
+        };
+      }),
+    );
+    const originalSharedImageUrl =
+      originalAdapterProducts[0]?.product.mainImageUrl ?? null;
+    expect(originalSharedImageUrl).toBeTruthy();
+    expect(originalAdapterProducts[1]?.product.mainImageUrl).toBe(
+      originalSharedImageUrl,
+    );
+
+    adapterForm.set("mode", "edit");
+    adapterForm.set("originalSku", adapterSku);
+    adapterForm.set("originalSalesSku", adapterSku);
+    adapterForm.set("currentMainImageReference", uploadedImageReference);
+    adapterForm.set("replaceSharedImage", "yes");
+    adapterForm.set(
+      "mainImageUpload",
+      new File(
+        [await readFile("public/images/601R2-structure.png")],
+        "ticket-74-shared-adapter.png",
+        { type: "image/png" },
+      ),
+    );
+    adapterForm.set(
+      "master.websiteProductName",
+      "Ticket 74 ordinary-parameter edit published",
+    );
+    const editResponse = await fetch(
+      `${origin}/admin/catalog/import?mode=manual&productType=adapter&sku=${encodeURIComponent(adapterSku)}`,
+      { body: adapterForm, method: "POST", redirect: "manual" },
+    );
+    expect(editResponse.status, await editResponse.text()).toBe(302);
+    const editLocation = decodeURIComponent(
+      editResponse.headers.get("location") ?? "",
+    );
+    expect(editLocation).toContain("imageAffected=");
+    expect(editLocation).toContain(adapterSku);
+    expect(editLocation).toContain(sharedAdapterSku);
+    const [editDraft] = runLocalD1<{ id: string }>(
+      `SELECT id FROM catalog_releases WHERE status = 'draft'
+       ORDER BY created_at DESC, id DESC LIMIT 1`,
+    );
+    expect(editDraft).toBeTruthy();
+    if (!editDraft) throw new Error("Expected ordinary-edit draft");
+    const editPublication = await publishFromReview(
+      editDraft.id,
+      `ticket-74-ordinary-edit-${editDraft.id}`,
+    );
+    expect(editPublication.status, await editPublication.text()).toBe(302);
+    const editedProduct = (await (
+      await fetch(`${origin}/api/catalog/products/${adapterSku}`)
+    ).json()) as {
+      product: { displayName: string; mainImageUrl: string | null };
+    };
+    expect(editedProduct.product.displayName).toContain(
+      "Ticket 74 ordinary-parameter edit published",
+    );
+    expect(editedProduct.product.mainImageUrl).toBeTruthy();
+    expect(editedProduct.product.mainImageUrl).not.toBe(originalSharedImageUrl);
+    const editedImage = await fetch(
+      new URL(editedProduct.product.mainImageUrl ?? "", origin),
+    );
+    expect(editedImage.status).toBe(200);
+    expect(editedImage.headers.get("content-type")).toContain("image/");
+    const editedSharedAdapter = (await (
+      await fetch(`${origin}/api/catalog/products/${sharedAdapterSku}`)
+    ).json()) as { product: { mainImageUrl: string | null } };
+    expect(editedSharedAdapter.product.mainImageUrl).toBe(
+      editedProduct.product.mainImageUrl,
+    );
+    const historicalAdapters = await Promise.all(
+      [adapterSku, sharedAdapterSku].map(async (sku) => {
+        const response = await fetch(
+          `${origin}/api/catalog/releases/${encodeURIComponent(draft.id)}/products/${encodeURIComponent(sku)}`,
+        );
+        expect(response.status).toBe(200);
+        return (await response.json()) as {
+          product: { mainImageUrl: string | null };
+        };
+      }),
+    );
+    expect(
+      historicalAdapters.map(({ product }) => product.mainImageUrl),
+    ).toEqual([originalSharedImageUrl, originalSharedImageUrl]);
+    for (const { product } of historicalAdapters) {
+      const historicalImage = await fetch(
+        new URL(product.mainImageUrl ?? "", origin),
+      );
+      expect(historicalImage.status).toBe(200);
+      expect(historicalImage.headers.get("content-type")).toContain("image/");
+    }
+    expect(JSON.stringify(editedProduct)).not.toContain("factory_unit_price");
+    expect(JSON.stringify(editedProduct)).not.toContain("Cost Basis");
   });
 
   it("serves the five-class published storefront without exposing cost data", async () => {
@@ -3613,7 +4190,7 @@ describe("Cloudflare Worker route surfaces", () => {
        SET supply_availability = 'discontinued'
        WHERE import_id = '${importId}' AND sku = 'QDC_16028_PLG_04_FNPT_04';`,
     );
-    assignReviewedImageToPublishedProducts(importId);
+    await assignReviewedImageToPublishedProducts(importId);
     const [draftState] = runLocalD1<{ version: number }>(
       `SELECT version FROM catalog_releases WHERE id = '${draft.id}'`,
     );
@@ -4844,7 +5421,7 @@ describe("Cloudflare Worker route surfaces", () => {
          10, 1, CURRENT_TIMESTAMP
        );`,
     );
-    assignReviewedImageToPublishedProducts(replacementImportId);
+    await assignReviewedImageToPublishedProducts(replacementImportId);
     const [replacementDraftState] = runLocalD1<{ version: number }>(
       `SELECT version FROM catalog_releases WHERE id = '${replacementDraft.id}'`,
     );
@@ -5115,13 +5692,23 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(discontinued).toContain("Discontinued");
     expect(discontinued).toMatch(/product-quote-command[^>]*disabled/);
 
-    const mediaFallback = await (
+    const inheritedSeriesImage = await (
       await fetch(
         `${origin}/catalog/ferrules/601r1-1-wire-braid-other?sku=601R1_1WB_001`,
       )
     ).text();
-    expect(mediaFallback).not.toContain("/media/catalog/");
-    expect(mediaFallback).toContain("Technical image pending");
+    const inheritedSeriesImageUrl = inheritedSeriesImage.match(
+      /src="(\/media\/catalog\/[^"]+)"/,
+    )?.[1];
+    expect(inheritedSeriesImageUrl).toBeTruthy();
+    expect(inheritedSeriesImage).not.toContain("Technical image pending");
+    const inheritedSeriesImageResponse = await fetch(
+      `${origin}${inheritedSeriesImageUrl}`,
+    );
+    expect(inheritedSeriesImageResponse.status).toBe(200);
+    expect(inheritedSeriesImageResponse.headers.get("content-type")).toMatch(
+      /^image\//,
+    );
 
     const hoseVariant = await (
       await fetch(`${origin}/catalog/hydraulic-hose/601r1?sku=601R1_001`)

@@ -1,3 +1,5 @@
+import { compareCatalogText } from "./catalog-sorting";
+
 export interface DerivedAssemblyEndpoint {
   compatibilityId: string;
   ferruleSku: string;
@@ -45,6 +47,7 @@ export interface AssemblyRegenerationSummary {
 
 export interface AssemblyRegenerationOperation extends AssemblyRegenerationSummary {
   actorId: string;
+  beforeAffectedCombinations: DerivedAssemblyCombination[];
   generatedCombinations: DerivedAssemblyCombination[];
   generatedSeries: string[];
   generationId: string;
@@ -88,10 +91,6 @@ export class AssemblyRegenerationRejected extends Error {
   }
 }
 
-function compareText(left: string, right: string) {
-  return left.localeCompare(right, "en");
-}
-
 function combinationIdentity(input: {
   endACompatibilityId: string;
   endBCompatibilityId: string;
@@ -115,9 +114,9 @@ export function deriveAssemblyCombinations(
   }
 
   const combinations: DerivedAssemblyCombination[] = [];
-  for (const hoseSku of [...byHose.keys()].sort(compareText)) {
+  for (const hoseSku of [...byHose.keys()].sort(compareCatalogText)) {
     const candidates = [...(byHose.get(hoseSku) ?? [])].sort((left, right) =>
-      compareText(left.compatibilityId, right.compatibilityId),
+      compareCatalogText(left.compatibilityId, right.compatibilityId),
     );
     for (const endA of candidates) {
       for (const endB of candidates) {
@@ -237,6 +236,7 @@ export async function regenerateDerivedAssemblyData(
     await repository.regenerate({
       ...summary,
       actorId: input.actorId,
+      beforeAffectedCombinations: plan.beforeAffectedCombinations,
       generatedCombinations,
       generatedSeries,
       generationId,

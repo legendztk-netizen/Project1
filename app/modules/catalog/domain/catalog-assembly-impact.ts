@@ -1,3 +1,5 @@
+import { compareCatalogText } from "./catalog-sorting";
+
 export type AssemblyImpactProductType = "ferrule" | "hose" | "hose_end";
 
 export interface AssemblyImpactProduct {
@@ -37,20 +39,16 @@ export interface AssemblyImpactResult {
   stale: boolean;
 }
 
-function compareText(left: string, right: string) {
-  return left.localeCompare(right, "en");
-}
-
 function canonicalSnapshot(snapshot: AssemblyImpactSnapshot) {
   return {
     compatibilities: [...snapshot.compatibilities]
       .map((relationship) => ({ ...relationship }))
       .sort((left, right) =>
-        compareText(left.compatibilityId, right.compatibilityId),
+        compareCatalogText(left.compatibilityId, right.compatibilityId),
       ),
     products: [...snapshot.products]
       .map((product) => ({ ...product }))
-      .sort((left, right) => compareText(left.sku, right.sku)),
+      .sort((left, right) => compareCatalogText(left.sku, right.sku)),
     sharedDerivationRuleFingerprint: snapshot.sharedDerivationRuleFingerprint,
   };
 }
@@ -95,7 +93,7 @@ function changedKind(
 }
 
 function sortedSeries(values: Iterable<string>) {
-  return [...new Set(values)].sort(compareText);
+  return [...new Set(values)].sort(compareCatalogText);
 }
 
 export function calculateAssemblyImpact(

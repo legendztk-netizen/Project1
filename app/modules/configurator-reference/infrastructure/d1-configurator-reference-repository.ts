@@ -701,9 +701,7 @@ export function createD1ConfiguratorReferenceRepository(database: D1Database) {
         )
         .first<{ record_version: number }>();
       if (!saved) {
-        throw new Error(
-          "This global setting changed while it was being saved. Reload and try again.",
-        );
+        throw new Error("全局配置在保存过程中已发生变化，请刷新页面后重试。");
       }
       return { recordVersion: saved.record_version };
     },

@@ -18,6 +18,7 @@ import {
   applyDraftSupplyAvailabilityChange,
   previewDraftSupplyAvailabilityChange,
   supplyAvailabilityValues,
+  type DraftCatalogReview,
   type DraftAvailabilityChangePreview,
   type DraftProductSelector,
   type SupplyAvailability,
@@ -74,7 +75,112 @@ const statusLabels: Record<string, string> = {
 };
 
 function localizedStatus(value: string) {
-  return statusLabels[value] ?? value;
+  return statusLabels[value] ?? `未知状态（${value}）`;
+}
+
+const impactChangeKindLabels: Record<string, string> = {
+  added: "新增",
+  changed: "修改",
+  removed: "移除",
+};
+
+const publicationFindingMessages: Record<string, string> = {
+  cost_basis_row_mismatch: "销售报价与私有成本基础记录不一致。",
+  empty_catalog_release: "目录版本必须至少包含一个 SKU。",
+  import_error_count: "来源导入仍包含错误，请先修复。",
+  incomplete_derived_assembly_data: "衍生总成数据未覆盖全部胶管系列。",
+  invalid_assembly_impact: "受影响胶管系列数据无效。",
+  invalid_catalog_state: "存在无效的发布、RFQ、技术资料或供应状态。",
+  invalid_configurator_registry_payload: "总成参数配置数据无效。",
+  invalid_import_summary: "无法重新校验已保存的导入摘要。",
+  invalid_retail_currency: "待发布产品的零售价格币种必须是 USD。",
+  invalid_sales_sku: "待发布产品必须使用由产品 SKU 自动生成的销售 SKU。",
+  missing_assembly_estimate_schedule: "缺少总成估价规则。",
+  missing_assembly_impact: "发布前必须先计算总成影响。",
+  missing_clocking_convention: "缺少时钟角规则。",
+  missing_configurator_registry_snapshot: "此目录版本缺少总成参数配置快照。",
+  missing_main_image: "待发布产品缺少唯一且已审核的主图。",
+  missing_measurement_method: "缺少测量方法配置。",
+  missing_reference_price: "待发布产品缺少有效的 USD 参考价格。",
+  missing_series_reference: "待发布子体无法解析有效的产品系列。",
+  orphaned_endpoint_assignment: "端点分配引用了此目录版本之外的压接接头。",
+  stale_derived_assembly_data: "受影响胶管系列仍为过期状态，请先更新总成数据。",
+};
+
+function localizedFindingMessage(finding: CatalogPublicationFinding) {
+  if (finding.message.includes(" / ")) {
+    const [englishMessage, chineseMessage] = finding.message.split(" / ");
+    const affectedIdentifiers = englishMessage
+      ?.match(/:\s*([^:]+?)\.?$/u)?.[1]
+      ?.trim()
+      .replace(/\.$/u, "");
+    return affectedIdentifiers
+      ? `${chineseMessage ?? finding.message}（${affectedIdentifiers}）`
+      : (chineseMessage ?? finding.message);
+  }
+  if (finding.code.startsWith("count_mismatch_")) {
+    return "持久化数据计数与导入摘要不一致。";
+  }
+  return (
+    publicationFindingMessages[finding.code] ??
+    "目录校验未通过，请检查来源数据。"
+  );
+}
+
+function formatBeijingDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "时间无效";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+    minute: "2-digit",
+    month: "2-digit",
+    second: "2-digit",
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+  }).formatToParts(date);
+  const valueOf = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return `${valueOf("year")}-${valueOf("month")}-${valueOf("day")} ${valueOf("hour")}:${valueOf("minute")}:${valueOf("second")} 北京时间`;
+}
+
+export function filterDraftReviewToPublicationDifferences(
+  review: DraftCatalogReview,
+  differences: Pick<
+    CatalogPublicationPreview,
+    "images" | "prices" | "products" | "relationships"
+  >,
+) {
+  const changedSkus = new Set([
+    ...differences.products.additions,
+    ...differences.products.changes,
+    ...differences.products.removals,
+    ...differences.prices.additions,
+    ...differences.prices.changes,
+    ...differences.prices.removals,
+    ...differences.images.additions,
+    ...differences.images.changes,
+    ...differences.images.removals,
+  ]);
+  const changedRelationshipIds = new Set(
+    [
+      ...differences.relationships.additions,
+      ...differences.relationships.changes,
+      ...differences.relationships.removals,
+    ].map((key) => key.replace(/^Compatibility\s+/u, "")),
+  );
+  const products = review.products.filter((product) =>
+    changedSkus.has(product.sku),
+  );
+  return {
+    ...review,
+    compatibilities: review.compatibilities.filter((relationship) =>
+      changedRelationshipIds.has(relationship.compatibilityId),
+    ),
+    products,
+    totalCount: products.length,
+  };
 }
 
 export function meta() {
@@ -130,7 +236,6 @@ export async function loader({ context, request }: Route.LoaderArgs) {
   const reviewRepository = createD1CatalogDraftReviewRepository(env.DB);
   const publicationRepository = createD1CatalogPublicationRepository(env.DB);
   const requestedReleaseId = url.searchParams.get("release");
-  const preparedRequestId = url.searchParams.get("publicationRequest");
   const auditContext = requestAuditContext(request);
   let [review, activeRelease, currentDraftRelease] = await Promise.all([
     reviewRepository.findCatalogReview(requestedReleaseId, {
@@ -152,51 +257,15 @@ export async function loader({ context, request }: Route.LoaderArgs) {
           releaseId: review.release.id,
         })
       : null;
-  const publicationPreview =
+  const completePublicationPreview =
     review?.release.status === "draft"
       ? await publicationRepository.findPublicationPreview(review.release.id)
       : null;
-  const publicationPreparation = preparedRequestId
-    ? await publicationRepository.findPublicationPreparation(preparedRequestId)
-    : null;
-  const hasExplicitReviewFilter = ["series", "sku", "worksheet"].some((key) =>
-    Boolean(url.searchParams.get(key)),
-  );
-  if (
-    review?.release.status === "draft" &&
-    publicationPreview &&
-    !hasExplicitReviewFilter
-  ) {
-    const differences = publicationPreview;
-    const changedSkus = new Set([
-      ...differences.products.additions,
-      ...differences.products.changes,
-      ...differences.products.removals,
-      ...differences.prices.additions,
-      ...differences.prices.changes,
-      ...differences.prices.removals,
-      ...differences.images.additions,
-      ...differences.images.changes,
-      ...differences.images.removals,
-    ]);
-    const changedRelationshipIds = new Set(
-      [
-        ...differences.relationships.additions,
-        ...differences.relationships.changes,
-        ...differences.relationships.removals,
-      ].map((key) => key.replace(/^Compatibility\s+/u, "")),
+  if (review?.release.status === "draft" && completePublicationPreview) {
+    review = filterDraftReviewToPublicationDifferences(
+      review,
+      completePublicationPreview,
     );
-    const changedProducts = review.products.filter((product) =>
-      changedSkus.has(product.sku),
-    );
-    review = {
-      ...review,
-      compatibilities: review.compatibilities.filter((relationship) =>
-        changedRelationshipIds.has(relationship.compatibilityId),
-      ),
-      products: changedProducts,
-      totalCount: changedProducts.length,
-    };
   }
   const published = url.searchParams.get("published");
   return {
@@ -222,26 +291,8 @@ export async function loader({ context, request }: Route.LoaderArgs) {
             warnings: Number(url.searchParams.get("warnings")) || 0,
           }
         : null,
-    publicationPreview,
-    publicationRequestId: preparedRequestId ?? crypto.randomUUID(),
-    publicationPreparation:
-      publicationPreparation &&
-      publicationPreview &&
-      publicationPreparation.releaseId === publicationPreview.draftRelease.id
-        ? {
-            ...publicationPreparation,
-            current:
-              publicationPreparation.draftVersion ===
-                publicationPreview.draftRelease.version &&
-              publicationPreparation.activeGeneration ===
-                publicationPreview.activeGeneration &&
-              publicationPreparation.activeReleaseId ===
-                (publicationPreview.activeRelease?.id ?? null) &&
-              JSON.stringify(publicationPreparation.assemblyState) ===
-                JSON.stringify(publicationPreview.assemblyState),
-            requestCorrelationId: preparedRequestId ?? "",
-          }
-        : null,
+    publicationPreview: null,
+    publicationRequestId: crypto.randomUUID(),
     review: review ? { ...review, assemblyImpact } : null,
     updatedCount: Number(url.searchParams.get("updated")) || 0,
   };
@@ -338,15 +389,10 @@ export function PublicationPreviewPanel({
 export function AssemblyImpactPanel({
   busy,
   impact,
-  preparation,
   requestCorrelationId,
 }: {
   busy: boolean;
   impact: CatalogAssemblyImpact;
-  preparation?: {
-    current: boolean;
-    requestCorrelationId: string;
-  } | null;
   requestCorrelationId: string;
 }) {
   return (
@@ -393,7 +439,7 @@ export function AssemblyImpactPanel({
             {impact.sourceChanges.map((change) => (
               <li key={`${change.sourceType}-${change.key}-${change.kind}`}>
                 <strong>{impactSourceLabels[change.sourceType]}</strong>{" "}
-                {change.key} · {change.kind}
+                {change.key} · {impactChangeKindLabels[change.kind]}
                 {change.affectedSeries.length > 0
                   ? ` · ${change.affectedSeries.join(", ")}`
                   : ""}
@@ -403,16 +449,11 @@ export function AssemblyImpactPanel({
         </details>
       ) : null}
       <small>
-        系统计算时间：{impact.calculatedAt}。管理员不能手工缩减此集合。
+        系统计算时间：{formatBeijingDateTime(impact.calculatedAt)}
+        。管理员不能手工缩减此集合。
       </small>
       <Form method="post">
-        <input
-          name="intent"
-          type="hidden"
-          value={
-            preparation?.current ? "publish_prepared" : "prepare_publication"
-          }
-        />
+        <input name="intent" type="hidden" value="publish_catalog" />
         <input name="releaseId" type="hidden" value={impact.releaseId} />
         <input
           name="requestCorrelationId"
@@ -420,17 +461,9 @@ export function AssemblyImpactPanel({
           value={requestCorrelationId}
         />
         <button className="button button-primary" disabled={busy} type="submit">
-          <Check size={17} />{" "}
-          {preparation?.current
-            ? "发布已确认的合并预览"
-            : "校验、更新总成并生成最终预览"}
+          <Check size={17} /> 校验、更新总成并发布
         </button>
       </Form>
-      {preparation && !preparation.current ? (
-        <p className="form-error" role="alert">
-          目录已在预览后发生变化，请重新生成最终预览。
-        </p>
-      ) : null}
     </section>
   );
 }
@@ -541,25 +574,24 @@ export async function action({ context, request }: Route.ActionArgs) {
     env.DB,
   );
   const publicationRepository = createD1CatalogPublicationRepository(env.DB);
+  const workflowContext = {
+    actorId: adminIdentity.id,
+    ipAddress,
+    releaseId,
+    requestCorrelationId,
+  };
 
   const publishDraft = async (
-    preparation: NonNullable<
-      Awaited<
-        ReturnType<typeof publicationRepository.findPublicationPreparation>
-      >
-    >,
+    preview: CatalogPublicationPreview,
     updatedCount: number,
   ) => {
     const result = await publishCatalogRelease(publicationRepository, {
-      actorId: adminIdentity.id,
-      expectedActiveGeneration: preparation.activeGeneration,
-      expectedActiveReleaseId: preparation.activeReleaseId,
-      expectedAssemblyState: preparation.assemblyState,
-      expectedDraftVersion: preparation.draftVersion,
+      ...workflowContext,
+      expectedActiveGeneration: preview.activeGeneration,
+      expectedActiveReleaseId: preview.activeRelease?.id ?? null,
+      expectedAssemblyState: preview.assemblyState,
+      expectedDraftVersion: preview.draftRelease.version,
       generateId: () => `catalog-release-published:${requestCorrelationId}`,
-      ipAddress,
-      releaseId,
-      requestCorrelationId,
     });
     return redirect(
       publicationSuccessUrl(result.releaseId, result.summary, updatedCount),
@@ -568,14 +600,11 @@ export async function action({ context, request }: Route.ActionArgs) {
 
   const recordWorkflowRejection = async (code: string, message: string) => {
     await publicationRepository.recordRejection({
-      actorId: adminIdentity.id,
+      ...workflowContext,
       auditEventId: `catalog-release-rejected:${requestCorrelationId}:${code}`,
       code,
-      ipAddress,
       message,
       occurredAt: new Date().toISOString(),
-      releaseId,
-      requestCorrelationId,
     });
   };
 
@@ -618,74 +647,7 @@ export async function action({ context, request }: Route.ActionArgs) {
   }
 
   try {
-    if (intent === "prepare_publication") {
-      const existingPreparation =
-        await publicationRepository.findPublicationPreparation(
-          requestCorrelationId,
-        );
-      if (existingPreparation) {
-        if (existingPreparation.releaseId !== releaseId) {
-          const message = "此请求标识已用于准备另一个目录版本。";
-          await recordWorkflowRejection("request_identifier_reused", message);
-          return { formError: message };
-        }
-        return redirect(
-          `/admin/catalog/review?release=${encodeURIComponent(releaseId)}&publicationRequest=${encodeURIComponent(requestCorrelationId)}`,
-        );
-      }
-      await publicationRepository.synchronizeDraftSalesOfferLifecycle({
-        actorId: adminIdentity.id,
-        ipAddress,
-        releaseId,
-        requestCorrelationId,
-      });
-      await expandDraftCatalogCompatibilities(env.DB, {
-        actorId: adminIdentity.id,
-        ipAddress,
-        releaseId,
-        requestCorrelationId,
-      });
-      const impact = await impactRepository.recalculate({
-        actorId: adminIdentity.id,
-        ipAddress,
-        releaseId,
-        requestCorrelationId,
-      });
-      if (impact?.stale) {
-        await regenerateDerivedAssemblyData(regenerationRepository, {
-          actorId: adminIdentity.id,
-          ipAddress,
-          releaseId,
-          requestCorrelationId,
-        });
-      }
-      const preview =
-        await publicationRepository.findPublicationPreview(releaseId);
-      if (!preview) {
-        const message = "未找到待发布的目录草稿。";
-        await recordWorkflowRejection("draft_not_found", message);
-        return { formError: message };
-      }
-      if (preview.blockers.length > 0) {
-        const message = `发布已停止：请先解决 ${preview.blockers.length} 个校验错误。当前客户目录未发生变化。`;
-        await recordWorkflowRejection("publication_blocked", message);
-        return {
-          formError: message,
-          publicationBlockers: preview.blockers,
-        };
-      }
-      await publicationRepository.recordPublicationPreparation({
-        actorId: adminIdentity.id,
-        ipAddress,
-        preview,
-        releaseId,
-        requestCorrelationId,
-      });
-      return redirect(
-        `/admin/catalog/review?release=${encodeURIComponent(releaseId)}&publicationRequest=${encodeURIComponent(requestCorrelationId)}`,
-      );
-    }
-    if (intent === "publish_prepared") {
+    if (intent === "publish_catalog") {
       const existingPublication =
         await publicationRepository.findPublicationReceipt(
           requestCorrelationId,
@@ -704,16 +666,33 @@ export async function action({ context, request }: Route.ActionArgs) {
         await recordWorkflowRejection("request_identifier_reused", message);
         return { formError: message };
       }
-      const preparation =
-        await publicationRepository.findPublicationPreparation(
-          requestCorrelationId,
+      await publicationRepository.synchronizeDraftSalesOfferLifecycle(
+        workflowContext,
+      );
+      await expandDraftCatalogCompatibilities(env.DB, workflowContext);
+      const impact = await impactRepository.recalculate(workflowContext);
+      if (impact?.stale) {
+        await regenerateDerivedAssemblyData(
+          regenerationRepository,
+          workflowContext,
         );
-      if (!preparation || preparation.releaseId !== releaseId) {
-        const message = "请先生成并确认最终合并预览。";
-        await recordWorkflowRejection("publication_not_prepared", message);
+      }
+      const preview =
+        await publicationRepository.findPublicationPreview(releaseId);
+      if (!preview) {
+        const message = "未找到待发布的目录草稿。";
+        await recordWorkflowRejection("draft_not_found", message);
         return { formError: message };
       }
-      return publishDraft(preparation, 0);
+      if (preview.blockers.length > 0) {
+        const message = `发布已停止：请先解决 ${preview.blockers.length} 个校验错误。当前客户目录未发生变化。`;
+        await recordWorkflowRejection("publication_blocked", message);
+        return {
+          formError: message,
+          publicationBlockers: preview.blockers,
+        };
+      }
+      return await publishDraft(preview, 0);
     }
     return { formError: "未知的目录操作。" };
   } catch (error) {
@@ -737,14 +716,18 @@ export async function action({ context, request }: Route.ActionArgs) {
         error instanceof Error ? error.message : "目录发布流程失败。",
       );
     }
+    const chineseMessage =
+      error instanceof Error && /[\u3400-\u9fff]/u.test(error.message)
+        ? error.message
+        : null;
     return {
       formError:
-        error instanceof AssemblyRegenerationRejected ||
-        error instanceof CatalogPublicationRejected
-          ? error.message
-          : error instanceof Error
-            ? error.message
-            : "目录操作失败。",
+        chineseMessage ??
+        (error instanceof AssemblyRegenerationRejected
+          ? "总成数据更新失败，请刷新页面并重新校验。"
+          : error instanceof CatalogPublicationRejected
+            ? "目录发布失败：请求无效、预览已过期或目录状态已变化。"
+            : "目录操作失败，请刷新页面后重试。"),
     };
   }
 }
@@ -753,7 +736,7 @@ function money(value: number | null, currency = "USD") {
   return value === null ? "未设置" : `${currency} ${value.toFixed(2)}`;
 }
 
-function PublicationErrors({
+export function PublicationErrors({
   findings,
 }: {
   findings: CatalogPublicationFinding[];
@@ -769,7 +752,7 @@ function PublicationErrors({
       <ul>
         {findings.map((finding, index) => (
           <li key={`${finding.code}-${index}`}>
-            <strong>{finding.code}</strong>: {finding.message}
+            <strong>{finding.code}</strong>：{localizedFindingMessage(finding)}
           </li>
         ))}
       </ul>
@@ -884,14 +867,11 @@ export default function CatalogReview({
           <AssemblyImpactPanel
             busy={busy}
             impact={review.assemblyImpact}
-            preparation={loaderData.publicationPreparation}
             requestCorrelationId={loaderData.publicationRequestId}
           />
         ) : null}
 
-        {isDraft &&
-        loaderData.publicationPreview &&
-        loaderData.publicationPreparation?.current ? (
+        {isDraft && loaderData.publicationPreview ? (
           <PublicationPreviewPanel preview={loaderData.publicationPreview} />
         ) : null}
 

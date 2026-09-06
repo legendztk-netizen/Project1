@@ -98,22 +98,31 @@ describe("Admin route boundary", () => {
     });
   });
 
-  it("rejects a missing deployed Access assertion", async () => {
+  it("rejects an unauthorized deployed Catalog mutation before route handling", async () => {
+    const body = new FormData();
+    body.set("intent", "publish_catalog");
+    body.set("releaseId", "draft-release");
     await expect(
       authorizeAdminRequest(
         new Request("https://admin.example.com/admin/catalog/review", {
+          body,
           headers: { cookie: "hs_customer_session=customer-token" },
+          method: "POST",
         }),
         deployedBindings,
       ),
     ).rejects.toMatchObject({ status: 401 });
   });
 
-  it("rejects Admin paths requested through the Storefront origin", async () => {
+  it("rejects Catalog mutations requested through the Storefront origin", async () => {
+    const body = new FormData();
+    body.set("intent", "maintain_component");
     await expect(
       authorizeAdminRequest(
-        new Request("https://storefront.example.com/admin", {
+        new Request("https://storefront.example.com/admin/catalog/import", {
+          body,
           headers: { "Cf-Access-Jwt-Assertion": "unused" },
+          method: "POST",
         }),
         deployedBindings,
       ),

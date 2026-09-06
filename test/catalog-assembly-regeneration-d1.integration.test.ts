@@ -448,7 +448,19 @@ describe("D1 Derived Assembly Data regeneration", () => {
         )
         .first<{ payload_json: string }>();
       expect(JSON.parse(regenerationAudit?.payload_json ?? "{}")).toMatchObject(
-        auditContext,
+        {
+          ...auditContext,
+          after: expect.objectContaining({
+            combinationCount: expect.any(Number),
+            combinationIdentitySample: expect.any(Array),
+            generationId: expect.any(String),
+            inputFingerprint: expect.any(String),
+          }),
+          before: expect.objectContaining({
+            combinationCount: expect.any(Number),
+            combinationIdentitySample: expect.any(Array),
+          }),
+        },
       );
     } finally {
       await platform.dispose();

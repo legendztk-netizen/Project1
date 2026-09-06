@@ -6,6 +6,7 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 
 import {
   AssemblyImpactPanel,
+  PublicationErrors,
   PublicationPreviewPanel,
 } from "../app/modules/admin/routes/catalog-review";
 import type { CatalogPublicationPreview } from "../app/modules/catalog/domain/catalog-publication";
@@ -48,11 +49,11 @@ describe("Assembly impact review panel", () => {
     render(<RouterProvider router={router} />);
   }
 
-  it("prepares the final combined preview before publication", () => {
+  it("validates, updates assembly data, and publishes in one action", () => {
     renderPanel("stale");
     expect(
       screen.getByRole("button", {
-        name: "校验、更新总成并生成最终预览",
+        name: "校验、更新总成并发布",
       }),
     ).toBeTruthy();
     expect(screen.getByText("SERIES-A")).toBeTruthy();
@@ -61,45 +62,20 @@ describe("Assembly impact review panel", () => {
       "value",
       "draft-release",
     );
+    expect(document.querySelector('[name="intent"]')).toHaveProperty(
+      "value",
+      "publish_catalog",
+    );
   });
 
-  it("keeps final-preview preparation available when assembly data is current", () => {
+  it("keeps the combined publication action available when assembly data is current", () => {
     renderPanel("current");
     expect(screen.getByText("总成数据已是最新")).toBeTruthy();
     expect(
       screen.getByRole("button", {
-        name: "校验、更新总成并生成最终预览",
+        name: "校验、更新总成并发布",
       }),
     ).toBeTruthy();
-  });
-
-  it("publishes only a current prepared preview", () => {
-    const router = createMemoryRouter(
-      [
-        {
-          element: (
-            <AssemblyImpactPanel
-              busy={false}
-              impact={impact("current")}
-              preparation={{
-                current: true,
-                requestCorrelationId: "durable-operation-1",
-              }}
-              requestCorrelationId="durable-operation-1"
-            />
-          ),
-          path: "/admin/catalog/review",
-        },
-      ],
-      { initialEntries: ["/admin/catalog/review"] },
-    );
-    render(<RouterProvider router={router} />);
-    expect(
-      screen.getByRole("button", { name: "发布已确认的合并预览" }),
-    ).toBeTruthy();
-    expect(
-      document.querySelector('[name="requestCorrelationId"]'),
-    ).toHaveProperty("value", "durable-operation-1");
   });
 
   it("shows additions, changes, and removals for every publication domain", () => {
@@ -164,5 +140,23 @@ describe("Assembly impact review panel", () => {
     ]) {
       expect(screen.getByText(value)).toBeTruthy();
     }
+  });
+
+  it("renders publication blockers in Simplified Chinese", () => {
+    render(
+      <PublicationErrors
+        findings={[
+          {
+            code: "invalid_retail_currency",
+            message:
+              "1 publishable SKU does not use USD retail pricing: TEST-1. / 1 个待发布 SKU 的零售价格币种不是 USD。",
+          },
+        ]}
+      />,
+    );
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain("零售价格币种不是 USD");
+    expect(alert.textContent).toContain("TEST-1");
+    expect(alert.textContent).not.toContain("publishable SKU");
   });
 });

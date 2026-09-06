@@ -133,7 +133,7 @@ const activeQuotedProductGuard = `
   FROM catalog_active_release ar
   INNER JOIN catalog_releases r ON r.id = ar.release_id
   INNER JOIN catalog_skus s ON s.import_id = r.source_import_id
-  INNER JOIN catalog_sales_offers o
+  LEFT JOIN catalog_sales_offers o
     ON o.import_id = s.import_id AND o.base_sku = s.sku
   LEFT JOIN catalog_hose_variants commercial_hose
     ON commercial_hose.import_id = s.import_id AND commercial_hose.sku = s.sku
@@ -217,26 +217,26 @@ const activeConfiguredAssemblyGuard = `
         AND fs.supply_availability = 'available_for_quote'
     )
     AND EXISTS (
-      SELECT 1 FROM catalog_configurator_registry_entries e
-      WHERE e.release_id = r.id AND e.registry_type = 'installed_protection'
+      SELECT 1 FROM configurator_global_registry_entries e
+      WHERE e.registry_type = 'installed_protection'
         AND e.entry_key = ? AND e.record_version = ?
     )
     AND EXISTS (
-      SELECT 1 FROM catalog_configurator_registry_entries e
-      WHERE e.release_id = r.id AND e.registry_type = 'assembly_estimate_schedule'
+      SELECT 1 FROM configurator_global_registry_entries e
+      WHERE e.registry_type = 'assembly_estimate_schedule'
         AND e.entry_key = 'DEFAULT' AND e.record_version = ?
     )
     AND (
       ? IS NULL OR EXISTS (
-        SELECT 1 FROM catalog_configurator_registry_entries e
-        WHERE e.release_id = r.id AND e.registry_type = 'measurement_method'
+        SELECT 1 FROM configurator_global_registry_entries e
+        WHERE e.registry_type = 'measurement_method'
           AND e.entry_key = ? AND e.record_version = ?
       )
     )
     AND (
       ? IS NULL OR EXISTS (
-        SELECT 1 FROM catalog_configurator_registry_entries e
-        WHERE e.release_id = r.id AND e.registry_type = 'clocking_convention'
+        SELECT 1 FROM configurator_global_registry_entries e
+        WHERE e.registry_type = 'clocking_convention'
           AND e.entry_key = 'M08' AND e.record_version = ?
       )
     )
