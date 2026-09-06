@@ -30,7 +30,7 @@ const catalogMaintenanceNavigation = [
   },
   {
     key: "commercial",
-    label: "Sales, Packaging and Price / 销售、包装和价格",
+    label: "销售、包装和价格",
     to: "/admin/catalog/commercial",
   },
 ] as const;

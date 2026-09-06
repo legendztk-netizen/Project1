@@ -53,7 +53,7 @@ describe("Assembly impact review panel", () => {
     renderPanel("stale");
     expect(
       screen.getByRole("button", {
-        name: "Validate, Update Assembly Data, and Publish / 校验、更新总成并发布",
+        name: "校验、更新总成并发布",
       }),
     ).toBeTruthy();
     expect(screen.getByText("SERIES-A")).toBeTruthy();
@@ -73,7 +73,7 @@ describe("Assembly impact review panel", () => {
     expect(screen.getByText("总成数据已是最新")).toBeTruthy();
     expect(
       screen.getByRole("button", {
-        name: "Validate, Update Assembly Data, and Publish / 校验、更新总成并发布",
+        name: "校验、更新总成并发布",
       }),
     ).toBeTruthy();
   });
@@ -142,7 +142,7 @@ describe("Assembly impact review panel", () => {
     }
   });
 
-  it("renders publication blockers in English and Simplified Chinese", () => {
+  it("renders publication blockers in Simplified Chinese", () => {
     render(
       <PublicationErrors
         findings={[
@@ -155,8 +155,8 @@ describe("Assembly impact review panel", () => {
       />,
     );
     const alert = screen.getByRole("alert");
-    expect(alert.textContent).toContain("publishable SKU");
     expect(alert.textContent).toContain("零售价格币种不是 USD");
     expect(alert.textContent).toContain("TEST-1");
+    expect(alert.textContent).not.toContain("publishable SKU");
   });
 });

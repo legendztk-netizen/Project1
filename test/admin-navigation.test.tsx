@@ -18,7 +18,7 @@ describe("AdminNavigation", () => {
   it.each([
     ["excel", "批量导入产品"],
     ["manual", "手动新增/编辑产品"],
-    ["commercial", "Sales, Packaging and Price / 销售、包装和价格"],
+    ["commercial", "销售、包装和价格"],
   ] as const)(
     "shows product maintenance paths as sidebar submenu items in %s mode",
     (maintenanceMode, activeLabel) => {
@@ -38,7 +38,7 @@ describe("AdminNavigation", () => {
       ).toEqual([
         "批量导入产品",
         "手动新增/编辑产品",
-        "Sales, Packaging and Price / 销售、包装和价格",
+        "销售、包装和价格",
       ]);
       expect(
         within(submenu)

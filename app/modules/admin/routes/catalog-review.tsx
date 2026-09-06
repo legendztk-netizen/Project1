@@ -109,7 +109,14 @@ const publicationFindingMessages: Record<string, string> = {
 
 function localizedFindingMessage(finding: CatalogPublicationFinding) {
   if (finding.message.includes(" / ")) {
-    return finding.message;
+    const [englishMessage, chineseMessage] = finding.message.split(" / ");
+    const affectedIdentifiers = englishMessage
+      ?.match(/:\s*([^:]+?)\.?$/u)?.[1]
+      ?.trim()
+      .replace(/\.$/u, "");
+    return affectedIdentifiers
+      ? `${chineseMessage ?? finding.message}（${affectedIdentifiers}）`
+      : (chineseMessage ?? finding.message);
   }
   if (finding.code.startsWith("count_mismatch_")) {
     return "持久化数据计数与导入摘要不一致。";
@@ -454,8 +461,7 @@ export function AssemblyImpactPanel({
           value={requestCorrelationId}
         />
         <button className="button button-primary" disabled={busy} type="submit">
-          <Check size={17} /> Validate, Update Assembly Data, and Publish /
-          校验、更新总成并发布
+          <Check size={17} /> 校验、更新总成并发布
         </button>
       </Form>
     </section>
