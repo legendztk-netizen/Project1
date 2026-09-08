@@ -1,3 +1,4 @@
+import { formatReferenceUnitPrice } from "../../quote-list/domain/quote-currency-totals";
 import { FileText } from "lucide-react";
 import { useState } from "react";
 import { Form, useActionData, useNavigation } from "react-router";
@@ -223,7 +224,7 @@ export function ProductCommercialPanel({
               ? "Complete size selection"
               : offer?.referencePrice == null
                 ? "Price on quote"
-                : `${offer.currency} ${offer.referencePrice.toFixed(2)} / ${offer.salesUnit.toLocaleLowerCase()}`}
+                : `${offer.currency} ${formatReferenceUnitPrice(offer.referencePrice)} / ${offer.salesUnit.toLocaleLowerCase()}`}
           </strong>
           <small>
             Non-binding reference; final pricing is confirmed in your quote.

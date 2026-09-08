@@ -14,7 +14,10 @@ import {
   ownedProductValues,
 } from "../../catalog/domain/catalog-product-fields";
 import { itemCurrencies } from "../../catalog/domain/catalog-item-publication";
-import { selectionActions } from "../../catalog/domain/catalog-product-management";
+import {
+  selectionActions,
+  validateProductPackaging,
+} from "../../catalog/domain/catalog-product-management";
 import type {
   ManagedProduct,
   ProductSelection,
@@ -138,6 +141,7 @@ function ProductEditor({
   const [currency, setCurrency] = useState(price?.currency ?? "USD");
   const [amount, setAmount] = useState(String(price?.amount ?? ""));
   const [state, setState] = useState(editor.targetState);
+  const [clientError, setClientError] = useState<string | null>(null);
   const canEdit = editor.canEdit;
   const close = () => {
     if (!dirty.current || window.confirm("放弃未保存的修改？")) onClose();
@@ -153,10 +157,41 @@ function ProductEditor({
         }}
         onSubmit={(e) => {
           e.preventDefault();
-          submit(new FormData(e.currentTarget));
+          const form = new FormData(e.currentTarget);
+          try {
+            if (kind === "sku") {
+              const rule =
+                editor.rules?.find(
+                  (rule) =>
+                    rule.seriesCode === String(form.get("hoseSeries") ?? ""),
+                ) ?? null;
+              const length = String(form.get("packageLengthFt") ?? "").trim();
+              validateProductPackaging(
+                productType,
+                rule,
+                length ? Number(length) : null,
+              );
+              for (const field of packagingFields.filter(
+                (field) => field.kind === "number",
+              )) {
+                const value = String(form.get(field.key) ?? "").trim();
+                if (
+                  value &&
+                  (!Number.isFinite(Number(value)) || Number(value) <= 0)
+                )
+                  throw new Error(`${field.header} 必须大于零`);
+              }
+            }
+            setClientError(null);
+            submit(form);
+          } catch (error) {
+            setClientError(
+              error instanceof Error ? error.message : "包装数据无效",
+            );
+          }
         }}
       >
-        {error && <p role="alert">{error}</p>}
+        {(clientError || error) && <p role="alert">{clientError || error}</p>}
         <input type="hidden" name="intent" value="save" />
         <input type="hidden" name="kind" value={kind} />
         <input type="hidden" name="productType" value={productType} />

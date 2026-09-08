@@ -22,6 +22,10 @@ import {
   packagingFields,
 } from "../../catalog/domain/catalog-product-fields";
 import { ProductManagementPage } from "../ui/product-management-page";
+export function meta() {
+  return [{ title: "管理所有产品 | Admin Backoffice" }];
+}
+
 export async function loader({ context, request }: Route.LoaderArgs) {
   const { env, adminIdentity } = requireAdminRequestContext(context);
   const url = new URL(request.url);

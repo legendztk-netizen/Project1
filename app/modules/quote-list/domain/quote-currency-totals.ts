@@ -80,3 +80,10 @@ export function formatQuoteAmounts(amounts: {
     )
     .join(" · ");
 }
+
+export function formatReferenceUnitPrice(amount: number) {
+  return amount.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 20,
+  });
+}

@@ -57,3 +57,99 @@ END;
 UPDATE `application_schema_state`
 SET `version` = 56, `updated_at` = CURRENT_TIMESTAMP
 WHERE `singleton` = 1;
+
+-- A non-USD hose amount and a USD cutting fee have no combined total.
+DROP TRIGGER anonymous_quote_lines_validate_shape_insert;
+DROP TRIGGER anonymous_quote_lines_validate_shape_update;
+CREATE TRIGGER `anonymous_quote_lines_validate_shape_insert`
+BEFORE INSERT ON `anonymous_quote_lines`
+WHEN (
+  NEW.`line_kind` = 'standard'
+  AND (
+    NEW.`original_length_value` IS NOT NULL OR NEW.`original_length_unit` IS NOT NULL
+    OR NEW.`normalized_length_ft` IS NOT NULL OR NEW.`piece_count` IS NOT NULL
+    OR NEW.`total_footage` IS NOT NULL OR NEW.`cutting_labeling_fee_rate` IS NOT NULL
+    OR NEW.`cutting_labeling_fee_amount` IS NOT NULL OR NEW.`cutting_labeling_fee_scope` IS NOT NULL
+    OR NEW.`cutting_labeling_fee_version` IS NOT NULL OR NEW.`estimated_merchandise_amount` IS NOT NULL
+    OR NEW.`current_estimate_amount` IS NOT NULL OR NEW.`configured_snapshot_json` IS NOT NULL
+    OR NEW.`configured_estimate_inputs_json` IS NOT NULL OR NEW.`configured_unit_estimate_amount` IS NOT NULL
+  )
+) OR (
+  NEW.`line_kind` = 'length_based_hose'
+  AND (
+    NEW.`category` <> 'hydraulic-hose' OR NEW.`original_length_value` IS NULL
+    OR NEW.`original_length_unit` IS NULL OR NEW.`normalized_length_ft` IS NULL
+    OR NEW.`piece_count` IS NULL OR NEW.`quantity` <> NEW.`piece_count`
+    OR NEW.`total_footage` IS NULL OR NEW.`cutting_labeling_fee_rate` IS NULL
+    OR NEW.`cutting_labeling_fee_amount` IS NULL OR NEW.`cutting_labeling_fee_scope` IS NULL
+    OR NEW.`cutting_labeling_fee_version` IS NULL
+    OR (NEW.currency='USD' AND (NEW.`estimated_merchandise_amount` IS NULL) <> (NEW.`current_estimate_amount` IS NULL))
+    OR (NEW.currency<>'USD' AND NEW.current_estimate_amount IS NOT NULL)
+    OR NEW.`configured_snapshot_json` IS NOT NULL OR NEW.`configured_estimate_inputs_json` IS NOT NULL
+    OR NEW.`configured_unit_estimate_amount` IS NOT NULL
+  )
+) OR (
+  NEW.`line_kind` = 'configured_assembly'
+  AND (
+    NEW.`category` <> 'hydraulic-hose' OR NEW.`sales_unit` <> 'each' OR NEW.`currency` <> 'USD'
+    OR NEW.`reference_unit_price` IS NOT NULL OR NEW.`original_length_value` IS NOT NULL
+    OR NEW.`original_length_unit` IS NOT NULL OR NEW.`normalized_length_ft` IS NOT NULL
+    OR NEW.`piece_count` IS NOT NULL OR NEW.`total_footage` IS NOT NULL
+    OR NEW.`cutting_labeling_fee_rate` IS NOT NULL OR NEW.`cutting_labeling_fee_amount` IS NOT NULL
+    OR NEW.`cutting_labeling_fee_scope` IS NOT NULL OR NEW.`cutting_labeling_fee_version` IS NOT NULL
+    OR NEW.`estimated_merchandise_amount` IS NOT NULL OR NEW.`configured_snapshot_json` IS NULL
+    OR NOT json_valid(NEW.`configured_snapshot_json`) OR NEW.`configured_estimate_inputs_json` IS NULL
+    OR NOT json_valid(NEW.`configured_estimate_inputs_json`)
+    OR (NEW.`configured_unit_estimate_amount` IS NULL) <> (NEW.`current_estimate_amount` IS NULL)
+  )
+)
+BEGIN
+  SELECT RAISE(ABORT, 'invalid anonymous quote line shape');
+END;
+--> statement-breakpoint
+CREATE TRIGGER `anonymous_quote_lines_validate_shape_update`
+BEFORE UPDATE ON `anonymous_quote_lines`
+WHEN (
+  NEW.`line_kind` = 'standard'
+  AND (
+    NEW.`original_length_value` IS NOT NULL OR NEW.`original_length_unit` IS NOT NULL
+    OR NEW.`normalized_length_ft` IS NOT NULL OR NEW.`piece_count` IS NOT NULL
+    OR NEW.`total_footage` IS NOT NULL OR NEW.`cutting_labeling_fee_rate` IS NOT NULL
+    OR NEW.`cutting_labeling_fee_amount` IS NOT NULL OR NEW.`cutting_labeling_fee_scope` IS NOT NULL
+    OR NEW.`cutting_labeling_fee_version` IS NOT NULL OR NEW.`estimated_merchandise_amount` IS NOT NULL
+    OR NEW.`current_estimate_amount` IS NOT NULL OR NEW.`configured_snapshot_json` IS NOT NULL
+    OR NEW.`configured_estimate_inputs_json` IS NOT NULL OR NEW.`configured_unit_estimate_amount` IS NOT NULL
+  )
+) OR (
+  NEW.`line_kind` = 'length_based_hose'
+  AND (
+    NEW.`category` <> 'hydraulic-hose' OR NEW.`original_length_value` IS NULL
+    OR NEW.`original_length_unit` IS NULL OR NEW.`normalized_length_ft` IS NULL
+    OR NEW.`piece_count` IS NULL OR NEW.`quantity` <> NEW.`piece_count`
+    OR NEW.`total_footage` IS NULL OR NEW.`cutting_labeling_fee_rate` IS NULL
+    OR NEW.`cutting_labeling_fee_amount` IS NULL OR NEW.`cutting_labeling_fee_scope` IS NULL
+    OR NEW.`cutting_labeling_fee_version` IS NULL
+    OR (NEW.currency='USD' AND (NEW.`estimated_merchandise_amount` IS NULL) <> (NEW.`current_estimate_amount` IS NULL))
+    OR (NEW.currency<>'USD' AND NEW.current_estimate_amount IS NOT NULL)
+    OR NEW.`configured_snapshot_json` IS NOT NULL OR NEW.`configured_estimate_inputs_json` IS NOT NULL
+    OR NEW.`configured_unit_estimate_amount` IS NOT NULL
+  )
+) OR (
+  NEW.`line_kind` = 'configured_assembly'
+  AND (
+    NEW.`category` <> 'hydraulic-hose' OR NEW.`sales_unit` <> 'each' OR NEW.`currency` <> 'USD'
+    OR NEW.`reference_unit_price` IS NOT NULL OR NEW.`original_length_value` IS NOT NULL
+    OR NEW.`original_length_unit` IS NOT NULL OR NEW.`normalized_length_ft` IS NOT NULL
+    OR NEW.`piece_count` IS NOT NULL OR NEW.`total_footage` IS NOT NULL
+    OR NEW.`cutting_labeling_fee_rate` IS NOT NULL OR NEW.`cutting_labeling_fee_amount` IS NOT NULL
+    OR NEW.`cutting_labeling_fee_scope` IS NOT NULL OR NEW.`cutting_labeling_fee_version` IS NOT NULL
+    OR NEW.`estimated_merchandise_amount` IS NOT NULL OR NEW.`configured_snapshot_json` IS NULL
+    OR NOT json_valid(NEW.`configured_snapshot_json`) OR NEW.`configured_estimate_inputs_json` IS NULL
+    OR NOT json_valid(NEW.`configured_estimate_inputs_json`)
+    OR (NEW.`configured_unit_estimate_amount` IS NULL) <> (NEW.`current_estimate_amount` IS NULL)
+  )
+)
+BEGIN
+  SELECT RAISE(ABORT, 'invalid anonymous quote line shape');
+END;
+--> statement-breakpoint

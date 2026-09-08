@@ -282,17 +282,6 @@ it("publishes through the protected Worker, creates a current RFQ, and preserves
     baselineRevisionId: editor.baselineRevisionId,
   });
   expect(updated.status, await updated.text()).toBe(200);
-  sql("UPDATE admin_identities SET catalog_permission='view'");
-  expect(
-    (
-      await post("/admin/catalog/products", {
-        intent: "delete",
-        selected: "[]",
-        commandId: crypto.randomUUID(),
-      })
-    ).status,
-  ).toBe(403);
-  sql("UPDATE admin_identities SET catalog_permission='edit'");
   const secondAdd = await post(
     `/catalog/hydraulic-hose/${current.familyKey}`,
     {

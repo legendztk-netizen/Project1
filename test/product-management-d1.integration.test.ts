@@ -279,3 +279,254 @@ it("blocks a live series deletion and returns per-SKU partial results with retai
     (await manager.all()).some((p) => p.kind === "series" && p.code === "FJX"),
   ).toBe(false);
 });
+
+it("rejects series deletion when a child publishes after impact planning", async () => {
+  const original = await repository.findProductPayload(
+    "ferrule",
+    "series",
+    "601R1",
+  );
+  if (!original || original.kind !== "series")
+    throw new Error("missing parent");
+  const parent = {
+    ...original,
+    series: { ...original.series, seriesCode: "RACE", seriesName: "RACE" },
+    commercialRule: { ...original.commercialRule!, seriesCode: "RACE" },
+  } as CatalogItemCommand["payload"];
+  await repository.apply(command(parent));
+  const child = await repository.findProductPayload(
+    "ferrule",
+    "sku",
+    "601R1_1WB_TEST",
+  );
+  if (!child || child.kind !== "sku" || child.productType !== "ferrule")
+    throw new Error("missing child");
+  const proposed = {
+    ...child,
+    variant: { ...child.variant, sku: "RACE_1WB_TEST", ferruleSeries: "RACE" },
+  };
+  await repository.apply(command(proposed, "draft"));
+  let injected = false;
+  const wrapped = {
+    prepare: database.prepare.bind(database),
+    async batch(statements: D1PreparedStatement[]) {
+      const result = await database.batch(statements);
+      if (!injected && statements.length === 3) {
+        injected = true;
+        await repository.apply(command(proposed, "online", "edit"));
+      }
+      return result;
+    },
+  } as D1Database;
+  await expect(
+    createD1ProductManagementRepository(wrapped).remove(
+      [{ kind: "series", productType: "ferrule", code: "RACE" }],
+      "race-child",
+      "owner-1",
+      "local",
+    ),
+  ).rejects.toThrow("catalog changed during deletion");
+  expect((await catalog.findItem("RACE_1WB_TEST"))?.canAddToQuote).toBe(true);
+  expect(
+    (await createD1ProductManagementRepository(database).all()).some(
+      (p) => p.kind === "series" && p.code === "RACE",
+    ),
+  ).toBe(true);
+});
+it("rejects deletion if a pending target request arrives after the plan", async () => {
+  const original = await repository.findProductPayload(
+    "ferrule",
+    "series",
+    "601R1",
+  );
+  if (!original || original.kind !== "series")
+    throw new Error("missing parent");
+  const parent = {
+    ...original,
+    series: {
+      ...original.series,
+      seriesCode: "REQUEST-RACE",
+      seriesName: "Request race",
+    },
+    commercialRule: { ...original.commercialRule!, seriesCode: "REQUEST-RACE" },
+  } as CatalogItemCommand["payload"];
+  await repository.apply(command(parent));
+  let pendingId = "";
+  const wrapped = {
+    prepare: database.prepare.bind(database),
+    async batch(statements: D1PreparedStatement[]) {
+      if (statements.length > 3 && !pendingId)
+        pendingId = await repository.createRequest(
+          command(parent, "online", "edit"),
+          { row: "race" },
+        );
+      return database.batch(statements);
+    },
+  } as D1Database;
+  await expect(
+    createD1ProductManagementRepository(wrapped).remove(
+      [{ kind: "series", productType: "ferrule", code: "REQUEST-RACE" }],
+      "race-request",
+      "owner-1",
+      "local",
+    ),
+  ).rejects.toThrow("pending requests changed during deletion");
+  expect(
+    await database
+      .prepare("SELECT status FROM catalog_product_change_requests WHERE id=?")
+      .bind(pendingId)
+      .first(),
+  ).toEqual({ status: "pending" });
+});
+
+it("rejects read-only product commands before touching D1", async () => {
+  const { RouterContextProvider } = await import("react-router");
+  const { cloudflareContext } = await import("../workers/context");
+  const { action } =
+    await import("../app/modules/admin/routes/catalog-products");
+  const context = new RouterContextProvider();
+  context.set(cloudflareContext, {
+    env: { DB: database, APP_ENV: "local" } as CloudflareBindings,
+    runtime: { environment: "local" },
+    ctx: {} as ExecutionContext,
+    adminIdentity: {
+      accountType: "subaccount",
+      catalogPermission: "view",
+      canManageSubaccounts: false,
+      email: "viewer@example.com",
+      id: "viewer",
+      source: "cloudflare-access",
+    },
+  });
+  await expect(
+    action({
+      context,
+      request: new Request("http://admin.localhost/admin/catalog/products", {
+        method: "POST",
+      }),
+      params: {},
+      url: new URL("http://admin.localhost/admin/catalog/products"),
+      pattern: "/admin/catalog/products",
+    } as Parameters<typeof action>[0]),
+  ).rejects.toMatchObject({ status: 403 });
+});
+
+it("deletes pending new-child requests with their series and prevents reuse of hidden parents", async () => {
+  const original = await repository.findProductPayload(
+    "ferrule",
+    "series",
+    "601R1",
+  );
+  const child = await repository.findProductPayload(
+    "ferrule",
+    "sku",
+    "601R1_1WB_TEST",
+  );
+  if (
+    !original ||
+    original.kind !== "series" ||
+    !child ||
+    child.kind !== "sku" ||
+    child.productType !== "ferrule"
+  )
+    throw new Error("missing fixtures");
+  const parent = {
+    ...original,
+    series: {
+      ...original.series,
+      seriesCode: "PENDING",
+      seriesName: "PENDING",
+    },
+    commercialRule: { ...original.commercialRule!, seriesCode: "PENDING" },
+  } as CatalogItemCommand["payload"];
+  await repository.apply(command(parent));
+  const proposed = {
+    ...child,
+    variant: {
+      ...child.variant,
+      sku: "PENDING_1WB_TEST",
+      ferruleSeries: "PENDING",
+    },
+  };
+  const pending = await repository.createRequest(command(proposed), {
+    row: "new child",
+  });
+  const manager = createD1ProductManagementRepository(database);
+  const selected = [
+    {
+      kind: "series" as const,
+      productType: "ferrule" as const,
+      code: "PENDING",
+    },
+  ];
+  expect((await manager.deletionPlan(selected)).requestIds).toContain(pending);
+  await manager.remove(selected, "delete-pending-parent", "owner-1", "local");
+  expect(
+    await database
+      .prepare("SELECT status FROM catalog_product_change_requests WHERE id=?")
+      .bind(pending)
+      .first(),
+  ).toEqual({ status: "deleted" });
+  await expect(repository.apply(command(proposed))).rejects.toThrow(
+    "Parent series was deleted",
+  );
+  await expect(
+    repository.createRequest(command(proposed), { row: "late child" }),
+  ).rejects.toThrow("parent series was deleted");
+});
+
+it("preserves legacy mixed-case series identities while editing and attaching a child", async () => {
+  const parent = await repository.findProductPayload(
+    "hose_end",
+    "series",
+    "FJX",
+  );
+  const child = await repository.findProductPayload(
+    "hose_end",
+    "sku",
+    "FJX-04-04",
+  );
+  if (
+    !parent ||
+    parent.kind !== "series" ||
+    parent.productType !== "hose_end" ||
+    !child ||
+    child.kind !== "sku" ||
+    child.productType !== "hose_end"
+  )
+    throw new Error("missing legacy fixtures");
+  const legacyCode = "Legacy FJX family";
+  const legacy = {
+    ...parent,
+    series: { ...parent.series, seriesCode: legacyCode },
+    commercialRule: { ...parent.commercialRule!, seriesCode: legacyCode },
+  };
+  const generation = (await repository.state()).generation;
+  await database.batch([
+    database
+      .prepare(
+        "INSERT INTO catalog_product_entities(id,kind,product_type,code) VALUES('legacy-end-family','series','hose_end',?)",
+      )
+      .bind(legacyCode),
+    database
+      .prepare(
+        "INSERT INTO catalog_product_revisions(id,entity_id,target_state,payload_json,media_version_id,source_json,affected_series_json,command_id,command_hash,expected_generation,actor_id,ip_address,occurred_at) VALUES('legacy-family-revision','legacy-end-family','online',?,?,'{\"channel\":\"migration\"}','[]','legacy-family-command','fixture',?,'owner-1','local','2026-09-01')",
+      )
+      .bind(JSON.stringify(legacy), legacy.mediaVersionId, generation),
+  ]);
+  await repository.apply(command(legacy, "online", "edit"));
+  await repository.apply(
+    command({
+      ...child,
+      variant: {
+        ...child.variant,
+        sku: "LJF-04-04",
+        fittingSeries: legacyCode,
+      },
+    }),
+  );
+  expect(
+    await repository.findProductPayload("hose_end", "sku", "LJF-04-04"),
+  ).toMatchObject({ variant: { fittingSeries: legacyCode } });
+  expect((await catalog.findItem("LJF-04-04"))?.canAddToQuote).toBe(true);
+});

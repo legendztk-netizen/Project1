@@ -156,7 +156,7 @@ export function createD1CatalogItemRepository(
         .prepare(
           `SELECT r.payload_json FROM catalog_product_entities e JOIN catalog_product_revisions r ON r.id = e.draft_revision_id WHERE e.kind = ? AND e.product_type = ? AND e.code = ?`,
         )
-        .bind(kind, code)
+        .bind(kind, "hose", code)
         .first<{ payload_json: string }>();
       if (revision)
         return JSON.parse(revision.payload_json) as HoseCatalogItemPayload;
@@ -278,6 +278,19 @@ export function createD1CatalogItemRepository(
       return retained;
     }
     const payload = structuredClone(input.payload);
+    if (payload.kind === "sku") {
+      const deletedParent = await database
+        .prepare(
+          "SELECT 1 FROM catalog_product_entities WHERE kind='series' AND product_type=? AND code=? AND hidden_at IS NOT NULL",
+        )
+        .bind(payload.productType, itemSeriesCode(payload))
+        .first();
+      if (deletedParent)
+        throw new CatalogItemRejected(
+          "Parent series was deleted / 所属系列已删除",
+          409,
+        );
+    }
     if (payload.productType !== "hose")
       return additional.validate(input, fromRequest);
     const code = itemCode(payload);

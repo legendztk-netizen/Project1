@@ -26,8 +26,15 @@ export async function loader({ context, request }: Route.LoaderArgs) {
         .bind(kind, type, code)
         .first<{ target_state: string }>()
     : null;
+  const rows = await createD1ProductManagementRepository(env.DB).all();
   return {
-    targetState: revision?.target_state ?? "online",
+    targetState:
+      revision?.target_state ??
+      rows.find(
+        (row) =>
+          row.kind === kind && row.productType === type && row.code === code,
+      )?.state ??
+      "online",
     payload,
     productType: type,
     kind: kind as "series" | "sku",
@@ -36,9 +43,20 @@ export async function loader({ context, request }: Route.LoaderArgs) {
     baselineRevisionId: code
       ? ((await repository.history(kind, code, type))[0]?.revisionId ?? null)
       : null,
-    series: (await createD1ProductManagementRepository(env.DB).all()).filter(
-      (r) => r.kind === "series" && r.productType === type,
-    ),
+    series: rows.filter((r) => r.kind === "series" && r.productType === type),
+    rules: (
+      await env.DB.prepare(
+        "SELECT m.series_code AS seriesCode,m.sales_unit AS salesUnit,m.quantity_input_mode AS quantityInputMode,m.minimum_length_per_piece_ft AS minimumLengthPerPieceFt,m.length_increment_ft AS lengthIncrementFt FROM catalog_runtime_series_commercial_rules m JOIN catalog_releases r ON r.source_import_id=m.import_id JOIN catalog_active_release a ON a.release_id=r.id WHERE m.product_type=?",
+      )
+        .bind(type)
+        .all<{
+          seriesCode: string;
+          salesUnit: string;
+          quantityInputMode: string;
+          minimumLengthPerPieceFt: number | null;
+          lengthIncrementFt: number | null;
+        }>()
+    ).results,
     media: (
       await env.DB.prepare(
         "SELECT id,COALESCE(approved_reference,id) AS label FROM catalog_media_versions ORDER BY created_at DESC",

@@ -111,26 +111,6 @@ export function createD1ProductManagementRepository(database: D1Database) {
         draftRevisionId: null,
         assemblyPending: false,
       });
-    for (const sku of result)
-      if (
-        sku.kind === "sku" &&
-        sku.seriesCode &&
-        !result.some(
-          (r) =>
-            r.kind === "series" &&
-            r.productType === sku.productType &&
-            r.code === sku.seriesCode,
-        )
-      )
-        result.push({
-          ...sku,
-          kind: "series",
-          code: sku.seriesCode,
-          name: sku.seriesCode,
-          dimensions: "",
-          amount: null,
-          imageId: null,
-        });
     for (const r of extras.results) {
       const index = result.findIndex(
         (p) =>
@@ -230,10 +210,13 @@ export function createD1ProductManagementRepository(database: D1Database) {
         ).payload;
         return targets.some(
           (t) =>
-            t.kind === p.kind &&
             t.productType === p.productType &&
-            t.code ===
-              (p.kind === "series" ? p.series.seriesCode : p.variant.sku),
+            ((t.kind === p.kind &&
+              t.code ===
+                (p.kind === "series" ? p.series.seriesCode : p.variant.sku)) ||
+              (t.kind === "series" &&
+                p.kind === "sku" &&
+                t.code === itemSeriesCode(p))),
         );
       })
       .map((r) => r.id);
@@ -311,13 +294,13 @@ export function createD1ProductManagementRepository(database: D1Database) {
       }
       return { results };
     }
+    const state = await items.state();
     const plan = await deletionPlan(selected);
     if (plan.blockers)
       throw new CatalogItemRejected(
         `Deletion blocked by ${plan.blockers} active children or dependent requests / ${plan.blockers} 个上线子体或有效依赖阻止删除`,
         409,
       );
-    const state = await items.state();
     if (state.mode !== "items")
       throw new CatalogItemRejected(
         "Enable item publication first / 请先启用条目发布",

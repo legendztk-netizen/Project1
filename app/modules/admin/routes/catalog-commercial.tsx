@@ -98,9 +98,7 @@ export async function loader({ context, request }: Route.LoaderArgs) {
   const { env, adminIdentity } = requireAdminRequestContext(context);
   const url = new URL(request.url);
   const selectedProductType = productType(url.searchParams.get("productType"));
-  const selectedSeries = (url.searchParams.get("series") ?? "")
-    .trim()
-    .toUpperCase();
+  const selectedSeries = (url.searchParams.get("series") ?? "").trim();
   const sku = (url.searchParams.get("sku") ?? "").trim().toUpperCase();
   const items = createD1CatalogItemRepository(env.DB);
   if ((await items.state()).mode === "items") {

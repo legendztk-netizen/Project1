@@ -368,6 +368,13 @@ CREATE TRIGGER catalog_item_delete_precondition BEFORE INSERT ON catalog_product
 BEGIN
  SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM catalog_item_publication_state WHERE mode='items' AND generation=NEW.expected_generation) THEN RAISE(ABORT,'catalog changed during deletion') END;
  SELECT CASE WHEN EXISTS (
+   SELECT 1 FROM catalog_item_pending_requests request, json_each(NEW.payload_json,'$.targets') target
+   WHERE request.product_type=json_extract(target.value,'$.productType')
+     AND ((request.kind=json_extract(target.value,'$.kind') AND request.code=json_extract(target.value,'$.code'))
+       OR (json_extract(target.value,'$.kind')='series' AND request.kind='sku' AND request.series_code=json_extract(target.value,'$.code')))
+     AND request.id NOT IN (SELECT value FROM json_each(NEW.payload_json,'$.requestIds'))
+ ) THEN RAISE(ABORT,'pending requests changed during deletion') END;
+ SELECT CASE WHEN EXISTS (
    SELECT 1 FROM catalog_product_change_requests request,json_each(request.dependencies_json) dependency
    WHERE request.status='pending' AND request.id NOT IN (SELECT value FROM json_each(NEW.payload_json,'$.requestIds'))
      AND dependency.value IN (SELECT value FROM json_each(NEW.payload_json,'$.requestIds'))
@@ -397,4 +404,21 @@ BEGIN
    AND json_extract(target.payload_json,'$.payload.productType')=entity.product_type
    AND COALESCE(json_extract(dependent.payload_json,'$.payload.variant.sku'),'')<>entity.code
  ) THEN RAISE(ABORT,'dependent requests prevent deletion') END;
+END;
+
+CREATE VIEW catalog_item_pending_requests AS
+SELECT id, json_extract(payload_json,'$.payload.kind') AS kind,
+ json_extract(payload_json,'$.payload.productType') AS product_type,
+ COALESCE(json_extract(payload_json,'$.payload.variant.sku'),json_extract(payload_json,'$.payload.series.seriesCode')) AS code,
+ json_extract(payload_json, CASE json_extract(payload_json, '$.payload.productType') WHEN 'hose' THEN '$.payload.variant.hoseSeries' WHEN 'hose_end' THEN '$.payload.variant.fittingSeries' WHEN 'ferrule' THEN '$.payload.variant.ferruleSeries' WHEN 'adapter' THEN '$.payload.variant.adapterFamilyId' WHEN 'quick_coupler' THEN '$.payload.variant.couplerSeries' END) AS series_code
+FROM catalog_product_change_requests WHERE status='pending';
+CREATE TRIGGER catalog_request_deleted_parent BEFORE INSERT ON catalog_product_change_requests
+WHEN json_extract(NEW.payload_json,'$.payload.kind')='sku'
+BEGIN
+ SELECT CASE WHEN EXISTS(SELECT 1 FROM catalog_product_entities e WHERE e.kind='series' AND e.hidden_at IS NOT NULL AND e.product_type=json_extract(NEW.payload_json,'$.payload.productType') AND e.code=json_extract(NEW.payload_json, CASE json_extract(NEW.payload_json, '$.payload.productType') WHEN 'hose' THEN '$.payload.variant.hoseSeries' WHEN 'hose_end' THEN '$.payload.variant.fittingSeries' WHEN 'ferrule' THEN '$.payload.variant.ferruleSeries' WHEN 'adapter' THEN '$.payload.variant.adapterFamilyId' WHEN 'quick_coupler' THEN '$.payload.variant.couplerSeries' END)) THEN RAISE(ABORT,'parent series was deleted') END;
+END;
+CREATE TRIGGER catalog_revision_deleted_parent BEFORE INSERT ON catalog_product_revisions
+WHEN json_extract(NEW.payload_json,'$.kind')='sku'
+BEGIN
+ SELECT CASE WHEN EXISTS(SELECT 1 FROM catalog_product_entities e WHERE e.kind='series' AND e.hidden_at IS NOT NULL AND e.product_type=json_extract(NEW.payload_json,'$.productType') AND e.code=json_extract(NEW.payload_json, CASE json_extract(NEW.payload_json, '$.productType') WHEN 'hose' THEN '$.variant.hoseSeries' WHEN 'hose_end' THEN '$.variant.fittingSeries' WHEN 'ferrule' THEN '$.variant.ferruleSeries' WHEN 'adapter' THEN '$.variant.adapterFamilyId' WHEN 'quick_coupler' THEN '$.variant.couplerSeries' END)) THEN RAISE(ABORT,'parent series was deleted') END;
 END;

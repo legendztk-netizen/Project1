@@ -222,8 +222,6 @@ export function createD1AdditionalCatalogItems(database: D1Database) {
       payload.kind === "series"
         ? payload.series.seriesCode
         : payload.variant.sku;
-    if (!/^[A-Z0-9_-]+$/.test(code))
-      throw new CatalogItemRejected("Invalid immutable code / 产品编号无效");
     const entity = await database
       .prepare(
         "SELECT kind,product_type,hidden_at FROM catalog_product_entities WHERE code=? AND (kind='sku' OR (kind=? AND product_type=?))",
@@ -258,6 +256,8 @@ export function createD1AdditionalCatalogItems(database: D1Database) {
         409,
       );
     const exists = Boolean(entity || legacy);
+    if (!exists && !/^[A-Z0-9_-]+$/.test(code))
+      throw new CatalogItemRejected("Invalid immutable code / 产品编号无效");
     if (input.mode === "create" && exists && !fromRequest)
       throw new CatalogItemRejected(
         "Product already exists / 产品编号已存在",
@@ -268,7 +268,17 @@ export function createD1AdditionalCatalogItems(database: D1Database) {
     const mode = fromRequest && exists ? "edit" : input.mode;
     const imageReference = await reference(payload.mediaVersionId);
     const findSeries = async (value: string) => {
-      const p = await read("hose_end", "series", value);
+      const originalCode =
+        payload.kind === "sku" && payload.productType === "hose_end"
+          ? payload.variant.fittingSeries
+          : value;
+      const p = await read(
+        "hose_end",
+        "series",
+        originalCode.toUpperCase() === value.toUpperCase()
+          ? originalCode
+          : value,
+      );
       return p?.kind === "series" && p.productType === "hose_end"
         ? p.series
         : null;
@@ -295,6 +305,7 @@ export function createD1AdditionalCatalogItems(database: D1Database) {
             },
           },
         );
+      if (exists) payload.series.seriesCode = code;
       if (payload.commercialRule) {
         payload.commercialRule = normalizeSeriesCommercialRule(
           payload.commercialRule,
@@ -376,6 +387,9 @@ export function createD1AdditionalCatalogItems(database: D1Database) {
         });
         payload.variant = master as typeof payload.variant;
       }
+      if (payload.productType === "hose_end" && parent?.kind === "series")
+        payload.variant.fittingSeries = parent.series.seriesCode;
+      if (exists) payload.variant.sku = code;
       if (payload.price) payload.price = normalizeItemPrice(payload.price);
       // Imported inapplicable values remain in the old revision; new proposals must be clean.
       validateProductPackaging(

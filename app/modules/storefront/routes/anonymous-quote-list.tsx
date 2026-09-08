@@ -1,3 +1,4 @@
+import { formatReferenceUnitPrice } from "../../quote-list/domain/quote-currency-totals";
 import { quoteCurrencyTotals } from "../../quote-list/domain/quote-currency-totals";
 import {
   AlertCircle,
@@ -1145,10 +1146,10 @@ export function QuoteListContent({
                       {line.lineKind === "configured_assembly"
                         ? line.refresh?.current.unitReferencePrice == null
                           ? "Reference inputs are incomplete"
-                          : `${line.refresh.current.currency ?? line.currency} ${line.refresh.current.unitReferencePrice.toFixed(2)} / assembly`
+                          : `${line.refresh.current.currency ?? line.currency} ${formatReferenceUnitPrice(line.refresh.current.unitReferencePrice)} / assembly`
                         : line.refresh?.current.unitReferencePrice == null
                           ? "No reference unit price"
-                          : `${line.refresh.current.currency ?? line.currency} ${line.refresh.current.unitReferencePrice.toFixed(2)} / ${line.salesUnit}`}
+                          : `${line.refresh.current.currency ?? line.currency} ${formatReferenceUnitPrice(line.refresh.current.unitReferencePrice)} / ${line.salesUnit}`}
                     </small>
                     {serviceFee > 0 ? (
                       <small>
