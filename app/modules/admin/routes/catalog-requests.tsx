@@ -6,7 +6,8 @@ import {
   useLoaderData,
   useActionData,
 } from "react-router";
-import { useState } from "react";
+import { AdminNavigation } from "../ui/admin-navigation";
+import { useEffect, useState } from "react";
 import type { Route } from "./+types/catalog-requests";
 import {
   requireAdminRequestContext,
@@ -66,19 +67,28 @@ export async function loader({ context, request }: Route.LoaderArgs) {
   const detail = url.searchParams.get("detail")
     ? await repository.get(url.searchParams.get("detail")!)
     : null;
-  const products =
-    detail?.command.payload.kind === "series"
-      ? await createD1ProductManagementRepository(env.DB).all()
-      : [];
+  const products = await createD1ProductManagementRepository(env.DB).all();
   return {
     requests,
     filters,
     batchSource: filters.batch
       ? await repository.batchSource(filters.batch)
       : null,
-    series: [
-      ...new Set(scope.map((r) => itemSeriesCode(r.command.payload))),
-    ].sort(),
+    seriesOptions: [
+      ...new Map(
+        [
+          ...products
+            .filter((p) => p.kind === "series")
+            .map((p) => ({ code: p.code, productType: p.productType })),
+          ...all.map((r) => ({
+            code: itemSeriesCode(r.command.payload),
+            productType: r.command.payload.productType,
+          })),
+        ]
+          .filter((option) => option.code)
+          .map((option) => [`${option.productType}:${option.code}`, option]),
+      ).values(),
+    ],
     batches: await repository.batches(),
     relations: await repository.relations(filters.batch || undefined),
     detail,
@@ -235,326 +245,360 @@ export default function CatalogRequests() {
   const page = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [selected, setSelected] = useState<string[]>([]);
+  const [worksheet, setWorksheet] = useState(page.filters.sheet);
+  const [series, setSeries] = useState(page.filters.series);
+  useEffect(() => {
+    setWorksheet(page.filters.sheet);
+    setSeries(page.filters.series);
+  }, [page.filters.sheet, page.filters.series]);
+  const worksheetType = (
+    {
+      "01": "hose",
+      "02": "hose_end",
+      "03": "ferrule",
+      "05": "adapter",
+      "06": "quick_coupler",
+    } as Record<string, string>
+  )[worksheet.slice(0, 2)];
+  const seriesOptions = [
+    ...new Set(
+      page.seriesOptions
+        .filter(
+          (option) => !worksheetType || option.productType === worksheetType,
+        )
+        .map((option) => option.code),
+    ),
+  ].sort();
   const detail = page.detail;
   const filters = new URLSearchParams(page.filters);
   const offerFields = catalogWorksheetContracts.find((c) =>
     c.name.startsWith("07"),
   )!.fields;
   return (
-    <main className="catalog-request-page">
-      <nav>
-        <a href="/admin">后台首页</a> ·{" "}
-        <a href="/admin/catalog/products">管理所有产品</a> ·{" "}
-        <a href="/admin/catalog/commercial">销售、包装和价格</a>
-      </nav>
-      <h1>产品更新请求审核</h1>
-      <a href="/admin/catalog/item-template" download>
-        下载条目导入模板
-      </a>
-      <p>
-        导入只生成待审核请求。批准整条参数、价格和图片后发布；每项独立成功或失败。
-      </p>
-      <p>
-        未提供的列继承导入时数据；提供的空值会清空可选字段，必填空值会报错。支持
-        USD、CNY、EUR、CAD、GBP、JPY；非 USD
-        请用通用零售单价列。系列销售规则在「销售、包装和价格」维护。
-      </p>
-      {page.mode !== "items" && (
-        <p role="alert">条目发布尚未启用；当前导入和审核不可提交。</p>
-      )}
-      {page.canEdit && (
-        <Form method="post" encType="multipart/form-data">
-          <input type="hidden" name="intent" value="import" />
-          <input type="hidden" name="batchId" value={page.batchId} />
-          <label>
-            Excel 工作簿
-            <input type="file" name="workbook" accept=".xlsx" required />
-          </label>
-          <button disabled={page.mode !== "items"}>导入为独立请求</button>
-        </Form>
-      )}
-      <Form method="get">
-        <label>
-          批次
-          <select name="batch" defaultValue={page.filters.batch}>
-            <option value="">全部批次</option>
-            {page.batches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.file_name} · {b.created_at}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          更新请求状态
-          <select name="status" defaultValue={page.filters.status}>
-            <option value="">全部</option>
-            {Object.entries(statusLabels).map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          目标产品状态
-          <select name="target" defaultValue={page.filters.target}>
-            <option value="">全部</option>
-            {Object.entries(targetLabels).map(([v, l]) => (
-              <option key={v} value={v}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          工作表
-          <select name="sheet" defaultValue={page.filters.sheet}>
-            <option value="">全部</option>
-            {catalogWorksheetContracts.map((c) => (
-              <option key={c.name}>{c.name}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          系列
-          <select name="series" defaultValue={page.filters.series}>
-            <option value="">全部</option>
-            {page.series.map((s) => (
-              <option key={s}>{s}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          SKU 模糊查询
-          <input name="q" defaultValue={page.filters.q} />
-        </label>
-        <button>筛选</button>
-      </Form>
-      {actionData?.error && <p role="alert">{actionData.error}</p>}
-      {actionData?.results.map((r) => (
-        <p role={r.ok ? "status" : "alert"} key={r.id}>
-          {r.code}：{r.message}
+    <div className="admin-shell" data-surface="admin">
+      <AdminNavigation active="catalog" />
+      <main className="catalog-request-page">
+        <h1>产品更新请求审核</h1>
+        <a href="/admin/catalog/item-template" download>
+          下载条目导入模板
+        </a>
+        <p>
+          导入只生成待审核请求。批准整条参数、价格和图片后发布；每项独立成功或失败。
         </p>
-      ))}
-      <Form method="post">
-        <table>
-          <thead>
-            <tr>
-              <th>选择</th>
-              <th>类型</th>
-              <th>产品 / 系列</th>
-              <th>更新请求状态</th>
-              <th>目标产品状态</th>
-              <th>问题</th>
-              <th>详情</th>
-            </tr>
-          </thead>
-          <tbody>
-            {page.requests.map((r) => (
-              <tr key={r.id}>
-                <td>
-                  <input
-                    aria-label={`选择 ${itemCode(r.command.payload)}`}
-                    type="checkbox"
-                    name="selected"
-                    value={`${r.id}:${r.version}`}
-                    disabled={!page.canEdit || r.status !== "pending"}
-                    checked={selected.includes(r.id)}
-                    onChange={(e) =>
-                      setSelected(
-                        e.target.checked
-                          ? [...selected, r.id]
-                          : selected.filter((id) => id !== r.id),
-                      )
-                    }
-                  />
-                </td>
-                <td>
-                  {productTypeLabels[r.command.payload.productType]} /{" "}
-                  {r.command.payload.kind === "series" ? "系列" : "SKU"}
-                </td>
-                <td>{itemCode(r.command.payload)}</td>
-                <td>{statusLabels[r.status]}</td>
-                <td>{targetLabels[r.command.targetState]}</td>
-                <td>
-                  {r.issues.join("；")}
-                  {r.dependencies.length > 0 && "；有系列依赖"}
-                </td>
-                <td>
-                  <a href={`?${filters.toString()}&detail=${r.id}`}>更多</a>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {!page.requests.length && <p>没有匹配的更新请求。</p>}
-        {page.canEdit && (
-          <div>
-            <button name="intent" value="approve" disabled={!selected.length}>
-              批准选中条目
-            </button>
-            <button name="intent" value="reject" disabled={!selected.length}>
-              拒绝选中条目
-            </button>
-            <button name="intent" value="delete" disabled={!selected.length}>
-              删除选中请求
-            </button>
-          </div>
+        <p>
+          未提供的列继承导入时数据；提供的空值会清空可选字段，必填空值会报错。支持
+          USD、CNY、EUR、CAD、GBP、JPY；非 USD
+          请用通用零售单价列。系列销售规则在「销售、包装和价格」维护。
+        </p>
+        {page.mode !== "items" && (
+          <p role="alert">条目发布尚未启用；当前导入和审核不可提交。</p>
         )}
-      </Form>
-      {detail && (
-        <section aria-label="更新请求详情">
-          <h2>{itemCode(detail.command.payload)} · 完整更新请求</h2>
-          <a href={`?${filters.toString()}`}>关闭详情</a>
-          <p>
-            导入人：{detail.createdBy}；版本：{detail.version}
-            。原始导入内容保留，修正另记审计。
-          </p>
-          {page.affected.length > 0 && (
-            <p>继承本系列数据的子体：{page.affected.join("、")}</p>
-          )}
-          <Form method="post" key={`${detail.id}:${detail.version}`}>
-            <input type="hidden" name="intent" value="correct" />
-            <input type="hidden" name="id" value={detail.id} />
-            <input type="hidden" name="version" value={detail.version} />
-            <fieldset disabled={!page.canEdit || detail.status !== "pending"}>
-              <legend>Product Snapshot / 完整产品快照</legend>
-              {productFields(
-                detail.command.payload.productType,
-                detail.command.payload.kind,
-              ).map((f) => (
-                <label key={f.key}>
-                  {f.header}
-                  <input
-                    name={`owned.${f.key}`}
-                    defaultValue={
-                      ownedProductValues(detail.command.payload)[f.key] ?? ""
-                    }
-                    readOnly={["sku", "seriesCode"].includes(f.key)}
-                  />
-                </label>
+        {page.canEdit && (
+          <Form method="post" encType="multipart/form-data">
+            <input type="hidden" name="intent" value="import" />
+            <input type="hidden" name="batchId" value={page.batchId} />
+            <label>
+              Excel 工作簿
+              <input type="file" name="workbook" accept=".xlsx" required />
+            </label>
+            <button disabled={page.mode !== "items"}>导入为独立请求</button>
+          </Form>
+        )}
+        <Form method="get">
+          <label>
+            批次
+            <select name="batch" defaultValue={page.filters.batch}>
+              <option value="">全部批次</option>
+              {page.batches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.file_name} · {b.created_at}
+                </option>
               ))}
-              <label>
-                Target State / 目标状态
-                <select
-                  name="targetState"
-                  defaultValue={detail.command.targetState}
-                >
-                  {Object.entries(targetLabels).map(([v, l]) => (
-                    <option key={v} value={v}>
-                      {v} / {l}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Image Version / 图片版本
-                <select
-                  name="mediaVersionId"
-                  defaultValue={detail.command.payload.mediaVersionId ?? ""}
-                >
-                  <option value="">
-                    Inherit Series Image / 继承系列图片（系列留空表示未指定）
-                  </option>
-                  {page.media.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {(detail.command.payload.kind === "sku"
-                ? [
-                    "amount",
-                    "currency",
-                    "packageLengthFt",
-                    ...packagingFields.map((f) => f.key),
-                  ]
-                : importRuleKeys
-              ).map((key) => {
-                const p = detail.command.payload;
-                const section = p.kind === "sku" ? "price" : "commercialRule";
-                const values = (p.kind === "sku"
-                  ? p.price
-                  : p.commercialRule) as unknown as Record<
-                  string,
-                  string | number | null
-                > | null;
-                return (
-                  <label key={key}>
-                    {key === "amount"
-                      ? "Retail Unit Price / 零售单价"
-                      : (offerFields.find((f) => f.key === key)?.header ?? key)}
+            </select>
+          </label>
+          <label>
+            更新请求状态
+            <select name="status" defaultValue={page.filters.status}>
+              <option value="">全部</option>
+              {Object.entries(statusLabels).map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            目标产品状态
+            <select name="target" defaultValue={page.filters.target}>
+              <option value="">全部</option>
+              {Object.entries(targetLabels).map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            工作表
+            <select
+              name="sheet"
+              value={worksheet}
+              onChange={(event) => {
+                setWorksheet(event.target.value);
+                setSeries("");
+              }}
+            >
+              <option value="">全部</option>
+              {catalogWorksheetContracts.map((c) => (
+                <option key={c.name}>{c.name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            系列
+            <select
+              name="series"
+              value={series}
+              onChange={(event) => setSeries(event.target.value)}
+            >
+              <option value="">全部</option>
+              {seriesOptions.map((s) => (
+                <option key={s}>{s}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            SKU 模糊查询
+            <input name="q" defaultValue={page.filters.q} />
+          </label>
+          <button>筛选</button>
+        </Form>
+        {actionData?.error && <p role="alert">{actionData.error}</p>}
+        {actionData?.results.map((r) => (
+          <p role={r.ok ? "status" : "alert"} key={r.id}>
+            {r.code}：{r.message}
+          </p>
+        ))}
+        <Form method="post">
+          <table>
+            <thead>
+              <tr>
+                <th>选择</th>
+                <th>类型</th>
+                <th>产品 / 系列</th>
+                <th>更新请求状态</th>
+                <th>目标产品状态</th>
+                <th>问题</th>
+                <th>详情</th>
+              </tr>
+            </thead>
+            <tbody>
+              {page.requests.map((r) => (
+                <tr key={r.id}>
+                  <td>
                     <input
-                      name={`${section}.${key}`}
-                      defaultValue={values?.[key] ?? ""}
+                      aria-label={`选择 ${itemCode(r.command.payload)}`}
+                      type="checkbox"
+                      name="selected"
+                      value={`${r.id}:${r.version}`}
+                      disabled={!page.canEdit || r.status !== "pending"}
+                      checked={selected.includes(r.id)}
+                      onChange={(e) =>
+                        setSelected(
+                          e.target.checked
+                            ? [...selected, r.id]
+                            : selected.filter((id) => id !== r.id),
+                        )
+                      }
+                    />
+                  </td>
+                  <td>
+                    {productTypeLabels[r.command.payload.productType]} /{" "}
+                    {r.command.payload.kind === "series" ? "系列" : "SKU"}
+                  </td>
+                  <td>{itemCode(r.command.payload)}</td>
+                  <td>{statusLabels[r.status]}</td>
+                  <td>{targetLabels[r.command.targetState]}</td>
+                  <td>
+                    {r.issues.join("；")}
+                    {r.dependencies.length > 0 && "；有系列依赖"}
+                  </td>
+                  <td>
+                    <a href={`?${filters.toString()}&detail=${r.id}`}>更多</a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!page.requests.length && <p>没有匹配的更新请求。</p>}
+          {page.canEdit && (
+            <div>
+              <button name="intent" value="approve" disabled={!selected.length}>
+                批准选中条目
+              </button>
+              <button name="intent" value="reject" disabled={!selected.length}>
+                拒绝选中条目
+              </button>
+              <button name="intent" value="delete" disabled={!selected.length}>
+                删除选中请求
+              </button>
+            </div>
+          )}
+        </Form>
+        {detail && (
+          <section aria-label="更新请求详情">
+            <h2>{itemCode(detail.command.payload)} · 完整更新请求</h2>
+            <a href={`?${filters.toString()}`}>关闭详情</a>
+            <p>
+              导入人：{detail.createdBy}；版本：{detail.version}
+              。原始导入内容保留，修正另记审计。
+            </p>
+            {page.affected.length > 0 && (
+              <p>继承本系列数据的子体：{page.affected.join("、")}</p>
+            )}
+            <Form method="post" key={`${detail.id}:${detail.version}`}>
+              <input type="hidden" name="intent" value="correct" />
+              <input type="hidden" name="id" value={detail.id} />
+              <input type="hidden" name="version" value={detail.version} />
+              <fieldset disabled={!page.canEdit || detail.status !== "pending"}>
+                <legend>Product Snapshot / 完整产品快照</legend>
+                {productFields(
+                  detail.command.payload.productType,
+                  detail.command.payload.kind,
+                ).map((f) => (
+                  <label key={f.key}>
+                    {f.header}
+                    <input
+                      name={`owned.${f.key}`}
+                      defaultValue={
+                        ownedProductValues(detail.command.payload)[f.key] ?? ""
+                      }
+                      readOnly={["sku", "seriesCode"].includes(f.key)}
                     />
                   </label>
-                );
-              })}
-              <label>
-                Correction Reason / 修正说明
-                <input name="reason" required />
-              </label>
-              <button>Save Correction / 保存修正，不发布</button>
-            </fieldset>
-          </Form>
-          {detail.command.payload.mediaVersionId && (
-            <img
-              className="request-image"
-              src={`/media/catalog/${detail.command.payload.mediaVersionId}/thumbnail`}
-              alt="请求图片预览"
-            />
-          )}
-          <details>
-            <summary>完整原始上传内容</summary>
-            <pre>{JSON.stringify(detail.original, null, 2)}</pre>
-          </details>
-          <details>
-            <summary>导入基线</summary>
-            <pre>{JSON.stringify(detail.baseline, null, 2)}</pre>
-          </details>
-        </section>
-      )}
-      {page.batchSource && (
-        <details>
-          <summary>批次原始工作簿（含无法识别的行）</summary>
-          <pre>{page.batchSource.original_json}</pre>
-          <p>缺少产品身份的行保留在此处；补齐工作簿后重新导入。</p>
-        </details>
-      )}
-      <h2>待处理总成来源（工作表 04）</h2>
-      <p>
-        这些来源独立保留，由总成管理处理。产品审核、拒绝或删除不会应用或删除它们。
-      </p>
-      {page.relations.map((r) => (
-        <details key={r.id}>
-          <summary>
-            {r.batch_id} ·{" "}
-            {(
-              {
-                pending: "待处理",
-                applied: "已应用",
-                rejected: "已拒绝",
-                deleted: "已删除",
-              } as Record<string, string>
-            )[r.status] ?? r.status}
-          </summary>
-          <pre>{r.source_json}</pre>
-          <p>{r.issues_json}</p>
-        </details>
-      ))}
-      {page.batches
-        .filter((b) => !page.filters.batch || b.id === page.filters.batch)
-        .map(
-          (b) =>
-            b.issues_json !== "[]" && (
-              <p role="alert" key={b.id}>
-                {b.file_name}：{b.issues_json}
-              </p>
-            ),
+                ))}
+                <label>
+                  Target State / 目标状态
+                  <select
+                    name="targetState"
+                    defaultValue={detail.command.targetState}
+                  >
+                    {Object.entries(targetLabels).map(([v, l]) => (
+                      <option key={v} value={v}>
+                        {v} / {l}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Image Version / 图片版本
+                  <select
+                    name="mediaVersionId"
+                    defaultValue={detail.command.payload.mediaVersionId ?? ""}
+                  >
+                    <option value="">
+                      Inherit Series Image / 继承系列图片（系列留空表示未指定）
+                    </option>
+                    {page.media.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {(detail.command.payload.kind === "sku"
+                  ? [
+                      "amount",
+                      "currency",
+                      "packageLengthFt",
+                      ...packagingFields.map((f) => f.key),
+                    ]
+                  : importRuleKeys
+                ).map((key) => {
+                  const p = detail.command.payload;
+                  const section = p.kind === "sku" ? "price" : "commercialRule";
+                  const values = (p.kind === "sku"
+                    ? p.price
+                    : p.commercialRule) as unknown as Record<
+                    string,
+                    string | number | null
+                  > | null;
+                  return (
+                    <label key={key}>
+                      {key === "amount"
+                        ? "Retail Unit Price / 零售单价"
+                        : (offerFields.find((f) => f.key === key)?.header ??
+                          key)}
+                      <input
+                        name={`${section}.${key}`}
+                        defaultValue={values?.[key] ?? ""}
+                      />
+                    </label>
+                  );
+                })}
+                <label>
+                  Correction Reason / 修正说明
+                  <input name="reason" required />
+                </label>
+                <button>Save Correction / 保存修正，不发布</button>
+              </fieldset>
+            </Form>
+            {detail.command.payload.mediaVersionId && (
+              <img
+                className="request-image"
+                src={`/media/catalog/${detail.command.payload.mediaVersionId}/thumbnail`}
+                alt="请求图片预览"
+              />
+            )}
+            <details>
+              <summary>完整原始上传内容</summary>
+              <pre>{JSON.stringify(detail.original, null, 2)}</pre>
+            </details>
+            <details>
+              <summary>导入基线</summary>
+              <pre>{JSON.stringify(detail.baseline, null, 2)}</pre>
+            </details>
+          </section>
         )}
-    </main>
+        {page.batchSource && (
+          <details>
+            <summary>批次原始工作簿（含无法识别的行）</summary>
+            <pre>{page.batchSource.original_json}</pre>
+            <p>缺少产品身份的行保留在此处；补齐工作簿后重新导入。</p>
+          </details>
+        )}
+        <h2>待处理总成来源（工作表 04）</h2>
+        <p>
+          这些来源独立保留，由总成管理处理。产品审核、拒绝或删除不会应用或删除它们。
+        </p>
+        {page.relations.map((r) => (
+          <details key={r.id}>
+            <summary>
+              {r.batch_id} ·{" "}
+              {(
+                {
+                  pending: "待处理",
+                  applied: "已应用",
+                  rejected: "已拒绝",
+                  deleted: "已删除",
+                } as Record<string, string>
+              )[r.status] ?? r.status}
+            </summary>
+            <pre>{r.source_json}</pre>
+            <p>{r.issues_json}</p>
+          </details>
+        ))}
+        {page.batches
+          .filter((b) => !page.filters.batch || b.id === page.filters.batch)
+          .map(
+            (b) =>
+              b.issues_json !== "[]" && (
+                <p role="alert" key={b.id}>
+                  {b.file_name}：{b.issues_json}
+                </p>
+              ),
+          )}
+      </main>
+    </div>
   );
 }

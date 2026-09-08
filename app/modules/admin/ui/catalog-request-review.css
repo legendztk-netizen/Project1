@@ -1,6 +1,9 @@
 .catalog-request-page {
   max-width: 1500px;
-  margin: auto;
+  margin: 0 auto;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   padding: 32px;
   color: #172d35;
 }

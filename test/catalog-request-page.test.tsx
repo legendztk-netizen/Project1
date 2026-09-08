@@ -45,7 +45,10 @@ function setup(canEdit = true, status = "pending") {
             series: "",
             q: "",
           },
-          series: ["A"],
+          seriesOptions: [
+            { code: "A", productType: "hose" },
+            { code: "FJX", productType: "hose_end" },
+          ],
           batches: [],
           relations: [],
           detail: null,
@@ -88,4 +91,20 @@ it("keeps approved requests and read-only accounts from selecting mutations", as
     true,
   );
   expect(screen.queryByRole("button", { name: "批准选中条目" })).toBeNull();
+});
+
+it("restores sidebar and updates series immediately when worksheet changes", async () => {
+  setup();
+  await screen.findByRole("heading", { name: "产品更新请求审核" });
+  expect(document.querySelector(".admin-sidebar")).toBeTruthy();
+  const worksheet = screen.getByLabelText("工作表");
+  fireEvent.change(worksheet, { target: { value: "01_胶管主数据" } });
+  const series = screen.getByLabelText("系列");
+  expect(series.textContent).toContain("A");
+  expect(series.textContent).not.toContain("FJX");
+  fireEvent.change(series, { target: { value: "A" } });
+  fireEvent.change(worksheet, { target: { value: "02_压接接头" } });
+  expect(series).toHaveProperty("value", "");
+  expect(series.textContent).toContain("FJX");
+  expect(series.textContent).not.toContain("A");
 });
