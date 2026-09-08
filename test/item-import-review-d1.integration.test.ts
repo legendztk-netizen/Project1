@@ -430,3 +430,63 @@ it("records the current correction and rejection IP rather than the importer IP"
   for (const event of events)
     expect(JSON.parse(event.payload_json).requestId).toBeTruthy();
 });
+it("retains the actual draft revision as an import baseline", async () => {
+  const payload = structuredClone(
+    (await items.findPayload("sku", "601R1_001"))!,
+  );
+  if (payload.kind !== "sku") throw new Error("fixture");
+  payload.variant.sku = "DRAFT84_001";
+  const draft = await items.apply({
+    payload,
+    targetState: "draft",
+    mode: "create",
+    commandId: crypto.randomUUID(),
+    actorId: "owner-1",
+    ipAddress: "local",
+    baselineRevisionId: null,
+    source: { channel: "manual" },
+  });
+  const rows = await importRows([
+    {
+      sheet: "07_价格包装",
+      data: [
+        ["baseSku", "amount"],
+        ["DRAFT84_001", 19],
+      ],
+    },
+  ]);
+  expect(rows[0].command.baselineRevisionId).toBe(draft.revisionId);
+  expect(rows[0].command.targetState).toBe("draft");
+});
+it("resolves a corrected child's dependency against an existing legacy online series", async () => {
+  const baseline = (await items.findPayload("sku", "601R1_001"))!;
+  if (baseline.kind !== "sku") throw new Error("fixture");
+  const values = {
+    ...baseline.variant,
+    sku: "REASSIGN84_001",
+    hoseSeries: "UNREADY84",
+  };
+  const rows = await importRows([
+    {
+      sheet: "01_胶管主数据",
+      data: [Object.keys(values), Object.values(values)],
+    },
+  ]);
+  const child = rows.find((r) => r.command.payload.kind === "sku")!;
+  expect(child.dependencies).toHaveLength(1);
+  const payload = {
+    ...baseline,
+    variant: { ...baseline.variant, sku: "REASSIGN84_001" },
+  };
+  await review.correct({
+    id: child.id,
+    version: child.version,
+    payload,
+    targetState: "online",
+    actorId: "owner-1",
+    ipAddress: "local",
+    reason: "改为已有上线系列",
+  });
+  const result = await approve([await review.get(child.id)]);
+  expect(result, JSON.stringify(result)).toMatchObject([{ ok: true }]);
+});

@@ -233,7 +233,10 @@ export function createD1ItemImportReview(
                       payload,
                       state: (row?.state ??
                         "online") as CatalogItemCommand["targetState"],
-                      revisionId: row?.revisionId ?? null,
+                      revisionId:
+                        (row?.state === "draft"
+                          ? row.draftRevisionId
+                          : row?.revisionId) ?? null,
                     }
                   : null;
               })(),
@@ -505,7 +508,7 @@ export function createD1ItemImportReview(
             if (row.issues.length)
               throw new CatalogItemRejected(row.issues.join("；"));
             if (row.dependencies.length) {
-              const parent = await database
+              let parent = await database
                 .prepare(
                   "SELECT target_state FROM catalog_item_current WHERE kind='series' AND product_type=? AND code=?",
                 )
@@ -514,6 +517,15 @@ export function createD1ItemImportReview(
                   itemSeriesCode(row.command.payload),
                 )
                 .first<{ target_state: string }>();
+              if (
+                !parent &&
+                (await items.findProductPayload(
+                  row.command.payload.productType,
+                  "series",
+                  itemSeriesCode(row.command.payload),
+                ))
+              )
+                parent = { target_state: "online" };
               const dependencies = await Promise.all(row.dependencies.map(get));
               if (dependencies.some((d) => d.status !== "approved")) {
                 if (parent?.target_state !== "online")

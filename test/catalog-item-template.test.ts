@@ -19,7 +19,13 @@ it("downloads a seven-sheet template whose master columns do not collide when im
       canManageSubaccounts: true,
     },
   });
-  const response = loader({ context } as Parameters<typeof loader>[0]);
+  const response = loader({
+    context,
+    request: new Request("http://admin.localhost/admin/catalog/item-template"),
+    url: new URL("http://admin.localhost/admin/catalog/item-template"),
+    params: {},
+    pattern: "/admin/catalog/item-template",
+  });
   const book = XLSX.read(await response.arrayBuffer(), { type: "array" });
   expect(book.SheetNames).toHaveLength(7);
   const sheets = book.SheetNames.filter(

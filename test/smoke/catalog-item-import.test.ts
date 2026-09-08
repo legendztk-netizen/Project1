@@ -1,3 +1,5 @@
+import { catalogWorksheetContracts } from "../../app/modules/catalog/domain/catalog-workbook";
+import { componentImportFixtures } from "../fixtures/component-item-import";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -269,4 +271,202 @@ it("imports a real workbook through Worker, corrects, self approves, filters and
       `SELECT count(*) n FROM catalog_product_revisions WHERE request_id='${row.id}'`,
     )[0].n,
   ).toBe(1);
+}, 120000);
+it("uses downloaded headers for new series/children, existing series changes and partial packaging failures", async () => {
+  const readEditor = async (kind: string, code: string) =>
+    (await (
+      await fetch(
+        origin +
+          `/admin/catalog/product-editor?type=hose&kind=${kind}&code=${code}`,
+      )
+    ).json()) as {
+      payload: {
+        series: Record<string, unknown>;
+        variant: Record<string, unknown>;
+        commercialRule: Record<string, unknown>;
+      };
+    };
+  const parent = (await readEditor("series", "601R1")).payload;
+  const child = (await readEditor("sku", "601R1_001")).payload;
+  const book = XLSX.read(
+    await (await fetch(origin + "/admin/catalog/item-template")).arrayBuffer(),
+    { type: "array" },
+  );
+  const headers = (name: string) =>
+    (
+      XLSX.utils.sheet_to_json(book.Sheets[name], { header: 1 }) as string[][]
+    )[0];
+  function row(name: string, values: Record<string, unknown>) {
+    const fields = catalogWorksheetContracts.find(
+      (c) => c.name === name,
+    )!.fields;
+    const special: Record<string, string> = {
+      "Retail Unit Price / 零售单价": "amount",
+      "Series Name / 系列名称": "seriesName",
+      "Series Image Version / 系列图片版本": "seriesMediaVersionId",
+      "SKU Image Version / SKU图片版本": "mediaVersionId",
+    };
+    return headers(name).map(
+      (header) =>
+        values[
+          special[header] ??
+            fields.find((f) => f.header === header)?.key ??
+            header
+        ] ?? null,
+    );
+  }
+  const master = {
+    ...parent.series,
+    ...child.variant,
+    hoseSeries: "WORKER84",
+    sku: "WORKER84_001",
+    seriesName: "Worker new series",
+    seriesMediaVersionId: "uploaded-v2",
+    origin: "China",
+    rfqEligibility: "Eligible",
+    catalogPublicationStatus: "Published",
+  };
+  const existing = {
+    ...master,
+    hoseSeries: "601R1",
+    sku: "601R1_001",
+    seriesName: "Existing series reviewed through Excel",
+  };
+  const offer = {
+    ...parent.commercialRule,
+    productType: "Hose Variant",
+    baseSku: "WORKER84_001",
+    salesSku: "WORKER84_001",
+    amount: 12,
+    currency: "EUR",
+    unitsPerSalesPack: 1,
+    rfqEligibility: "Eligible",
+    technicalDataStatus: "Complete",
+    catalogPublicationStatus: "Published",
+    seriesMediaVersionId: "uploaded-v2",
+  };
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.aoa_to_sheet([
+      headers("01_胶管主数据"),
+      row("01_胶管主数据", master),
+      row("01_胶管主数据", { ...master, sku: "WORKER84_BAD", dash: null }),
+      row("01_胶管主数据", existing),
+    ]),
+    "01_胶管主数据",
+  );
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.aoa_to_sheet([
+      headers("07_价格包装"),
+      row("07_价格包装", offer),
+      row("07_价格包装", {
+        ...offer,
+        baseSku: "WORKER84_BAD",
+        salesSku: "WORKER84_BAD",
+      }),
+    ]),
+    "07_价格包装",
+  );
+  const ferrule = componentImportFixtures.find((f) => f.type === "ferrule")!;
+  const ferruleMaster = {
+    ...ferrule.variant,
+    seriesMediaVersionId: "uploaded-v2",
+  };
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.aoa_to_sheet([
+      Object.keys(ferruleMaster),
+      Object.values(ferruleMaster),
+    ]),
+    "03_套筒",
+  );
+  const ferruleOffer = {
+    productType: "Ferrule",
+    baseSku: ferrule.code,
+    amount: 10,
+    currency: "USD",
+    packageLengthFt: 10,
+    salesUnit: "each",
+    quantityInputMode: "Units",
+    moq: 1,
+    leadTimeDays: 10,
+    countryOfOrigin: "China",
+    seriesMediaVersionId: "uploaded-v2",
+  };
+  XLSX.utils.sheet_add_aoa(
+    workbook.Sheets["07_价格包装"],
+    [
+      row("07_价格包装", {
+        ...ferruleOffer,
+        salesSku: ferrule.code,
+        unitsPerSalesPack: 1,
+        rfqEligibility: "Eligible",
+        technicalDataStatus: "Complete",
+        catalogPublicationStatus: "Published",
+      }),
+    ],
+    { origin: -1 },
+  );
+  const batchId = crypto.randomUUID();
+  const form = new FormData();
+  form.set("intent", "import");
+  form.set("batchId", batchId);
+  form.set(
+    "workbook",
+    new Blob([XLSX.write(workbook, { type: "array", bookType: "xlsx" })]),
+    "full-template.xlsx",
+  );
+  const imported = await fetch(origin + "/admin/catalog/requests", {
+    method: "POST",
+    body: form,
+    headers: { origin },
+    redirect: "manual",
+  });
+  expect(imported.status, await imported.text()).toBe(302);
+  const rows = sql<{
+    id: string;
+    version: number;
+    payload_json: string;
+    issues_json: string;
+  }>(
+    `SELECT id,version,payload_json,issues_json FROM catalog_product_change_requests WHERE batch_id='${batchId}'`,
+  );
+  expect(rows.flatMap((r) => JSON.parse(r.issues_json)).join()).not.toContain(
+    "重复列",
+  );
+  const selected = new FormData();
+  selected.set("intent", "approve");
+  for (const r of rows) selected.append("selected", `${r.id}:${r.version}`);
+  const approved = await fetch(origin + "/admin/catalog/requests", {
+    method: "POST",
+    body: selected,
+    headers: { origin },
+  });
+  const html = await approved.text();
+  expect(html).toContain("已批准");
+  const current = (await (
+    await fetch(origin + "/api/catalog/products/WORKER84_001")
+  ).json()) as {
+    product: { offer: { referencePrice: number; currency: string } };
+  };
+  expect(
+    current.product?.offer,
+    JSON.stringify({ rows, html: html.slice(-10000) }),
+  ).toMatchObject({ referencePrice: 12, currency: "EUR" });
+  const statuses = sql<{ status: string; code: string }>(
+    `SELECT status,COALESCE(json_extract(payload_json,'$.payload.variant.sku'),json_extract(payload_json,'$.payload.series.seriesCode')) code FROM catalog_product_change_requests WHERE batch_id='${batchId}'`,
+  );
+  expect(statuses).toEqual(
+    expect.arrayContaining([
+      { status: "pending", code: "WORKER84_BAD" },
+      { status: "pending", code: ferrule.code },
+      { status: "approved", code: "WORKER84" },
+      { status: "approved", code: "601R1" },
+    ]),
+  );
+  expect((await readEditor("series", "601R1")).payload.series.seriesName).toBe(
+    "Existing series reviewed through Excel",
+  );
 }, 120000);

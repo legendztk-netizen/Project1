@@ -14,7 +14,10 @@ export function loader({ context }: Route.LoaderArgs) {
           : f.header,
       );
     if (!contract.name.startsWith("04")) {
-      if (!contract.fields.some((f) => f.key === "seriesName"))
+      if (
+        !contract.name.startsWith("07") &&
+        !contract.fields.some((f) => f.key === "seriesName")
+      )
         headers.push("Series Name / 系列名称");
       headers.push(
         "Series Image Version / 系列图片版本",
