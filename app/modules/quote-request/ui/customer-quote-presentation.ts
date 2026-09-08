@@ -17,6 +17,8 @@ export function quotePurchasingAs(quoteRequest: CustomerQuoteProjection) {
 }
 
 export function quoteImportHandling(quoteRequest: CustomerQuoteProjection) {
+  if (quoteRequest.snapshot.importResponsibility.fulfillmentTerm === "MANUAL")
+    return "Import terms pending manual commercial review";
   return quoteRequest.snapshot.importResponsibility.fulfillmentTerm === "DDP"
     ? "Seller-managed import handling (DDP)"
     : "Customer-managed import clearance (DAP)";

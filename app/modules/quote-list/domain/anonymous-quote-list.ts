@@ -34,6 +34,8 @@ export interface QuoteLineRefreshReason {
 }
 
 export interface QuoteLineEstimateSnapshot {
+  currency?: string;
+  manualPricing?: boolean;
   discountAmount: number;
   discountPercent: number;
   discountRecordVersion: number | null;

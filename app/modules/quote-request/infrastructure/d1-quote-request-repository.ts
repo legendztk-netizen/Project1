@@ -402,16 +402,16 @@ export function createD1QuoteRequestRepository(database: D1Database) {
                    LEFT JOIN catalog_runtime_hose_variants commercial_hose
                      ON commercial_hose.import_id = sku.import_id
                     AND commercial_hose.sku = sku.sku
-                   LEFT JOIN catalog_hose_ends commercial_hose_end
+                   LEFT JOIN catalog_runtime_hose_ends commercial_hose_end
                      ON commercial_hose_end.import_id = sku.import_id
                     AND commercial_hose_end.sku = sku.sku
-                   LEFT JOIN catalog_ferrules commercial_ferrule
+                   LEFT JOIN catalog_runtime_ferrules commercial_ferrule
                      ON commercial_ferrule.import_id = sku.import_id
                     AND commercial_ferrule.sku = sku.sku
-                   LEFT JOIN catalog_adapters commercial_adapter
+                   LEFT JOIN catalog_runtime_adapters commercial_adapter
                      ON commercial_adapter.import_id = sku.import_id
                     AND commercial_adapter.sku = sku.sku
-                   LEFT JOIN catalog_quick_couplers commercial_coupler
+                   LEFT JOIN catalog_runtime_quick_couplers commercial_coupler
                      ON commercial_coupler.import_id = sku.import_id
                     AND commercial_coupler.sku = sku.sku
                    LEFT JOIN catalog_runtime_series_commercial_rules commercial_rule
@@ -512,7 +512,7 @@ export function createD1QuoteRequestRepository(database: D1Database) {
                 purchasing_context_kind, fulfillment_term, currency,
                 merchandise_subtotal, service_fee_total, idempotency_key,
                 snapshot_json, submitted_at)
-             SELECT ?, ?, ?, ?, s.id, ?, ?, ?, ?, 'USD',
+             SELECT ?, ?, ?, ?, s.id, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?
              FROM customer_quote_request_submission_guards guard
              INNER JOIN anonymous_quote_sessions s ON s.id = guard.session_id
@@ -529,6 +529,7 @@ export function createD1QuoteRequestRepository(database: D1Database) {
             input.sourceAddressId,
             input.snapshot.purchasingContext.kind,
             input.snapshot.importResponsibility.fulfillmentTerm,
+            input.snapshot.amounts.currency,
             input.snapshot.amounts.merchandiseSubtotal,
             input.snapshot.amounts.serviceFeeTotal,
             input.idempotencyKey,

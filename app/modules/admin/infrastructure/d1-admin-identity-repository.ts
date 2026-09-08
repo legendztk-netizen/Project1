@@ -1,4 +1,5 @@
 export interface ActiveAdminIdentityRecord {
+  catalogPermission?: "view" | "edit";
   accountType: "owner" | "subaccount";
   canManageSubaccounts: boolean;
   email: string;
@@ -6,6 +7,7 @@ export interface ActiveAdminIdentityRecord {
 }
 
 interface AdminIdentityRow {
+  catalog_permission: "view" | "edit";
   account_type: "owner" | "subaccount";
   email: string;
   id: string;
@@ -17,7 +19,7 @@ export async function findActiveAdminIdentityByEmail(
 ): Promise<ActiveAdminIdentityRecord | null> {
   const row = await database
     .prepare(
-      `SELECT id, email, account_type
+      `SELECT id, email, account_type, catalog_permission
        FROM admin_identities
        WHERE email = ? AND status = 'active'
        LIMIT 1`,
@@ -27,6 +29,9 @@ export async function findActiveAdminIdentityByEmail(
 
   if (!row) return null;
   return {
+    ...(row.catalog_permission === "view"
+      ? { catalogPermission: "view" as const }
+      : {}),
     accountType: row.account_type,
     canManageSubaccounts: row.account_type === "owner",
     email: row.email,

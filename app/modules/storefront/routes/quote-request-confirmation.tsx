@@ -1,3 +1,4 @@
+import { formatQuoteAmounts } from "../../quote-list/domain/quote-currency-totals";
 import { CheckCircle2, FileText } from "lucide-react";
 import { Link, redirect } from "react-router";
 
@@ -53,10 +54,7 @@ export default function QuoteRequestConfirmation({
             </div>
             <div>
               <dt>Merchandise reference</dt>
-              <dd>
-                USD{" "}
-                {quoteRequest.snapshot.amounts.merchandiseSubtotal.toFixed(2)}
-              </dd>
+              <dd>{formatQuoteAmounts(quoteRequest.snapshot.amounts)}</dd>
             </div>
             <div>
               <dt>Purchasing as</dt>

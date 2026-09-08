@@ -1,3 +1,4 @@
+import { formatQuoteAmounts } from "../../quote-list/domain/quote-currency-totals";
 import { Link } from "react-router";
 
 import type { CustomerQuoteProjection } from "../domain/quote-request";
@@ -66,12 +67,7 @@ export function CustomerQuoteList({
                 </div>
                 <div>
                   <dt>Merchandise reference</dt>
-                  <dd>
-                    USD{" "}
-                    {quoteRequest.snapshot.amounts.merchandiseSubtotal.toFixed(
-                      2,
-                    )}
-                  </dd>
+                  <dd>{formatQuoteAmounts(quoteRequest.snapshot.amounts)}</dd>
                 </div>
               </dl>
             </article>

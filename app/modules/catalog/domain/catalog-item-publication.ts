@@ -1,4 +1,13 @@
 import type {
+  HoseEndSeriesRecord,
+  HoseEndVariantInput,
+} from "./catalog-hose-end-maintenance";
+import type {
+  AdapterDraft,
+  FerruleDraft,
+  QuickCouplerDraft,
+} from "./catalog-workbook";
+import type {
   HoseSeriesRecord,
   HoseVariantInput,
 } from "./catalog-hose-maintenance";
@@ -27,7 +36,7 @@ export interface ItemPrice {
   cartonHCm?: number | null;
   packingBasis?: string | null;
 }
-export type CatalogItemPayload =
+export type HoseCatalogItemPayload =
   | {
       kind: "series";
       productType: "hose";
@@ -42,6 +51,51 @@ export type CatalogItemPayload =
       price: ItemPrice | null;
       mediaVersionId: string | null;
     };
+export type AdditionalCatalogItemPayload =
+  | {
+      kind: "series";
+      productType: "hose_end";
+      series: HoseEndSeriesRecord;
+      commercialRule: SeriesCommercialRule | null;
+      mediaVersionId: string | null;
+    }
+  | {
+      kind: "series";
+      productType: "ferrule" | "adapter" | "quick_coupler";
+      series: { seriesCode: string; seriesName: string };
+      commercialRule: SeriesCommercialRule | null;
+      mediaVersionId: string | null;
+    }
+  | {
+      kind: "sku";
+      productType: "hose_end";
+      variant: HoseEndVariantInput;
+      price: ItemPrice | null;
+      mediaVersionId: string | null;
+    }
+  | {
+      kind: "sku";
+      productType: "ferrule";
+      variant: FerruleDraft;
+      price: ItemPrice | null;
+      mediaVersionId: string | null;
+    }
+  | {
+      kind: "sku";
+      productType: "adapter";
+      variant: AdapterDraft;
+      price: ItemPrice | null;
+      mediaVersionId: string | null;
+    }
+  | {
+      kind: "sku";
+      productType: "quick_coupler";
+      variant: QuickCouplerDraft;
+      price: ItemPrice | null;
+      mediaVersionId: string | null;
+    };
+export type CatalogItemPayload =
+  HoseCatalogItemPayload | AdditionalCatalogItemPayload;
 export interface CatalogItemCommand {
   commandId: string;
   actorId: string;
@@ -52,6 +106,7 @@ export interface CatalogItemCommand {
   baselineRevisionId: string | null;
   source: {
     channel: "manual" | "excel" | "migration";
+    operation?: "delete";
     batchId?: string;
     row?: number;
   };

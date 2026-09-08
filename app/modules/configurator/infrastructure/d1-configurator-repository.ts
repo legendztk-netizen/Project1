@@ -152,13 +152,13 @@ const compatibleHoseEndSql = `
    AND c.compatibility_id = derived.compatibility_id
   INNER JOIN catalog_runtime_skus hs
     ON hs.import_id = c.import_id AND hs.sku = c.hose_sku
-  INNER JOIN catalog_hose_ends e
+  INNER JOIN catalog_runtime_hose_ends e
     ON e.import_id = c.import_id AND e.sku = c.hose_end_sku
-  INNER JOIN catalog_hose_end_series series
+  INNER JOIN catalog_runtime_hose_end_series series
     ON series.import_id = e.import_id AND series.series_code = e.fitting_series
   INNER JOIN catalog_runtime_skus es
     ON es.import_id = e.import_id AND es.sku = e.sku
-  INNER JOIN catalog_ferrules f
+  INNER JOIN catalog_runtime_ferrules f
     ON f.import_id = c.import_id AND f.sku = c.ferrule_sku
   INNER JOIN catalog_runtime_skus fs
     ON fs.import_id = f.import_id AND fs.sku = f.sku

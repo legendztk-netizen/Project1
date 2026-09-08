@@ -137,13 +137,13 @@ const activeQuotedProductGuard = `
     ON o.import_id = s.import_id AND o.base_sku = s.sku
   LEFT JOIN catalog_runtime_hose_variants commercial_hose
     ON commercial_hose.import_id = s.import_id AND commercial_hose.sku = s.sku
-  LEFT JOIN catalog_hose_ends commercial_hose_end
+  LEFT JOIN catalog_runtime_hose_ends commercial_hose_end
     ON commercial_hose_end.import_id = s.import_id AND commercial_hose_end.sku = s.sku
-  LEFT JOIN catalog_ferrules commercial_ferrule
+  LEFT JOIN catalog_runtime_ferrules commercial_ferrule
     ON commercial_ferrule.import_id = s.import_id AND commercial_ferrule.sku = s.sku
-  LEFT JOIN catalog_adapters commercial_adapter
+  LEFT JOIN catalog_runtime_adapters commercial_adapter
     ON commercial_adapter.import_id = s.import_id AND commercial_adapter.sku = s.sku
-  LEFT JOIN catalog_quick_couplers commercial_coupler
+  LEFT JOIN catalog_runtime_quick_couplers commercial_coupler
     ON commercial_coupler.import_id = s.import_id AND commercial_coupler.sku = s.sku
   LEFT JOIN catalog_runtime_series_commercial_rules commercial_rule
     ON commercial_rule.import_id = s.import_id

@@ -16,10 +16,9 @@ export type AdminNavigationKey =
   "catalog" | "configurator" | "imports" | "overview" | "quotes" | "system";
 
 export type CatalogMaintenanceMode =
-  "commercial" | "excel" | "manual" | "items";
+  "commercial" | "excel" | "manual" | "items" | "assemblies";
 
 const catalogMaintenanceNavigation = [
-  { key: "items", label: "胶管条目发布（试运行）", to: "/admin/catalog/items" },
   {
     key: "excel",
     label: "批量导入产品",
@@ -27,14 +26,15 @@ const catalogMaintenanceNavigation = [
   },
   {
     key: "manual",
-    label: "手动新增/编辑产品",
-    to: "/admin/catalog/import?mode=manual",
+    label: "管理所有产品",
+    to: "/admin/catalog/products",
   },
   {
     key: "commercial",
     label: "销售、包装和价格",
     to: "/admin/catalog/commercial",
   },
+  { key: "assemblies", label: "总成管理", to: "/admin/catalog/reference-data" },
 ] as const;
 
 const adminNavigation = [

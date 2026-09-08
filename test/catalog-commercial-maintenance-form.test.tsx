@@ -62,7 +62,9 @@ describe("Sales, Packaging and Price maintenance", () => {
       "readOnly",
       true,
     );
-    expect(screen.getByDisplayValue("USD")).toHaveProperty("readOnly", true);
+    expect(
+      screen.getByDisplayValue("USD").querySelectorAll("option"),
+    ).toHaveLength(1);
     expect(
       container.querySelectorAll('form[method="post"][novalidate]'),
     ).toHaveLength(2);

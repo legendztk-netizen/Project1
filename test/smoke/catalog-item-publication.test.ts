@@ -260,4 +260,86 @@ it("publishes through the protected Worker, creates a current RFQ, and preserves
     await fetch(origin + "/api/catalog/products/601R1_001")
   ).json()) as { product: { offer: { referencePrice: number } } };
   expect(after.offer.referencePrice).toBe(15);
+  const managerPage = await fetch(origin + "/admin/catalog/products");
+  expect(await managerPage.text()).toContain("管理所有产品");
+  const editor = (await (
+    await fetch(
+      origin +
+        "/admin/catalog/product-editor?type=hose&kind=sku&code=601R1_001",
+    )
+  ).json()) as {
+    payload: unknown;
+    commandId: string;
+    baselineRevisionId: string;
+  };
+  const updated = await post("/admin/catalog/products", {
+    ...publication("8", editor.commandId),
+    intent: "save",
+    kind: "sku",
+    productType: "hose",
+    currency: "CNY",
+    basePayload: JSON.stringify(editor.payload),
+    baselineRevisionId: editor.baselineRevisionId,
+  });
+  expect(updated.status, await updated.text()).toBe(200);
+  sql("UPDATE admin_identities SET catalog_permission='view'");
+  expect(
+    (
+      await post("/admin/catalog/products", {
+        intent: "delete",
+        selected: "[]",
+        commandId: crypto.randomUUID(),
+      })
+    ).status,
+  ).toBe(403);
+  sql("UPDATE admin_identities SET catalog_permission='edit'");
+  const secondAdd = await post(
+    `/catalog/hydraulic-hose/${current.familyKey}`,
+    {
+      intent: "add-length-hose",
+      sku: "601R1_001",
+      lengthPerPiece: "10",
+      lengthUnit: "ft",
+      pieceCount: "1",
+    },
+    cookie,
+  );
+  expect(secondAdd.status, await secondAdd.text()).toBe(302);
+  const mixedPage = await (
+    await fetch(origin + "/quote-list", { headers: { cookie } })
+  ).text();
+  expect(mixedPage).toContain("CNY");
+  expect(mixedPage).toContain("manual commercial review");
+  const secondLines = sql<{ id: string }>(
+    "SELECT id FROM anonymous_quote_lines WHERE sku='601R1_001'",
+  );
+  const secondSubmit = await post(
+    "/quote-list",
+    {
+      intent: "submit_individual_quote_request",
+      idempotencyKey: crypto.randomUUID(),
+      selectedLineId: secondLines[0].id,
+      accuracyConfirmed: "yes",
+      commercialReviewConfirmed: "yes",
+    },
+    cookie,
+  );
+  expect(secondSubmit.status, await secondSubmit.text()).toBe(302);
+  const allSnapshots = sql<{ snapshot_json: string }>(
+    "SELECT snapshot_json FROM customer_quote_requests ORDER BY submitted_at",
+  );
+  expect(allSnapshots).toHaveLength(2);
+  expect(allSnapshots[0]).toEqual(stored[0]);
+  const originalCurrency = JSON.parse(allSnapshots[1].snapshot_json);
+  expect(originalCurrency.importResponsibility.fulfillmentTerm).toBe("MANUAL");
+  expect(originalCurrency.amounts.manualCommercialReview).toBe(true);
+  expect(originalCurrency.amounts.groups).toEqual(
+    expect.arrayContaining([
+      { currency: "CNY", merchandiseSubtotal: 80, serviceFeeTotal: 0 },
+    ]),
+  );
+  expect(originalCurrency.lines[0].productSnapshot.offer).toMatchObject({
+    referencePrice: 8,
+    currency: "CNY",
+  });
 }, 120000);

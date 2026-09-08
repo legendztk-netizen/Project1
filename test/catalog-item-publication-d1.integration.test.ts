@@ -164,7 +164,8 @@ describe("D1 item publication", () => {
     await expect(repository.apply(invalid)).rejects.toThrow();
     expect(await repository.state()).toEqual(state);
     const dash = await command(40);
-    if (dash.payload.kind === "sku") dash.payload.variant.dash = "-6";
+    if (dash.payload.kind === "sku" && dash.payload.productType === "hose")
+      dash.payload.variant.dash = "-6";
     const changed = await repository.apply(dash);
     expect(
       (

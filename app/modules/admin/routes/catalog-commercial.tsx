@@ -1,3 +1,6 @@
+import { createD1CatalogItemRepository } from "../../catalog/infrastructure/d1-catalog-item-repository";
+import { createD1ProductManagementRepository } from "../../catalog/infrastructure/d1-product-management-repository";
+import type { CatalogItemPayload } from "../../catalog/domain/catalog-item-publication";
 import { ArrowLeft } from "lucide-react";
 import { Link, redirect } from "react-router";
 
@@ -12,7 +15,10 @@ import {
   type SkuPricePackaging,
 } from "../../catalog/domain/catalog-commercial-maintenance";
 import { createD1CatalogCommercialMaintenanceRepository } from "../../catalog/infrastructure/d1-catalog-commercial-maintenance-repository";
-import { requireAdminRequestContext } from "../infrastructure/admin-request-context";
+import {
+  requireAdminRequestContext,
+  requireCatalogWriteContext,
+} from "../infrastructure/admin-request-context";
 import { AdminNavigation } from "../ui/admin-navigation";
 import { CatalogCommercialMaintenance } from "../ui/catalog-commercial-maintenance";
 
@@ -75,7 +81,7 @@ function packagingFromForm(form: FormData): SkuPricePackaging {
     cartonHCm: optionalNumber(form, "cartonHCm"),
     cartonLCm: optionalNumber(form, "cartonLCm"),
     cartonWCm: optionalNumber(form, "cartonWCm"),
-    currency: "USD",
+    currency: text(form, "currency") || "USD",
     innerPackQty: optionalNumber(form, "innerPackQty"),
     masterCartonQty: optionalNumber(form, "masterCartonQty"),
     netUnitWeightKg: optionalNumber(form, "netUnitWeightKg"),
@@ -89,15 +95,74 @@ function packagingFromForm(form: FormData): SkuPricePackaging {
 }
 
 export async function loader({ context, request }: Route.LoaderArgs) {
-  const { env } = requireAdminRequestContext(context);
+  const { env, adminIdentity } = requireAdminRequestContext(context);
   const url = new URL(request.url);
   const selectedProductType = productType(url.searchParams.get("productType"));
   const selectedSeries = (url.searchParams.get("series") ?? "")
     .trim()
     .toUpperCase();
   const sku = (url.searchParams.get("sku") ?? "").trim().toUpperCase();
+  const items = createD1CatalogItemRepository(env.DB);
+  if ((await items.state()).mode === "items") {
+    const rows = await createD1ProductManagementRepository(env.DB).all();
+    const skuRow = rows.find((r) => r.kind === "sku" && r.code === sku);
+    const actualType = skuRow?.productType ?? selectedProductType;
+    const seriesPayload = selectedSeries
+      ? await items.findProductPayload(
+          actualType,
+          "series",
+          selectedSeries,
+          true,
+        )
+      : null;
+    const skuPayload = skuRow
+      ? await items.findProductPayload(actualType, "sku", sku, true)
+      : null;
+    const price = skuPayload?.kind === "sku" ? skuPayload.price : null;
+    return {
+      exact: price
+        ? ({
+            ...price,
+            sku,
+            salesSku: sku,
+            referencePrice: price.amount,
+          } as SkuPricePackaging)
+        : null,
+      productType: actualType,
+      rule:
+        seriesPayload?.kind === "series" ? seriesPayload.commercialRule : null,
+      selectedSeries,
+      series: rows
+        .filter((r) => r.kind === "series" && r.productType === actualType)
+        .map((r) => ({
+          productType: actualType,
+          seriesCode: r.code,
+          seriesName: r.name,
+        })),
+      sku,
+      skuRecord: skuRow
+        ? {
+            sku,
+            productType: actualType,
+            seriesCode: skuRow.seriesCode,
+            lifecycleStatus: skuRow.state as
+              "online" | "draft" | "discontinued",
+          }
+        : null,
+      seriesPayload,
+      skuPayload,
+      commandId: crypto.randomUUID(),
+      canEdit: adminIdentity.catalogPermission !== "view",
+      itemMode: true,
+    };
+  }
   const repository = createD1CatalogCommercialMaintenanceRepository(env.DB);
   return {
+    seriesPayload: null,
+    skuPayload: null,
+    commandId: crypto.randomUUID(),
+    canEdit: adminIdentity.catalogPermission !== "view",
+    itemMode: false,
     exact: sku ? await repository.findSkuPricePackaging(sku) : null,
     productType: selectedProductType,
     rule: selectedSeries
@@ -111,7 +176,7 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 }
 
 export async function action({ context, request }: Route.ActionArgs) {
-  const { adminIdentity, env } = requireAdminRequestContext(context);
+  const { adminIdentity, env } = requireCatalogWriteContext(context);
   const form = await request.formData();
   const intent = text(form, "intent");
   const ipAddress = request.headers.get("cf-connecting-ip") ?? "local";
@@ -121,6 +186,46 @@ export async function action({ context, request }: Route.ActionArgs) {
     crypto.randomUUID();
   const repository = createD1CatalogCommercialMaintenanceRepository(env.DB);
   try {
+    const items = createD1CatalogItemRepository(env.DB);
+    if ((await items.state()).mode === "items") {
+      const payload = JSON.parse(
+        text(form, "basePayload"),
+      ) as CatalogItemPayload;
+      if (intent === "save_series_rule" && payload.kind === "series")
+        payload.commercialRule = ruleFromForm(form);
+      else if (intent === "save_sku_price" && payload.kind === "sku") {
+        const {
+          referencePrice,
+          sku: _sku,
+          salesSku: _salesSku,
+          ...packaging
+        } = packagingFromForm(form);
+        payload.price = { ...packaging, amount: referencePrice };
+      } else throw new Error("Invalid product command / 产品提交无效");
+      const target =
+        payload.kind === "sku"
+          ? (await createD1ProductManagementRepository(env.DB).all()).find(
+              (row) =>
+                row.kind === "sku" &&
+                row.code === payload.variant.sku &&
+                row.productType === payload.productType,
+            )
+          : null;
+      await items.apply({
+        commandId: text(form, "commandId"),
+        actorId: adminIdentity.id,
+        ipAddress,
+        payload,
+        mode: "edit",
+        targetState: (target?.state ?? "online") as
+          "online" | "draft" | "discontinued",
+        baselineRevisionId: text(form, "baselineRevisionId") || null,
+        source: { channel: "manual" },
+      });
+      return redirect(
+        `/admin/catalog/commercial?productType=${payload.productType}&series=${payload.kind === "series" ? encodeURIComponent(payload.series.seriesCode) : ""}&sku=${payload.kind === "sku" ? encodeURIComponent(payload.variant.sku) : ""}&saved=1`,
+      );
+    }
     if (intent === "save_series_rule") {
       const rule = ruleFromForm(form);
       await maintainSeriesCommercialRule(repository, {
@@ -181,6 +286,11 @@ export default function CatalogCommercial({
           </p>
         </header>
         <CatalogCommercialMaintenance
+          commandId={loaderData.commandId}
+          seriesPayload={loaderData.seriesPayload}
+          skuPayload={loaderData.skuPayload}
+          canEdit={loaderData.canEdit}
+          itemMode={loaderData.itemMode}
           exact={loaderData.exact}
           formError={actionData?.formError ?? null}
           productType={loaderData.productType}

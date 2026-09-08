@@ -1,3 +1,4 @@
+import { quoteCurrencyTotals } from "../../quote-list/domain/quote-currency-totals";
 import { createCustomerAccountService } from "../../customer-identity/application/customer-account-service";
 import { createD1PublicCatalogRepository } from "../../catalog/infrastructure/d1-public-catalog-repository";
 import {
@@ -178,9 +179,9 @@ export function createQuoteRequestService(
     }
     const ready = selectedLines.every(
       (line) =>
-        line.currency === "USD" &&
         line.refresh?.status === "ready" &&
-        line.refresh.current.discountedMerchandiseAmount !== null,
+        (line.refresh.current.discountedMerchandiseAmount !== null ||
+          line.refresh.current.manualPricing === true),
     );
     if (!ready) {
       throw new QuoteRequestRejected(
@@ -238,7 +239,11 @@ export function createQuoteRequestService(
         version: line.refresh!.current.serviceFeeRecordVersion,
       }));
 
-    const merchandiseSubtotal = discountedMerchandiseSubtotal(selectedLines);
+    const currencyTotals = quoteCurrencyTotals(selectedLines);
+    const manualReview = currencyTotals.manualReview;
+    const merchandiseSubtotal = manualReview
+      ? 0
+      : discountedMerchandiseSubtotal(selectedLines);
     const serviceFeeTotal = quoteMoney(
       selectedLines.reduce(
         (total, line) => total + (line.refresh?.current.serviceFeeAmount ?? 0),
@@ -263,7 +268,7 @@ export function createQuoteRequestService(
         ? evaluation.outcome.code === "INDIVIDUAL_DDP"
         : evaluation.outcome.code === "ORGANIZATION_DDP" ||
           evaluation.outcome.code === "ORGANIZATION_DAP";
-    if (!evaluation.outcome.allowed || !expectedOutcome) {
+    if (!manualReview && (!evaluation.outcome.allowed || !expectedOutcome)) {
       throw new QuoteRequestRejected(
         evaluation.outcome.code === "ORGANIZATION_REQUIRED"
           ? "Individual quote requests are limited to USD 4,500.00 in merchandise. Choose an Organization Purchasing Context."
@@ -281,8 +286,18 @@ export function createQuoteRequestService(
       verifiedAt: account.profile.verifiedAt,
     };
     const amounts = {
-      currency: "USD" as const,
-      merchandiseSubtotal: evaluation.merchandiseSubtotal,
+      currency:
+        currencyTotals.groups.length === 1
+          ? currencyTotals.groups[0].currency
+          : null,
+      merchandiseSubtotal: manualReview
+        ? currencyTotals.groups.length === 1
+          ? currencyTotals.groups[0].merchandiseSubtotal
+          : null
+        : evaluation.merchandiseSubtotal,
+      ...(manualReview
+        ? { groups: currencyTotals.groups, manualCommercialReview: true }
+        : {}),
       serviceFeeTotal,
     };
     let snapshot: QuoteRequestSnapshot;
@@ -296,10 +311,15 @@ export function createQuoteRequestService(
         actor,
         amounts,
         destination,
-        importResponsibility: {
-          fulfillmentTerm: "DDP",
-          version: individualDdpExpectationVersion,
-        },
+        importResponsibility: manualReview
+          ? {
+              fulfillmentTerm: "MANUAL",
+              version: "manual-commercial-review-v1",
+            }
+          : {
+              fulfillmentTerm: "DDP",
+              version: individualDdpExpectationVersion,
+            },
         lines: snapshotLines,
         purchasingContext: { ...purchasingContext, kind: "individual" },
         submittedAt: submittedAt.toISOString(),
@@ -308,15 +328,20 @@ export function createQuoteRequestService(
     } else {
       const organization = validatedOrganizationContext!;
       const importResponsibility: OrganizationQuoteRequestSnapshot["importResponsibility"] =
-        evaluation.outcome.fulfillmentTerm === "DAP"
+        manualReview
           ? {
-              fulfillmentTerm: "DAP",
-              version: organizationDapExpectationVersion,
+              fulfillmentTerm: "MANUAL",
+              version: "manual-commercial-review-v1",
             }
-          : {
-              fulfillmentTerm: "DDP",
-              version: organizationDdpExpectationVersion,
-            };
+          : evaluation.outcome.fulfillmentTerm === "DAP"
+            ? {
+                fulfillmentTerm: "DAP",
+                version: organizationDapExpectationVersion,
+              }
+            : {
+                fulfillmentTerm: "DDP",
+                version: organizationDdpExpectationVersion,
+              };
       snapshot = {
         acknowledgements: {
           accuracyConfirmed: true,

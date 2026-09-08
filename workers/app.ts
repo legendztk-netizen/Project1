@@ -44,7 +44,11 @@ export default {
       !["GET", "HEAD", "OPTIONS"].includes(request.method) &&
       (url.pathname.startsWith("/admin/catalog/") ||
         url.pathname === "/admin/diagnostics/catalog-release") &&
-      url.pathname !== "/admin/catalog/items"
+      ![
+        "/admin/catalog/items",
+        "/admin/catalog/products",
+        "/admin/catalog/commercial",
+      ].includes(url.pathname)
     ) {
       const state = await env.DB.prepare(
         "SELECT mode FROM catalog_item_publication_state WHERE singleton = 1",
@@ -55,6 +59,13 @@ export default {
         });
     }
 
+    if (
+      adminIdentity?.catalogPermission === "view" &&
+      request.method !== "GET" &&
+      request.method !== "HEAD" &&
+      url.pathname.startsWith("/admin/catalog/")
+    )
+      return new Response("需要产品编辑权限", { status: 403 });
     const routerContext = new RouterContextProvider();
     routerContext.set(cloudflareContext, { adminIdentity, env, runtime, ctx });
 

@@ -16,9 +16,9 @@ afterEach(cleanup);
 
 describe("AdminNavigation", () => {
   it.each([
-    ["items", "胶管条目发布（试运行）"],
+    ["assemblies", "总成管理"],
     ["excel", "批量导入产品"],
-    ["manual", "手动新增/编辑产品"],
+    ["manual", "管理所有产品"],
     ["commercial", "销售、包装和价格"],
   ] as const)(
     "shows product maintenance paths as sidebar submenu items in %s mode",
@@ -37,10 +37,10 @@ describe("AdminNavigation", () => {
           .getAllByRole("link")
           .map((link) => link.textContent),
       ).toEqual([
-        "胶管条目发布（试运行）",
         "批量导入产品",
-        "手动新增/编辑产品",
+        "管理所有产品",
         "销售、包装和价格",
+        "总成管理",
       ]);
       expect(
         within(submenu)

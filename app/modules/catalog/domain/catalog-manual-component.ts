@@ -816,6 +816,21 @@ function validateSubmission(input: ManualComponentSubmission) {
   return results;
 }
 
+export function validateItemComponent(input: ManualComponentSubmission) {
+  const findings = validateSubmission({ ...input, salesValues: {} });
+  if (findings.length)
+    throw new ManualComponentEntryRejected(
+      "Correct product parameters / 请更正产品参数",
+      findings,
+    );
+  return {
+    adapter: toAdapter,
+    ferrule: toFerrule,
+    hose_end: toHoseEnd,
+    quick_coupler: toQuickCoupler,
+  }[input.productType](input.masterValues);
+}
+
 export async function maintainManualComponent(
   repository: CatalogManualComponentRepository,
   input: MaintainManualComponentInput,

@@ -40,3 +40,12 @@ export function requireCommercialSettingsRequestContext(
   }
   return requestContext;
 }
+
+export function requireCatalogWriteContext(
+  context: Readonly<RouterContextProvider>,
+) {
+  const result = requireAdminRequestContext(context);
+  if (result.adminIdentity.catalogPermission === "view")
+    throw new Response("需要产品编辑权限", { status: 403 });
+  return result;
+}

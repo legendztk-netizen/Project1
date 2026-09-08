@@ -20,6 +20,7 @@ export interface AdminAccessBindings {
 }
 
 export interface AdminIdentity {
+  catalogPermission?: "view" | "edit";
   accountType: "owner" | "subaccount";
   canManageSubaccounts: boolean;
   email: string;

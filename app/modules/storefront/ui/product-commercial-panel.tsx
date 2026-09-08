@@ -43,7 +43,7 @@ function LengthBasedHoseOrderForm({
   );
   const ordering = selected.offer?.lengthOrdering;
 
-  if (!selected.offer || !ordering || selected.offer.currency !== "USD") {
+  if (!selected.offer || !ordering) {
     return (
       <p className="availability-note">
         Automatic length pricing is unavailable. Contact us for a quotation in
@@ -62,6 +62,7 @@ function LengthBasedHoseOrderForm({
   );
   const estimate = parsed.ok
     ? calculateLengthBasedHoseEstimate({
+        currency: selected.offer.currency,
         feeRatePerPiece: ordering.cuttingLabelingFee.ratePerPiece,
         order: parsed.value,
         referencePricePerFoot: selected.offer.referencePrice,
@@ -161,6 +162,14 @@ function LengthBasedHoseOrderForm({
                 : `USD ${estimate.currentEstimateAmount.toFixed(2)}`}
             </strong>
           </p>
+          {selected.offer.currency !== "USD" ? (
+            <p>
+              Merchandise: {selected.offer.currency}{" "}
+              {estimate?.estimatedMerchandiseAmount?.toFixed(2) ??
+                "Price on quote"}
+              . Fees remain in USD; the final quote requires manual pricing.
+            </p>
+          ) : null}
           {ordering.cuttingLabelingFee.ratePerPiece > 0 ? (
             <small>
               Includes USD {estimate?.cuttingLabelingFeeAmount.toFixed(2)}{" "}

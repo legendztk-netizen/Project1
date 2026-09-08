@@ -1,4 +1,9 @@
 import {
+  createD1AdditionalCatalogItems,
+  itemSeriesCode,
+} from "./d1-additional-catalog-items";
+import type { CommercialProductType } from "../domain/catalog-commercial-maintenance";
+import {
   catalogCommandHash,
   CatalogItemRejected,
   itemCode,
@@ -6,6 +11,7 @@ import {
   normalizeItemPrice,
   type CatalogItemCommand,
   type CatalogItemPayload,
+  type HoseCatalogItemPayload,
   type CatalogItemResult,
   type ItemPrice,
 } from "../domain/catalog-item-publication";
@@ -74,6 +80,17 @@ export function createD1CatalogItemRepository(
   database: D1Database,
   now = () => new Date(),
 ) {
+  const additional = createD1AdditionalCatalogItems(database);
+  async function findProductPayload(
+    type: CommercialProductType,
+    kind: "series" | "sku",
+    code: string,
+    draft = false,
+  ): Promise<CatalogItemPayload | null> {
+    return type === "hose"
+      ? findPayload(kind, code, draft)
+      : additional.read(type, kind, code, draft);
+  }
   async function state() {
     return (await database
       .prepare(
@@ -133,16 +150,16 @@ export function createD1CatalogItemRepository(
     kind: "series" | "sku",
     code: string,
     draft = false,
-  ): Promise<CatalogItemPayload | null> {
+  ): Promise<HoseCatalogItemPayload | null> {
     if (draft) {
       const revision = await database
         .prepare(
-          `SELECT r.payload_json FROM catalog_product_entities e JOIN catalog_product_revisions r ON r.id = e.draft_revision_id WHERE e.kind = ? AND e.product_type = 'hose' AND e.code = ?`,
+          `SELECT r.payload_json FROM catalog_product_entities e JOIN catalog_product_revisions r ON r.id = e.draft_revision_id WHERE e.kind = ? AND e.product_type = ? AND e.code = ?`,
         )
         .bind(kind, code)
         .first<{ payload_json: string }>();
       if (revision)
-        return JSON.parse(revision.payload_json) as CatalogItemPayload;
+        return JSON.parse(revision.payload_json) as HoseCatalogItemPayload;
     }
     if (kind === "series") {
       const series = await findHoseSeries(code);
@@ -241,11 +258,28 @@ export function createD1CatalogItemRepository(
       !["create", "edit"].includes(input.mode)
     )
       throw new CatalogItemRejected("Invalid operation / 操作无效");
+    if (input.source.operation === "delete") {
+      if (input.targetState !== "discontinued" || input.payload.kind !== "sku")
+        throw new CatalogItemRejected("Invalid deletion / 删除请求无效");
+      const retained =
+        (await findProductPayload(
+          input.payload.productType,
+          "sku",
+          input.payload.variant.sku,
+        )) ??
+        (await findProductPayload(
+          input.payload.productType,
+          "sku",
+          input.payload.variant.sku,
+          true,
+        ));
+      if (!retained)
+        throw new CatalogItemRejected("Product not found / 产品不存在", 404);
+      return retained;
+    }
     const payload = structuredClone(input.payload);
     if (payload.productType !== "hose")
-      throw new CatalogItemRejected(
-        "This entry supports Hose / 此入口支持胶管",
-      );
+      return additional.validate(input, fromRequest);
     const code = itemCode(payload);
     if (!/^[A-Z0-9_-]+$/.test(code))
       throw new CatalogItemRejected(
@@ -254,10 +288,15 @@ export function createD1CatalogItemRepository(
     const imageReference = await mediaReference(payload.mediaVersionId);
     const entity = await database
       .prepare(
-        "SELECT id FROM catalog_product_entities WHERE kind = ? AND code = ?",
+        "SELECT id, hidden_at FROM catalog_product_entities WHERE kind = ? AND product_type = 'hose' AND code = ?",
       )
       .bind(payload.kind, code)
       .first();
+    if (entity && (entity as { hidden_at?: string }).hidden_at)
+      throw new CatalogItemRejected(
+        "Deleted identity cannot be reused / 已删除编号不能复用",
+        409,
+      );
     const legacy =
       payload.kind === "series"
         ? await findHoseSeries(code)
@@ -282,7 +321,7 @@ export function createD1CatalogItemRepository(
             (await findHoseSeries(value)) ??
             (
               (await findPayload("series", value, true)) as Extract<
-                CatalogItemPayload,
+                HoseCatalogItemPayload,
                 { kind: "series" }
               > | null
             )?.series ??
@@ -416,12 +455,16 @@ export function createD1CatalogItemRepository(
       const code = itemCode(payload);
       const previous = await database
         .prepare(
-          "SELECT revision_id AS id FROM catalog_item_current WHERE kind = ? AND product_type = 'hose' AND code = ?",
+          "SELECT revision_id AS id FROM catalog_item_current WHERE kind = ? AND product_type = ? AND code = ?",
         )
-        .bind(payload.kind, code)
+        .bind(payload.kind, payload.productType, code)
         .first<{ id: string }>();
       let affected: string[] = [];
-      if (payload.kind === "sku" && input.targetState !== "draft") {
+      if (
+        payload.kind === "sku" &&
+        payload.productType === "hose" &&
+        input.targetState !== "draft"
+      ) {
         const old = await database
           .prepare(
             `SELECT h.hose_series, h.dash, h.skive_requirement, s.catalog_publication_status
@@ -458,21 +501,76 @@ export function createD1CatalogItemRepository(
             ),
           ];
       }
+      if (
+        payload.kind === "sku" &&
+        ["hose_end", "ferrule"].includes(payload.productType) &&
+        input.targetState !== "draft"
+      ) {
+        const old = await findProductPayload(payload.productType, "sku", code);
+        const keys =
+          payload.productType === "hose_end"
+            ? ["fittingSeries", "hoseTailDash"]
+            : [
+                "ferruleSeries",
+                "hoseTailDash",
+                "skiveRequirement",
+                "hoseConstruction",
+              ];
+        const identity = (p: CatalogItemPayload | null) =>
+          p?.kind === "sku"
+            ? keys.map(
+                (k) => (p.variant as unknown as Record<string, unknown>)[k],
+              )
+            : null;
+        const previousState = await database
+          .prepare(
+            "SELECT target_state FROM catalog_item_current WHERE kind='sku' AND code=?",
+          )
+          .bind(code)
+          .first<{ target_state: string }>();
+        const oldState = previousState?.target_state ?? (old ? "online" : null);
+        if (
+          JSON.stringify(identity(old)) !== JSON.stringify(identity(payload)) ||
+          oldState !== input.targetState
+        ) {
+          const relationColumn =
+            payload.productType === "hose_end" ? "hose_end_sku" : "ferrule_sku";
+          const table =
+            payload.productType === "hose_end"
+              ? "catalog_runtime_hose_ends"
+              : "catalog_runtime_ferrules";
+          const seriesColumn =
+            payload.productType === "hose_end"
+              ? "fitting_series"
+              : "ferrule_series";
+          const rows = await database
+            .prepare(
+              `SELECT DISTINCT h.hose_series FROM catalog_compatibilities c
+            JOIN catalog_runtime_hose_variants h ON h.import_id=c.import_id AND h.sku=c.hose_sku
+            JOIN ${table} component ON component.import_id=c.import_id AND component.sku=c.${relationColumn}
+            JOIN catalog_releases r ON r.source_import_id=c.import_id JOIN catalog_active_release a ON a.release_id=r.id
+            WHERE c.${relationColumn}=? OR component.${seriesColumn} IN (?,?)`,
+            )
+            .bind(code, old ? itemSeriesCode(old) : "", itemSeriesCode(payload))
+            .all<{ hose_series: string }>();
+          affected = rows.results.map((r) => r.hose_series);
+        }
+      }
       const revisionId = crypto.randomUUID();
       try {
         await database.batch([
           database
             .prepare(
-              "INSERT INTO catalog_product_entities(id, kind, product_type, code) VALUES (?, ?, 'hose', ?) ON CONFLICT DO NOTHING",
+              "INSERT INTO catalog_product_entities(id, kind, product_type, code) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING",
             )
-            .bind(crypto.randomUUID(), payload.kind, code),
+            .bind(crypto.randomUUID(), payload.kind, payload.productType, code),
           database
             .prepare(
               `INSERT INTO catalog_product_revisions(id, entity_id, target_state, payload_json, media_version_id,
             source_json, affected_series_json, baseline_revision_id, previous_revision_id, request_id,
             command_id, command_hash, expected_generation, actor_id, ip_address, occurred_at)
             SELECT ?, e.id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM catalog_product_entities e
-            WHERE e.kind = ? AND e.product_type = 'hose' AND e.code = ?`,
+            WHERE e.kind = ? AND e.product_type = ? AND e.code = ?`,
             )
             .bind(
               revisionId,
@@ -483,7 +581,11 @@ export function createD1CatalogItemRepository(
               JSON.stringify(affected),
               input.baselineRevisionId,
               previous?.id ??
-                ((await findPayload(payload.kind, code))
+                ((await findProductPayload(
+                  payload.productType,
+                  payload.kind,
+                  code,
+                ))
                   ? `legacy:${current.baseline_release_id}:${payload.kind}:${code}`
                   : null),
               requestId,
@@ -494,6 +596,7 @@ export function createD1CatalogItemRepository(
               input.ipAddress,
               now().toISOString(),
               payload.kind,
+              payload.productType,
               code,
             ),
         ]);
@@ -522,6 +625,7 @@ export function createD1CatalogItemRepository(
   return {
     state,
     findPayload,
+    findProductPayload,
     apply,
     async enable(input: { environment: string; actorId: string }) {
       if (!["local", "preview"].includes(input.environment))
@@ -559,13 +663,17 @@ export function createD1CatalogItemRepository(
           .all<{ code: string; name: string }>()
       ).results;
     },
-    async history(kind: "series" | "sku", code: string) {
+    async history(
+      kind: "series" | "sku",
+      code: string,
+      productType: CommercialProductType = "hose",
+    ) {
       const rows = await database
         .prepare(
           `SELECT r.* FROM catalog_product_revisions r JOIN catalog_product_entities e ON e.id = r.entity_id
-        WHERE e.kind = ? AND e.product_type = 'hose' AND e.code = ? ORDER BY r.sequence DESC`,
+        WHERE e.kind = ? AND e.product_type = ? AND e.code = ? ORDER BY r.sequence DESC`,
         )
-        .bind(kind, code)
+        .bind(kind, productType, code)
         .all<RevisionRow>();
       return rows.results.map((row) => ({
         ...result(row),

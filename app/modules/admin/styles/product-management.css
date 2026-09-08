@@ -1,0 +1,168 @@
+.product-management {
+  padding: 32px;
+  min-width: 0;
+}
+.product-management header h1 {
+  margin: 8px 0;
+}
+.product-management-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-end;
+  margin: 28px 0;
+}
+.product-management-toolbar form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+.product-management fieldset {
+  border: 1px solid #d9e0e8;
+  padding: 12px;
+  border-radius: 8px;
+}
+.product-management-toolbar fieldset label {
+  display: inline-flex;
+  gap: 5px;
+  margin-right: 12px;
+}
+.product-management input,
+.product-management select,
+.product-editor input,
+.product-editor select {
+  padding: 8px;
+  border: 1px solid #c8d2de;
+  border-radius: 5px;
+}
+.product-management button,
+.product-editor button {
+  padding: 8px 13px;
+  border: 1px solid #c8d2de;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+.product-management button:disabled,
+.product-editor button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.product-actions {
+  display: flex;
+  gap: 8px;
+}
+.product-add-menu {
+  position: relative;
+}
+.product-add-options {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  min-width: 260px;
+  background: white;
+  box-shadow: 0 10px 30px #23344930;
+  padding: 14px;
+  z-index: 3;
+}
+.product-add-options > div {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+}
+.product-add-options strong {
+  min-width: 72px;
+}
+.product-table-scroll {
+  overflow: auto;
+}
+.product-management table {
+  border-collapse: collapse;
+  width: 100%;
+  background: #fff;
+}
+.product-management th,
+.product-management td {
+  text-align: left;
+  padding: 13px;
+  border-bottom: 1px solid #e2e8ee;
+  white-space: nowrap;
+}
+.product-management td img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  vertical-align: middle;
+  margin-right: 10px;
+}
+.product-child td:nth-child(2) {
+  padding-left: 46px;
+}
+.product-management nav {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  margin-top: 22px;
+}
+.product-editor {
+  width: min(920px, 94vw);
+  max-height: 90vh;
+  border: 1px solid #ccd5df;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 24px 70px #16263a45;
+}
+.product-editor::backdrop {
+  background: #13233870;
+}
+.product-editor > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.product-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 15px;
+  margin: 20px 0;
+  border: 1px solid #d8e0e9;
+  border-radius: 8px;
+  padding: 20px;
+}
+.product-field-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+.product-editor footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  align-items: center;
+}
+.product-management [role="alert"],
+.product-editor [role="alert"] {
+  color: #a02727;
+}
+.product-management aside {
+  background: #fff6df;
+  padding: 14px;
+  border-radius: 8px;
+}
+@media (max-width: 800px) {
+  .product-management {
+    padding: 16px;
+  }
+  .product-management-toolbar {
+    display: block;
+  }
+  .product-actions {
+    margin-top: 16px;
+  }
+  .product-field-grid {
+    grid-template-columns: 1fr;
+  }
+}

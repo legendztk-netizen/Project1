@@ -39,7 +39,7 @@ export interface SkuPricePackaging {
   cartonHCm: number | null;
   cartonLCm: number | null;
   cartonWCm: number | null;
-  currency: "USD";
+  currency: string;
   innerPackQty: number | null;
   masterCartonQty: number | null;
   netUnitWeightKg: number | null;

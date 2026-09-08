@@ -444,7 +444,6 @@ export function publicCatalogItemFromRow(
         }),
     aliases: product.aliases.filter((value): value is string => Boolean(value)),
     canAddToQuote:
-      (row.currency ?? "USD") === "USD" &&
       row.rfq_eligibility === "Eligible" &&
       row.supply_availability === "available_for_quote",
     category: categoryByProductType[row.product_type],
@@ -565,7 +564,6 @@ const publicCatalogSql = `
   INNER JOIN catalog_runtime_skus s ON s.import_id = r.source_import_id
   LEFT JOIN catalog_item_publication_state item_state ON item_state.singleton = 1
   LEFT JOIN catalog_product_entities item_entity ON item_entity.kind = 'sku' AND item_entity.code = s.sku AND item_entity.product_type = s.product_type
-  LEFT JOIN catalog_product_entities series_entity ON series_entity.kind = 'series' AND series_entity.code = s.hose_series AND series_entity.product_type = s.product_type
   LEFT JOIN catalog_runtime_sales_offers o
     ON o.import_id = s.import_id AND o.base_sku = s.sku
   LEFT JOIN catalog_runtime_product_main_images image
@@ -579,20 +577,23 @@ const publicCatalogSql = `
     ON h.import_id = s.import_id AND h.sku = s.sku
   LEFT JOIN catalog_runtime_hose_series hs
     ON hs.import_id = h.import_id AND hs.series_code = h.hose_series
-  LEFT JOIN catalog_hose_ends e
+  LEFT JOIN catalog_runtime_hose_ends e
     ON e.import_id = s.import_id AND e.sku = s.sku
-  LEFT JOIN catalog_hose_end_series hes
+  LEFT JOIN catalog_runtime_hose_end_series hes
     ON hes.import_id = e.import_id AND hes.series_code = e.fitting_series
+  LEFT JOIN catalog_runtime_ferrules f
+    ON f.import_id = s.import_id AND f.sku = s.sku
+  LEFT JOIN catalog_runtime_adapters a
+    ON a.import_id = s.import_id AND a.sku = s.sku
+  LEFT JOIN catalog_runtime_quick_couplers q
+    ON q.import_id = s.import_id AND q.sku = s.sku
+  LEFT JOIN catalog_product_entities series_entity ON series_entity.kind = 'series' AND series_entity.code = COALESCE(s.hose_series,e.fitting_series,f.ferrule_series,a.adapter_family_id,q.coupler_series) AND series_entity.product_type = s.product_type
+  LEFT JOIN catalog_product_revisions series_revision ON series_revision.id = series_entity.current_revision_id
   LEFT JOIN catalog_media_versions selected_media
     ON selected_media.id = COALESCE(image.media_version_id,
                                     hs.representative_media_version_id,
-                                    hes.representative_media_version_id)
-  LEFT JOIN catalog_ferrules f
-    ON f.import_id = s.import_id AND f.sku = s.sku
-  LEFT JOIN catalog_adapters a
-    ON a.import_id = s.import_id AND a.sku = s.sku
-  LEFT JOIN catalog_quick_couplers q
-    ON q.import_id = s.import_id AND q.sku = s.sku
+                                    hes.representative_media_version_id,
+                                    series_revision.media_version_id)
   LEFT JOIN catalog_runtime_series_commercial_rules commercial_rule
     ON commercial_rule.import_id = s.import_id
    AND commercial_rule.product_type = s.product_type

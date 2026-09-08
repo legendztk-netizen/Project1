@@ -1,3 +1,4 @@
+import { quoteCurrencyTotals } from "../../quote-list/domain/quote-currency-totals";
 import {
   AlertCircle,
   ArrowLeft,
@@ -292,6 +293,7 @@ function RfqPreparation({
   hasBlockedLine,
   idempotencyKey,
   merchandiseSubtotal,
+  manualReview,
   purchasingContexts,
   selectedLineIds,
   serviceFeeTotal,
@@ -301,6 +303,7 @@ function RfqPreparation({
   hasBlockedLine: boolean;
   idempotencyKey: string;
   merchandiseSubtotal: number;
+  manualReview: boolean;
   purchasingContexts: PurchasingContext[];
   selectedLineIds: string[];
   serviceFeeTotal: number;
@@ -322,7 +325,10 @@ function RfqPreparation({
     pricingComplete: !hasBlockedLine,
     purchasingContextKind: selectedContext?.kind ?? null,
   });
-  const outcome = evaluation.outcome;
+  const outcome =
+    manualReview && !hasBlockedLine && selectedContext
+      ? { allowed: true, code: "MANUAL_REVIEW" }
+      : evaluation.outcome;
   const selectionEmpty = selectedLineIds.length === 0;
 
   return (
@@ -372,6 +378,16 @@ function RfqPreparation({
         className={`rfq-eligibility rfq-eligibility-${outcome.allowed ? "ready" : "blocked"}`}
         role="status"
       >
+        {!selectionEmpty && outcome.code === "MANUAL_REVIEW" ? (
+          <>
+            <strong>Ready for manual commercial review</strong>
+            <p>
+              Original currencies are retained. Pricing, minimum order
+              requirements and import terms will be confirmed by our team; no
+              currency conversion is applied.
+            </p>
+          </>
+        ) : null}
         {selectionEmpty ? (
           <>
             <strong>Select products to continue</strong>
@@ -471,7 +487,11 @@ function RfqPreparation({
       <dl className="rfq-preparation-facts">
         <div>
           <dt>Merchandise subtotal used</dt>
-          <dd>USD {evaluation.merchandiseSubtotal.toFixed(2)}</dd>
+          <dd>
+            {manualReview
+              ? "Original currency groups; manual review"
+              : `USD ${evaluation.merchandiseSubtotal.toFixed(2)}`}
+          </dd>
         </div>
         <div>
           <dt>Freight</dt>
@@ -894,13 +914,16 @@ export function QuoteListContent({
   );
   const effectiveQuantity = (line: QuoteLine) =>
     optimisticQuantities[line.id] ?? line.quantity;
-  const referenceTotal = roundMoney(
-    selectedLines.reduce(
-      (total, line) =>
-        total + (merchandiseEstimate(line, effectiveQuantity(line)) ?? 0),
-      0,
-    ),
-  );
+  const currencyTotals = quoteCurrencyTotals(selectedLines);
+  const referenceTotal = currencyTotals.manualReview
+    ? 0
+    : roundMoney(
+        selectedLines.reduce(
+          (total, line) =>
+            total + (merchandiseEstimate(line, effectiveQuantity(line)) ?? 0),
+          0,
+        ),
+      );
   const serviceFeeTotal = roundMoney(
     selectedLines.reduce(
       (total, line) =>
@@ -913,7 +936,9 @@ export function QuoteListContent({
   );
   const hasBlockedLine = selectedLines.some(
     (line) =>
-      line.refresh?.status === "blocked" || merchandiseEstimate(line) == null,
+      line.refresh?.status === "blocked" ||
+      (merchandiseEstimate(line) == null &&
+        !line.refresh?.current.manualPricing),
   );
   const removalLine =
     loaderData.lines.find((line) => line.id === removalLineId) ?? null;
@@ -1114,23 +1139,23 @@ export function QuoteListContent({
                         ? line.lineKind === "configured_assembly"
                           ? "Price confirmed with quote"
                           : "Price on quote"
-                        : `${line.currency} ${subtotal.toFixed(2)}`}
+                        : `${line.refresh?.current.currency ?? line.currency} ${subtotal.toFixed(2)}`}
                     </strong>
                     <small>
                       {line.lineKind === "configured_assembly"
                         ? line.refresh?.current.unitReferencePrice == null
                           ? "Reference inputs are incomplete"
-                          : `${line.currency} ${line.refresh.current.unitReferencePrice.toFixed(2)} / assembly`
+                          : `${line.refresh.current.currency ?? line.currency} ${line.refresh.current.unitReferencePrice.toFixed(2)} / assembly`
                         : line.refresh?.current.unitReferencePrice == null
                           ? "No reference unit price"
-                          : `${line.currency} ${line.refresh.current.unitReferencePrice.toFixed(2)} / ${line.salesUnit}`}
+                          : `${line.refresh.current.currency ?? line.currency} ${line.refresh.current.unitReferencePrice.toFixed(2)} / ${line.salesUnit}`}
                     </small>
                     {serviceFee > 0 ? (
                       <small>
                         {line.lineKind === "length_based_hose"
                           ? "Cutting & Labeling Fee"
                           : "Assembly service fees"}{" "}
-                        (excluded from merchandise subtotal): {line.currency}{" "}
+                        (excluded from merchandise subtotal): USD{" "}
                         {serviceFee.toFixed(2)}
                       </small>
                     ) : null}
@@ -1147,7 +1172,8 @@ export function QuoteListContent({
                               )}
                         </small>
                         <small>
-                          Current merchandise: {line.currency}{" "}
+                          Current merchandise:{" "}
+                          {line.refresh?.current.currency ?? line.currency}{" "}
                           {line.refresh.current.discountedMerchandiseAmount ==
                           null
                             ? "not available"
@@ -1159,7 +1185,7 @@ export function QuoteListContent({
                         line.refresh.current.serviceFeeAmount ? (
                           <>
                             <small>
-                              Former service fees: {line.currency}{" "}
+                              Former service fees: USD{" "}
                               {line.refresh.former.serviceFeeAmount == null
                                 ? "not available"
                                 : line.refresh.former.serviceFeeAmount.toFixed(
@@ -1167,7 +1193,7 @@ export function QuoteListContent({
                                   )}
                             </small>
                             <small>
-                              Current service fees: {line.currency}{" "}
+                              Current service fees: USD{" "}
                               {line.refresh.current.serviceFeeAmount == null
                                 ? "not available"
                                 : line.refresh.current.serviceFeeAmount.toFixed(
@@ -1245,7 +1271,14 @@ export function QuoteListContent({
             <aside className="quote-summary">
               <span className="eyebrow">Reference only</span>
               <h2>Selected product estimate</h2>
-              <strong>USD {referenceTotal.toFixed(2)}</strong>
+              {currencyTotals.groups.map((group) => (
+                <strong key={group.currency}>
+                  {group.currency}{" "}
+                  {group.merchandiseSubtotal === null
+                    ? "Manual pricing"
+                    : group.merchandiseSubtotal.toFixed(2)}
+                </strong>
+              ))}
               <small>
                 {selectedLines.length} selected · Estimated merchandise subtotal
               </small>
@@ -1265,6 +1298,7 @@ export function QuoteListContent({
               hasBlockedLine={hasBlockedLine}
               idempotencyKey={loaderData.idempotencyKey}
               merchandiseSubtotal={referenceTotal}
+              manualReview={currencyTotals.manualReview}
               purchasingContexts={loaderData.purchasingContexts}
               selectedLineIds={activeSelectedLineIds}
               serviceFeeTotal={serviceFeeTotal}

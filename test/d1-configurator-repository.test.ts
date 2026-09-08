@@ -124,8 +124,8 @@ describe("D1 configurator repository", () => {
     expect(sql).toContain("c.assembly_working_bar");
     expect(sql).toContain("e.max_working_bar");
     expect(sql).toContain("e.fitting_series");
-    expect(sql).toContain("catalog_hose_ends e");
-    expect(sql).toContain("catalog_ferrules f");
+    expect(sql).toContain("catalog_runtime_hose_ends e");
+    expect(sql).toContain("catalog_runtime_ferrules f");
     expect(
       sql.match(/supply_availability = 'available_for_quote'/g),
     ).toHaveLength(3);

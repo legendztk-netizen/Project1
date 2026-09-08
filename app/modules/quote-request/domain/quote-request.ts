@@ -1,3 +1,4 @@
+import type { QuoteCurrencyTotal } from "../../quote-list/domain/quote-currency-totals";
 import type {
   DeliveryAddress,
   PurchasingContext,
@@ -25,8 +26,10 @@ type QuoteRequestActor = Pick<
 >;
 
 interface QuoteRequestAmounts {
-  currency: "USD";
-  merchandiseSubtotal: number;
+  currency: string | null;
+  merchandiseSubtotal: number | null;
+  groups?: QuoteCurrencyTotal[];
+  manualCommercialReview?: boolean;
   serviceFeeTotal: number;
 }
 
@@ -72,6 +75,11 @@ export function captureQuoteRequestProductSnapshot(
   };
 }
 
+export interface ManualCommercialReview {
+  fulfillmentTerm: "MANUAL";
+  version: "manual-commercial-review-v1";
+}
+
 export interface IndividualQuoteRequestSnapshot {
   acknowledgements: {
     accuracyConfirmed: true;
@@ -81,10 +89,12 @@ export interface IndividualQuoteRequestSnapshot {
   actor: QuoteRequestActor;
   amounts: QuoteRequestAmounts;
   destination: DeliveryAddress;
-  importResponsibility: {
-    fulfillmentTerm: "DDP";
-    version: typeof individualDdpExpectationVersion;
-  };
+  importResponsibility:
+    | ManualCommercialReview
+    | {
+        fulfillmentTerm: "DDP";
+        version: typeof individualDdpExpectationVersion;
+      };
   lines: QuoteRequestLine[];
   purchasingContext: PurchasingContext & { kind: "individual" };
   submittedAt: string;
@@ -101,6 +111,7 @@ export interface OrganizationQuoteRequestSnapshot {
   amounts: QuoteRequestAmounts;
   destination: DeliveryAddress;
   importResponsibility:
+    | ManualCommercialReview
     | {
         fulfillmentTerm: "DDP";
         version: typeof organizationDdpExpectationVersion;

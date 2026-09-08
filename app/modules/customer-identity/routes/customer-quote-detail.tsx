@@ -1,3 +1,4 @@
+import { formatQuoteAmounts } from "../../quote-list/domain/quote-currency-totals";
 import { ArrowLeft, FileText } from "lucide-react";
 import { Link, redirect } from "react-router";
 
@@ -210,7 +211,7 @@ export default function CustomerQuoteDetail({
               </div>
               <div>
                 <dt>Merchandise reference</dt>
-                <dd>USD {snapshot.amounts.merchandiseSubtotal.toFixed(2)}</dd>
+                <dd>{formatQuoteAmounts(snapshot.amounts)}</dd>
               </div>
             </dl>
             <p className="customer-quote-commercial-note">

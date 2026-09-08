@@ -282,7 +282,11 @@ describe("real local D1 migration lifecycle", () => {
   it("backfills product series inside published and historical catalog snapshots", () => {
     const fixture = createD1Fixture();
     const seriesMigration = "0050_version_product_series.sql";
-    rmSync(join(fixture.directory, "migrations", seriesMigration));
+    const upgradeMigrations = schemaContract.migrations.filter(
+      (name) => name >= seriesMigration,
+    );
+    for (const name of upgradeMigrations)
+      rmSync(join(fixture.directory, "migrations", name));
     const beforeUpgrade = applyMigrations(fixture);
     expect(
       beforeUpgrade.status,
@@ -390,10 +394,11 @@ describe("real local D1 migration lifecycle", () => {
                '2026-09-02');`,
     );
 
-    copyFileSync(
-      join(projectRoot, "migrations", seriesMigration),
-      join(fixture.directory, "migrations", seriesMigration),
-    );
+    for (const name of upgradeMigrations)
+      copyFileSync(
+        join(projectRoot, "migrations", name),
+        join(fixture.directory, "migrations", name),
+      );
     const upgrade = applyMigrations(fixture);
     expect(upgrade.status, `${upgrade.stdout}\n${upgrade.stderr}`).toBe(0);
     expect(

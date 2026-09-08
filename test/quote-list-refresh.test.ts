@@ -390,3 +390,52 @@ describe("Quote List refresh", () => {
     expect(line.configuredAssembly.snapshot).toBeTruthy();
   });
 });
+
+describe("original price currencies", () => {
+  it("refreshes a changed currency without rewriting the saved price", () => {
+    const line = standardLine();
+    const product = publicHoseFixture({
+      offer: {
+        currency: "CNY",
+        leadTimeDays: 10,
+        madeToOrder: false,
+        moq: 1,
+        referencePrice: 88,
+        salesUnit: "ft",
+        lengthOrdering: null,
+      },
+    });
+    const refresh = refreshStandardQuoteLine({ line, product, refreshedAt });
+    expect(refresh.status).toBe("ready");
+    expect(refresh.current).toMatchObject({
+      currency: "CNY",
+      merchandiseAmount: 176,
+    });
+    expect(line.currency).toBe("USD");
+    expect(line.referenceUnitPrice).toBe(10);
+  });
+  it("keeps mixed-currency assemblies ready for manual pricing", () => {
+    const line = configuredLine();
+    const { basis, snapshot } = configuredMaterials();
+    const product = publicHoseFixture();
+    snapshot.productBasis = [
+      { sku: product.sku, offer: { ...product.offer!, currency: "CNY" } },
+    ];
+    const refresh = refreshConfiguredAssemblyQuoteLine({
+      line,
+      current: {
+        basis: { ...basis, hosePricePerFootUsd: null },
+        snapshot,
+        unitEstimateAmount: null,
+      },
+      issue: null,
+      refreshedAt,
+    });
+    expect(refresh.status).toBe("ready");
+    expect(refresh.current).toMatchObject({
+      manualPricing: true,
+      merchandiseAmount: null,
+      totalReferenceAmount: null,
+    });
+  });
+});

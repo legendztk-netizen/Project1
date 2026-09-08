@@ -22,6 +22,8 @@ export function quoteMoney(value: number) {
 }
 
 function estimate(input: {
+  currency?: string;
+  manualPricing?: boolean;
   discount: QuoteReferenceDiscount;
   merchandiseAmount: number | null;
   serviceFeeAmount: number | null;
@@ -38,6 +40,8 @@ function estimate(input: {
           input.merchandiseAmount * (input.discount.discountPercent / 100),
         );
   return {
+    ...(input.currency ? { currency: input.currency } : {}),
+    ...(input.manualPricing ? { manualPricing: true } : {}),
     discountAmount,
     discountPercent: input.discount.discountPercent,
     discountRecordVersion:
@@ -122,18 +126,13 @@ function currentTermsReason(input: {
     offer.madeToOrder === input.expectedMadeToOrder &&
     (!input.expectedMadeToOrder ||
       (input.product?.productType === "hose" && offer.lengthOrdering !== null));
-  if (
-    matchesOrderingMode &&
-    offer.currency === "USD" &&
-    offer.currency === input.line.currency &&
-    offer.salesUnit === input.line.salesUnit
-  ) {
+  if (matchesOrderingMode && offer.salesUnit === input.line.salesUnit) {
     return null;
   }
   return {
     code: "PRODUCT_TERMS_CHANGED" as const,
     message:
-      "This SKU's ordering mode, currency, or sales unit changed. The original request remains in your list for review.",
+      "This SKU's ordering mode or sales unit changed. The original request remains in your list for review.",
   };
 }
 
@@ -210,6 +209,7 @@ export function formerQuoteLineEstimate(
         ? null
         : quoteMoney(line.referenceUnitPrice * line.quantity);
     return estimate({
+      currency: line.currency,
       discount,
       merchandiseAmount: merchandise,
       serviceFeeAmount: 0,
@@ -222,6 +222,7 @@ export function formerQuoteLineEstimate(
   }
   if (line.lineKind === "length_based_hose") {
     return estimate({
+      currency: line.currency,
       discount,
       merchandiseAmount: line.estimatedMerchandiseAmount,
       serviceFeeAmount: line.cuttingLabelingFeeAmount,
@@ -276,6 +277,7 @@ export function refreshStandardQuoteLine(input: {
   const merchandise =
     price === null ? null : quoteMoney(price * input.line.quantity);
   const current = estimate({
+    currency: input.product?.offer?.currency ?? input.line.currency,
     discount: input.currentDiscount ?? noQuoteReferenceDiscount,
     merchandiseAmount: merchandise,
     serviceFeeAmount: 0,
@@ -333,12 +335,14 @@ export function refreshLengthBasedHoseQuoteLine(input: {
     : (input.product?.offer?.referencePrice ?? null);
   const currentCalculation = ordering
     ? calculateLengthBasedHoseEstimate({
+        currency: input.product?.offer?.currency,
         feeRatePerPiece: ordering.cuttingLabelingFee.ratePerPiece,
         order: input.line.lengthOrder,
         referencePricePerFoot: price,
       })
     : null;
   const current = estimate({
+    currency: input.product?.offer?.currency ?? input.line.currency,
     discount: input.currentDiscount ?? noQuoteReferenceDiscount,
     merchandiseAmount: currentCalculation?.estimatedMerchandiseAmount ?? null,
     serviceFeeAmount: currentCalculation?.cuttingLabelingFeeAmount ?? null,
@@ -425,7 +429,13 @@ export function refreshConfiguredAssemblyQuoteLine(input: {
     input.current?.unitEstimateAmount === null || !input.current
       ? null
       : quoteMoney(input.current.unitEstimateAmount * input.line.quantity);
+  const manualPricing = Boolean(
+    input.current?.snapshot.productBasis?.some(
+      (product) => product.offer && product.offer.currency !== "USD",
+    ),
+  );
   const current = estimate({
+    manualPricing,
     discount: input.currentDiscount ?? noQuoteReferenceDiscount,
     merchandiseAmount: merchandise,
     serviceFeeAmount: serviceFee,
@@ -443,7 +453,7 @@ export function refreshConfiguredAssemblyQuoteLine(input: {
       code: "CONFIGURATION_INVALID",
       message: input.issue,
     });
-  } else if (merchandise === null || total === null) {
+  } else if (!manualPricing && (merchandise === null || total === null)) {
     blockingReasons.push({
       code: "CURRENT_PRICE_MISSING",
       message:

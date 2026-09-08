@@ -104,6 +104,7 @@ function money(value: number) {
 }
 
 export function calculateLengthBasedHoseEstimate(input: {
+  currency?: string;
   feeRatePerPiece: number;
   order: LengthBasedHoseOrder;
   referencePricePerFoot: number | null;
@@ -117,7 +118,7 @@ export function calculateLengthBasedHoseEstimate(input: {
       : money(input.referencePricePerFoot * input.order.totalFootage);
   return {
     currentEstimateAmount:
-      estimatedMerchandiseAmount === null
+      estimatedMerchandiseAmount === null || (input.currency ?? "USD") !== "USD"
         ? null
         : money(estimatedMerchandiseAmount + cuttingLabelingFeeAmount),
     cuttingLabelingFeeAmount,

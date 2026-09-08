@@ -527,6 +527,7 @@ export function createAnonymousQuoteListService(
         );
       }
       const estimate = calculateLengthBasedHoseEstimate({
+        currency: product.offer!.currency,
         feeRatePerPiece: ordering.cuttingLabelingFee.ratePerPiece,
         order: currentOrder.value,
         referencePricePerFoot: product.offer!.referencePrice,
@@ -708,6 +709,7 @@ export function createAnonymousQuoteListService(
       };
       const ordering = product.offer!.lengthOrdering!;
       const estimate = calculateLengthBasedHoseEstimate({
+        currency: product.offer!.currency,
         feeRatePerPiece: ordering.cuttingLabelingFee.ratePerPiece,
         order,
         referencePricePerFoot: product.offer!.referencePrice,
