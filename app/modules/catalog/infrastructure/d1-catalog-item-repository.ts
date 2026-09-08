@@ -7,6 +7,7 @@ import {
   type CatalogItemCommand,
   type CatalogItemPayload,
   type CatalogItemResult,
+  type ItemPrice,
 } from "../domain/catalog-item-publication";
 import {
   validateHoseSeriesMaintenance,
@@ -48,6 +49,25 @@ function result(row: RevisionRow): CatalogItemResult {
     sequence: row.sequence,
     targetState: row.target_state,
   };
+}
+
+function validateHoseOrdering(
+  rule: SeriesCommercialRule,
+  price: ItemPrice | null,
+) {
+  if (
+    rule.salesUnit.toLowerCase() === "ft" &&
+    rule.quantityInputMode.toLowerCase().includes("length")
+  ) {
+    if (!rule.minimumLengthPerPieceFt || !rule.lengthIncrementFt)
+      throw new CatalogItemRejected(
+        "Length ordering rules are incomplete / 长度销售规则不完整",
+      );
+  } else if (!price?.packageLengthFt) {
+    throw new CatalogItemRejected(
+      "Packaged Hose requires package length / 定长包装胶管需要包装长度",
+    );
+  }
 }
 
 export function createD1CatalogItemRepository(
@@ -310,17 +330,8 @@ export function createD1CatalogItemRepository(
             throw new CatalogItemRejected(
               "Published children require a series sales rule and an image / 上线子体需要有效销售规则及图片",
             );
-          if (
-            (payload.commercialRule.salesUnit !== "ft" ||
-              !payload.commercialRule.quantityInputMode
-                .toLowerCase()
-                .includes("length")) &&
-            owned?.kind === "sku" &&
-            !owned.price?.packageLengthFt
-          )
-            throw new CatalogItemRejected(
-              "Published packaged Hose requires package length / 上线包装胶管需要包装长度",
-            );
+          if (owned?.kind === "sku")
+            validateHoseOrdering(payload.commercialRule, owned.price);
         }
       }
     } else if (payload.kind === "sku") {
@@ -354,18 +365,7 @@ export function createD1CatalogItemRepository(
             "Online SKU requires price, image and series sales rule / 上线需要价格、图片和系列销售规则",
           );
         normalizeSeriesCommercialRule(rule);
-        if (
-          rule.salesUnit !== "ft" ||
-          !rule.quantityInputMode.toLowerCase().includes("length")
-        ) {
-          if (!payload.price.packageLengthFt)
-            throw new CatalogItemRejected(
-              "Packaged Hose requires package length / 定长包装胶管需要包装长度",
-            );
-        } else if (!rule.minimumLengthPerPieceFt || !rule.lengthIncrementFt)
-          throw new CatalogItemRejected(
-            "Length ordering rules are incomplete / 长度销售规则不完整",
-          );
+        validateHoseOrdering(rule, payload.price);
       }
     } else throw new CatalogItemRejected("Invalid entity type / 条目类型无效");
     return payload;
@@ -374,9 +374,14 @@ export function createD1CatalogItemRepository(
     input: CatalogItemCommand,
     requestId: string | null = null,
   ): Promise<CatalogItemResult> {
-    const hash = await catalogCommandHash(input);
+    // Actor/IP belong to the first audit event, not the idempotent proposal.
+    const hash = await catalogCommandHash({
+      ...input,
+      actorId: undefined,
+      ipAddress: undefined,
+    });
     function replay(row: RevisionRow) {
-      if (row.command_hash !== hash || row.actor_id !== input.actorId)
+      if (row.command_hash !== hash)
         throw new CatalogItemRejected(
           "Command identity already used / 提交标识已使用",
           409,

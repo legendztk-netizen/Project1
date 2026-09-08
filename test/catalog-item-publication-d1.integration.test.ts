@@ -93,7 +93,7 @@ describe("D1 item publication", () => {
     );
     const c = await repository.apply(await command(30));
     expect(
-      await repository.approveRequest(pending, "owner-1", "local"),
+      await repository.approveRequest(pending, "owner-2", "203.0.113.8"),
     ).toEqual(a);
     expect(
       (await catalog.findItem("601R1_001"))?.catalogBasis?.skuRevisionId,
@@ -298,6 +298,37 @@ describe("D1 item publication", () => {
       await quotes.addLengthBasedHoseLine({ ...input, lineId: "stale-line" }),
     ).toBeNull();
     expect(await quotes.listLines("item-session")).toEqual(before);
+  });
+  it("rejects incomplete series length rules without changing live children", async () => {
+    const series = await repository.findPayload("series", "601R1");
+    if (series?.kind !== "series" || !series.commercialRule)
+      throw new Error("series missing");
+    series.commercialRule.lengthIncrementFt = null;
+    const before = await repository.state();
+    await expect(
+      repository.apply({ ...(await command(99)), payload: series }),
+    ).rejects.toThrow("Length ordering");
+    expect(await repository.state()).toEqual(before);
+  });
+  it("keeps a request pending when its series dependency is not approved", async () => {
+    const id = await repository.createRequest(
+      await command(101),
+      { row: "dependent" },
+      ["missing-parent"],
+    );
+    const before = await repository.state();
+    await expect(
+      repository.approveRequest(id, "owner-1", "local"),
+    ).rejects.toThrow("dependency");
+    expect(await repository.state()).toEqual(before);
+    expect(
+      await database
+        .prepare(
+          "SELECT status FROM catalog_product_change_requests WHERE id = ?",
+        )
+        .bind(id)
+        .first(),
+    ).toEqual({ status: "pending" });
   });
   it("rejects old publication and unauthenticated form actions", async () => {
     await expect(

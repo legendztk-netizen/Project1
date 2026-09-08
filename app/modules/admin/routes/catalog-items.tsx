@@ -16,21 +16,21 @@ import { CatalogCommercialMaintenanceRejected } from "../../catalog/domain/catal
 
 const fields = [
   ["sku", "SKU", "text"],
-  ["hoseSeries", "胶管系列", "text"],
+  ["hoseSeries", "Hose Series / 胶管系列", "text"],
   ["dash", "Dash", "text"],
-  ["nominalIdIn", "公称内径 (in)", "number"],
-  ["idMm", "内径 (mm)", "number"],
-  ["odMm", "外径 (mm)", "number"],
-  ["workingBar", "工作压力 (bar)", "number"],
-  ["workingPsi", "工作压力 (psi)", "number"],
-  ["burstBar", "爆破压力 (bar)", "number"],
-  ["bendRadiusMm", "弯曲半径 (mm)", "number"],
-  ["weightKgM", "米重 (kg/m)", "number"],
-  ["skiveRequirement", "剥胶要求", "text"],
-  ["mshaMarking", "MSHA 标识", "text"],
-  ["technicalDataStatus", "技术数据状态", "text"],
-  ["source", "数据来源", "text"],
-  ["notes", "备注", "text"],
+  ["nominalIdIn", "Nominal ID / 公称内径 (in)", "number"],
+  ["idMm", "ID / 内径 (mm)", "number"],
+  ["odMm", "OD / 外径 (mm)", "number"],
+  ["workingBar", "Working Pressure / 工作压力 (bar)", "number"],
+  ["workingPsi", "Working Pressure / 工作压力 (psi)", "number"],
+  ["burstBar", "Burst Pressure / 爆破压力 (bar)", "number"],
+  ["bendRadiusMm", "Bend Radius / 弯曲半径 (mm)", "number"],
+  ["weightKgM", "Weight / 米重 (kg/m)", "number"],
+  ["skiveRequirement", "Skive Requirement / 剥胶要求", "text"],
+  ["mshaMarking", "MSHA Marking / MSHA 标识", "text"],
+  ["technicalDataStatus", "Technical Data Status / 技术数据状态", "text"],
+  ["source", "Source / 数据来源", "text"],
+  ["notes", "Notes / 备注", "text"],
 ] as const;
 
 export async function loader({ context, request }: Route.LoaderArgs) {
@@ -150,10 +150,12 @@ export default function CatalogItems({
   return (
     <main className="admin-page">
       <Link to="/admin">返回后台</Link>
-      <h1>胶管条目发布</h1>
+      <h1>Hose Item Publication / 胶管条目发布</h1>
       <p>
         当前模式：{state.mode === "items" ? "条目发布" : "旧目录发布"}
-        。系列属性、图片和销售规则继承自系列；本表单只保存 SKU 自有数据。
+        。Series attributes, images and sales rules are inherited; this form
+        saves SKU-owned data. / 系列属性、图片和销售规则继承自系列；本表单只保存
+        SKU 自有数据。
       </p>
       {actionData?.error && <p role="alert">{actionData.error}</p>}
       {actionData?.saved && <p role="status">{actionData.saved}</p>}
@@ -222,7 +224,7 @@ export default function CatalogItems({
             ))}
             <p>
               <label>
-                价格金额{" "}
+                Price / 价格金额{" "}
                 <input
                   name="amount"
                   type="number"
@@ -232,7 +234,7 @@ export default function CatalogItems({
                 />
               </label>
               <label>
-                币种{" "}
+                Currency / 币种{" "}
                 <select
                   name="currency"
                   defaultValue={sku?.price?.currency ?? "USD"}
@@ -245,7 +247,7 @@ export default function CatalogItems({
             </p>
             <p>
               <label>
-                包装长度 (ft){" "}
+                Package Length / 包装长度 (ft){" "}
                 <input
                   name="packageLengthFt"
                   type="number"
@@ -254,6 +256,7 @@ export default function CatalogItems({
                   defaultValue={sku?.price?.packageLengthFt ?? ""}
                 />
               </label>
+              Optional for length orders; required for packaged Hose. /
               按长度销售可留空；定长包装必须填写。
             </p>
             {(
@@ -278,12 +281,12 @@ export default function CatalogItems({
             ))}
             <p>
               <label>
-                SKU 图片覆盖{" "}
+                SKU Image Override / SKU 图片覆盖{" "}
                 <select
                   name="mediaVersionId"
                   defaultValue={sku?.mediaVersionId ?? ""}
                 >
-                  <option value="">继承系列图片</option>
+                  <option value="">Inherit Series Image / 继承系列图片</option>
                   {loaderData.media.map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.label}

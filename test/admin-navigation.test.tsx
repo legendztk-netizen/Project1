@@ -16,6 +16,7 @@ afterEach(cleanup);
 
 describe("AdminNavigation", () => {
   it.each([
+    ["items", "胶管条目发布（试运行）"],
     ["excel", "批量导入产品"],
     ["manual", "手动新增/编辑产品"],
     ["commercial", "销售、包装和价格"],
@@ -36,6 +37,7 @@ describe("AdminNavigation", () => {
           .getAllByRole("link")
           .map((link) => link.textContent),
       ).toEqual([
+        "胶管条目发布（试运行）",
         "批量导入产品",
         "手动新增/编辑产品",
         "销售、包装和价格",
