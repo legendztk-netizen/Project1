@@ -38,17 +38,20 @@ export async function loader({ context, request }: Route.LoaderArgs) {
     1,
     Math.floor(Number(url.searchParams.get("page")) || 1),
   );
-  const [rows, pending, sources, history, options] = await Promise.all([
+  const [rows, pending, sources, history, options, total] = await Promise.all([
     repo.all({ filters, limit: 51, offset: (page - 1) * 50 }),
     repo.pending(),
     repo.sources(),
     repo.history(url.searchParams.get("detail") ?? undefined),
     repo.filterOptions(),
+    repo.count(filters),
   ]);
   return {
     rows: rows.slice(0, 50),
     page,
     hasNext: rows.length > 50,
+    total,
+    totalPages: Math.ceil(total / 50),
     pending,
     sources,
     history,
@@ -146,11 +149,15 @@ const sourceNames: Record<string, string> = {
 function AssemblyPagination({
   page,
   hasNext,
+  total,
+  totalPages,
   filters,
   position,
 }: {
   page: number;
   hasNext: boolean;
+  total: number;
+  totalPages: number;
   filters: Record<string, string>;
   position: string;
 }) {
@@ -163,7 +170,10 @@ function AssemblyPagination({
       ) : (
         <span aria-disabled="true">上一页</span>
       )}
-      <strong>第 {page} 页 · 每页 50 条</strong>
+      <strong>
+        第 {totalPages === 0 ? 0 : page} 页 / 共 {totalPages} 页 · 共{" "}
+        {total.toLocaleString("zh-CN")} 个组合 · 每页 50 条
+      </strong>
       {hasNext ? (
         <Link to={pageUrl(page + 1)}>下一页</Link>
       ) : (
@@ -310,6 +320,8 @@ export default function AssemblyManagement() {
         <AssemblyPagination
           page={d.page}
           hasNext={d.hasNext}
+          total={d.total}
+          totalPages={d.totalPages}
           filters={d.filters}
           position="顶部"
         />
@@ -439,6 +451,8 @@ export default function AssemblyManagement() {
         <AssemblyPagination
           page={d.page}
           hasNext={d.hasNext}
+          total={d.total}
+          totalPages={d.totalPages}
           filters={d.filters}
           position="底部"
         />

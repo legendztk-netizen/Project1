@@ -371,3 +371,25 @@ it("reserves applied identifiers before generation, records new dependencies, an
     )?.count,
   ).toBe(1);
 });
+
+it("counts the entire filtered combination set independently of pagination", async () => {
+  const rows = await assemblies.all();
+  expect(rows.length).toBeGreaterThan(0);
+  expect(await assemblies.count()).toBe(rows.length);
+  const filterCases: Record<string, string>[] = [
+    { series: rows[0].hoseSeries },
+    { endA: rows[0].endAHoseEndSku, endB: rows[0].endBHoseEndSku },
+    { enabled: "disabled" },
+    { ready: "pending" },
+    { q: "missing-combination-for-count" },
+  ];
+  for (const filters of filterCases) {
+    expect(await assemblies.count(filters)).toBe(
+      (await assemblies.all({ filters })).length,
+    );
+  }
+  expect((await assemblies.all({ limit: 1 })).length).toBe(1);
+  expect(await assemblies.count({ q: "missing-combination-for-count" })).toBe(
+    0,
+  );
+});
