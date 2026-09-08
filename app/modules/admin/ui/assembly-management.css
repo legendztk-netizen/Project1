@@ -65,3 +65,27 @@
 .assembly-management th {
   background: #e1e8ea;
 }
+
+.assembly-management .assembly-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  margin: 20px 0;
+  background: #e1e8ea;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.assembly-management .assembly-pagination a,
+.assembly-management .assembly-pagination [aria-disabled] {
+  margin: 0;
+  padding: 10px 16px;
+  border-radius: 6px;
+  background: #1b6063;
+  color: white;
+  text-decoration: none;
+}
+.assembly-management .assembly-pagination [aria-disabled] {
+  opacity: 0.45;
+}

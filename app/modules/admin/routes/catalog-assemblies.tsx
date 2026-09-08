@@ -143,6 +143,35 @@ const sourceNames: Record<string, string> = {
   import: "导入",
   legacy: "历史目录",
 };
+function AssemblyPagination({
+  page,
+  hasNext,
+  filters,
+  position,
+}: {
+  page: number;
+  hasNext: boolean;
+  filters: Record<string, string>;
+  position: string;
+}) {
+  const pageUrl = (target: number) =>
+    `?${new URLSearchParams({ ...filters, page: String(target) })}`;
+  return (
+    <nav className="assembly-pagination" aria-label={`组合分页（${position}）`}>
+      {page > 1 ? (
+        <Link to={pageUrl(page - 1)}>上一页</Link>
+      ) : (
+        <span aria-disabled="true">上一页</span>
+      )}
+      <strong>第 {page} 页 · 每页 50 条</strong>
+      {hasNext ? (
+        <Link to={pageUrl(page + 1)}>下一页</Link>
+      ) : (
+        <span aria-disabled="true">下一页</span>
+      )}
+    </nav>
+  );
+}
 export default function AssemblyManagement() {
   const d = useLoaderData<typeof loader>();
   const result = useActionData<typeof action>();
@@ -278,6 +307,12 @@ export default function AssemblyManagement() {
             </button>
           </Form>
         </details>
+        <AssemblyPagination
+          page={d.page}
+          hasNext={d.hasNext}
+          filters={d.filters}
+          position="顶部"
+        />
         <Form method="post">
           <input type="hidden" name="commandId" value={d.commandId} />
           <p>每页显示 50 条组合；全选仅选择本页。已选 {selected.length} 条。</p>
@@ -401,23 +436,12 @@ export default function AssemblyManagement() {
             启用选中组合
           </button>
         </Form>
-        <nav aria-label="组合分页">
-          {d.page > 1 && (
-            <Link
-              to={`?${new URLSearchParams({ ...d.filters, page: String(d.page - 1) })}`}
-            >
-              上一页
-            </Link>
-          )}
-          <span>第 {d.page} 页，每页 50 条</span>
-          {d.hasNext && (
-            <Link
-              to={`?${new URLSearchParams({ ...d.filters, page: String(d.page + 1) })}`}
-            >
-              下一页
-            </Link>
-          )}
-        </nav>
+        <AssemblyPagination
+          page={d.page}
+          hasNext={d.hasNext}
+          filters={d.filters}
+          position="底部"
+        />
         {d.detail && (
           <section>
             <h2>{d.detail}：生成依据及审计</h2>
