@@ -120,6 +120,22 @@ export async function action({ context, request }: Route.ActionArgs) {
     );
   }
 }
+const operationNames: Record<string, string> = {
+  generate: "更新生成",
+  manual: "保存手动组合",
+  disable: "停用",
+  enable: "启用",
+  apply: "应用来源",
+  reject: "拒绝来源",
+  delete: "删除请求",
+  failure: "更新失败",
+};
+const sourceStatuses: Record<string, string> = {
+  pending: "待处理",
+  applied: "已应用",
+  rejected: "已拒绝",
+  deleted: "已删除",
+};
 const sourceNames: Record<string, string> = {
   manual: "手动",
   automatic: "自动",
@@ -131,7 +147,7 @@ export default function AssemblyManagement() {
   const result = useActionData<typeof action>();
   return (
     <div className="admin-shell" data-surface="admin">
-      <AdminNavigation active="catalog" maintenanceMode="assemblies" />
+      <AdminNavigation active="imports" maintenanceMode="assemblies" />
       <main className="admin-main assembly-management">
         <h1>总成管理</h1>
         <p>
@@ -321,7 +337,8 @@ export default function AssemblyManagement() {
                         )
                         .map((h) => (
                           <p key={h.id}>
-                            {h.occurred_at} · {h.actor_id} · {h.kind}
+                            {h.occurred_at} · {h.actor_id} ·{" "}
+                            {operationNames[h.kind] ?? h.kind}
                           </p>
                         ))}
                     </details>
@@ -365,7 +382,8 @@ export default function AssemblyManagement() {
             {d.history.map((h) => (
               <details key={h.id}>
                 <summary>
-                  {h.occurred_at} · {h.actor_id} · {h.kind}
+                  {h.occurred_at} · {h.actor_id} ·{" "}
+                  {operationNames[h.kind] ?? h.kind}
                 </summary>
                 <pre>{JSON.stringify(JSON.parse(h.payload_json), null, 2)}</pre>
               </details>
@@ -381,7 +399,7 @@ export default function AssemblyManagement() {
           {d.sources.map((s) => (
             <details key={s.id}>
               <summary>
-                {s.id} · {s.status}
+                {s.id} · {sourceStatuses[s.status] ?? s.status}
               </summary>
               <pre>{JSON.stringify(JSON.parse(s.source_json), null, 2)}</pre>
               <p>{s.issues_json}</p>

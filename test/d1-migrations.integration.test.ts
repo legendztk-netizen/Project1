@@ -112,6 +112,7 @@ function runWrangler(
     {
       cwd: fixture.directory,
       encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
       env: { ...process.env, CI: "1" },
     },
   );
@@ -185,6 +186,7 @@ function runDeploymentChainAfterMigration(
     {
       cwd: fixture.directory,
       encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
       env: { ...process.env, CI: "1" },
     },
   );

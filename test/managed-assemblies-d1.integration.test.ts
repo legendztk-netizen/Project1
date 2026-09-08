@@ -95,7 +95,9 @@ it("gates published inputs until generation, preserves manual identity and exclu
   expect(
     await config.findCompatibleEndA("active-release", "601R1_001"),
   ).toHaveLength(1);
-  await assemblies.add(combination, command());
+  const manualCommand = command();
+  await assemblies.add(combination, manualCommand);
+  await assemblies.add(combination, manualCommand);
   expect(await assemblies.pending()).toEqual(["601R1"]);
   await assemblies.update(command());
   await expect(assemblies.add(combination, command())).rejects.toThrow(
@@ -285,4 +287,87 @@ it("keeps a failed series pending while committing another, and permits a price-
     await createD1ManagedAssemblies(intercepted, actor).update(command()),
   ).toEqual([expect.objectContaining({ success: true })]);
   expect(await assemblies.pending()).toEqual([]);
+});
+it("reserves applied identifiers before generation, records new dependencies, and replays source commands", async () => {
+  for (const sku of ["NEW-END-A", "NEW-END-B"]) {
+    const payload = (await items.findProductPayload(
+      "hose_end",
+      "sku",
+      "FJX-04-04",
+    ))!;
+    if (payload.kind !== "sku") throw Error("fixture");
+    payload.variant.sku = sku;
+    await items.apply({
+      payload,
+      targetState: "online",
+      mode: "create",
+      commandId: crypto.randomUUID(),
+      actorId: actor.id,
+      ipAddress: "local",
+      baselineRevisionId: null,
+      source: { channel: "manual" },
+    });
+  }
+  const base = {
+    catalogPublicationStatus: "Published",
+    compatibilityId: "RESERVED-ID",
+    hoseSku: "601R1_001",
+    hoseEndSku: "NEW-END-A",
+    ferruleSku: "601R1_1WB_TEST",
+    qualificationStatus: "Not Tested",
+    rfqEligibility: "Eligible",
+    technicalDataStatus: "Pending",
+  };
+  await importRows([
+    {
+      sheet: "04_兼容压接",
+      data: [
+        Object.keys(base),
+        Object.values(base),
+        Object.values({ ...base, hoseEndSku: "NEW-END-B" }),
+      ],
+    },
+  ]);
+  const rows = (await assemblies.sources()).filter((s) =>
+    s.source_json.includes("RESERVED-ID"),
+  );
+  const first = rows.find((s) => s.source_json.includes("NEW-END-A"))!;
+  const second = rows.find((s) => s.source_json.includes("NEW-END-B"))!;
+  const context = command();
+  await assemblies.processSource(first.id, "apply", "验证编号唯一", context);
+  await assemblies.processSource(first.id, "apply", "验证编号唯一", context);
+  await expect(
+    assemblies.processSource(first.id, "apply", "改变重放内容", context),
+  ).rejects.toThrow("提交标识");
+  const operation = await db
+    .prepare("SELECT payload_json FROM catalog_assembly_operations WHERE id=?")
+    .bind(context.id)
+    .first<{ payload_json: string }>();
+  expect(JSON.parse(operation!.payload_json).revisions).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: "NEW-END-A",
+        revision_id: expect.any(String),
+      }),
+    ]),
+  );
+  await expect(
+    assemblies.processSource(second.id, "apply", "重复编号", command()),
+  ).rejects.toThrow("关系编号");
+  expect(
+    (await assemblies.sources()).find((s) => s.id === second.id)?.status,
+  ).toBe("pending");
+  const reject = command();
+  await assemblies.processSource(second.id, "reject", "编号冲突", reject);
+  await assemblies.processSource(second.id, "reject", "编号冲突", reject);
+  await assemblies.update(command());
+  expect(
+    (
+      await db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM catalog_runtime_compatibilities WHERE compatibility_id='RESERVED-ID'",
+        )
+        .first<{ count: number }>()
+    )?.count,
+  ).toBe(1);
 });

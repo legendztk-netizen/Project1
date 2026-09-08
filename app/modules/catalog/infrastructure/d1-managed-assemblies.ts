@@ -85,6 +85,26 @@ export function createD1ManagedAssemblies(
         .all<{ hose_series: string }>()
     ).results.map((r) => r.hose_series);
   }
+  async function replay(
+    context: OperationContext,
+    kind: string,
+    request: unknown,
+  ) {
+    const old = await database
+      .prepare(
+        "SELECT kind,payload_json FROM catalog_assembly_operations WHERE id=?",
+      )
+      .bind(context.id)
+      .first<{ kind: string; payload_json: string }>();
+    if (!old) return false;
+    if (
+      old.kind !== kind ||
+      JSON.stringify(JSON.parse(old.payload_json).request) !==
+        JSON.stringify(request)
+    )
+      throw new CatalogItemRejected("提交标识已使用", 409);
+    return true;
+  }
   async function record(
     kind: string,
     series: string,
@@ -105,24 +125,35 @@ export function createD1ManagedAssemblies(
         throw new CatalogItemRejected("提交标识已使用", 409);
       return;
     }
-    await database
-      .prepare(
-        `INSERT INTO catalog_assembly_operations(id,kind,hose_series,expected_sequence,expected_relation_version,expected_generation,payload_json,actor_id,ip_address,occurred_at)
+    try {
+      await database
+        .prepare(
+          `INSERT INTO catalog_assembly_operations(id,kind,hose_series,expected_sequence,expected_relation_version,expected_generation,payload_json,actor_id,ip_address,occurred_at)
       VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      )
-      .bind(
-        context.id,
-        kind,
-        series,
-        expected.sequence,
-        expected.relationVersion,
-        generation,
-        JSON.stringify(payload),
-        actor.id,
-        context.ipAddress,
-        new Date().toISOString(),
-      )
-      .run();
+        )
+        .bind(
+          context.id,
+          kind,
+          series,
+          expected.sequence,
+          expected.relationVersion,
+          generation,
+          JSON.stringify(payload),
+          actor.id,
+          context.ipAddress,
+          new Date().toISOString(),
+        )
+        .run();
+    } catch (error) {
+      if (payload.request && (await replay(context, kind, payload.request)))
+        return;
+      const message = error instanceof Error ? error.message : "";
+      if (message.includes("catalog_assembly_relation_identifier"))
+        throw new CatalogItemRejected("关系编号已被其他三件套使用", 409);
+      if (message.includes("inputs changed"))
+        throw new CatalogItemRejected("相关总成输入已变化，请重新更新", 409);
+      throw error;
+    }
   }
   async function inputs(series: string) {
     const current = await state();
@@ -233,9 +264,10 @@ export function createD1ManagedAssemblies(
           )
             endpoints.push({ ...endpoint, hose_series: series });
         }
-    const referenced = new Set(
-      endpoints.flatMap((e) => [e.hose_sku, e.hose_end_sku, e.ferrule_sku]),
-    );
+    const referenced = new Set([
+      ...hoses.map((h) => h.sku),
+      ...matched.flatMap((e) => [e.hose_sku, e.hose_end_sku, e.ferrule_sku]),
+    ]);
     const seriesCodes = new Set([
       series,
       ...ends
@@ -398,6 +430,15 @@ export function createD1ManagedAssemblies(
         const expected = await token(series);
         const operation = { ...context, id: `${context.id}:${series}` };
         try {
+          const request = { series };
+          if (await replay(operation, "generate", request)) {
+            results.push({
+              series,
+              success: true,
+              reason: "该提交已完成；后续变更请重新发起更新",
+            });
+            continue;
+          }
           const { matched: _matched, ...basis } = await inputs(series);
           const counts = new Map<string, number>();
           for (const e of basis.endpoints)
@@ -410,7 +451,7 @@ export function createD1ManagedAssemblies(
             "generate",
             series,
             expected,
-            { ...basis, combinationCount },
+            { ...basis, combinationCount, request },
             operation,
           );
           results.push({
@@ -437,8 +478,10 @@ export function createD1ManagedAssemblies(
     },
     async add(parts: AssemblyParts, context: OperationContext) {
       authorize();
-      const current = await state();
       const identity = assemblyIdentity(parts);
+      const request = { identity };
+      if (await replay(context, "manual", request)) return;
+      const current = await state();
       if (
         (await all({ identities: [identity] })).some(
           (c) => c.identity === identity && c.source === "manual",
@@ -464,6 +507,7 @@ export function createD1ManagedAssemblies(
         hose.hose_series,
         expected,
         {
+          request,
           combination: { ...combination, source: "manual" },
           revisions: basis.revisions,
         },
@@ -480,6 +524,12 @@ export function createD1ManagedAssemblies(
       authorize();
       if (!identities.length || !reason.trim())
         throw new CatalogItemRejected("请选择组合并填写原因");
+      const request = {
+        identities: [...new Set(identities)].sort(),
+        reason: reason.trim(),
+      };
+      if (await replay(context, enabled ? "enable" : "disable", request))
+        return;
       const current = await state();
       const rows = await all({ identities });
       for (const identity of new Set(identities)) {
@@ -498,7 +548,7 @@ export function createD1ManagedAssemblies(
         enabled ? "enable" : "disable",
         "",
         await token(""),
-        { identities: [...new Set(identities)], reason },
+        { identities: request.identities, reason: request.reason, request },
         context,
         current.generation,
       );
@@ -510,6 +560,8 @@ export function createD1ManagedAssemblies(
       context: OperationContext,
     ) {
       authorize();
+      const request = { sourceId, reason: reason.trim() };
+      if (await replay(context, disposition, request)) return;
       const current = await state();
       const source = await database
         .prepare("SELECT * FROM catalog_pending_relation_sources WHERE id=?")
@@ -534,7 +586,7 @@ export function createD1ManagedAssemblies(
           disposition,
           series,
           await token(series),
-          { sourceId, reason },
+          { sourceId, reason, request },
           context,
           current.generation,
         );
@@ -599,6 +651,7 @@ export function createD1ManagedAssemblies(
         {
           sourceId,
           reason,
+          request,
           endpoint,
           endpointIdentity: triple(endpoint),
           revisions: basis.revisions,

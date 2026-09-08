@@ -10,6 +10,7 @@ import { seedManagedAssemblyBaseline } from "../fixtures/managed-assembly-baseli
 
 const directory = mkdtempSync(join(tmpdir(), "item-worker-"));
 let origin: string;
+let assemblyDraft: unknown;
 let preview: ChildProcess;
 let exited: Promise<number | null>;
 function sql<T>(query: string) {
@@ -348,4 +349,86 @@ it("approves a real Excel compatibility change, gates immediately, and restores 
       }
     ).candidates,
   ).toHaveLength(1);
+}, 60000);
+it("rejects a direct customer submit of a disabled combination and preserves a submitted RFQ after later edits", async () => {
+  const otp = await post("/register", {
+    intent: "request",
+    email: "assembly-rfq@example.com",
+    returnTo: "/quote-list",
+  });
+  const html = await otp.text();
+  const challenge =
+    html.match(/name="challengeId"[^>]*value="([^"]+)"/)?.[1] ?? "";
+  const verified = await post("/register", {
+    intent: "verify",
+    challengeId: challenge,
+    code: html.match(/<strong>(\d{6})<\/strong>/)?.[1] ?? "",
+    returnTo: "/quote-list",
+  });
+  expect(verified.status, await verified.text()).toBe(302);
+  const cookie = verified.headers.get("set-cookie")!.split(";", 1)[0];
+  const address = await post(
+    "/account?view=addresses",
+    {
+      intent: "create_address",
+      addressLine1: "200 Park Avenue",
+      city: "New York",
+      countryCode: "US",
+      label: "Main",
+      postalCode: "10166",
+      recipientEmail: "assembly-rfq@example.com",
+      recipientName: "Assembly Buyer",
+      recipientPhone: "+1 212 555 0109",
+      stateProvince: "New York",
+    },
+    cookie,
+  );
+  expect(address.status).toBe(302);
+  const added = await post(
+    "/api/configurator/quote-assembly",
+    { draft: JSON.stringify(assemblyDraft), quantity: "2" },
+    cookie,
+  );
+  expect(added.status, await added.text()).toBe(200);
+  const [line] = sql<{ id: string }>(
+    "SELECT l.id FROM anonymous_quote_lines l JOIN anonymous_quote_sessions s ON s.id=l.session_id JOIN customer_profiles p ON p.id=s.profile_id WHERE p.email_normalized='assembly-rfq@example.com'",
+  );
+  expect(line).toBeDefined();
+  const identity = JSON.stringify([
+    "601R1_001",
+    "FJX-04-04",
+    "601R1_1WB_TEST",
+    "FJX-04-04",
+    "601R1_1WB_TEST",
+  ]);
+  await post("/admin/catalog/assemblies", {
+    intent: "disable",
+    identity,
+    reason: "Submit guard check",
+    commandId: crypto.randomUUID(),
+  });
+  const values = {
+    intent: "submit_individual_quote_request",
+    idempotencyKey: crypto.randomUUID(),
+    selectedLineId: line.id,
+    accuracyConfirmed: "yes",
+    commercialReviewConfirmed: "yes",
+  };
+  const blocked = await post("/quote-list", values, cookie);
+  expect(blocked.status).toBeGreaterThanOrEqual(400);
+  expect(sql("SELECT * FROM customer_quote_requests")).toHaveLength(0);
+  await post("/admin/catalog/assemblies", {
+    intent: "enable",
+    identity,
+    reason: "Submit guard restored",
+    commandId: crypto.randomUUID(),
+  });
+  const submitted = await post("/quote-list", values, cookie);
+  expect(submitted.status, await submitted.text()).toBe(302);
+  const snapshot = sql("SELECT snapshot_json FROM customer_quote_requests");
+  expect(snapshot).toHaveLength(1);
+  await post("/admin/catalog/items", publication("35"));
+  expect(sql("SELECT snapshot_json FROM customer_quote_requests")).toEqual(
+    snapshot,
+  );
 }, 60000);
