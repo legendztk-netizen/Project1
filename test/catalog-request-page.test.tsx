@@ -66,7 +66,8 @@ function setup(canEdit = true, status = "pending") {
 it("requires explicit selection and uses separate request and target-state filters", async () => {
   setup();
   await screen.findByRole("heading", { name: "产品更新请求审核" });
-  expect(screen.getByLabelText<HTMLSelectElement>("更新请求状态").value).toBe(
+  expect(screen.getByLabelText("更新请求状态")).toHaveProperty(
+    "value",
     "pending",
   );
   expect(screen.getByLabelText("目标产品状态")).toBeTruthy();

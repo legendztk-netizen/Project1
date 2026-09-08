@@ -162,3 +162,49 @@ describe("item workbook snapshots", () => {
     expect(result.requests[0].issues.join()).toContain("不能为空");
   });
 });
+it("infers an existing SKU type for price-only sheets without a productType column", async () => {
+  const result = await plan([
+    {
+      sheet: "07_价格包装",
+      data: [
+        ["baseSku", "amount"],
+        ["A_001", 11],
+      ],
+    },
+  ]);
+  expect(result.requests).toHaveLength(1);
+  expect(result.requests[0].command.payload).toMatchObject({
+    productType: "hose",
+    price: { amount: 11, currency: "USD" },
+  });
+});
+it("applies legacy series image references and rejects conflicting image columns", async () => {
+  const result = await plan([
+    {
+      sheet: "01_胶管主数据",
+      data: [
+        ["sku", "seriesMainImageReference"],
+        ["A_001", "media-version:replacement"],
+      ],
+    },
+  ]);
+  expect(result.requests).toHaveLength(1);
+  expect(result.requests[0].command.payload).toMatchObject({
+    kind: "series",
+    mediaVersionId: "replacement",
+  });
+  const conflict = await plan([
+    {
+      sheet: "01_胶管主数据",
+      data: [
+        ["sku", "seriesMainImageReference", "seriesMediaVersionId"],
+        ["A_001", "media-version:replacement", "different"],
+      ],
+    },
+  ]);
+  expect(
+    conflict.requests
+      .find((r) => r.command.payload.kind === "series")
+      ?.issues.join(),
+  ).toContain("冲突");
+});

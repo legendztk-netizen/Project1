@@ -76,17 +76,27 @@ export function createD1ItemImportReview(
   actor?: { id: string; catalogPermission?: "view" | "edit" },
 ) {
   const items = createD1CatalogItemRepository(database);
-  function audit(id: string, actor: string, event: string, payload: unknown) {
+  function audit(
+    id: string,
+    operation: { actorId: string; ipAddress: string },
+    event: string,
+    payload: Record<string, unknown>,
+  ) {
+    const eventId = crypto.randomUUID();
     return database
       .prepare(
         "INSERT INTO admin_audit_events(id,event_type,entity_type,entity_id,actor_id,payload_json,occurred_at) VALUES(?,?,'product_change_request',?,?,?,?)",
       )
       .bind(
-        crypto.randomUUID(),
+        eventId,
         `catalog_item.${event}`,
         id,
-        actor,
-        JSON.stringify(payload),
+        operation.actorId,
+        JSON.stringify({
+          ...payload,
+          requestId: eventId,
+          ipAddress: operation.ipAddress,
+        }),
         new Date().toISOString(),
       );
   }
@@ -115,10 +125,10 @@ export function createD1ItemImportReview(
   }
   async function persistTransition(
     row: ItemReviewRequest,
-    actor: string,
+    operation: { actorId: string; ipAddress: string },
     update: D1PreparedStatement,
     event: string,
-    payload: unknown,
+    payload: Record<string, unknown>,
   ) {
     // A conditional audit insert keeps failed optimistic updates from leaving misleading success events.
     const eventId = crypto.randomUUID();
@@ -132,8 +142,12 @@ export function createD1ItemImportReview(
           eventId,
           `catalog_item.${event}`,
           row.id,
-          actor,
-          JSON.stringify(payload),
+          operation.actorId,
+          JSON.stringify({
+            ...payload,
+            requestId: eventId,
+            ipAddress: operation.ipAddress,
+          }),
           new Date().toISOString(),
         ),
     ]);
@@ -181,6 +195,21 @@ export function createD1ItemImportReview(
       const cache = new Map<string, Promise<ImportBaseline | null>>();
       const plan = await planItemImport({
         ...input,
+        async resolveMediaReference(reference) {
+          const id = reference.startsWith("media-version:")
+            ? reference.slice(14)
+            : reference;
+          return (
+            (
+              await database
+                .prepare(
+                  "SELECT id FROM catalog_media_versions WHERE id=? OR approved_reference=? ORDER BY created_at DESC LIMIT 1",
+                )
+                .bind(id, reference)
+                .first<{ id: string }>()
+            )?.id ?? null
+          );
+        },
         baseline(type, kind, code) {
           const key = `${type}:${kind}:${code}`;
           if (!cache.has(key))
@@ -262,7 +291,7 @@ export function createD1ItemImportReview(
             ),
         );
         statements.push(
-          audit(p.id, input.actorId, "request_created", {
+          audit(p.id, input, "request_created", {
             source: p.command.source,
             dependencies: p.dependencies,
             issues: p.issues,
@@ -285,7 +314,7 @@ export function createD1ItemImportReview(
             ),
         );
       statements.push(
-        audit(input.batchId, input.actorId, "workbook_imported", {
+        audit(input.batchId, input, "workbook_imported", {
           requests: plan.requests.length,
           relations: plan.relations.length,
           issues: plan.issues,
@@ -363,7 +392,7 @@ export function createD1ItemImportReview(
       // A new parent can be approved separately; keep the dependency reason visible until it is available.
       await persistTransition(
         row,
-        input.actorId,
+        input,
         database
           .prepare(
             "UPDATE catalog_product_change_requests SET payload_json=?,target_state=?,issues_json=?,version=version+1 WHERE id=? AND version=? AND status='pending'",
@@ -447,7 +476,7 @@ export function createD1ItemImportReview(
             const status = input.intent === "reject" ? "rejected" : "deleted";
             await persistTransition(
               row,
-              input.actorId,
+              input,
               database
                 .prepare(
                   "UPDATE catalog_product_change_requests SET status=?,version=version+1 WHERE id=? AND status='pending' AND version=?",
@@ -491,7 +520,7 @@ export function createD1ItemImportReview(
                   throw new CatalogItemRejected("系列依赖未批准或未上线");
                 await persistTransition(
                   row,
-                  input.actorId,
+                  input,
                   database
                     .prepare(
                       "UPDATE catalog_product_change_requests SET dependencies_json='[]',version=version+1 WHERE id=? AND status='pending' AND version=?",

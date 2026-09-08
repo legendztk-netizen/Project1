@@ -133,6 +133,7 @@ export async function planItemImport(input: {
   batchId: string;
   actorId: string;
   ipAddress: string;
+  resolveMediaReference?(reference: string): Promise<string | null>;
   baseline(
     type: CommercialProductType,
     kind: "series" | "sku",
@@ -292,6 +293,28 @@ export async function planItemImport(input: {
     p.sources.push(source);
     p.issues.push(...errors);
   }
+  async function legacySeriesImage(
+    parent: ImportProposal | null,
+    values: Record<string, CatalogWorkbookCell>,
+  ) {
+    if (!parent || !("seriesMainImageReference" in values)) return;
+    const reference = values.seriesMainImageReference;
+    const id =
+      reference === null
+        ? null
+        : input.resolveMediaReference
+          ? await input.resolveMediaReference(String(reference))
+          : String(reference).startsWith("media-version:")
+            ? String(reference).slice(14)
+            : null;
+    if (reference !== null && !id) {
+      parent.issues.push("系列图片引用不存在，请选择已保存的图片版本");
+      return;
+    }
+    if ("seriesMediaVersionId" in values && values.seriesMediaVersionId !== id)
+      parent.issues.push("系列图片引用与版本列冲突");
+    patch(parent, "mediaVersionId", id);
+  }
   // Master data first, irrespective of workbook tab order, so offers can find newly imported parents.
   for (const { source, prefix, errors } of records.filter(
     (r) => r.prefix !== "07",
@@ -346,17 +369,25 @@ export async function planItemImport(input: {
       else patch(child, "targetState", target);
     }
     if ("mediaVersionId" in v) patch(child, "mediaVersionId", v.mediaVersionId);
+    await legacySeriesImage(parent, v);
     if (parent && "seriesMediaVersionId" in v)
       patch(parent, "mediaVersionId", v.seriesMediaVersionId);
   }
   for (const { source, errors } of records.filter((r) => r.prefix === "07")) {
     const v = source.values;
     const sku = String(v.baseSku ?? "");
-    const type =
+    let type =
       offerTypes[String(v.productType)] ??
       Object.values(worksheetTypes).find((t) =>
         proposals.has(identity(t, "sku", sku)),
       );
+    if (!type && !("productType" in v) && sku) {
+      for (const candidate of Object.values(worksheetTypes))
+        if (await input.baseline(candidate, "sku", sku)) {
+          type = candidate;
+          break;
+        }
+    }
     if (!type || !sku) {
       issues.push(
         `${source.sheet}:${source.row} 缺少或无法识别 Product Type / Base SKU`,
@@ -424,6 +455,7 @@ export async function planItemImport(input: {
       else child.issues.push("产品状态无效");
     }
     if ("mediaVersionId" in v) patch(child, "mediaVersionId", v.mediaVersionId);
+    await legacySeriesImage(parent, v);
     if (parent && "seriesMediaVersionId" in v)
       patch(parent, "mediaVersionId", v.seriesMediaVersionId);
   }

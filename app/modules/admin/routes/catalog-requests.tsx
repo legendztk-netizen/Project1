@@ -443,7 +443,7 @@ export default function CatalogRequests() {
                 >
                   {Object.entries(targetLabels).map(([v, l]) => (
                     <option key={v} value={v}>
-                      {l}
+                      {v} / {l}
                     </option>
                   ))}
                 </select>
@@ -454,7 +454,9 @@ export default function CatalogRequests() {
                   name="mediaVersionId"
                   defaultValue={detail.command.payload.mediaVersionId ?? ""}
                 >
-                  <option value="">继承系列图片 / 未指定系列图片</option>
+                  <option value="">
+                    Inherit Series Image / 继承系列图片（系列留空表示未指定）
+                  </option>
                   {page.media.map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.label}
@@ -529,7 +531,15 @@ export default function CatalogRequests() {
       {page.relations.map((r) => (
         <details key={r.id}>
           <summary>
-            {r.batch_id} · {r.status}
+            {r.batch_id} ·{" "}
+            {(
+              {
+                pending: "待处理",
+                applied: "已应用",
+                rejected: "已拒绝",
+                deleted: "已删除",
+              } as Record<string, string>
+            )[r.status] ?? r.status}
           </summary>
           <pre>{r.source_json}</pre>
           <p>{r.issues_json}</p>

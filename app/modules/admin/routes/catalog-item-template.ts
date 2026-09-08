@@ -6,15 +6,21 @@ export function loader({ context }: Route.LoaderArgs) {
   requireAdminRequestContext(context);
   const workbook = XLSX.utils.book_new();
   for (const contract of catalogWorksheetContracts) {
-    const headers = contract.fields.map((f) =>
-      f.key === "referencePriceUsd" ? "Retail Unit Price / 零售单价" : f.header,
-    );
-    if (!contract.name.startsWith("04"))
+    const headers = contract.fields
+      .filter((f) => f.key !== "seriesMainImageReference")
+      .map((f) =>
+        f.key === "referencePriceUsd"
+          ? "Retail Unit Price / 零售单价"
+          : f.header,
+      );
+    if (!contract.name.startsWith("04")) {
+      if (!contract.fields.some((f) => f.key === "seriesName"))
+        headers.push("Series Name / 系列名称");
       headers.push(
-        "Series Name / 系列名称",
         "Series Image Version / 系列图片版本",
         "SKU Image Version / SKU图片版本",
       );
+    }
     XLSX.utils.book_append_sheet(
       workbook,
       XLSX.utils.aoa_to_sheet([headers]),

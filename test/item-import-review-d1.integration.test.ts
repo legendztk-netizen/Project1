@@ -398,3 +398,35 @@ it("rejects a correction arriving after approval reads the request but before it
     price: { amount: 43 },
   });
 });
+it("records the current correction and rejection IP rather than the importer IP", async () => {
+  const row = (await importRows([priceSheet(90)]))[0];
+  await review.correct({
+    id: row.id,
+    version: row.version,
+    payload: row.command.payload,
+    targetState: "online",
+    actorId: "owner-1",
+    ipAddress: "203.0.113.84",
+    reason: "检查审计来源",
+  });
+  await review.review({
+    selected: [await review.get(row.id)],
+    intent: "reject",
+    actorId: "owner-1",
+    ipAddress: "203.0.113.85",
+  });
+  const events = (
+    await db
+      .prepare(
+        "SELECT event_type,payload_json FROM admin_audit_events WHERE entity_id=? AND event_type IN ('catalog_item.request_corrected','catalog_item.request_rejected') ORDER BY occurred_at",
+      )
+      .bind(row.id)
+      .all<{ event_type: string; payload_json: string }>()
+  ).results;
+  expect(events.map((e) => JSON.parse(e.payload_json).ipAddress)).toEqual([
+    "203.0.113.84",
+    "203.0.113.85",
+  ]);
+  for (const event of events)
+    expect(JSON.parse(event.payload_json).requestId).toBeTruthy();
+});
