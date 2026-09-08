@@ -71,6 +71,7 @@ export default [
     "admin/settings/commercial",
     "modules/admin/routes/commercial-settings.tsx",
   ),
+  route("admin/catalog/items", "modules/admin/routes/catalog-items.tsx"),
   route("admin/catalog/import", "modules/admin/routes/catalog-import.tsx"),
   route(
     "admin/catalog/commercial",

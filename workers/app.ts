@@ -39,6 +39,22 @@ export default {
       }
     }
 
+    if (
+      adminIdentity &&
+      !["GET", "HEAD", "OPTIONS"].includes(request.method) &&
+      (url.pathname.startsWith("/admin/catalog/") ||
+        url.pathname === "/admin/diagnostics/catalog-release") &&
+      url.pathname !== "/admin/catalog/items"
+    ) {
+      const state = await env.DB.prepare(
+        "SELECT mode FROM catalog_item_publication_state WHERE singleton = 1",
+      ).first<{ mode: string }>();
+      if (state?.mode === "items")
+        return new Response("条目发布已启用，请使用条目维护入口", {
+          status: 409,
+        });
+    }
+
     const routerContext = new RouterContextProvider();
     routerContext.set(cloudflareContext, { adminIdentity, env, runtime, ctx });
 

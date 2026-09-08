@@ -178,6 +178,7 @@ export function createQuoteRequestService(
     }
     const ready = selectedLines.every(
       (line) =>
+        line.currency === "USD" &&
         line.refresh?.status === "ready" &&
         line.refresh.current.discountedMerchandiseAmount !== null,
     );
@@ -200,7 +201,12 @@ export function createQuoteRequestService(
     const snapshotLines = await Promise.all(
       selectedLines.map(async (line) => {
         const product = await catalog.findItem(line.sku);
-        if (!product || product.releaseId !== expectedCatalogReleaseId) {
+        if (
+          !product ||
+          product.releaseId !== expectedCatalogReleaseId ||
+          product.catalogBasis?.generation !==
+            line.refresh?.currentCatalogRelease?.generation
+        ) {
           throw new QuoteRequestRejected(
             "The catalog changed while this request was being prepared. Review the Quote List and try again.",
             "LIST_CHANGED",
@@ -212,6 +218,17 @@ export function createQuoteRequestService(
         };
       }),
     );
+    const catalogGenerations = new Set(
+      snapshotLines.map(
+        (line) => line.productSnapshot.catalogBasis?.generation ?? -1,
+      ),
+    );
+    if (catalogGenerations.size !== 1)
+      throw new QuoteRequestRejected(
+        "The catalog changed; review and retry.",
+        "LIST_CHANGED",
+      );
+    const expectedCatalogGeneration = [...catalogGenerations][0]!;
     const expectedLengthBasedHoseFees = selectedLines
       .filter((line) => line.lineKind === "length_based_hose")
       .map((line) => ({
@@ -325,6 +342,7 @@ export function createQuoteRequestService(
     }
     const result = await repository.createAndClearSelectedQuoteLines({
       expectedCatalogReleaseId,
+      expectedCatalogGeneration,
       expectedLengthBasedHoseFees,
       expectedLineCount: selectedLines.length,
       expectedLineState: quoteListSourceState(selectedLines),

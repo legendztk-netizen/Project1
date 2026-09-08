@@ -15,9 +15,11 @@ import { BrandMark } from "../../shared/ui/brand-mark";
 export type AdminNavigationKey =
   "catalog" | "configurator" | "imports" | "overview" | "quotes" | "system";
 
-export type CatalogMaintenanceMode = "commercial" | "excel" | "manual";
+export type CatalogMaintenanceMode =
+  "commercial" | "excel" | "manual" | "items";
 
 const catalogMaintenanceNavigation = [
+  { key: "items", label: "胶管条目发布（试运行）", to: "/admin/catalog/items" },
   {
     key: "excel",
     label: "批量导入产品",

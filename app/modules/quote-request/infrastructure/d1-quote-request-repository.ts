@@ -154,10 +154,10 @@ function deleteGuardForInvalidConfiguredEnd(end: "A" | "B") {
               AND line.line_kind = 'configured_assembly'
               AND NOT EXISTS (
                 SELECT 1 FROM catalog_compatibilities compatibility
-                INNER JOIN catalog_skus hose_end
+                INNER JOIN catalog_runtime_skus hose_end
                   ON hose_end.import_id = compatibility.import_id
                  AND hose_end.sku = compatibility.hose_end_sku
-                INNER JOIN catalog_skus ferrule
+                INNER JOIN catalog_runtime_skus ferrule
                   ON ferrule.import_id = compatibility.import_id
                  AND ferrule.sku = compatibility.ferrule_sku
                 WHERE compatibility.import_id = release.source_import_id
@@ -228,7 +228,7 @@ export const staleLengthBasedHoseFeeGuardSql = `
         FROM anonymous_quote_lines line
         INNER JOIN catalog_active_release active ON active.singleton = 1
         INNER JOIN catalog_releases release ON release.id = active.release_id
-        INNER JOIN catalog_skus sku
+        INNER JOIN catalog_runtime_skus sku
           ON sku.import_id = release.source_import_id
          AND sku.sku = line.sku
         LEFT JOIN cutting_labeling_fee_rates global_fee
@@ -294,6 +294,7 @@ export function createD1QuoteRequestRepository(database: D1Database) {
 
     async createAndClearSelectedQuoteLines(input: {
       expectedCatalogReleaseId: string;
+      expectedCatalogGeneration?: number;
       expectedLengthBasedHoseFees: {
         lineId: string;
         ratePerPiece: number | null;
@@ -329,6 +330,12 @@ export function createD1QuoteRequestRepository(database: D1Database) {
              WHERE s.id = ? AND s.profile_id = ? AND s.retired_at IS NULL
                AND (SELECT release_id FROM catalog_active_release
                     WHERE singleton = 1) = ?
+               AND (SELECT CASE WHEN mode = 'items' THEN generation ELSE -1 END
+                    FROM catalog_item_publication_state WHERE singleton = 1) = ?
+               AND NOT EXISTS (SELECT 1 FROM anonymous_quote_lines l
+                 JOIN catalog_item_unavailable_hoses blocked ON blocked.sku = l.sku
+                 WHERE l.session_id = s.id AND l.line_kind = 'configured_assembly'
+                   AND l.id IN (SELECT value FROM json_each(?)))
                AND EXISTS (
                  SELECT 1 FROM customer_profiles profile
                  WHERE profile.id = ? AND profile.email_display = ?
@@ -359,6 +366,8 @@ export function createD1QuoteRequestRepository(database: D1Database) {
             input.sessionId,
             input.profileId,
             input.expectedCatalogReleaseId,
+            input.expectedCatalogGeneration ?? -1,
+            selectedLineIdsJson,
             input.profileId,
             input.snapshot.actor.email,
             input.snapshot.actor.verifiedAt,
@@ -384,13 +393,13 @@ export function createD1QuoteRequestRepository(database: D1Database) {
                    FROM catalog_active_release active
                    INNER JOIN catalog_releases release
                      ON release.id = active.release_id
-                   INNER JOIN catalog_skus sku
+                   INNER JOIN catalog_runtime_skus sku
                      ON sku.import_id = release.source_import_id
                     AND sku.sku = line.sku
-                   INNER JOIN catalog_sales_offers offer
+                   INNER JOIN catalog_runtime_sales_offers offer
                      ON offer.import_id = sku.import_id
                     AND offer.base_sku = sku.sku
-                   LEFT JOIN catalog_hose_variants commercial_hose
+                   LEFT JOIN catalog_runtime_hose_variants commercial_hose
                      ON commercial_hose.import_id = sku.import_id
                     AND commercial_hose.sku = sku.sku
                    LEFT JOIN catalog_hose_ends commercial_hose_end
@@ -405,7 +414,7 @@ export function createD1QuoteRequestRepository(database: D1Database) {
                    LEFT JOIN catalog_quick_couplers commercial_coupler
                      ON commercial_coupler.import_id = sku.import_id
                     AND commercial_coupler.sku = sku.sku
-                   LEFT JOIN catalog_series_commercial_rules commercial_rule
+                   LEFT JOIN catalog_runtime_series_commercial_rules commercial_rule
                      ON commercial_rule.import_id = sku.import_id
                     AND commercial_rule.product_type = sku.product_type
                     AND commercial_rule.series_code = CASE sku.product_type

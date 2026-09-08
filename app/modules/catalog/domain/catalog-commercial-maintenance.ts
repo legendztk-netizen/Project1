@@ -165,7 +165,9 @@ function operationIdentity(
   };
 }
 
-function normalizeRule(rule: SeriesCommercialRule): SeriesCommercialRule {
+export function normalizeSeriesCommercialRule(
+  rule: SeriesCommercialRule,
+): SeriesCommercialRule {
   return {
     continuousLengthConfirmation: normalizedText(
       rule.continuousLengthConfirmation,
@@ -272,7 +274,7 @@ export async function maintainSeriesCommercialRule(
 ) {
   const generateId = input.generateId ?? (() => crypto.randomUUID());
   const now = input.now ?? (() => new Date());
-  const normalizedRule = normalizeRule(input.rule);
+  const normalizedRule = normalizeSeriesCommercialRule(input.rule);
   const series = await repository.findSeries(
     normalizedRule.productType,
     normalizedRule.seriesCode,

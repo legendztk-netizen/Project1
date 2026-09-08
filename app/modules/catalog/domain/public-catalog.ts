@@ -2,6 +2,7 @@ import type { CatalogFamilyId } from "./catalog-family";
 import type { SupplyAvailability } from "./catalog-draft-availability";
 import type { RfqEligibility } from "./catalog-workbook";
 import type { DashSize } from "./dash-size";
+import type { CatalogRevisionBasis } from "./catalog-item-publication";
 
 export type PublicProductType =
   "hose" | "hose_end" | "ferrule" | "adapter" | "quick_coupler";
@@ -50,6 +51,7 @@ export type PublicVariantSelection =
     };
 
 export interface PublicCatalogItem {
+  catalogBasis?: CatalogRevisionBasis;
   aliases: string[];
   canAddToQuote: boolean;
   category: CatalogFamilyId;

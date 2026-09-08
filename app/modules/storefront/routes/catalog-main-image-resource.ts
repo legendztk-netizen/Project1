@@ -58,6 +58,9 @@ export async function loader({ context, params, request }: Route.LoaderArgs) {
            ON release.source_import_id = series.import_id
          WHERE series.representative_media_version_id = media.id
            AND release.status IN ('published', 'superseded')
+         UNION ALL
+         SELECT 1 FROM catalog_product_revisions revision
+         WHERE revision.media_version_id = media.id AND revision.target_state = 'online'
        )`,
   )
     .bind(params.mediaVersionId)

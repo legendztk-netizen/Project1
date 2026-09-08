@@ -132,10 +132,10 @@ const activeQuotedProductGuard = `
   SELECT 1
   FROM catalog_active_release ar
   INNER JOIN catalog_releases r ON r.id = ar.release_id
-  INNER JOIN catalog_skus s ON s.import_id = r.source_import_id
-  LEFT JOIN catalog_sales_offers o
+  INNER JOIN catalog_runtime_skus s ON s.import_id = r.source_import_id
+  LEFT JOIN catalog_runtime_sales_offers o
     ON o.import_id = s.import_id AND o.base_sku = s.sku
-  LEFT JOIN catalog_hose_variants commercial_hose
+  LEFT JOIN catalog_runtime_hose_variants commercial_hose
     ON commercial_hose.import_id = s.import_id AND commercial_hose.sku = s.sku
   LEFT JOIN catalog_hose_ends commercial_hose_end
     ON commercial_hose_end.import_id = s.import_id AND commercial_hose_end.sku = s.sku
@@ -145,7 +145,7 @@ const activeQuotedProductGuard = `
     ON commercial_adapter.import_id = s.import_id AND commercial_adapter.sku = s.sku
   LEFT JOIN catalog_quick_couplers commercial_coupler
     ON commercial_coupler.import_id = s.import_id AND commercial_coupler.sku = s.sku
-  LEFT JOIN catalog_series_commercial_rules commercial_rule
+  LEFT JOIN catalog_runtime_series_commercial_rules commercial_rule
     ON commercial_rule.import_id = s.import_id
    AND commercial_rule.product_type = s.product_type
    AND commercial_rule.series_code = CASE s.product_type
@@ -159,6 +159,7 @@ const activeQuotedProductGuard = `
     AND ar.release_id = ?
     AND r.status = 'published'
     AND s.sku = ?
+    AND (SELECT CASE WHEN mode = 'items' THEN generation ELSE -1 END FROM catalog_item_publication_state WHERE singleton = 1) = ?
     AND s.catalog_publication_status = 'Published'
     AND s.rfq_eligibility = 'Eligible'
     AND s.supply_availability = 'available_for_quote'
@@ -178,12 +179,13 @@ const activeLengthBasedHoseGuard = `
 const activeConfiguredAssemblyGuard = `
   ${activeQuotedProductGuard}
     AND s.product_type = 'hose'
+    AND NOT EXISTS (SELECT 1 FROM catalog_item_unavailable_hoses blocked WHERE blocked.sku = s.sku)
     AND EXISTS (
       SELECT 1
       FROM catalog_compatibilities c
-      INNER JOIN catalog_skus es
+      INNER JOIN catalog_runtime_skus es
         ON es.import_id = c.import_id AND es.sku = c.hose_end_sku
-      INNER JOIN catalog_skus fs
+      INNER JOIN catalog_runtime_skus fs
         ON fs.import_id = c.import_id AND fs.sku = c.ferrule_sku
       WHERE c.import_id = r.source_import_id
         AND c.compatibility_id = ? AND c.hose_sku = s.sku
@@ -200,9 +202,9 @@ const activeConfiguredAssemblyGuard = `
     AND EXISTS (
       SELECT 1
       FROM catalog_compatibilities c
-      INNER JOIN catalog_skus es
+      INNER JOIN catalog_runtime_skus es
         ON es.import_id = c.import_id AND es.sku = c.hose_end_sku
-      INNER JOIN catalog_skus fs
+      INNER JOIN catalog_runtime_skus fs
         ON fs.import_id = c.import_id AND fs.sku = c.ferrule_sku
       WHERE c.import_id = r.source_import_id
         AND c.compatibility_id = ? AND c.hose_sku = s.sku
@@ -262,6 +264,7 @@ export function createD1AnonymousQuoteListRepository(database: D1Database) {
     return [
       input.product.releaseId,
       input.product.sku,
+      input.product.catalogBasis?.generation ?? -1,
       endA.compatibilityId,
       endA.hoseEnd.sku,
       endA.ferrule.sku,
@@ -618,6 +621,7 @@ export function createD1AnonymousQuoteListRepository(database: D1Database) {
             input.now,
             input.product.releaseId,
             input.product.sku,
+            input.product.catalogBasis?.generation ?? -1,
             input.sessionId,
             input.now,
           ),
@@ -726,6 +730,7 @@ export function createD1AnonymousQuoteListRepository(database: D1Database) {
             input.now,
             input.product.releaseId,
             input.product.sku,
+            input.product.catalogBasis?.generation ?? -1,
             input.sessionId,
             input.now,
           ),
@@ -977,6 +982,7 @@ export function createD1AnonymousQuoteListRepository(database: D1Database) {
             input.product.sku,
             input.product.releaseId,
             input.product.sku,
+            input.product.catalogBasis?.generation ?? -1,
             input.sessionId,
             input.now,
           ),
@@ -1044,6 +1050,7 @@ export function createD1AnonymousQuoteListRepository(database: D1Database) {
             input.order.normalizedLengthFt,
             input.product.releaseId,
             input.product.sku,
+            input.product.catalogBasis?.generation ?? -1,
             input.sessionId,
             input.now,
           ),

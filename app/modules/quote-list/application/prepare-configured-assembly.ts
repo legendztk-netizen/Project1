@@ -436,6 +436,31 @@ export async function prepareConfiguredAssembly(input: {
       catalog.findItem(endA.ferrule.sku),
       catalog.findItem(endB.ferrule.sku),
     ]);
+  const basisProducts = [
+    hoseProduct,
+    endAProduct,
+    endBProduct,
+    ferruleAProduct,
+    ferruleBProduct,
+  ];
+  if (hoseProduct?.catalogBasis) {
+    const generation = hoseProduct.catalogBasis.generation;
+    const state = await input.database
+      .prepare(
+        "SELECT generation FROM catalog_item_publication_state WHERE singleton = 1",
+      )
+      .first<{ generation: number }>();
+    if (
+      state?.generation !== generation ||
+      basisProducts.some(
+        (product) => product?.catalogBasis?.generation !== generation,
+      )
+    ) {
+      reject(
+        "The catalog changed during preparation. Review the configuration and retry.",
+      );
+    }
+  }
   const estimateInput = {
     assemblyServiceUsd: lengthPricing.assemblyServiceUsd,
     ferruleAPriceUsd: currentUnitPrice(ferruleAProduct, "each"),
@@ -457,6 +482,16 @@ export async function prepareConfiguredAssembly(input: {
     scheduleRecordVersion: schedule.recordVersion,
   };
   const snapshot: ConfiguredAssemblySnapshot = {
+    ...(hoseProduct?.catalogBasis
+      ? {
+          productBasis: basisProducts.map((product) => ({
+            sku: product!.sku,
+            catalogBasis: product!.catalogBasis,
+            offer: structuredClone(product!.offer),
+            mainImageUrl: product!.mainImageUrl,
+          })),
+        }
+      : {}),
     configuration: rebuilt,
     review: { issues: validation.issues, outcome: review.outcome },
     sourceCatalogRelease: { ...rebuilt.catalogRelease },

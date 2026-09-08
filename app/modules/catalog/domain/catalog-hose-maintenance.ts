@@ -203,7 +203,7 @@ function operationIdentity(
 }
 
 export async function validateHoseSeriesMaintenance(
-  repository: CatalogHoseMaintenanceRepository,
+  repository: Pick<CatalogHoseMaintenanceRepository, "findHoseSeries">,
   input: MaintainHoseSeriesInput,
 ) {
   const series: HoseSeriesRecord = {
@@ -308,7 +308,10 @@ export async function maintainHoseSeries(
 }
 
 export async function validateHoseVariantMaintenance(
-  repository: CatalogHoseMaintenanceRepository,
+  repository: Pick<
+    CatalogHoseMaintenanceRepository,
+    "findHoseSeries" | "findProductIdentity"
+  >,
   input: MaintainHoseVariantInput,
 ) {
   const variant: HoseVariantInput = {

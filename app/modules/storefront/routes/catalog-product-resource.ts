@@ -10,5 +10,8 @@ export async function loader({ context, params }: Route.LoaderArgs) {
   if (!product) {
     return Response.json({ error: "Product not found" }, { status: 404 });
   }
-  return Response.json({ product });
+  return Response.json(
+    { product },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }

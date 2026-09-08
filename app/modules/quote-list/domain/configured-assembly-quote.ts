@@ -1,8 +1,12 @@
 import type { DraftValidationIssue } from "../../configurator/domain/assembly-draft-validation";
 import type { AssemblyReviewOutcome } from "../../configurator/domain/assembly-review";
 import type { HoseConfigurationDraft } from "../../configurator/domain/hose-configuration-draft";
+import type { PublicCatalogItem } from "../../catalog/domain/public-catalog";
 
 export interface ConfiguredAssemblySnapshot {
+  productBasis?: Array<
+    Pick<PublicCatalogItem, "sku" | "catalogBasis" | "offer" | "mainImageUrl">
+  >;
   configuration: HoseConfigurationDraft;
   review: {
     issues: DraftValidationIssue[];

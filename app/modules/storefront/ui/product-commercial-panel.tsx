@@ -43,10 +43,11 @@ function LengthBasedHoseOrderForm({
   );
   const ordering = selected.offer?.lengthOrdering;
 
-  if (!selected.offer || !ordering) {
+  if (!selected.offer || !ordering || selected.offer.currency !== "USD") {
     return (
       <p className="availability-note">
-        Length ordering details are not available for this hose.
+        Automatic length pricing is unavailable. Contact us for a quotation in
+        the listed currency.
       </p>
     );
   }
@@ -213,7 +214,7 @@ export function ProductCommercialPanel({
               ? "Complete size selection"
               : offer?.referencePrice == null
                 ? "Price on quote"
-                : `USD ${offer.referencePrice.toFixed(2)} / ${offer.salesUnit.toLocaleLowerCase()}`}
+                : `${offer.currency} ${offer.referencePrice.toFixed(2)} / ${offer.salesUnit.toLocaleLowerCase()}`}
           </strong>
           <small>
             Non-binding reference; final pricing is confirmed in your quote.

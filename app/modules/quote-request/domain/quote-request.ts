@@ -31,6 +31,9 @@ interface QuoteRequestAmounts {
 }
 
 export interface QuoteRequestProductSnapshot {
+  catalogBasis?: PublicCatalogItem["catalogBasis"];
+  mainImageUrl?: string | null;
+  offer?: PublicCatalogItem["offer"];
   category: PublicCatalogItem["category"];
   familyName: string;
   mediaKey: string | null;
@@ -49,6 +52,13 @@ export function captureQuoteRequestProductSnapshot(
   product: PublicCatalogItem,
 ): QuoteRequestProductSnapshot {
   return {
+    ...(product.catalogBasis
+      ? {
+          catalogBasis: structuredClone(product.catalogBasis),
+          mainImageUrl: product.mainImageUrl ?? null,
+          offer: structuredClone(product.offer),
+        }
+      : {}),
     category: product.category,
     familyName: product.familyName,
     mediaKey: product.mediaKey,

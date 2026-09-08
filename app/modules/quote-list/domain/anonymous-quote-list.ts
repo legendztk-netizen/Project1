@@ -48,10 +48,12 @@ export interface QuoteLineEstimateSnapshot {
 }
 
 export interface QuoteLineRefresh {
+  currentConfiguration?: ConfiguredAssemblySnapshot;
   blockingReasons: QuoteLineRefreshReason[];
   changed: boolean;
   current: QuoteLineEstimateSnapshot;
   currentCatalogRelease: {
+    generation?: number;
     id: string;
     number: string;
   } | null;

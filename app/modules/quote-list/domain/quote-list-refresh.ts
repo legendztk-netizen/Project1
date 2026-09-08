@@ -57,9 +57,14 @@ function estimate(input: {
 }
 
 function buildQuoteLineRefresh(input: {
+  currentConfiguration?: ConfiguredAssemblySnapshot;
   blockingReasons: QuoteLineRefreshReason[];
   current: QuoteLineEstimateSnapshot;
-  currentCatalogRelease: { id: string; number: string } | null;
+  currentCatalogRelease: {
+    id: string;
+    number: string;
+    generation?: number;
+  } | null;
   former: QuoteLineEstimateSnapshot;
   refreshedAt: string;
 }) {
@@ -119,6 +124,7 @@ function currentTermsReason(input: {
       (input.product?.productType === "hose" && offer.lengthOrdering !== null));
   if (
     matchesOrderingMode &&
+    offer.currency === "USD" &&
     offer.currency === input.line.currency &&
     offer.salesUnit === input.line.salesUnit
   ) {
@@ -292,7 +298,13 @@ export function refreshStandardQuoteLine(input: {
     blockingReasons,
     current,
     currentCatalogRelease: input.product
-      ? { id: input.product.releaseId, number: input.product.releaseNumber }
+      ? {
+          id: input.product.releaseId,
+          number: input.product.releaseNumber,
+          ...(input.product.catalogBasis
+            ? { generation: input.product.catalogBasis.generation }
+            : {}),
+        }
       : null,
     former,
     refreshedAt: input.refreshedAt,
@@ -366,7 +378,13 @@ export function refreshLengthBasedHoseQuoteLine(input: {
     blockingReasons,
     current,
     currentCatalogRelease: input.product
-      ? { id: input.product.releaseId, number: input.product.releaseNumber }
+      ? {
+          id: input.product.releaseId,
+          number: input.product.releaseNumber,
+          ...(input.product.catalogBasis
+            ? { generation: input.product.catalogBasis.generation }
+            : {}),
+        }
       : null,
     former,
     refreshedAt: input.refreshedAt,
@@ -433,10 +451,20 @@ export function refreshConfiguredAssemblyQuoteLine(input: {
     });
   }
   return buildQuoteLineRefresh({
+    ...(input.current?.snapshot.productBasis
+      ? { currentConfiguration: structuredClone(input.current.snapshot) }
+      : {}),
     blockingReasons,
     current,
     currentCatalogRelease: input.current
       ? {
+          ...(input.current.snapshot.productBasis?.[0]?.catalogBasis
+            ? {
+                generation:
+                  input.current.snapshot.productBasis[0].catalogBasis
+                    .generation,
+              }
+            : {}),
           id: input.current.basis.catalogReleaseId,
           number: input.current.snapshot.sourceCatalogRelease.number,
         }
