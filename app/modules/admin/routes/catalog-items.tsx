@@ -183,7 +183,9 @@ export default function CatalogItems({
           </Form>
           <p>
             可用系列：{loaderData.series.map((s) => s.code).join("、")}
-            。系列销售规则的完整维护入口由 Ticket 02 的系列编辑弹窗交付。
+            。Shared sales rules: Product Data Maintenance → Sales, Packaging
+            and Pricing (Ticket 02). / 系列销售规则在“产品数据维护 →
+            销售、包装和价格”维护，条目直接发布接入由 Ticket 02 交付。
           </p>
           <Form
             method="post"
