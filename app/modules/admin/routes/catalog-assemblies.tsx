@@ -1,4 +1,5 @@
 import "../ui/assembly-management.css";
+import { useState } from "react";
 import {
   Link,
   Form,
@@ -145,6 +146,13 @@ const sourceNames: Record<string, string> = {
 export default function AssemblyManagement() {
   const d = useLoaderData<typeof loader>();
   const result = useActionData<typeof action>();
+  const [selection, setSelection] = useState<{
+    commandId: string;
+    ids: string[];
+  }>({ commandId: d.commandId, ids: [] });
+  const selected = selection.commandId === d.commandId ? selection.ids : [];
+  const select = (ids: string[]) =>
+    setSelection({ commandId: d.commandId, ids });
   return (
     <div className="admin-shell" data-surface="admin">
       <AdminNavigation active="imports" maintenanceMode="assemblies" />
@@ -272,11 +280,37 @@ export default function AssemblyManagement() {
         </details>
         <Form method="post">
           <input type="hidden" name="commandId" value={d.commandId} />
+          <p>每页显示 50 条组合；全选仅选择本页。已选 {selected.length} 条。</p>
           <table>
             <thead>
               <tr>
+                <th>
+                  <label>
+                    <input
+                      type="checkbox"
+                      aria-label="全选本页组合"
+                      disabled={!d.rows.length}
+                      checked={
+                        d.rows.length > 0 && selected.length === d.rows.length
+                      }
+                      ref={(element) => {
+                        if (element)
+                          element.indeterminate =
+                            selected.length > 0 &&
+                            selected.length < d.rows.length;
+                      }}
+                      onChange={(event) =>
+                        select(
+                          event.target.checked
+                            ? d.rows.map((row) => row.identity)
+                            : [],
+                        )
+                      }
+                    />
+                    全选
+                  </label>
+                </th>
                 {[
-                  "选择",
                   "胶管",
                   "End A 接头 / 套筒",
                   "End B 接头 / 套筒",
@@ -296,6 +330,14 @@ export default function AssemblyManagement() {
                       type="checkbox"
                       name="identity"
                       value={c.identity}
+                      checked={selected.includes(c.identity)}
+                      onChange={(event) =>
+                        select(
+                          event.target.checked
+                            ? [...selected, c.identity]
+                            : selected.filter((id) => id !== c.identity),
+                        )
+                      }
                       aria-label={`选择 ${c.identity}`}
                     />
                   </td>
