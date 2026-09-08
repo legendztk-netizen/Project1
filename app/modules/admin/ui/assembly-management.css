@@ -49,3 +49,19 @@
 .assembly-management summary {
   cursor: pointer;
 }
+.assembly-management button {
+  padding: 10px 16px;
+  border: 1px solid #23686b;
+  border-radius: 6px;
+  background: #1b6063;
+  color: white;
+  font: inherit;
+  cursor: pointer;
+}
+.assembly-management button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.assembly-management th {
+  background: #e1e8ea;
+}

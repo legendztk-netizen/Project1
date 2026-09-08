@@ -153,7 +153,7 @@ function deleteGuardForInvalidConfiguredEnd(end: "A" | "B") {
               AND line.id IN (SELECT value FROM json_each(?))
               AND line.line_kind = 'configured_assembly'
               AND NOT EXISTS (
-                SELECT 1 FROM catalog_compatibilities compatibility
+                SELECT 1 FROM catalog_runtime_compatibilities compatibility
                 INNER JOIN catalog_runtime_skus hose_end
                   ON hose_end.import_id = compatibility.import_id
                  AND hose_end.sku = compatibility.hose_end_sku

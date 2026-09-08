@@ -195,6 +195,7 @@ it("enforces assembly readiness and exclusion at real Worker boundaries and reta
       },
     },
   };
+  assemblyDraft = draft;
   const quote = () =>
     post("/api/configurator/quote-assembly", {
       draft: JSON.stringify(draft),

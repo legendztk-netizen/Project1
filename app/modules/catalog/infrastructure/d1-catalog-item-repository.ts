@@ -592,7 +592,8 @@ export function createD1CatalogItemRepository(
           const retained = await database
             .prepare(
               `SELECT DISTINCT hose_series FROM catalog_runtime_assembly_combinations
-            WHERE hose_sku=? OR end_a_hose_end_sku=? OR end_b_hose_end_sku=? OR end_a_ferrule_sku=? OR end_b_ferrule_sku=?`,
+            WHERE release_id=(SELECT baseline_release_id FROM catalog_item_publication_state WHERE singleton=1)
+              AND (hose_sku=? OR end_a_hose_end_sku=? OR end_b_hose_end_sku=? OR end_a_ferrule_sku=? OR end_b_ferrule_sku=?)`,
             )
             .bind(code, code, code, code, code)
             .all<{ hose_series: string }>();
