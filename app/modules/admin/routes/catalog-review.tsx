@@ -1,3 +1,4 @@
+import { createD1CatalogItemRepository as itemPublicationRepository } from "../../catalog/infrastructure/d1-catalog-item-repository";
 import {
   ArrowLeft,
   Check,
@@ -231,6 +232,12 @@ function requestAuditContext(request: Request, form?: FormData) {
 }
 
 export async function loader({ context, request }: Route.LoaderArgs) {
+  const itemContext = requireAdminRequestContext(context);
+  if (
+    (await itemPublicationRepository(itemContext.env.DB).state()).mode ===
+    "items"
+  )
+    return redirect("/admin/catalog/requests");
   const { adminIdentity, env } = requireAdminRequestContext(context);
   const url = new URL(request.url);
   const reviewRepository = createD1CatalogDraftReviewRepository(env.DB);

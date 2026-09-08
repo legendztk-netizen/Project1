@@ -108,6 +108,7 @@ export interface CatalogItemCommand {
     channel: "manual" | "excel" | "migration";
     operation?: "delete";
     batchId?: string;
+    reviewVersion?: number;
     row?: number;
   };
 }

@@ -45,6 +45,7 @@ export default {
       (url.pathname.startsWith("/admin/catalog/") ||
         url.pathname === "/admin/diagnostics/catalog-release") &&
       ![
+        "/admin/catalog/requests",
         "/admin/catalog/items",
         "/admin/catalog/products",
         "/admin/catalog/commercial",

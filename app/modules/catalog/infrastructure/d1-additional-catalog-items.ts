@@ -383,7 +383,8 @@ export function createD1AdditionalCatalogItems(database: D1Database) {
           originalSku: code,
           originalSalesSku: code,
           salesValues: {},
-          mainImageReference: imageReference,
+          mainImageReference:
+            imageReference || (await reference(parent?.mediaVersionId ?? null)),
         });
         payload.variant = master as typeof payload.variant;
       }

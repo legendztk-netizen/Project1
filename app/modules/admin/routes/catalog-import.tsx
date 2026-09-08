@@ -1,3 +1,4 @@
+import { createD1CatalogItemRepository as itemPublicationRepository } from "../../catalog/infrastructure/d1-catalog-item-repository";
 import {
   AlertCircle,
   ArrowLeft,
@@ -84,6 +85,12 @@ export function meta() {
 }
 
 export async function loader({ context, request }: Route.LoaderArgs) {
+  const itemContext = requireAdminRequestContext(context);
+  if (
+    (await itemPublicationRepository(itemContext.env.DB).state()).mode ===
+    "items"
+  )
+    return redirect("/admin/catalog/requests");
   const { env } = requireAdminRequestContext(context);
   const url = new URL(request.url);
   const repository = createD1CatalogWorkbookImportRepository(env.DB);

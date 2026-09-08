@@ -76,6 +76,11 @@ export default [
     "admin/catalog/product-editor",
     "modules/admin/routes/catalog-product-editor.ts",
   ),
+  route(
+    "admin/catalog/item-template",
+    "modules/admin/routes/catalog-item-template.ts",
+  ),
+  route("admin/catalog/requests", "modules/admin/routes/catalog-requests.tsx"),
   route("admin/catalog/items", "modules/admin/routes/catalog-items.tsx"),
   route("admin/catalog/import", "modules/admin/routes/catalog-import.tsx"),
   route(

@@ -1,0 +1,119 @@
+.catalog-request-page {
+  max-width: 1500px;
+  margin: auto;
+  padding: 32px;
+  color: #172d35;
+}
+.catalog-request-page nav {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.catalog-request-page h1 {
+  font-size: 30px;
+  margin-bottom: 12px;
+}
+.catalog-request-page h2 {
+  margin-top: 32px;
+}
+.catalog-request-page form {
+  margin: 24px 0;
+}
+.catalog-request-page form[method="get"],
+.catalog-request-page fieldset {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid #cad8d9;
+  border-radius: 10px;
+  background: #f5f8f8;
+}
+.catalog-request-page label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+.catalog-request-page input:not([type="checkbox"]),
+.catalog-request-page select {
+  min-height: 38px;
+  padding: 8px;
+  border: 1px solid #b8c8ca;
+  border-radius: 5px;
+  background: white;
+  color: #172d35;
+  width: 100%;
+}
+.catalog-request-page button {
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 6px;
+  background: #165b5e;
+  color: white;
+  margin: 8px 8px 8px 0;
+  cursor: pointer;
+}
+.catalog-request-page button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.catalog-request-page table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+}
+.catalog-request-page th,
+.catalog-request-page td {
+  text-align: left;
+  border-bottom: 1px solid #dce4e5;
+  padding: 12px 8px;
+  vertical-align: top;
+}
+.catalog-request-page th {
+  background: #eff4f4;
+  font-size: 13px;
+}
+.catalog-request-page td:nth-child(6) {
+  max-width: 340px;
+  font-size: 13px;
+}
+.catalog-request-page [role="alert"] {
+  padding: 12px;
+  background: #fff2ed;
+  color: #8d3424;
+}
+.catalog-request-page [role="status"] {
+  padding: 12px;
+  background: #eaf6ef;
+}
+.catalog-request-page pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 450px;
+  overflow: auto;
+  padding: 16px;
+  background: #f3f6f7;
+  font-size: 12px;
+}
+.catalog-request-page details {
+  margin: 12px 0;
+}
+.catalog-request-page summary {
+  cursor: pointer;
+}
+.catalog-request-page .request-image {
+  width: 160px;
+  height: 160px;
+  object-fit: contain;
+  background: white;
+}
+@media (max-width: 760px) {
+  .catalog-request-page {
+    padding: 16px;
+  }
+  .catalog-request-page table {
+    display: block;
+    overflow-x: auto;
+  }
+}

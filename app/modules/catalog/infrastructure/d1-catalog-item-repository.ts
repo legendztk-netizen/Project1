@@ -637,6 +637,7 @@ export function createD1CatalogItemRepository(
   }
   return {
     state,
+    validateRequest: (input: CatalogItemCommand) => validate(input, true),
     findPayload,
     findProductPayload,
     apply,
@@ -735,15 +736,26 @@ export function createD1CatalogItemRepository(
       ]);
       return id;
     },
-    async approveRequest(id: string, actorId: string, ipAddress: string) {
+    async approveRequest(
+      id: string,
+      actorId: string,
+      ipAddress: string,
+      expectedVersion?: number,
+    ) {
       const row = await database
         .prepare(
-          "SELECT payload_json, dependencies_json FROM catalog_product_change_requests WHERE id = ?",
+          "SELECT payload_json, dependencies_json, version FROM catalog_product_change_requests WHERE id = ?",
         )
         .bind(id)
-        .first<{ payload_json: string; dependencies_json: string }>();
+        .first<{
+          payload_json: string;
+          dependencies_json: string;
+          version: number;
+        }>();
       if (!row)
         throw new CatalogItemRejected("Request not found / 请求不存在", 404);
+      if (expectedVersion !== undefined && row.version !== expectedVersion)
+        throw new CatalogItemRejected("请求已修正，请刷新后审核", 409);
       for (const dependency of JSON.parse(row.dependencies_json) as string[]) {
         const parent = await database
           .prepare(
@@ -760,6 +772,10 @@ export function createD1CatalogItemRepository(
       return apply(
         {
           ...(JSON.parse(row.payload_json) as CatalogItemCommand),
+          source: {
+            ...(JSON.parse(row.payload_json) as CatalogItemCommand).source,
+            reviewVersion: row.version,
+          },
           commandId: `request:${id}`,
           actorId,
           ipAddress,
