@@ -558,7 +558,7 @@ export function createD1CatalogItemRepository(
               : "ferrule_series";
           const rows = await database
             .prepare(
-              `SELECT DISTINCT h.hose_series FROM catalog_compatibilities c
+              `SELECT DISTINCT h.hose_series FROM catalog_runtime_compatibilities c
             JOIN catalog_runtime_hose_variants h ON h.import_id=c.import_id AND h.sku=c.hose_sku
             JOIN ${table} component ON component.import_id=c.import_id AND component.sku=c.${relationColumn}
             JOIN catalog_releases r ON r.source_import_id=c.import_id JOIN catalog_active_release a ON a.release_id=r.id
@@ -566,7 +566,43 @@ export function createD1CatalogItemRepository(
             )
             .bind(code, old ? itemSeriesCode(old) : "", itemSeriesCode(payload))
             .all<{ hose_series: string }>();
-          affected = rows.results.map((r) => r.hose_series);
+          const oldVariant =
+            old?.kind === "sku"
+              ? (old.variant as unknown as Record<string, unknown>)
+              : {};
+          const newVariant = payload.variant as unknown as Record<
+            string,
+            unknown
+          >;
+          const potential = await database
+            .prepare(
+              `SELECT DISTINCT h.hose_series FROM catalog_runtime_hose_variants h
+            JOIN catalog_releases r ON r.source_import_id=h.import_id JOIN catalog_active_release a ON a.release_id=r.id
+            WHERE abs(CAST(h.dash AS INTEGER)) IN (abs(CAST(? AS INTEGER)),abs(CAST(? AS INTEGER)))
+            AND (?='hose_end' OR h.hose_series IN (?,?))`,
+            )
+            .bind(
+              String(oldVariant.hoseTailDash ?? ""),
+              String(newVariant.hoseTailDash ?? ""),
+              payload.productType,
+              String(oldVariant.ferruleSeries ?? ""),
+              String(newVariant.ferruleSeries ?? ""),
+            )
+            .all<{ hose_series: string }>();
+          const retained = await database
+            .prepare(
+              `SELECT DISTINCT hose_series FROM catalog_runtime_assembly_combinations
+            WHERE hose_sku=? OR end_a_hose_end_sku=? OR end_b_hose_end_sku=? OR end_a_ferrule_sku=? OR end_b_ferrule_sku=?`,
+            )
+            .bind(code, code, code, code, code)
+            .all<{ hose_series: string }>();
+          affected = [
+            ...new Set(
+              [...rows.results, ...potential.results, ...retained.results].map(
+                (r) => r.hose_series,
+              ),
+            ),
+          ];
         }
       }
       const revisionId = crypto.randomUUID();

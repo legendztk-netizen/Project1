@@ -80,6 +80,10 @@ export default [
     "admin/catalog/item-template",
     "modules/admin/routes/catalog-item-template.ts",
   ),
+  route(
+    "admin/catalog/assemblies",
+    "modules/admin/routes/catalog-assemblies.tsx",
+  ),
   route("admin/catalog/requests", "modules/admin/routes/catalog-requests.tsx"),
   route("admin/catalog/items", "modules/admin/routes/catalog-items.tsx"),
   route("admin/catalog/import", "modules/admin/routes/catalog-import.tsx"),

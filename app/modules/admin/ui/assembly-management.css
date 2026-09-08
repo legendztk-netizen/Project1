@@ -1,0 +1,51 @@
+.assembly-management fieldset {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.assembly-management label {
+  display: grid;
+  gap: 6px;
+}
+.assembly-management section,
+.assembly-management > details {
+  margin: 24px 0;
+}
+.assembly-management input:not([type="checkbox"]):not([type="hidden"]),
+.assembly-management select {
+  min-width: 0;
+  width: 100%;
+  padding: 10px;
+}
+.assembly-management button,
+.assembly-management nav a {
+  margin: 8px 12px 8px 0;
+}
+.assembly-management > form {
+  overflow-x: auto;
+}
+.assembly-management table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 20px 0;
+}
+.assembly-management th,
+.assembly-management td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.assembly-management pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.assembly-management summary {
+  cursor: pointer;
+}

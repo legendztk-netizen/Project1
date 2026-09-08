@@ -34,7 +34,7 @@ const catalogMaintenanceNavigation = [
     label: "销售、包装和价格",
     to: "/admin/catalog/commercial",
   },
-  { key: "assemblies", label: "总成管理", to: "/admin/catalog/reference-data" },
+  { key: "assemblies", label: "总成管理", to: "/admin/catalog/assemblies" },
 ] as const;
 
 const adminNavigation = [

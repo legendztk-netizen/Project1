@@ -46,6 +46,7 @@ export default {
         url.pathname === "/admin/diagnostics/catalog-release") &&
       ![
         "/admin/catalog/requests",
+        "/admin/catalog/assemblies",
         "/admin/catalog/items",
         "/admin/catalog/products",
         "/admin/catalog/commercial",

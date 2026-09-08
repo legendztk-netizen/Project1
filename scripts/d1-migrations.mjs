@@ -87,6 +87,7 @@ function runWrangler(environment, args, options = {}) {
     {
       cwd: fileURLToPath(projectRoot),
       encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
       env: childEnvironment,
       ...options,
     },
@@ -139,7 +140,9 @@ function applyMigrations(environment) {
   const output = runWrangler(environment, ["d1", "migrations", "apply"], {
     stdio: ["ignore", "pipe", "inherit"],
   });
-  process.stdout.write(output);
+  // Wrangler repeats the growing migration table after every applied file.
+  // Keep the final summary without overflowing callers that capture stdout.
+  process.stdout.write(output.slice(-16_384));
   verifyDatabase(environment);
 }
 

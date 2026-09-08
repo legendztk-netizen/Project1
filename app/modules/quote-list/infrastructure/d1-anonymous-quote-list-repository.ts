@@ -181,42 +181,10 @@ const activeConfiguredAssemblyGuard = `
     AND s.product_type = 'hose'
     AND NOT EXISTS (SELECT 1 FROM catalog_item_unavailable_hoses blocked WHERE blocked.sku = s.sku)
     AND EXISTS (
-      SELECT 1
-      FROM catalog_compatibilities c
-      INNER JOIN catalog_runtime_skus es
-        ON es.import_id = c.import_id AND es.sku = c.hose_end_sku
-      INNER JOIN catalog_runtime_skus fs
-        ON fs.import_id = c.import_id AND fs.sku = c.ferrule_sku
-      WHERE c.import_id = r.source_import_id
-        AND c.compatibility_id = ? AND c.hose_sku = s.sku
-        AND c.hose_end_sku = ? AND c.ferrule_sku = ?
-        AND c.catalog_publication_status = 'Published'
-        AND c.rfq_eligibility = 'Eligible'
-        AND es.catalog_publication_status = 'Published'
-        AND es.rfq_eligibility = 'Eligible'
-        AND es.supply_availability = 'available_for_quote'
-        AND fs.catalog_publication_status = 'Published'
-        AND fs.rfq_eligibility = 'Eligible'
-        AND fs.supply_availability = 'available_for_quote'
-    )
-    AND EXISTS (
-      SELECT 1
-      FROM catalog_compatibilities c
-      INNER JOIN catalog_runtime_skus es
-        ON es.import_id = c.import_id AND es.sku = c.hose_end_sku
-      INNER JOIN catalog_runtime_skus fs
-        ON fs.import_id = c.import_id AND fs.sku = c.ferrule_sku
-      WHERE c.import_id = r.source_import_id
-        AND c.compatibility_id = ? AND c.hose_sku = s.sku
-        AND c.hose_end_sku = ? AND c.ferrule_sku = ?
-        AND c.catalog_publication_status = 'Published'
-        AND c.rfq_eligibility = 'Eligible'
-        AND es.catalog_publication_status = 'Published'
-        AND es.rfq_eligibility = 'Eligible'
-        AND es.supply_availability = 'available_for_quote'
-        AND fs.catalog_publication_status = 'Published'
-        AND fs.rfq_eligibility = 'Eligible'
-        AND fs.supply_availability = 'available_for_quote'
+      SELECT 1 FROM catalog_available_assembly_combinations c
+      WHERE c.release_id=r.id AND c.hose_sku=s.sku
+        AND c.end_a_compatibility_id=? AND c.end_a_hose_end_sku=? AND c.end_a_ferrule_sku=?
+        AND c.end_b_compatibility_id=? AND c.end_b_hose_end_sku=? AND c.end_b_ferrule_sku=?
     )
     AND EXISTS (
       SELECT 1 FROM configurator_global_registry_entries e
