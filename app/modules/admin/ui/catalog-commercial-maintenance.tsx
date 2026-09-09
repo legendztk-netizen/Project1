@@ -1,3 +1,4 @@
+import "./catalog-commercial-maintenance.css";
 import {
   itemCurrencies,
   type CatalogItemPayload,
@@ -57,7 +58,7 @@ export function CatalogCommercialMaintenance({
   return (
     <>
       {formError ? <p className="form-error">{formError}</p> : null}
-      <section className="catalog-upload-panel">
+      <section className="catalog-upload-panel commercial-panel">
         <div>
           <div>
             <h2>Series Commercial Rule / 系列销售、包装和价格规则</h2>
@@ -67,7 +68,7 @@ export function CatalogCommercialMaintenance({
             </p>
           </div>
         </div>
-        <Form method="get">
+        <Form method="get" className="commercial-search">
           <label>
             <span>Product Type / 产品类型</span>
             <select defaultValue={productType} name="productType">
@@ -102,9 +103,10 @@ export function CatalogCommercialMaintenance({
               type="hidden"
               value={JSON.stringify(seriesPayload)}
             />
-            <fieldset disabled={!canEdit}>
+            <fieldset className="commercial-fields" disabled={!canEdit}>
               <input name="productType" type="hidden" value={productType} />
               <input name="seriesCode" type="hidden" value={selectedSeries} />
+              <h3 className="commercial-group-title">销售与交付</h3>
               <label>
                 <span>Sales Unit / 销售单位</span>
                 <input
@@ -156,6 +158,7 @@ export function CatalogCommercialMaintenance({
                   required
                 />
               </label>
+              <h3 className="commercial-group-title">长度与订购规则</h3>
               <label>
                 <span>Minimum Length per Piece ft / 每根最小长度（英尺）</span>
                 <input
@@ -199,22 +202,24 @@ export function CatalogCommercialMaintenance({
                   name="continuousLengthConfirmation"
                 />
               </label>
-              <label>
+              <label className="commercial-wide">
                 <span>Notes / 备注</span>
                 <textarea
                   defaultValue={optionalValue(rule?.notes)}
                   name="notes"
                 />
               </label>
-              <button className="button button-primary" type="submit">
-                <Save size={16} /> Save Series Rule / 保存系列规则
-              </button>
+              <div className="commercial-actions">
+                <button className="button button-primary" type="submit">
+                  <Save size={16} /> Save Series Rule / 保存系列规则
+                </button>
+              </div>
             </fieldset>
           </Form>
         ) : null}
       </section>
 
-      <section className="catalog-upload-panel">
+      <section className="catalog-upload-panel commercial-panel">
         <div>
           <div>
             <h2>Exact SKU Price and Packaging / 子体价格和包装</h2>
@@ -224,7 +229,7 @@ export function CatalogCommercialMaintenance({
             </p>
           </div>
         </div>
-        <Form method="get">
+        <Form method="get" className="commercial-search commercial-sku-search">
           <input name="productType" type="hidden" value={productType} />
           {selectedSeries ? (
             <input name="series" type="hidden" value={selectedSeries} />
@@ -246,7 +251,8 @@ export function CatalogCommercialMaintenance({
               type="hidden"
               value={JSON.stringify(skuPayload)}
             />
-            <fieldset disabled={!canEdit}>
+            <fieldset className="commercial-fields" disabled={!canEdit}>
+              <h3 className="commercial-group-title">价格与销售包装</h3>
               <label>
                 <span>Sales SKU / 销售 SKU</span>
                 <input name="sku" readOnly value={skuRecord.sku} />
@@ -309,6 +315,7 @@ export function CatalogCommercialMaintenance({
                   type="number"
                 />
               </label>
+              <h3 className="commercial-group-title">装箱信息</h3>
               <label>
                 <span>Inner Pack Qty / 内包装数量</span>
                 <input
@@ -369,16 +376,18 @@ export function CatalogCommercialMaintenance({
                   type="number"
                 />
               </label>
-              <label>
+              <label className="commercial-wide">
                 <span>Packing Basis / 装箱依据</span>
                 <input
                   defaultValue={optionalValue(exact?.packingBasis)}
                   name="packingBasis"
                 />
               </label>
-              <button className="button button-primary" type="submit">
-                <Save size={16} /> Save SKU Price / 保存子体价格
-              </button>
+              <div className="commercial-actions">
+                <button className="button button-primary" type="submit">
+                  <Save size={16} /> Save SKU Price / 保存子体价格
+                </button>
+              </div>
             </fieldset>
           </Form>
         ) : sku ? (
