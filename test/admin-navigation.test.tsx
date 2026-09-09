@@ -17,7 +17,6 @@ afterEach(cleanup);
 describe("AdminNavigation", () => {
   it.each([
     ["assemblies", "总成管理"],
-    ["excel", "批量导入产品"],
     ["manual", "管理所有产品"],
     ["commercial", "销售、包装和价格"],
   ] as const)(
@@ -36,12 +35,7 @@ describe("AdminNavigation", () => {
         within(submenu)
           .getAllByRole("link")
           .map((link) => link.textContent),
-      ).toEqual([
-        "批量导入产品",
-        "管理所有产品",
-        "销售、包装和价格",
-        "总成管理",
-      ]);
+      ).toEqual(["管理所有产品", "销售、包装和价格", "总成管理"]);
       expect(
         within(submenu)
           .getByRole("link", { name: activeLabel })
@@ -64,8 +58,8 @@ describe("AdminNavigation", () => {
     fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(
-      screen.getByRole("link", { name: "批量导入产品" }).getAttribute("href"),
-    ).toBe("/admin/catalog/bulk-import");
+      screen.getByRole("link", { name: "管理所有产品" }).getAttribute("href"),
+    ).toBe("/admin/catalog/products");
 
     fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("false");

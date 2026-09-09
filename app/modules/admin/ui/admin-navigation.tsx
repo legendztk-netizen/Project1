@@ -20,11 +20,6 @@ export type CatalogMaintenanceMode =
 
 const catalogMaintenanceNavigation = [
   {
-    key: "excel",
-    label: "批量导入产品",
-    to: "/admin/catalog/bulk-import",
-  },
-  {
     key: "manual",
     label: "管理所有产品",
     to: "/admin/catalog/products",

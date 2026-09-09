@@ -175,8 +175,9 @@ it("switches a legacy Worker, blocks retired writes and keeps item prices live",
   const bulk = await (
     await fetch(origin + "/admin/catalog/bulk-import")
   ).text();
-  expect(bulk).toContain("<h1>批量导入产品</h1>");
-  expect(bulk).not.toContain("<h1>产品更新请求审核</h1>");
+  expect(bulk).toContain("<h1>产品审核与发布</h1>");
+  expect(bulk).toContain("<h2>批量导入产品</h2>");
+  expect(bulk).toContain("<h2>产品更新请求审核</h2>");
   expect((await post("/admin/catalog/items", publication("15"))).status).toBe(
     200,
   );

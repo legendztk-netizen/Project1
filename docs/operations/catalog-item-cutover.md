@@ -12,7 +12,7 @@ Active 建立不可变实体修订及来源映射。已有条目修改优先；�
 
 冻结后、正式提交前可取消并恢复原维护状态。正式提交后采用前向修复，不直接回退 Active 指针；恢复备份前必须保存和重放提交后所有产品、请求、总成及客户业务写入。不要将本地备份覆盖已有新增业务的数据库。
 
-导入入口为 `/admin/catalog/bulk-import`；审核为 `/admin/catalog/requests`；产品为 `/admin/catalog/products`；总成为 `/admin/catalog/assemblies`。旧导入/审核地址保留跳转。历史数据由原 Release、原 Draft、媒体版本、RFQ/Quote/PI/Order 快照保留，不执行删除或改写。
+导入与审核合并在“产品审核与发布” `/admin/catalog/requests`，原 `/admin/catalog/bulk-import` 跳转到该页导入区。产品数据维护仅保留管理所有产品、销售、包装和价格、总成管理三个子菜单。产品为 `/admin/catalog/products`；总成为 `/admin/catalog/assemblies`。旧导入/审核地址保留跳转。历史数据由原 Release、原 Draft、媒体版本、RFQ/Quote/PI/Order 快照保留，不执行删除或改写。
 
 ## 环境与验证证据
 

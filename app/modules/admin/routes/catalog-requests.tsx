@@ -1,7 +1,6 @@
 import "../ui/catalog-request-review.css";
 import {
   Form,
-  Link,
   data,
   redirect,
   useLoaderData,
@@ -34,7 +33,7 @@ import { importRuleKeys } from "../../catalog/domain/catalog-item-import";
 import { catalogWorksheetContracts } from "../../catalog/domain/catalog-workbook";
 
 export function meta() {
-  return [{ title: "产品更新请求审核 | Admin Backoffice" }];
+  return [{ title: "产品审核与发布 | Admin Backoffice" }];
 }
 export async function loader({ context, request }: Route.LoaderArgs) {
   const { env, adminIdentity } = requireAdminRequestContext(context);
@@ -282,7 +281,7 @@ export default function CatalogRequests() {
     <div className="admin-shell" data-surface="admin">
       <AdminNavigation active="catalog" />
       <main className="catalog-request-page">
-        <h1>产品更新请求审核</h1>
+        <h1>产品审核与发布</h1>
         <a href="/admin/catalog/item-template" download>
           下载条目导入模板
         </a>
@@ -297,9 +296,21 @@ export default function CatalogRequests() {
         {page.mode !== "items" && (
           <p role="alert">条目发布尚未启用；当前导入和审核不可提交。</p>
         )}
-        <p>
-          <Link to="/admin/catalog/bulk-import">前往批量导入产品</Link>
-        </p>
+        <section id="bulk-import">
+          <h2>批量导入产品</h2>
+          {page.canEdit && (
+            <Form method="post" encType="multipart/form-data">
+              <input type="hidden" name="intent" value="import" />
+              <input type="hidden" name="batchId" value={page.batchId} />
+              <label>
+                Excel 工作簿
+                <input type="file" name="workbook" accept=".xlsx" required />
+              </label>
+              <button disabled={page.mode !== "items"}>导入为独立请求</button>
+            </Form>
+          )}
+        </section>
+        <h2>产品更新请求审核</h2>
         <Form method="get">
           <label>
             批次

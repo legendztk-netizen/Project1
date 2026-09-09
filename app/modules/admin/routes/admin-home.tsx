@@ -73,7 +73,7 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
           </div>
           <Link
             className="button button-primary"
-            to="/admin/catalog/bulk-import"
+            to="/admin/catalog/requests#bulk-import"
           >
             <FileUp size={17} /> 产品数据维护
           </Link>
