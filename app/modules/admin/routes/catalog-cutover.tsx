@@ -1,8 +1,16 @@
+import { CatalogItemRejected } from "../../catalog/domain/catalog-item-publication";
 import { Form, useLoaderData, useActionData, data } from "react-router";
 import type { Route } from "./+types/catalog-cutover";
 import { requireAdminRequestContext } from "../infrastructure/admin-request-context";
 import { createD1CatalogCutover } from "../../catalog/infrastructure/d1-catalog-cutover";
 import { AdminNavigation } from "../ui/admin-navigation";
+const states: Record<string, string> = {
+  inventoried: "已盘点",
+  frozen: "已冻结",
+  committing: "切换中",
+  committed: "已完成",
+  cancelled: "已取消",
+};
 function repository(context: Route.LoaderArgs["context"]) {
   const { env, adminIdentity } = requireAdminRequestContext(context);
   return createD1CatalogCutover(env.DB, adminIdentity);
@@ -20,11 +28,13 @@ export async function action({ context, request }: Route.ActionArgs) {
       throw new Error("未知迁移操作");
     const result =
       await repo[intent as "inventory" | "freeze" | "commit" | "cancel"](id);
-    return data({ message: `迁移状态：${result.status}` });
+    return data({
+      message: `迁移状态：${states[result.status] ?? result.status}`,
+    });
   } catch (error) {
     return data(
       { message: error instanceof Error ? error.message : "迁移失败" },
-      { status: 409 },
+      { status: error instanceof CatalogItemRejected ? error.status : 409 },
     );
   }
 }
@@ -49,11 +59,19 @@ export default function Cutover() {
         {d.runs.map((r) => (
           <section key={r.id}>
             <h2>
-              {r.id} · {r.status}
+              {r.id} · {states[r.status] ?? r.status}
             </h2>
-            <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-              {JSON.stringify(JSON.parse(r.report_json), null, 2)}
-            </pre>
+            <p>
+              基线产品：{JSON.parse(r.report_json).baselineProducts}
+              ；待审核请求：{JSON.parse(r.report_json).requests}；待处理关系：
+              {JSON.parse(r.report_json).relations}。
+            </p>
+            <details>
+              <summary>展开完整盘点与校验依据</summary>
+              <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+                {JSON.stringify(JSON.parse(r.report_json), null, 2)}
+              </pre>
+            </details>
             <Form method="post">
               <input type="hidden" name="id" value={r.id} />
               {r.status === "inventoried" && (

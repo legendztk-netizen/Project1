@@ -18,6 +18,7 @@ const productTables = [
   "catalog_hose_ends",
   "catalog_ferrules",
   "catalog_adapters",
+  "catalog_adapter_families",
   "catalog_quick_couplers",
   "catalog_hose_series",
   "catalog_hose_end_series",
@@ -154,8 +155,23 @@ export function createD1CatalogCutover(
           a ? { payload: a.payload, targetState: a.targetState } : null,
           !!lineage,
         );
-        if (disposition === "already_current" || disposition === "inherited")
+        if (disposition === "already_current" || disposition === "inherited") {
+          records.push({
+            key: `${release.id}:${key}`,
+            kind: "retained",
+            targetId: activeByKey.has(key)
+              ? `cutover-revision:${active.id}:${key}`
+              : null,
+            value: {
+              releaseId: release.id,
+              disposition,
+              original: p?.original ?? null,
+              baseline: b ?? null,
+              active: a ?? null,
+            },
+          });
           continue;
+        }
         const product = p ?? a!;
         const requestId = `cutover-request:${release.id}:${key}`;
         const command: CatalogItemCommand = {
@@ -220,42 +236,76 @@ export function createD1CatalogCutover(
           .bind(active.source_import_id as string)
           .all<LegacyRow>()
       ).results;
-      const clean = (r: LegacyRow) =>
-        Object.fromEntries(
-          Object.entries(r).filter(([k]) => !["id", "import_id"].includes(k)),
+      const baselineRelations = lineage?.source_import_id
+        ? (
+            await db
+              .prepare(
+                "SELECT * FROM catalog_compatibilities WHERE import_id=? ORDER BY id",
+              )
+              .bind(lineage.source_import_id)
+              .all<LegacyRow>()
+          ).results
+        : [];
+      const clean = (r: LegacyRow | undefined) =>
+        r
+          ? Object.fromEntries(
+              Object.entries(r).filter(
+                ([k]) => !["id", "import_id"].includes(k),
+              ),
+            )
+          : null;
+      const drafts = new Map(relations.map((r) => [r.compatibility_id, r])),
+        bases = new Map(baselineRelations.map((r) => [r.compatibility_id, r])),
+        actives = new Map(activeRelations.map((r) => [r.compatibility_id, r]));
+      for (const key of new Set([
+        ...drafts.keys(),
+        ...bases.keys(),
+        ...actives.keys(),
+      ])) {
+        const d = drafts.get(key),
+          b = bases.get(key),
+          a = actives.get(key);
+        const disposition = draftDifference(
+          clean(b),
+          clean(d),
+          clean(a),
+          !!lineage,
         );
-      const activeRelationsById = new Map(
-        activeRelations.map((r) => [r.compatibility_id, r]),
-      );
-      for (const relation of relations) {
-        const old = activeRelationsById.get(relation.compatibility_id);
-        activeRelationsById.delete(relation.compatibility_id);
-        if (old && canonicalJson(clean(old)) === canonicalJson(clean(relation)))
+        if (disposition === "inherited" || disposition === "already_current") {
+          records.push({
+            key: `${release.id}:relation:${key}`,
+            kind: "retained",
+            targetId: a ? String(a.id) : null,
+            value: {
+              releaseId: release.id,
+              disposition,
+              original: d ?? null,
+              baseline: b ?? null,
+              active: a ?? null,
+            },
+          });
           continue;
+        }
+        const relation = d ?? b ?? a!;
         records.push({
-          key: `${release.id}:relation:${relation.id}`,
+          key: `${release.id}:relation:${key}`,
           kind: "relation",
-          targetId: `cutover-relation:${release.id}:${relation.id}`,
+          targetId: `cutover-relation:${release.id}:${key}`,
           value: {
             releaseId: release.id,
             relation,
-            issues: ["迁移待处理：缺少 Draft 创建基线，请核对关系意图"],
-            missingFromDraft: false,
+            baseline: b ?? null,
+            active: a ?? null,
+            disposition,
+            issues: !d
+              ? ["Draft 缺行不构成删除依据；请明确停用相关组合或保留关系"]
+              : disposition === "ambiguous"
+                ? ["迁移待处理：缺少 Draft 创建基线，请核对关系意图"]
+                : [],
+            missingFromDraft: !d,
           },
         });
       }
-      for (const relation of activeRelationsById.values())
-        records.push({
-          key: `${release.id}:missing-relation:${relation.id}`,
-          kind: "relation",
-          targetId: `cutover-relation:${release.id}:missing:${relation.id}`,
-          value: {
-            releaseId: release.id,
-            relation,
-            issues: ["Draft 缺行不构成删除依据；请明确停用相关组合或保留关系"],
-            missingFromDraft: true,
-          },
-        });
     }
     const tableNames = (
       await db
@@ -301,6 +351,7 @@ export function createD1CatalogCutover(
       })),
       counts,
       baselineProducts: activeProducts.length,
+      retained: records.filter((r) => r.kind === "retained").length,
       requests: records.filter((r) => r.kind === "request").length,
       relations: records.filter((r) => r.kind === "relation").length,
       baselinePolicy: "Missing creation baselines require explicit review",
@@ -382,7 +433,10 @@ export function createD1CatalogCutover(
     const report = JSON.parse(r.report_json);
     if (
       records.length !==
-      report.baselineProducts + report.requests + report.relations
+      report.baselineProducts +
+        report.requests +
+        report.relations +
+        report.retained
     )
       throw new CatalogItemRejected("迁移暂存记录不完整");
     const now = new Date().toISOString();
@@ -401,6 +455,7 @@ export function createD1CatalogCutover(
     const batchIds = new Set<string>();
     for (const row of records) {
       const value = JSON.parse(row.payload_json);
+      if (row.record_kind === "retained") continue;
       if (row.record_kind === "baseline") {
         const p = value.payload as CatalogItemCommand["payload"],
           code = itemCode(p),

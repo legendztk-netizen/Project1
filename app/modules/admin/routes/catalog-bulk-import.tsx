@@ -48,7 +48,7 @@ export default function BulkImport() {
           </a>{" "}
           · <Link to="/admin/catalog/requests">查看产品更新请求</Link>
         </p>
-        {result && <p role="alert">{JSON.stringify(result)}</p>}
+        {result && <p role="alert">{result.error}</p>}
         <Form method="post" encType="multipart/form-data">
           <input type="hidden" name="intent" value="import" />
           <input type="hidden" name="batchId" value={page.batchId} />

@@ -48,8 +48,17 @@ it("requires an owner and refuses a stale inventory; cancellation restores maint
     .run();
   await expect(repo.freeze("stale")).rejects.toThrow(/changed/);
   await repo.cancel("stale");
+  await repo.inventory("other");
   await repo.inventory("cancel");
   await repo.freeze("cancel");
+  await repo.cancel("other");
+  await expect(
+    db
+      .prepare(
+        "UPDATE catalog_item_publication_state SET generation=generation",
+      )
+      .run(),
+  ).rejects.toThrow(/frozen/);
   await repo.cancel("cancel");
   await expect(
     db

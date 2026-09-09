@@ -143,6 +143,11 @@ export function releaseProducts(
         type,
         code: String(row.series_code),
       });
+  for (const row of rows("catalog_adapter_families"))
+    series.set(`adapter:${row.adapter_family_id}`, {
+      type: "adapter",
+      code: String(row.adapter_family_id),
+    });
   for (const row of rows("catalog_series_commercial_rules")) {
     const type = row.product_type as keyof typeof variantTables;
     if (variantTables[type])
@@ -157,8 +162,13 @@ export function releaseProducts(
         ? "catalog_hose_series"
         : type === "hose_end"
           ? "catalog_hose_end_series"
-          : "",
-    ).find((r) => r.series_code === code);
+          : type === "adapter"
+            ? "catalog_adapter_families"
+            : "",
+    ).find(
+      (r) =>
+        (type === "adapter" ? r.adapter_family_id : r.series_code) === code,
+    );
     const rule = rows("catalog_series_commercial_rules").find(
       (r) => r.product_type === type && r.series_code === code,
     );
@@ -170,7 +180,9 @@ export function releaseProducts(
       kind: "series",
       productType: type,
       series: {
-        ...(raw ? camel(raw) : { seriesCode: code, seriesName: code }),
+        ...(raw ? camel(raw) : {}),
+        seriesCode: code,
+        seriesName: raw?.series_name ?? raw?.website_product_name ?? code,
         ...(type === "hose_end"
           ? { interfaceStandard: raw?.connection_standard }
           : {}),
@@ -182,7 +194,9 @@ export function releaseProducts(
     result.push({
       key: `series:${type}:${code}`,
       payload,
-      targetState: "online",
+      targetState: raw?.catalog_publication_status
+        ? lifecycle({ ...raw, supply_availability: "available_for_quote" })
+        : "online",
       original: { series: raw ?? null, rule: rule ?? null },
     });
   }
