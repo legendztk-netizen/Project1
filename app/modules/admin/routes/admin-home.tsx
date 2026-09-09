@@ -71,10 +71,16 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
               <p>The import and release workflow will appear here.</p>
             </div>
           </div>
-          <Link className="button button-primary" to="/admin/catalog/import">
+          <Link
+            className="button button-primary"
+            to="/admin/catalog/bulk-import"
+          >
             <FileUp size={17} /> 产品数据维护
           </Link>
-          <Link className="button button-secondary" to="/admin/catalog/review">
+          <Link
+            className="button button-secondary"
+            to="/admin/catalog/requests"
+          >
             <Boxes size={17} /> 产品审核与发布
           </Link>
           <Link

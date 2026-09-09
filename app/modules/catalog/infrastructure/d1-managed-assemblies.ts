@@ -619,6 +619,10 @@ export function createD1ManagedAssemblies(
           current.generation,
         );
       }
+      if (JSON.parse(source.source_json).migration?.missingFromDraft)
+        throw new CatalogItemRejected(
+          "缺行不能直接应用为关系：请明确停用相关组合，或拒绝此迁移来源以保留现有关系",
+        );
       const issues = validateCatalogWorksheetRecord(
         "04_兼容压接",
         original.values,

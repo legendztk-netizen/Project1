@@ -1,6 +1,7 @@
 import "../ui/catalog-request-review.css";
 import {
   Form,
+  Link,
   data,
   redirect,
   useLoaderData,
@@ -110,7 +111,10 @@ export async function loader({ context, request }: Route.LoaderArgs) {
     batchId: crypto.randomUUID(),
   };
 }
-export async function action({ context, request }: Route.ActionArgs) {
+export async function action({
+  context,
+  request,
+}: Pick<Route.ActionArgs, "context" | "request">) {
   const { env, adminIdentity } = requireCatalogWriteContext(context);
   const repository = createD1ItemImportReview(env.DB, adminIdentity);
   const form = await request.formData();
@@ -293,17 +297,9 @@ export default function CatalogRequests() {
         {page.mode !== "items" && (
           <p role="alert">条目发布尚未启用；当前导入和审核不可提交。</p>
         )}
-        {page.canEdit && (
-          <Form method="post" encType="multipart/form-data">
-            <input type="hidden" name="intent" value="import" />
-            <input type="hidden" name="batchId" value={page.batchId} />
-            <label>
-              Excel 工作簿
-              <input type="file" name="workbook" accept=".xlsx" required />
-            </label>
-            <button disabled={page.mode !== "items"}>导入为独立请求</button>
-          </Form>
-        )}
+        <p>
+          <Link to="/admin/catalog/bulk-import">前往批量导入产品</Link>
+        </p>
         <Form method="get">
           <label>
             批次

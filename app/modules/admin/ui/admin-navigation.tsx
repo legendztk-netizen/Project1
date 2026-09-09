@@ -22,7 +22,7 @@ const catalogMaintenanceNavigation = [
   {
     key: "excel",
     label: "批量导入产品",
-    to: "/admin/catalog/import?mode=excel",
+    to: "/admin/catalog/bulk-import",
   },
   {
     key: "manual",
@@ -44,7 +44,7 @@ const adminNavigation = [
     key: "catalog",
     label: "产品审核与发布",
     icon: Boxes,
-    to: "/admin/catalog/review",
+    to: "/admin/catalog/requests",
   },
   {
     children: catalogMaintenanceNavigation,

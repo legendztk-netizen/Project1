@@ -85,6 +85,11 @@ export default [
     "modules/admin/routes/catalog-assemblies.tsx",
   ),
   route("admin/catalog/requests", "modules/admin/routes/catalog-requests.tsx"),
+  route(
+    "admin/catalog/bulk-import",
+    "modules/admin/routes/catalog-bulk-import.tsx",
+  ),
+  route("admin/catalog/cutover", "modules/admin/routes/catalog-cutover.tsx"),
   route("admin/catalog/items", "modules/admin/routes/catalog-items.tsx"),
   route("admin/catalog/import", "modules/admin/routes/catalog-import.tsx"),
   route(

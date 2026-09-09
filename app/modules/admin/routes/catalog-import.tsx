@@ -90,7 +90,7 @@ export async function loader({ context, request }: Route.LoaderArgs) {
     (await itemPublicationRepository(itemContext.env.DB).state()).mode ===
     "items"
   )
-    return redirect("/admin/catalog/requests");
+    return redirect("/admin/catalog/bulk-import");
   const { env } = requireAdminRequestContext(context);
   const url = new URL(request.url);
   const repository = createD1CatalogWorkbookImportRepository(env.DB);
