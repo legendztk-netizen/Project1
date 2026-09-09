@@ -151,7 +151,9 @@ export function createD1ItemImportReview(
           new Date().toISOString(),
         ),
     ]);
-    if (results[0].meta.changes !== 1)
+    // D1 metadata also counts the cutover epoch trigger; the primary-key update
+    // still affects at most one request. A stale conditional update changes nothing.
+    if (results[0].meta.changes === 0)
       throw new CatalogItemRejected("请求已变更或已审核，请刷新", 409);
   }
   return {

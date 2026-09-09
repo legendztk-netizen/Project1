@@ -36,7 +36,7 @@ async function hash(value: unknown) {
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
-interface Run {
+export interface CutoverRun {
   id: string;
   expected_epoch: number;
   active_release_id: string;
@@ -69,7 +69,7 @@ export function createD1CatalogCutover(
     const r = await db
       .prepare("SELECT * FROM catalog_cutover_runs WHERE id=?")
       .bind(id)
-      .first<Run>();
+      .first<CutoverRun>();
     if (!r) throw new CatalogItemRejected("迁移盘点不存在");
     return r;
   }
@@ -94,7 +94,7 @@ export function createD1CatalogCutover(
     const existing = await db
       .prepare("SELECT * FROM catalog_cutover_runs WHERE id=?")
       .bind(id)
-      .first<Run>();
+      .first<CutoverRun>();
     if (existing) return existing;
     const before = await control();
     if (before.frozen || before.committed)
@@ -606,7 +606,7 @@ export function createD1CatalogCutover(
           .prepare(
             "SELECT * FROM catalog_cutover_runs ORDER BY created_at DESC",
           )
-          .all<Run>()
+          .all<CutoverRun>()
       ).results;
     },
   };

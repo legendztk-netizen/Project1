@@ -16,6 +16,8 @@ Active 建立不可变实体修订及来源映射。已有条目修改优先；�
 
 ## 环境与验证证据
 
-- 本地：0059 schemaVersion 60；隔离 D1 演练与针对性测试在 `test/catalog-cutover-d1.integration.test.ts`。
+- 本地：0059/0060 schemaVersion 61；隔离 D1 演练与针对性测试在 `test/catalog-cutover-d1.integration.test.ts`。
 - 真实预览/生产：当前 `wrangler.jsonc` 的预览和生产资源仍有占位项，不能宣称已完成远程演练或生产切换。必须先配置真实 D1、Access、域名及相关环境契约，再执行同样的冻结/核对流程。
 - 本地原数据备份与运行日志保存在 `.scratch/ticket-86/`，含业务原数据，不提交 Git。
+
+真实本地数据副本演练：从 SQLite 一致性备份复制到独立 D1，运行 `CATALOG_CUTOVER_BACKUP=/绝对路径/备份.sqlite pnpm exec vitest run test/catalog-cutover-rehearsal.integration.test.ts`。该命令只作用于 `.scratch/ticket-86/real-rehearsal`，不切换源数据库。报告包含 369 个 Release 的范围盘点；输出文件为 `.scratch/ticket-86/real-report.json` 与 `real-result.json`。实际运行使用当前快照数据，不将测试夹具数量当作生产数量。

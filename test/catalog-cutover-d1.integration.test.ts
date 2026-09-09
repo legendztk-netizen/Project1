@@ -145,6 +145,19 @@ it("freezes against concurrent writes, commits evidence atomically and replays w
   await expect(
     db.prepare("UPDATE catalog_imports SET summary_json='{}'").run(),
   ).rejects.toThrow(/frozen/);
+  await db
+    .prepare(
+      "CREATE TRIGGER cutover_test_failure BEFORE INSERT ON catalog_product_revisions WHEN json_extract(NEW.source_json,'$.bootstrap')=1 BEGIN SELECT RAISE(ABORT,'cutover fixture failure'); END",
+    )
+    .run();
+  await expect(repo.commit(r.id)).rejects.toThrow(/fixture failure/);
+  expect((await repo.run(r.id)).status).toBe("frozen");
+  expect(
+    (await db
+      .prepare("SELECT COUNT(*) AS n FROM catalog_product_revisions")
+      .first<{ n: number }>())!.n,
+  ).toBe(before!.n);
+  await db.prepare("DROP TRIGGER cutover_test_failure").run();
   await repo.commit(r.id);
   expect((await repo.commit(r.id)).status).toBe("committed");
   expect(
