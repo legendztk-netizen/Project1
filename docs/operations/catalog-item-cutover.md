@@ -21,3 +21,11 @@ Active 建立不可变实体修订及来源映射。已有条目修改优先；�
 - 本地原数据备份与运行日志保存在 `.scratch/ticket-86/`，含业务原数据，不提交 Git。
 
 真实本地数据副本演练：从 SQLite 一致性备份复制到独立 D1，运行 `CATALOG_CUTOVER_BACKUP=/绝对路径/备份.sqlite pnpm exec vitest run test/catalog-cutover-rehearsal.integration.test.ts`。该命令只作用于 `.scratch/ticket-86/real-rehearsal`，不切换源数据库。报告包含 369 个 Release 的范围盘点；输出文件为 `.scratch/ticket-86/real-report.json` 与 `real-result.json`。实际运行使用当前快照数据，不将测试夹具数量当作生产数量。
+
+## 2026-09-09 本地验收
+
+本地实际数据库运行 `local-spec11-cutover-20260909` 已提交，冻结已解除且旧写入已关闭。基线条目 718 个，当前 SKU 645 个；切换前后 SKU 读取逐行一致，总成 49,070 条，外键异常 0。此次实际数据没有未处理 Draft 差异，相关迁移分支另由隔离 D1 夹具验证。
+
+完整回归一次：519 项通过、7 项失败；失败项分别为导航旧地址预期 2 项、迁移夹具依赖顺序 1 项、D1 触发器修改计数兼容 4 项，修正后均完成定向复测，合计覆盖 526 项通过。真实数据副本演练单独通过。Worker 共 7 项流程覆盖通过（含导入页拆分后的复测）；格式、Lint、类型、构建与本地部署 dry-run 通过。日志保留于 `.scratch/ticket-86/`。
+
+远程预览演练及正式生产切换未执行，仍需真实环境配置；本地验收不等于远程验收完成。

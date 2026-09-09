@@ -165,7 +165,10 @@ it("imports a real workbook through Worker, corrects, self approves, filters and
     "04_兼容压接",
   );
   const form = new FormData();
-  const batchId = hidden(reviewPage, "batchId");
+  const importPage = await (
+    await fetch(origin + "/admin/catalog/bulk-import")
+  ).text();
+  const batchId = hidden(importPage, "batchId");
   form.set("intent", "import");
   form.set("batchId", batchId);
   form.set(
@@ -173,7 +176,7 @@ it("imports a real workbook through Worker, corrects, self approves, filters and
     new Blob([XLSX.write(workbook, { type: "array", bookType: "xlsx" })]),
     "real-test.xlsx",
   );
-  const imported = await fetch(origin + "/admin/catalog/requests", {
+  const imported = await fetch(origin + "/admin/catalog/bulk-import", {
     method: "POST",
     body: form,
     headers: { origin },
@@ -418,7 +421,7 @@ it("uses downloaded headers for new series/children, existing series changes and
     new Blob([XLSX.write(workbook, { type: "array", bookType: "xlsx" })]),
     "full-template.xlsx",
   );
-  const imported = await fetch(origin + "/admin/catalog/requests", {
+  const imported = await fetch(origin + "/admin/catalog/bulk-import", {
     method: "POST",
     body: form,
     headers: { origin },

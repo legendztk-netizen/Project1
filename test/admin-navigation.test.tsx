@@ -65,7 +65,7 @@ describe("AdminNavigation", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(
       screen.getByRole("link", { name: "批量导入产品" }).getAttribute("href"),
-    ).toBe("/admin/catalog/import?mode=excel");
+    ).toBe("/admin/catalog/bulk-import");
 
     fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
@@ -84,6 +84,6 @@ describe("AdminNavigation", () => {
     ).toBe("/admin");
     expect(
       screen.getByRole("link", { name: "产品审核与发布" }).getAttribute("href"),
-    ).toBe("/admin/catalog/review");
+    ).toBe("/admin/catalog/requests");
   });
 });

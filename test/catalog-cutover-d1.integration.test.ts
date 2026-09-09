@@ -147,7 +147,7 @@ it("freezes against concurrent writes, commits evidence atomically and replays w
   ).rejects.toThrow(/frozen/);
   await db
     .prepare(
-      "CREATE TRIGGER cutover_test_failure BEFORE INSERT ON catalog_product_revisions WHEN json_extract(NEW.source_json,'$.bootstrap')=1 BEGIN SELECT RAISE(ABORT,'cutover fixture failure'); END",
+      "CREATE TRIGGER cutover_test_failure BEFORE INSERT ON catalog_product_revisions WHEN json_extract(NEW.source_json,'$.bootstrap')=1 AND json_extract(NEW.payload_json,'$.kind')='sku' BEGIN SELECT RAISE(ABORT,'cutover fixture failure'); END",
     )
     .run();
   await expect(repo.commit(r.id)).rejects.toThrow(/fixture failure/);
