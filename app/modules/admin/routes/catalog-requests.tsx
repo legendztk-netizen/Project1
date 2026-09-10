@@ -1,6 +1,7 @@
 import "../ui/catalog-request-review.css";
 import {
   Form,
+  Link,
   data,
   redirect,
   useLoaderData,
@@ -282,6 +283,9 @@ export default function CatalogRequests() {
       <AdminNavigation active="catalog" />
       <main className="catalog-request-page">
         <h1>产品审核与发布</h1>
+        <p>
+          <Link to="/admin/catalog/history">查看历史目录与导入来源</Link>
+        </p>
         <a href="/admin/catalog/item-template" download>
           下载条目导入模板
         </a>

@@ -1,9 +1,10 @@
-import { Activity, Boxes, Database, FileUp, Waypoints } from "lucide-react";
+import { Activity, Boxes, Database, Waypoints } from "lucide-react";
 import { Link } from "react-router";
 
 import type { Route } from "./+types/admin-home";
 import { createD1CatalogPublicationRepository } from "../../catalog/infrastructure/d1-catalog-publication-repository";
 import { requireAdminRequestContext } from "../infrastructure/admin-request-context";
+import { createD1CatalogItemRepository } from "../../catalog/infrastructure/d1-catalog-item-repository";
 import { AdminNavigation } from "../ui/admin-navigation";
 
 export function meta() {
@@ -15,10 +16,16 @@ export async function loader({ context }: Route.LoaderArgs) {
   const activeRelease = await createD1CatalogPublicationRepository(
     env.DB,
   ).findActiveRelease();
-  return { activeRelease, adminIdentity, environment: env.APP_ENV };
+  return {
+    activeRelease,
+    adminIdentity,
+    environment: env.APP_ENV,
+    publication: await createD1CatalogItemRepository(env.DB).state(),
+  };
 }
 
 export default function AdminHome({ loaderData }: Route.ComponentProps) {
+  const itemMode = loaderData.publication.mode === "items";
   return (
     <div className="admin-shell" data-surface="admin">
       <AdminNavigation active="overview" />
@@ -42,14 +49,18 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
             <small>Cloudflare Worker</small>
           </article>
           <article>
-            <span>Catalog release</span>
+            <span>产品发布方式</span>
             <strong>
-              {loaderData.activeRelease?.releaseNumber ?? "Not published"}
+              {itemMode
+                ? "条目级发布"
+                : (loaderData.activeRelease?.releaseNumber ?? "尚未发布")}
             </strong>
             <small>
-              {loaderData.activeRelease
-                ? "Active customer release"
-                : "Import workflow pending"}
+              {itemMode
+                ? "产品独立发布，总成按受影响系列更新"
+                : loaderData.activeRelease
+                  ? "整本目录发布"
+                  : "等待导入产品"}
             </small>
           </article>
           <article>
@@ -67,15 +78,22 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
           <div className="empty-state">
             <Database size={24} />
             <div>
-              <strong>No catalog release yet</strong>
-              <p>The import and release workflow will appear here.</p>
+              <strong>
+                {itemMode
+                  ? "产品维护已切换到条目流程"
+                  : loaderData.activeRelease
+                    ? "目录已发布"
+                    : "尚无已发布目录"}
+              </strong>
+              <p>
+                {itemMode
+                  ? "手动新增或编辑直接发布；批量导入在产品审核与发布中处理。历史目录保留只读。"
+                  : "通过目录导入和审核维护产品。"}
+              </p>
             </div>
           </div>
-          <Link
-            className="button button-primary"
-            to="/admin/catalog/requests#bulk-import"
-          >
-            <FileUp size={17} /> 产品数据维护
+          <Link className="button button-primary" to="/admin/catalog/products">
+            <Boxes size={17} /> 管理所有产品
           </Link>
           <Link
             className="button button-secondary"
@@ -89,6 +107,14 @@ export default function AdminHome({ loaderData }: Route.ComponentProps) {
           >
             <Waypoints size={17} /> 总成参数配置
           </Link>
+          {itemMode && (
+            <Link
+              className="button button-secondary"
+              to="/admin/catalog/history"
+            >
+              历史目录与来源
+            </Link>
+          )}
           <Link
             className="button button-secondary"
             to="/admin/diagnostics/catalog-release"

@@ -172,6 +172,44 @@ it("switches a legacy Worker, blocks retired writes and keeps item prices live",
   expect(
     (await post("/admin/catalog/import", { intent: "import" })).status,
   ).toBe(409);
+  const retained = sql<{ release_id: string }>(
+    "SELECT release_id FROM catalog_active_release WHERE singleton=1",
+  )[0];
+  const oldHistory = await fetch(
+    origin + `/admin/catalog/review?release=${retained.release_id}`,
+    { redirect: "manual" },
+  );
+  expect(oldHistory.status).toBe(302);
+  expect(oldHistory.headers.get("location")).toBe(
+    `/admin/catalog/history?release=${retained.release_id}`,
+  );
+  const history = await (
+    await fetch(origin + oldHistory.headers.get("location"))
+  ).text();
+  expect(history).toContain("历史目录与导入来源");
+  expect(history).toContain("601R1_001");
+  expect(history).not.toContain('method="post"');
+  // The Worker rejects retired catalog writes before the read-only route action.
+  expect((await post("/admin/catalog/history", {})).status).toBe(409);
+  const audit = sql<{ payload_json: string }>(
+    "SELECT payload_json FROM admin_audit_events WHERE event_type LIKE 'catalog_cutover.%'",
+  );
+  expect(audit.length).toBe(4);
+  for (const event of audit) {
+    const payload = JSON.parse(event.payload_json);
+    expect(payload.requestId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(payload.ipAddress).toBeTruthy();
+  }
+  const overview = await (await fetch(origin + "/admin")).text();
+  expect(overview).toContain("条目级发布");
+  expect(overview).not.toContain("No catalog release yet");
+  const diagnostic = await (
+    await fetch(origin + "/admin/diagnostics/catalog-release")
+  ).text();
+  expect(diagnostic).not.toContain("Create diagnostic draft");
+  expect((await post("/admin/diagnostics/catalog-release", {})).status).toBe(
+    409,
+  );
   const bulk = await (
     await fetch(origin + "/admin/catalog/bulk-import")
   ).text();

@@ -29,6 +29,14 @@ beforeAll(async () => {
   });
   db = platform.env.DB;
   await seedManagedAssemblyBaseline(db);
+  await db.batch([
+    db.prepare(
+      "INSERT INTO catalog_imports(id,kind,status,created_at,completed_at) VALUES('history-diagnostic-import','diagnostic','completed','2026-09-01','2026-09-01')",
+    ),
+    db.prepare(
+      "INSERT INTO catalog_releases(id,release_number,status,source_import_id,created_at) VALUES('history-diagnostic','DIAG-HISTORY','draft','history-diagnostic-import','2026-09-01')",
+    ),
+  ]);
 }, 60000);
 afterAll(async () => {
   await platform?.dispose();
@@ -67,6 +75,44 @@ it("requires an owner and refuses a stale inventory; cancellation restores maint
       )
       .run(),
   ).resolves.toBeDefined();
+});
+it("audits each cutover request and keeps earlier events unchanged on retries", async () => {
+  const context = (requestId: string) => ({
+    requestId,
+    ipAddress: "203.0.113.8",
+  });
+  await createD1CatalogCutover(db, actor, context("inventory-http")).inventory(
+    "audit-run",
+  );
+  await createD1CatalogCutover(db, actor, context("freeze-http")).freeze(
+    "audit-run",
+  );
+  await createD1CatalogCutover(db, actor, context("retry-http")).freeze(
+    "audit-run",
+  );
+  await createD1CatalogCutover(db, actor, context("cancel-http")).cancel(
+    "audit-run",
+  );
+  const events = (
+    await db
+      .prepare(
+        "SELECT event_type,payload_json FROM admin_audit_events WHERE entity_id='audit-run'",
+      )
+      .all<{ event_type: string; payload_json: string }>()
+  ).results;
+  expect(events).toHaveLength(3);
+  for (const [status, requestId] of [
+    ["inventoried", "inventory-http"],
+    ["frozen", "freeze-http"],
+    ["cancelled", "cancel-http"],
+  ]) {
+    expect(
+      JSON.parse(
+        events.find((e) => e.event_type === `catalog_cutover.${status}`)!
+          .payload_json,
+      ),
+    ).toMatchObject({ requestId, ipAddress: "203.0.113.8", status });
+  }
 });
 it("preserves changed draft contents while leaving inherited rows alone", async () => {
   const active = await db
@@ -150,7 +196,19 @@ it("freezes against concurrent writes, commits evidence atomically and replays w
       "CREATE TRIGGER cutover_test_failure BEFORE INSERT ON catalog_product_revisions WHEN json_extract(NEW.source_json,'$.bootstrap')=1 AND json_extract(NEW.payload_json,'$.kind')='sku' BEGIN SELECT RAISE(ABORT,'cutover fixture failure'); END",
     )
     .run();
-  await expect(repo.commit(r.id)).rejects.toThrow(/fixture failure/);
+  const commitContext = { requestId: "commit-http", ipAddress: "203.0.113.9" };
+  const commitRepo = createD1CatalogCutover(db, actor, commitContext);
+  await expect(commitRepo.commit(r.id)).rejects.toThrow(/fixture failure/);
+  expect(
+    (
+      await db
+        .prepare(
+          "SELECT id FROM admin_audit_events WHERE entity_id=? AND event_type='catalog_cutover.committing'",
+        )
+        .bind(r.id)
+        .all()
+    ).results,
+  ).toEqual([]);
   expect((await repo.run(r.id)).status).toBe("frozen");
   expect(
     (await db
@@ -158,7 +216,14 @@ it("freezes against concurrent writes, commits evidence atomically and replays w
       .first<{ n: number }>())!.n,
   ).toBe(before!.n);
   await db.prepare("DROP TRIGGER cutover_test_failure").run();
-  await repo.commit(r.id);
+  await commitRepo.commit(r.id);
+  const event = await db
+    .prepare(
+      "SELECT payload_json FROM admin_audit_events WHERE entity_id=? AND event_type='catalog_cutover.committed'",
+    )
+    .bind(r.id)
+    .first<{ payload_json: string }>();
+  expect(JSON.parse(event!.payload_json)).toMatchObject(commitContext);
   expect((await repo.commit(r.id)).status).toBe("committed");
   expect(
     (await db
@@ -175,3 +240,65 @@ it("freezes against concurrent writes, commits evidence atomically and replays w
     [],
   );
 }, 60000);
+
+it("reads retained release sections after cutover without changing legacy data", async () => {
+  const { readCatalogHistory, historySections } =
+    await import("../app/modules/catalog/infrastructure/d1-catalog-history");
+  const epochBefore = await db
+    .prepare("SELECT epoch FROM catalog_cutover_control WHERE singleton=1")
+    .first();
+  const list = await readCatalogHistory(
+    db,
+    new URL("http://admin.localhost/admin/catalog/history"),
+  );
+  expect(list.rows.length).toBeGreaterThan(0);
+  expect(list.rows.length).toBeLessThanOrEqual(20);
+  for (const status of ["draft", "published", "superseded"]) {
+    const filtered = await readCatalogHistory(
+      db,
+      new URL(`http://admin.localhost/admin/catalog/history?status=${status}`),
+    );
+    expect(filtered.rows.every((row) => row.status === status)).toBe(true);
+  }
+  for (const section of Object.keys(historySections)) {
+    const detail = await readCatalogHistory(
+      db,
+      new URL(
+        `http://admin.localhost/admin/catalog/history?release=${encodeURIComponent(String(list.rows[0].id))}&section=${section}&page=999999`,
+      ),
+    );
+    expect(detail.release?.id).toBe(list.rows[0].id);
+    expect(detail.page).toBeLessThanOrEqual(detail.pages);
+    expect(detail.rows.length).toBeLessThanOrEqual(20);
+  }
+  await expect(
+    readCatalogHistory(
+      db,
+      new URL("http://admin.localhost/admin/catalog/history?release=missing"),
+    ),
+  ).rejects.toMatchObject({ status: 404 });
+  const diagnostic = await readCatalogHistory(
+    db,
+    new URL(
+      "http://admin.localhost/admin/catalog/history?release=history-diagnostic",
+    ),
+  );
+  expect(diagnostic.release?.source_import_id).toBe(
+    "history-diagnostic-import",
+  );
+  expect(diagnostic.rows).toEqual([]);
+  expect(diagnostic.total).toBe(0);
+  const safe = await readCatalogHistory(
+    db,
+    new URL(
+      `http://admin.localhost/admin/catalog/history?release=${encodeURIComponent(String(list.rows[0].id))}&section=catalog_cost_bases&q=NO_MATCH`,
+    ),
+  );
+  expect(safe.section).toBe("catalog_skus");
+  expect(safe.rows).toEqual([]);
+  expect(
+    await db
+      .prepare("SELECT epoch FROM catalog_cutover_control WHERE singleton=1")
+      .first(),
+  ).toEqual(epochBefore);
+});

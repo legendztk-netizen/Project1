@@ -55,7 +55,13 @@ interface RecordEntry {
 export function createD1CatalogCutover(
   db: D1Database,
   actor: { id: string; accountType: string; catalogPermission?: string },
+  auditContext?: { requestId: string; ipAddress: string },
 ) {
+  function audit() {
+    return (
+      auditContext ?? { requestId: crypto.randomUUID(), ipAddress: "internal" }
+    );
+  }
   function authorize() {
     if (actor.accountType !== "owner" || actor.catalogPermission === "view")
       throw new CatalogItemRejected("仅主账号可执行目录切换", 403);
@@ -363,7 +369,7 @@ export function createD1CatalogCutover(
     const statements = [
       db
         .prepare(
-          "INSERT INTO catalog_cutover_runs(id,expected_epoch,active_release_id,fingerprint,report_json,status,actor_id,created_at) VALUES(?,?,?,?,?,'inventoried',?,?)",
+          "INSERT INTO catalog_cutover_runs(id,expected_epoch,active_release_id,fingerprint,report_json,status,actor_id,created_at,audit_actor_id,audit_request_id,audit_ip_address) VALUES(?,?,?,?,?,'inventoried',?,?,?,?,?)",
         )
         .bind(
           id,
@@ -373,6 +379,9 @@ export function createD1CatalogCutover(
           JSON.stringify(report),
           actor.id,
           now,
+          actor.id,
+          audit().requestId,
+          audit().ipAddress,
         ),
     ];
     // Evidence is staged before freezing. Incomplete staging is not eligible for commit.
@@ -400,9 +409,9 @@ export function createD1CatalogCutover(
     if (r.status === "frozen" || r.status === "committed") return r;
     await db
       .prepare(
-        "UPDATE catalog_cutover_runs SET status='frozen' WHERE id=? AND status='inventoried'",
+        "UPDATE catalog_cutover_runs SET status='frozen',audit_actor_id=?,audit_request_id=?,audit_ip_address=? WHERE id=? AND status='inventoried'",
       )
-      .bind(id)
+      .bind(actor.id, audit().requestId, audit().ipAddress, id)
       .run();
     return run(id);
   }
@@ -410,9 +419,9 @@ export function createD1CatalogCutover(
     authorize();
     await db
       .prepare(
-        "UPDATE catalog_cutover_runs SET status='cancelled' WHERE id=? AND status IN('inventoried','frozen')",
+        "UPDATE catalog_cutover_runs SET status='cancelled',audit_actor_id=?,audit_request_id=?,audit_ip_address=? WHERE id=? AND status IN('inventoried','frozen')",
       )
-      .bind(id)
+      .bind(actor.id, audit().requestId, audit().ipAddress, id)
       .run();
     return run(id);
   }
@@ -443,9 +452,9 @@ export function createD1CatalogCutover(
     const statements = [
       db
         .prepare(
-          "UPDATE catalog_cutover_runs SET status='committing' WHERE id=? AND status='frozen'",
+          "UPDATE catalog_cutover_runs SET status='committing',audit_actor_id=?,audit_request_id=?,audit_ip_address=? WHERE id=? AND status='frozen'",
         )
-        .bind(id),
+        .bind(actor.id, audit().requestId, audit().ipAddress, id),
       db
         .prepare(
           "UPDATE catalog_item_publication_state SET mode='items',baseline_release_id=? WHERE singleton=1",
@@ -471,7 +480,7 @@ export function createD1CatalogCutover(
           db
             .prepare(
               `INSERT INTO catalog_product_revisions(id,entity_id,target_state,payload_json,media_version_id,source_json,affected_series_json,command_id,command_hash,expected_generation,actor_id,ip_address,occurred_at)
-        SELECT ?,e.id,?,?,?,?, '[]',?,?,0,?,'migration',? FROM catalog_product_entities e WHERE e.kind=? AND e.product_type=? AND e.code=?`,
+        SELECT ?,e.id,?,?,?,?, '[]',?,?,0,?,?,? FROM catalog_product_entities e WHERE e.kind=? AND e.product_type=? AND e.code=?`,
             )
             .bind(
               row.target_id,
@@ -488,6 +497,7 @@ export function createD1CatalogCutover(
               row.target_id,
               await hash(value),
               actor.id,
+              audit().ipAddress,
               now,
               p.kind,
               p.productType,

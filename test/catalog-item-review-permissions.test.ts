@@ -44,3 +44,35 @@ it("denies unauthorized reads and read-only mutations before reading forms or D1
     }),
   ).rejects.toMatchObject({ status: 403 });
 });
+
+it("requires an administrator for legacy history and rejects all history mutations", async () => {
+  const history = await import("../app/modules/admin/routes/catalog-history");
+  const context = new RouterContextProvider();
+  const base = {
+    env: {} as CloudflareBindings,
+    runtime: { environment: "local" as const },
+    ctx: {} as ExecutionContext,
+  };
+  context.set(cloudflareContext, { ...base, adminIdentity: undefined });
+  const args = {
+    context,
+    request: new Request("http://admin.localhost/admin/catalog/history"),
+    url: new URL("http://admin.localhost/admin/catalog/history"),
+    pattern: "/admin/catalog/history",
+    params: {},
+  } as Parameters<typeof history.loader>[0];
+  await expect(history.loader(args)).rejects.toMatchObject({ status: 403 });
+  await expect(history.action(args)).rejects.toMatchObject({ status: 403 });
+  context.set(cloudflareContext, {
+    ...base,
+    adminIdentity: {
+      id: "viewer",
+      email: "viewer@example.com",
+      accountType: "subaccount",
+      source: "cloudflare-access",
+      canManageSubaccounts: false,
+      catalogPermission: "view",
+    },
+  });
+  await expect(history.action(args)).rejects.toMatchObject({ status: 405 });
+});

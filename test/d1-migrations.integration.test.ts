@@ -1436,6 +1436,7 @@ describe("real local D1 migration lifecycle", () => {
     const cutoverMigrations = [
       "0059_catalog_cutover.sql",
       "0060_catalog_cutover_freeze_ownership.sql",
+      "0061_catalog_cutover_request_audit.sql",
     ];
     for (const migration of cutoverMigrations)
       rmSync(join(fixture.directory, "migrations", migration));

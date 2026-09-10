@@ -4,23 +4,31 @@ import { Form, Link, redirect } from "react-router";
 import type { Route } from "./+types/catalog-release-diagnostic";
 import { createDiagnosticCatalogRelease } from "../../catalog/domain/catalog-release";
 import { createD1CatalogReleaseRepository } from "../../catalog/infrastructure/d1-catalog-release-repository";
-import { requireAdminRequestContext } from "../infrastructure/admin-request-context";
+import { createD1CatalogItemRepository } from "../../catalog/infrastructure/d1-catalog-item-repository";
+import {
+  requireAdminRequestContext,
+  requireCatalogWriteContext,
+} from "../infrastructure/admin-request-context";
 
 export function meta() {
   return [{ title: "Catalog Release Diagnostic | Admin Backoffice" }];
 }
 
 export async function loader({ context }: Route.LoaderArgs) {
-  const { env } = requireAdminRequestContext(context);
+  const { env, adminIdentity } = requireAdminRequestContext(context);
   const repository = createD1CatalogReleaseRepository(env.DB);
   return {
     environment: env.APP_ENV,
+    canCreate:
+      env.APP_ENV === "local" &&
+      adminIdentity.catalogPermission !== "view" &&
+      (await createD1CatalogItemRepository(env.DB).state()).mode === "legacy",
     latestRelease: await repository.findLatestDiagnosticDraft(),
   };
 }
 
 export async function action({ context, request }: Route.ActionArgs) {
-  const { adminIdentity, env } = requireAdminRequestContext(context);
+  const { adminIdentity, env } = requireCatalogWriteContext(context);
   if (env.APP_ENV !== "local") {
     throw new Response(
       "Diagnostic mutation is available only in local development",
@@ -32,6 +40,9 @@ export async function action({ context, request }: Route.ActionArgs) {
   if (request.method !== "POST")
     throw new Response("Method not allowed", { status: 405 });
 
+  if ((await createD1CatalogItemRepository(env.DB).state()).mode === "items") {
+    throw new Response("条目发布已启用，旧目录草稿创建已停用", { status: 409 });
+  }
   const repository = createD1CatalogReleaseRepository(env.DB);
   const release = await createDiagnosticCatalogRelease(repository, {
     actorId: adminIdentity.id,
@@ -97,11 +108,15 @@ export default function CatalogReleaseDiagnostic({
         )}
       </section>
 
-      <Form method="post">
-        <button className="button button-primary" type="submit">
-          <Plus size={17} /> Create diagnostic draft
-        </button>
-      </Form>
+      {loaderData.canCreate ? (
+        <Form method="post">
+          <button className="button button-primary" type="submit">
+            <Plus size={17} /> Create diagnostic draft
+          </button>
+        </Form>
+      ) : (
+        <p>此页仅供读取诊断记录；当前不开放旧目录草稿创建。</p>
+      )}
     </main>
   );
 }

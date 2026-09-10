@@ -11,15 +11,24 @@ const states: Record<string, string> = {
   committed: "已完成",
   cancelled: "已取消",
 };
-function repository(context: Route.LoaderArgs["context"]) {
+function repository(context: Route.LoaderArgs["context"], request?: Request) {
   const { env, adminIdentity } = requireAdminRequestContext(context);
-  return createD1CatalogCutover(env.DB, adminIdentity);
+  return createD1CatalogCutover(
+    env.DB,
+    adminIdentity,
+    request
+      ? {
+          requestId: crypto.randomUUID(),
+          ipAddress: request.headers.get("cf-connecting-ip") ?? "local",
+        }
+      : undefined,
+  );
 }
 export async function loader({ context }: Route.LoaderArgs) {
   return { runs: await repository(context).history(), id: crypto.randomUUID() };
 }
 export async function action({ context, request }: Route.ActionArgs) {
-  const repo = repository(context),
+  const repo = repository(context, request),
     form = await request.formData(),
     id = String(form.get("id") ?? ""),
     intent = String(form.get("intent") ?? "");

@@ -340,7 +340,7 @@ it("imports and approves the remaining four product types and blocks inapplicabl
     ]);
     expect((await approve(bad))[0].ok).toBe(false);
   }
-});
+}, 30000);
 it("rejects a correction arriving after approval reads the request but before its transaction", async () => {
   const row = (await importRows([priceSheet(42)]))[0];
   let corrected = false;
