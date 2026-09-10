@@ -503,7 +503,93 @@ export function publicCatalogItemFromRow(
   };
 }
 
+// Materialize only the active import before joining runtime overlay views.
+// Otherwise SQLite can repeatedly scan historical imports for each SKU.
 const publicCatalogSql = `
+WITH active_catalog_runtime_skus AS MATERIALIZED (
+    SELECT * FROM catalog_runtime_skus
+    WHERE import_id = (
+      SELECT r.source_import_id FROM catalog_active_release ar
+      JOIN catalog_releases r ON r.id = ar.release_id
+    )
+  ),
+active_catalog_runtime_sales_offers AS MATERIALIZED (
+    SELECT * FROM catalog_runtime_sales_offers
+    WHERE import_id = (
+      SELECT r.source_import_id FROM catalog_active_release ar
+      JOIN catalog_releases r ON r.id = ar.release_id
+    )
+  ),
+active_catalog_runtime_product_main_images AS MATERIALIZED (
+    SELECT * FROM catalog_runtime_product_main_images
+    WHERE import_id = (
+      SELECT r.source_import_id FROM catalog_active_release ar
+      JOIN catalog_releases r ON r.id = ar.release_id
+    )
+  ),
+active_catalog_runtime_hose_variants AS MATERIALIZED (
+    SELECT * FROM catalog_runtime_hose_variants
+    WHERE import_id = (
+      SELECT r.source_import_id FROM catalog_active_release ar
+      JOIN catalog_releases r ON r.id = ar.release_id
+    )
+  ),
+active_catalog_runtime_hose_series AS MATERIALIZED (
+    SELECT * FROM catalog_runtime_hose_series
+    WHERE import_id = (
+      SELECT r.source_import_id FROM catalog_active_release ar
+      JOIN catalog_releases r ON r.id = ar.release_id
+    )
+  ),
+active_catalog_runtime_hose_ends AS MATERIALIZED (
+    SELECT * FROM catalog_runtime_hose_ends
+    WHERE import_id = (
+      SELECT r.source_import_id FROM catalog_active_release ar
+      JOIN catalog_releases r ON r.id = ar.release_id
+    )
+  ),
+active_catalog_runtime_hose_end_series AS MATERIALIZED (
+    SELECT * FROM catalog_runtime_hose_end_series
+    WHERE import_id = (
+      SELECT r.source_import_id FROM catalog_active_release ar
+      JOIN catalog_releases r ON r.id = ar.release_id
+    )
+  ),
+active_catalog_runtime_ferrules AS MATERIALIZED (
+    SELECT * FROM catalog_runtime_ferrules
+    WHERE import_id = (
+      SELECT r.source_import_id FROM catalog_active_release ar
+      JOIN catalog_releases r ON r.id = ar.release_id
+    )
+  ),
+active_catalog_runtime_adapters AS MATERIALIZED (
+    SELECT * FROM catalog_runtime_adapters
+    WHERE import_id = (
+      SELECT r.source_import_id FROM catalog_active_release ar
+      JOIN catalog_releases r ON r.id = ar.release_id
+    )
+  ),
+active_catalog_runtime_quick_couplers AS MATERIALIZED (
+    SELECT * FROM catalog_runtime_quick_couplers
+    WHERE import_id = (
+      SELECT r.source_import_id FROM catalog_active_release ar
+      JOIN catalog_releases r ON r.id = ar.release_id
+    )
+  ),
+active_catalog_runtime_series_commercial_rules AS MATERIALIZED (
+    SELECT * FROM catalog_runtime_series_commercial_rules
+    WHERE import_id = (
+      SELECT r.source_import_id FROM catalog_active_release ar
+      JOIN catalog_releases r ON r.id = ar.release_id
+    )
+  ),
+active_catalog_runtime_sku_price_packaging AS MATERIALIZED (
+    SELECT * FROM catalog_runtime_sku_price_packaging
+    WHERE import_id = (
+      SELECT r.source_import_id FROM catalog_active_release ar
+      JOIN catalog_releases r ON r.id = ar.release_id
+    )
+  )
   SELECT CASE WHEN item_state.mode = 'items' THEN item_state.generation END AS item_generation,
          item_entity.current_revision_id AS item_revision_id,
          series_entity.current_revision_id AS series_revision_id,
@@ -561,31 +647,31 @@ const publicCatalogSql = `
          q.unit_weight_g AS coupler_unit_weight_g
   FROM catalog_active_release ar
   INNER JOIN catalog_releases r ON r.id = ar.release_id
-  INNER JOIN catalog_runtime_skus s ON s.import_id = r.source_import_id
+  INNER JOIN active_catalog_runtime_skus s ON s.import_id = r.source_import_id
   LEFT JOIN catalog_item_publication_state item_state ON item_state.singleton = 1
   LEFT JOIN catalog_product_entities item_entity ON item_entity.kind = 'sku' AND item_entity.code = s.sku AND item_entity.product_type = s.product_type
-  LEFT JOIN catalog_runtime_sales_offers o
+  LEFT JOIN active_catalog_runtime_sales_offers o
     ON o.import_id = s.import_id AND o.base_sku = s.sku
-  LEFT JOIN catalog_runtime_product_main_images image
+  LEFT JOIN active_catalog_runtime_product_main_images image
     ON image.import_id = s.import_id AND image.sku = s.sku
    AND image.assignment_kind = 'override'
   LEFT JOIN cutting_labeling_fee_rates global_fee
     ON global_fee.scope_key = 'global'
   LEFT JOIN cutting_labeling_fee_rates series_fee
     ON series_fee.scope_key = 'series:' || s.hose_series
-  LEFT JOIN catalog_runtime_hose_variants h
+  LEFT JOIN active_catalog_runtime_hose_variants h
     ON h.import_id = s.import_id AND h.sku = s.sku
-  LEFT JOIN catalog_runtime_hose_series hs
+  LEFT JOIN active_catalog_runtime_hose_series hs
     ON hs.import_id = h.import_id AND hs.series_code = h.hose_series
-  LEFT JOIN catalog_runtime_hose_ends e
+  LEFT JOIN active_catalog_runtime_hose_ends e
     ON e.import_id = s.import_id AND e.sku = s.sku
-  LEFT JOIN catalog_runtime_hose_end_series hes
+  LEFT JOIN active_catalog_runtime_hose_end_series hes
     ON hes.import_id = e.import_id AND hes.series_code = e.fitting_series
-  LEFT JOIN catalog_runtime_ferrules f
+  LEFT JOIN active_catalog_runtime_ferrules f
     ON f.import_id = s.import_id AND f.sku = s.sku
-  LEFT JOIN catalog_runtime_adapters a
+  LEFT JOIN active_catalog_runtime_adapters a
     ON a.import_id = s.import_id AND a.sku = s.sku
-  LEFT JOIN catalog_runtime_quick_couplers q
+  LEFT JOIN active_catalog_runtime_quick_couplers q
     ON q.import_id = s.import_id AND q.sku = s.sku
   LEFT JOIN catalog_product_entities series_entity ON series_entity.kind = 'series' AND series_entity.code = COALESCE(s.hose_series,e.fitting_series,f.ferrule_series,a.adapter_family_id,q.coupler_series) AND series_entity.product_type = s.product_type
   LEFT JOIN catalog_product_revisions series_revision ON series_revision.id = series_entity.current_revision_id
@@ -594,7 +680,7 @@ const publicCatalogSql = `
                                     hs.representative_media_version_id,
                                     hes.representative_media_version_id,
                                     series_revision.media_version_id)
-  LEFT JOIN catalog_runtime_series_commercial_rules commercial_rule
+  LEFT JOIN active_catalog_runtime_series_commercial_rules commercial_rule
     ON commercial_rule.import_id = s.import_id
    AND commercial_rule.product_type = s.product_type
    AND commercial_rule.series_code = CASE s.product_type
@@ -604,7 +690,7 @@ const publicCatalogSql = `
      WHEN 'adapter' THEN a.adapter_family_id
      WHEN 'quick_coupler' THEN q.coupler_series
    END
-  LEFT JOIN catalog_runtime_sku_price_packaging exact_price
+  LEFT JOIN active_catalog_runtime_sku_price_packaging exact_price
     ON exact_price.import_id = s.import_id AND exact_price.sku = s.sku
   WHERE ar.singleton = 1
     AND r.status = 'published'
