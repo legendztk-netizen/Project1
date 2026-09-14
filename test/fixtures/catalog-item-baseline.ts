@@ -1,4 +1,7 @@
-export async function seedCatalogItemBaseline(database: D1Database) {
+export async function seedCatalogItemBaseline(
+  database: D1Database,
+  privateCost: number | null = null,
+) {
   const now = "2026-09-04T00:00:00.000Z";
   const summary = JSON.stringify({
     adapterCount: 0,
@@ -110,13 +113,15 @@ export async function seedCatalogItemBaseline(database: D1Database) {
              'Eligible', 'Complete', 'Length x Pieces', 1, 1, 5, 10, 20, NULL
            )`,
     ),
-    database.prepare(
-      `INSERT INTO catalog_cost_bases (
+    database
+      .prepare(
+        `INSERT INTO catalog_cost_bases (
              id, import_id, sales_sku, currency, factory_unit_price,
              price_incoterm, incoterm_place, tier_qty, tier_price
            ) VALUES ('active-cost', 'active-import', '601R1_001', 'USD',
-                     NULL, NULL, NULL, NULL, NULL)`,
-    ),
+                     ?, NULL, NULL, NULL, NULL)`,
+      )
+      .bind(privateCost),
     database.prepare(`INSERT INTO catalog_series_commercial_rules
     (id,import_id,product_type,series_code,sales_unit,moq,lead_time_days,country_of_origin,quantity_input_mode,minimum_length_per_piece_ft,length_increment_ft)
     VALUES ('rule','active-import','hose','601R1','ft',1,14,'China','Length x Pieces',1,1)`),

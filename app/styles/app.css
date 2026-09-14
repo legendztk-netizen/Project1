@@ -702,6 +702,7 @@ a {
 }
 
 .private-review-page .commercial-settings-form textarea,
+.private-review-page .commercial-settings-form input,
 .private-review-page .commercial-settings-form select {
   border: 1px solid #89959c;
   padding: 10px;

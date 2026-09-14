@@ -22,3 +22,25 @@ separate and are scanned for seeded private content by integration tests.
 Standards review identified idempotency and multipart limits; both were corrected.
 Spec review identified cache headers and missing failure/projection checks; these
 were added. Full Spec 4A checks and end-to-end acceptance remain Ticket 15 / #63.
+
+## Ticket 04 / #53
+
+`/admin/quotes/:requestId/pricing` starts/resumes a separate versioned preparation
+draft from the exact RFQ JSON/hash. Final prices are explicit USD cents and manual
+discounts use basis points. Length-based lines multiply captured total footage;
+other lines preserve their captured sales unit. Optimistic version checks and
+stable commands prevent stale overwrites and duplicate pricing audit events.
+
+Legacy catalog Cost Basis is a separately labelled Admin-only context; it is not
+asserted to describe a newer item revision and is never copied into draft pricing,
+RFQs or pricing audit payloads. Current item-series/image changes cannot mutate
+the captured source.
+
+Focused tests: three arithmetic tests and three real local D1 tests pass. Coverage
+includes simultaneous start/save, retries, cost projection isolation, and an actual
+item-series/image update after source capture. Typecheck passes. Browser verified
+100 units x USD 2.50 less 10% = USD 225.00 with the USD 2.26 reference unchanged;
+desktop/mobile inspected. Migration0064 advances local readiness to 65.
+
+Review findings corrected: captured sales-unit labelling, honest legacy-cost
+provenance, and meaningful private-cost/catalog-change integration coverage.
