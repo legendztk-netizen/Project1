@@ -17,6 +17,12 @@ import {
   consumeQuoteNotifications,
   dispatchQuoteNotifications,
 } from "./quote-notifications";
+import {
+  dispatchInboundEmail,
+  quoteInboundEmail,
+  receiveQuoteEmailEvent,
+} from "./quote-inbound-email";
+import { createInboundEmailVerifier } from "./inbound-email-verifier";
 
 const requestHandler = createRequestHandler(
   () => import("virtual:react-router/server-build"),
@@ -80,9 +86,15 @@ export default {
     return requestHandler(request, routerContext);
   },
 
+  async email(message, env) {
+    validateRuntimeEnvironment(env);
+    await receiveQuoteEmailEvent(message, env, createInboundEmailVerifier());
+  },
+
   scheduled(controller, env, ctx) {
     validateRuntimeEnvironment(env);
     ctx.waitUntil(dispatchQuoteNotifications(env));
+    ctx.waitUntil(dispatchInboundEmail(env));
     if (controller.cron === "17 * * * *")
       ctx.waitUntil(
         createRegistrationConfigurationService(env, {
@@ -92,6 +104,10 @@ export default {
   },
   async queue(batch, env) {
     validateRuntimeEnvironment(env);
-    await consumeQuoteNotifications(batch, env);
+    await consumeQuoteNotifications(
+      batch,
+      env,
+      (await quoteInboundEmail(env)).consume,
+    );
   },
 } satisfies ExportedHandler<ApplicationBindings>;

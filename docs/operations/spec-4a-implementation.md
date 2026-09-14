@@ -179,3 +179,63 @@ uncertainty, session-key rotation, multi-batch recovery, and failures older than
 produced one Queue-consumed stub capture; desktop and390px notification views
 were inspected without horizontal overflow. Both review axes' findings on
 history visibility, recovery cadence and key retention were corrected.
+
+## Ticket 10 / #58
+
+The Email Worker receives bounded raw messages, verifies a full-body RSA-SHA256
+DKIM signature aligned exactly with the envelope and single MIME From address,
+then checks the opaque reply token against current quote ownership. MIME
+Authentication-Results headers are not trusted. Launch verification supports
+2048-4096-bit RSA keys and rejects partial-body signatures. Unsupported or
+unverified senders go to quarantine, never to a customer conversation. This is
+strict DKIM alignment, not a complete DMARC-policy implementation.
+
+Only bounded TXT queries to Cloudflare DNS-over-HTTPS are used for verification;
+tests provide an offline DNS fixture. Cloudflare's Email handler does not expose
+a dedicated event identifier here, so the adapter uses a hash of raw bytes and
+the envelope, plus quote-scoped Message-ID/content deduplication. A future trusted
+provider event ID is supported without trusting user-supplied MIME headers.
+
+Authorized messages stage in private R2, then Queue processing parses MIME and
+rechecks ownership/token expiry in the atomic append transaction. Attachment
+validation and conversation quotas reuse Ticket08 rules. Source email bodies,
+tokens and storage keys are not exposed in the Admin receipt projection.
+`/admin/quote-inbound-email` provides quarantine, failed and all-receipt filters
+with cursor pagination. Scheduled bounded recovery handles dropped Queue jobs.
+
+Migration0071 was tested through actual Wrangler against populated message,
+attachment, notification, token and local-capture tables, with byte-for-byte row
+preservation, foreign-key and immutability checks. It then applied successfully
+to shared local D1: schema72, health ready. Desktop and390px Admin views were
+checked. No inbound domain, production resource or real outgoing email was used.
+
+Before production launch, replace `EMAIL_REPLY_DOMAIN`, route that domain to this
+Worker, retain the notification encryption key, and confirm DNS access. Private
+raw MIME is retained as evidence; object lifecycle deletion must not be enabled
+without an approved evidence-retention policy. Attachment validation is not a
+claim of antivirus scanning.
+
+Review corrections add migration0072 (schema73): atomic pre-upload ingress
+budgets of200 authorized receipts/100MiB per quote and10000 receipts/1GiB globally.
+Unverified metadata has a separate10000-record ceiling, so unauthenticated spam
+cannot consume the authorized raw budget. These are operational safety ceilings,
+not commercial entitlements; capacity increases require reviewed maintenance,
+not deletion of business evidence. Event replay is not charged again.
+
+Terminal receipt cleanup is durable, retried by Queue and scheduled recovery,
+including dispatch exhaustion and failed tombstone/release operations. Temporary
+DNS verification failures leave no receipt/dedup poison: the Email handler
+explicitly rejects unconfirmed receipt and asks the sender to resend or use the
+website conversation. No platform automatic-retry guarantee is assumed.
+
+The end-to-end offline fixture uses real RSA signing, DNS verification, runtime
+factories, D1, R2, local Queue delivery and the existing conversation reader.
+It covers malformed MIME, expired/unauthorized tokens, repeated events/content,
+private files, fault injection, flood isolation and retry recovery.
+
+Final verification:58 tests passed across seven inbound/verifier/Worker/route
+suites. Typecheck and production-format local build passed. The stale-consumer
+race is guarded atomically at reservation creation/reuse; four cleanup
+interleavings verify no resurrected uploads or stranded quota. Both review axes
+are cleared after corrections. Schema73 recovery migration also passed actual
+Wrangler preservation/backfill tests and was applied to local D1.

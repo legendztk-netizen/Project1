@@ -4,7 +4,7 @@ import {
   createQuoteNotifications,
 } from "../app/modules/quote-notifications";
 
-export async function quoteNotifications(env: ApplicationBindings) {
+export async function notificationProtector(env: ApplicationBindings) {
   const secret =
     env.APP_ENV === "local"
       ? "local-development-only-customer-identity-signing-key"
@@ -32,10 +32,14 @@ export async function quoteNotifications(env: ApplicationBindings) {
     false,
     ["encrypt", "decrypt"],
   );
+  return createAesGcmNotificationProtector(key);
+}
+
+export async function quoteNotifications(env: ApplicationBindings) {
   return createQuoteNotifications({
     database: env.DB,
     env,
-    protector: createAesGcmNotificationProtector(key),
+    protector: await notificationProtector(env),
   });
 }
 
@@ -55,10 +59,11 @@ export async function dispatchQuoteNotifications(env: ApplicationBindings) {
 export async function consumeQuoteNotifications(
   batch: MessageBatch<unknown>,
   env: ApplicationBindings,
+  fallback?: (message: Message<unknown>) => Promise<boolean>,
 ) {
   const service = await quoteNotifications(env);
   for (const message of batch.messages) {
-    if (!(await service.consume(message))) {
+    if (!(await service.consume(message)) && !(await fallback?.(message))) {
       // Unknown jobs are not silently accepted by an unrelated consumer.
       message.retry({ delaySeconds: 300 });
     }

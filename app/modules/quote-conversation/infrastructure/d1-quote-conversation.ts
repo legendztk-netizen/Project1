@@ -32,7 +32,7 @@ interface MessageRow {
   author_role: ConversationAuthor["role"];
   body: string;
   created_at: string;
-  source: "website";
+  source: "website" | "email";
   delivery_state: "available";
   filename: string | null;
   content_type: string | null;

@@ -52,6 +52,7 @@ export default function QuoteNotifications({
       <AdminNavigation active="quotes" />
       <main className="admin-main private-review-page">
         <h1>会话邮件通知</h1>
+        <Link to="/admin/quote-inbound-email">客户邮件接收与隔离区</Link>
         <Form method="post">
           <button
             className="button button-secondary"

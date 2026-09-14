@@ -38,10 +38,13 @@
   "dependencies": {
     "@e965/xlsx": "0.20.3",
     "drizzle-orm": "0.45.2",
+    "html-to-text": "9.0.5",
     "isbot": "5.2.1",
     "jose": "6.2.9",
     "lucide-react": "1.33.0",
+    "mailauth": "5.0.3",
     "pdf-lib": "1.17.1",
+    "postal-mime": "2.7.5",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-router": "8.3.0"
@@ -50,6 +53,7 @@
     "@cloudflare/vite-plugin": "1.53.1",
     "@react-router/dev": "8.3.0",
     "@testing-library/react": "16.3.2",
+    "@types/html-to-text": "9.0.4",
     "@types/node": "24.10.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",

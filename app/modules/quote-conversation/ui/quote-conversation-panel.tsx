@@ -71,6 +71,7 @@ export function QuoteConversationPanel({
                 </a>
               ) : null}
               <small>
+                {message.source === "email" ? (admin ? "邮件回复 · " : "Email reply · ") : ""}
                 {message.deliveryState === "available"
                   ? admin
                     ? "已发布至会话"

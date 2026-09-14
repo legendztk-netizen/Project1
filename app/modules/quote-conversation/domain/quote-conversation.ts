@@ -22,7 +22,7 @@ export interface ConversationMessage {
   authorRole: ConversationAuthor["role"];
   body: string;
   createdAt: string;
-  source: "website";
+  source: "website" | "email";
   // Available in the website conversation; not an email delivery receipt.
   deliveryState: "available";
   attachment: ConversationAttachment | null;
