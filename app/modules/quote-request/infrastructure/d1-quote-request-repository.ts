@@ -8,6 +8,7 @@ interface QuoteRequestRow {
   reference_number: string;
   snapshot_json: string;
   submitted_at: string;
+  has_current_offer?: number;
 }
 
 function record(row: QuoteRequestRow): QuoteRequestRecord {
@@ -16,6 +17,7 @@ function record(row: QuoteRequestRow): QuoteRequestRecord {
     referenceNumber: row.reference_number,
     snapshot: JSON.parse(row.snapshot_json) as QuoteRequestSnapshot,
     submittedAt: row.submitted_at,
+    hasCurrentOffer: row.has_current_offer === 1,
   };
 }
 
@@ -268,7 +270,8 @@ export function createD1QuoteRequestRepository(database: D1Database) {
       const result = await database
         .prepare(
           `SELECT request.id, request.reference_number,
-                  request.snapshot_json, request.submitted_at
+                  request.snapshot_json, request.submitted_at,
+                  EXISTS(SELECT 1 FROM quote_revisions revision WHERE revision.request_id=request.id) AS has_current_offer
            FROM customer_quote_requests request
            ${ownedQuoteRequestWhere}
            ORDER BY request.submitted_at DESC, request.id DESC`,

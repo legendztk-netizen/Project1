@@ -134,6 +134,7 @@ export type QuoteRequestSnapshot =
   IndividualQuoteRequestSnapshot | OrganizationQuoteRequestSnapshot;
 
 export interface QuoteRequestRecord {
+  hasCurrentOffer?: boolean;
   id: string;
   referenceNumber: string;
   snapshot: QuoteRequestSnapshot;
@@ -153,6 +154,9 @@ export type CustomerQuoteProgressCode =
   (typeof customerQuoteProgressStages)[number]["code"];
 
 export interface CustomerQuoteProjection extends QuoteRequestRecord {
+  currentOffer?:
+    | import("../../quote-review/domain/quote-revision").CustomerQuoteRevision
+    | null;
   progress: {
     code: CustomerQuoteProgressCode;
     label: string;

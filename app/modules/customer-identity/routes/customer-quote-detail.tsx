@@ -1,6 +1,7 @@
 import { formatQuoteAmounts } from "../../quote-list/domain/quote-currency-totals";
+import { CustomerQuoteOffer } from "../../quote-review/ui/customer-quote-offer";
 import { ArrowLeft, FileText } from "lucide-react";
-import { Link, redirect } from "react-router";
+import { Link, data, redirect } from "react-router";
 
 import type { Route } from "./+types/customer-quote-detail";
 import { AccountWorkspace } from "../ui/account-workspace";
@@ -17,6 +18,9 @@ import { cloudflareContext } from "#workers/context";
 export function meta() {
   return [{ title: "Quote Request | Account & Lists" }];
 }
+export function headers() {
+  return { "Cache-Control": "private, no-store" };
+}
 
 export async function loader({ context, params, request }: Route.LoaderArgs) {
   const { env } = context.get(cloudflareContext);
@@ -29,7 +33,7 @@ export async function loader({ context, params, request }: Route.LoaderArgs) {
     return redirect(`/sign-in?returnTo=${encodeURIComponent(returnTo)}`);
   }
   if (!result.record) throw new Response("Not found", { status: 404 });
-  return { quoteRequest: result.record };
+  return data({ quoteRequest: result.record }, { headers: headers() });
 }
 
 function lineDetails(line: AnonymousQuoteLine) {
@@ -156,10 +160,17 @@ export default function CustomerQuoteDetail({
           <FileText aria-hidden="true" size={22} />
           <div>
             <strong>{quoteRequest.progress.label}</strong>
-            <p>We received your request and will prepare the formal quote.</p>
+            <p>
+              {quoteRequest.currentOffer
+                ? "Your formal quote is ready. PI preparation is pending."
+                : "We received your request and will prepare the formal quote."}
+            </p>
           </div>
         </section>
 
+        {quoteRequest.currentOffer ? (
+          <CustomerQuoteOffer offer={quoteRequest.currentOffer} />
+        ) : null}
         <section className="customer-quote-section">
           <h2>Submitted products</h2>
           <div className="customer-quote-lines">

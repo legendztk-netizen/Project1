@@ -137,6 +137,9 @@ export default function CommercialTerms({
           返回定价
         </Link>
         <h1>商业与交付条款</h1>
+        <Link to={`/admin/quotes/${params.requestId}/issue`}>
+          审核并发布正式报价
+        </Link>
         <p>
           草稿版本 {draft.version} ·{" "}
           {total === null ? "条款待完成" : `USD ${(total / 100).toFixed(2)}`}

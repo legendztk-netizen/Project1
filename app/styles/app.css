@@ -701,6 +701,18 @@ a {
   gap: 8px;
 }
 
+.customer-offer-lines {
+  display: grid;
+  gap: 16px;
+  margin-block: 20px;
+}
+.customer-offer-lines > div {
+  display: grid;
+  gap: 6px;
+  padding-block: 12px;
+  border-bottom: 1px solid #d6dde1;
+  overflow-wrap: anywhere;
+}
 .private-review-page fieldset {
   display: grid;
   gap: 16px;

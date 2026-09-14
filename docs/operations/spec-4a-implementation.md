@@ -64,3 +64,26 @@ Desktop and390px mobile layouts inspected without horizontal overflow.
 Review fixes: test setup ordering, canonical payload hashing, freight review
 confirmation and missing acceptance cases. Separate pricing/terms SQL remains
 explicit; common command-table semantics are covered together by integration tests.
+
+## Ticket 06 / #54
+
+`/admin/quotes/:requestId/issue` explicitly issues the first immutable USD offer.
+The command checks Admin identity, RFQ hash, preparation version, full prices and
+commercial terms, associated tax evidence and advisory factory-review confirmation.
+Schema0066 stores numbered revisions with immutable JSON/hash, captured source,
+actor and timestamp; unique operation/version constraints and an atomic audit
+prevent duplicate first issuance. Customer My Quotes shows Quote Ready and the
+owned detail shows explicit prices, discounts, fees and delivery terms without
+private evidence or review fields. Length-based offers show piece count, cut
+length and the total-footage pricing basis separately.
+
+Ten focused tests passed across three files, including real local D1 distinct
+issuance races, same-command replay, a controlled edit between validation and
+insert, update/delete denial, post-issue catalogue changes, private projection,
+one-query list progress and rendered length-based offer contents. Typecheck and
+build passed. Local schema67 is ready. Browser issued revision1 of the labelled
+test RFQ at USD245; desktop and390px views inspected without horizontal overflow.
+
+Both review axes identified the missing length pricing basis and concurrency
+coverage; corrected. Standards review also identified per-RFQ list queries; the
+list now obtains only offer availability in its existing owned-record query.

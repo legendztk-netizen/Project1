@@ -1,4 +1,5 @@
 import { quoteCurrencyTotals } from "../../quote-list/domain/quote-currency-totals";
+import { createQuoteRevisions } from "../../quote-review/infrastructure/d1-quote-revisions";
 import { createCustomerAccountService } from "../../customer-identity/application/customer-account-service";
 import { createD1PublicCatalogRepository } from "../../catalog/infrastructure/d1-public-catalog-repository";
 import {
@@ -398,7 +399,12 @@ export function createQuoteRequestService(
       const records = await repository.listOwned(account.profile.id);
       return {
         authenticated: true as const,
-        records: records.map((record) => customerQuoteProjection(record)),
+        records: records.map((record) =>
+          customerQuoteProjection(
+            record,
+            record.hasCurrentOffer ? "QUOTE_READY" : "RFQ_SUBMITTED",
+          ),
+        ),
       };
     },
 
@@ -409,7 +415,19 @@ export function createQuoteRequestService(
         authenticated: true as const,
         record: await repository
           .findOwned(account.profile.id, requestId)
-          .then((record) => (record ? customerQuoteProjection(record) : null)),
+          .then(async (record) => {
+            if (!record) return null;
+            const currentOffer = await createQuoteRevisions(
+              env.DB,
+            ).customerCurrent(account.profile.id, record.id);
+            return {
+              ...customerQuoteProjection(
+                record,
+                currentOffer ? "QUOTE_READY" : "RFQ_SUBMITTED",
+              ),
+              currentOffer,
+            };
+          }),
       };
     },
 
