@@ -118,3 +118,33 @@ it("keeps explicit fees in reproducible totals and never presumes tax exemption 
     ).charges.salesTax,
   ).toBe(100);
 });
+it("requires manual currency confirmation for amended assemblies with captured non-USD component offers", () => {
+  const amended = {
+    ...source,
+    lines: [
+      {
+        lineKind: "configured_assembly",
+        currency: "USD",
+        configuredAssembly: {
+          snapshot: {
+            productBasis: [
+              { sku: "END", offer: { currency: "CNY", referencePrice: 100 } },
+            ],
+          },
+        },
+      },
+    ],
+  } as unknown as QuoteRequestSnapshot;
+  expect(() =>
+    validateCommercialTerms(
+      { ...commercialTerms(), manualCurrencyConfirmed: false },
+      amended,
+    ),
+  ).toThrow(/manual USD/);
+  expect(
+    validateCommercialTerms(
+      { ...commercialTerms(), manualCurrencyConfirmed: true },
+      amended,
+    ).manualCurrencyConfirmed,
+  ).toBe(true);
+});

@@ -1,4 +1,5 @@
 import type { CustomerQuoteRevision } from "../domain/quote-revision";
+import { QuoteRevisionChanges } from "./quote-revision-changes";
 
 const usd = (cents: number | null) =>
   cents === null ? "Pending" : `USD ${(cents / 100).toFixed(2)}`;
@@ -34,9 +35,31 @@ export function CustomerQuoteOffer({
               Discount {line.price.discountBasisPoints / 100}% · Line total{" "}
               {usd(line.totals.totalCents)}
             </span>
+            {line.assemblyLength ? (
+              <span>
+                Finished length: {line.assemblyLength.originalValue}{" "}
+                {line.assemblyLength.originalUnit}
+              </span>
+            ) : null}
+            {line.quotedSpecificationOverrides.length ? (
+              <div>
+                <strong>Reviewed specification changes</strong>
+                <dl>
+                  {line.quotedSpecificationOverrides.map((spec) => (
+                    <div key={spec.label}>
+                      <dt>{spec.label}</dt>
+                      <dd>{spec.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            ) : null}
           </div>
         ))}
       </div>
+      {offer.differences.length ? (
+        <QuoteRevisionChanges changes={offer.differences} />
+      ) : null}
       <dl className="customer-quote-summary">
         <div>
           <dt>Merchandise</dt>

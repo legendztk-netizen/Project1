@@ -6,6 +6,7 @@ import { getPlatformProxy } from "wrangler";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { createQuotePreparation } from "../app/modules/quote-review/infrastructure/d1-quote-preparation";
 import { createQuoteRevisions } from "../app/modules/quote-review/infrastructure/d1-quote-revisions";
+import { saveQuoteLineRevisions } from "../app/modules/quote-review/infrastructure/d1-quote-line-revisions";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { CustomerQuoteOffer } from "../app/modules/quote-review/ui/customer-quote-offer";
@@ -39,6 +40,7 @@ const source = {
   lines: [
     {
       lineKind: "standard",
+      id: "line-standard",
       sku: "601R1_001",
       catalogReleaseId: "active-release",
       salesUnit: "roll",
@@ -55,6 +57,7 @@ const source = {
     },
     {
       lineKind: "length_based_hose",
+      id: "line-length",
       sku: "fixture-length",
       catalogReleaseId: "active-release",
       salesUnit: "ft",
@@ -69,6 +72,7 @@ const source = {
     },
     {
       lineKind: "configured_assembly",
+      id: "line-assembly",
       sku: "fixture-assembly",
       catalogReleaseId: "active-release",
       salesUnit: "EA",
@@ -368,23 +372,23 @@ it("issues once under concurrency, freezes exact source and excludes internal re
     commandId: crypto.randomUUID(),
   };
   await expect(
-    revisions.issueFirst(undefined as unknown as AdminIdentity, input),
+    revisions.issueRevision(undefined as unknown as AdminIdentity, input),
   ).rejects.toMatchObject({ status: 403 });
   await expect(
-    revisions.issueFirst(actor, { ...input, factoryReviewConfirmed: false }),
+    revisions.issueRevision(actor, { ...input, factoryReviewConfirmed: false }),
   ).rejects.toThrow(/factory/);
   await expect(
-    revisions.issueFirst(actor, {
+    revisions.issueRevision(actor, {
       ...input,
       preparationVersion: draft.version - 1,
     }),
   ).rejects.toMatchObject({ status: 409 });
   await expect(
-    revisions.issueFirst(actor, { ...input, sourceHash: "stale" }),
+    revisions.issueRevision(actor, { ...input, sourceHash: "stale" }),
   ).rejects.toMatchObject({ status: 409 });
   const [first, repeated] = await Promise.all([
-    revisions.issueFirst(actor, input),
-    revisions.issueFirst(actor, input),
+    revisions.issueRevision(actor, input),
+    revisions.issueRevision(actor, input),
   ]);
   expect(first).toEqual(repeated);
   expect(first.snapshot.source).toEqual(source);
@@ -392,10 +396,13 @@ it("issues once under concurrency, freezes exact source and excludes internal re
   expect(first.snapshot.terms).toEqual(draft.terms);
   expect(first.snapshot.revisionNumber).toBe(1);
   await expect(
-    revisions.issueFirst(actor, { ...input, commandId: crypto.randomUUID() }),
+    revisions.issueRevision(actor, {
+      ...input,
+      commandId: crypto.randomUUID(),
+    }),
   ).rejects.toMatchObject({ status: 409 });
   await expect(
-    revisions.issueFirst({ ...actor, id: "another-admin" }, input),
+    revisions.issueRevision({ ...actor, id: "another-admin" }, input),
   ).rejects.toMatchObject({ status: 409 });
   expect(
     await revisions.customerCurrent("not-owner", "pricing-rfq"),
@@ -421,9 +428,15 @@ it("issues once under concurrency, freezes exact source and excludes internal re
   await expect(db.prepare("DELETE FROM quote_revisions").run()).rejects.toThrow(
     /immutable/,
   );
+  const nextDraft = await revisions.startNext(
+    actor,
+    "pricing-rfq",
+    first.id,
+    draft.version,
+  );
   await preparation.savePrices(
     "pricing-rfq",
-    draft.version,
+    nextDraft.version,
     draft.prices.map((price) => ({ ...price, unitPriceCents: 1 })),
     "later preparation change",
     crypto.randomUUID(),
@@ -502,8 +515,11 @@ it("allows only one of distinct issuance commands and batches customer-list prog
     commandId: crypto.randomUUID(),
   };
   const outcomes = await Promise.allSettled([
-    revisions.issueFirst(actor, input),
-    revisions.issueFirst(actor, { ...input, commandId: crypto.randomUUID() }),
+    revisions.issueRevision(actor, input),
+    revisions.issueRevision(actor, {
+      ...input,
+      commandId: crypto.randomUUID(),
+    }),
   ]);
   expect(
     outcomes.filter((result) => result.status === "fulfilled"),
@@ -561,7 +577,7 @@ it("rejects issuance when preparation changes after validation but before atomic
     },
   });
   await expect(
-    createQuoteRevisions(racing).issueFirst(actor, {
+    createQuoteRevisions(racing).issueRevision(actor, {
       requestId: draft.requestId,
       preparationVersion: draft.version,
       sourceHash: draft.sourceHash,
@@ -578,4 +594,211 @@ it("rejects issuance when preparation changes after validation but before atomic
       .bind(draft.requestId)
       .first("n"),
   ).toBe(0);
+});
+
+it("revises products and terms without replacing history, rejects no-op and stale revisions", async () => {
+  const initial = await prepareOtherQuote("revision-lifecycle");
+  const revisions = createQuoteRevisions(db);
+  const preparation = createQuotePreparation(db, actor);
+  const first = await revisions.issueRevision(actor, {
+    requestId: initial.requestId,
+    preparationVersion: initial.version,
+    sourceHash: initial.sourceHash,
+    factoryReviewConfirmed: false,
+    commandId: crypto.randomUUID(),
+  });
+  const [draft, retry] = await Promise.all([
+    revisions.startNext(actor, initial.requestId, first.id, initial.version),
+    revisions.startNext(actor, initial.requestId, first.id, initial.version),
+  ]);
+  expect(draft.version).toBe(retry.version);
+  expect(draft.source).toEqual(first.snapshot.source);
+  const issueInput = {
+    requestId: draft.requestId,
+    preparationVersion: draft.version,
+    sourceHash: draft.sourceHash,
+    baseRevisionId: first.id,
+    changeReason: "Buyer changed product specifications and quantity",
+    factoryReviewConfirmed: true,
+    commandId: crypto.randomUUID(),
+  };
+  await expect(revisions.issueRevision(actor, issueInput)).rejects.toThrow(
+    /No material/,
+  );
+  const editInput = {
+    requestId: draft.requestId,
+    version: draft.version,
+    reason: "Confirmed quantity and surface-finish amendment",
+    commandId: crypto.randomUUID(),
+    edits: [
+      {
+        id: "line-standard",
+        sku: "601R1_001",
+        quantity: 5,
+        lengthValue: "",
+        lengthUnit: "ft" as const,
+        specifications: [
+          { label: "Surface finish", value: "Customer-approved finish B" },
+        ],
+      },
+      {
+        id: "line-length",
+        sku: "601R1_001",
+        quantity: 3,
+        lengthValue: "10",
+        lengthUnit: "ft" as const,
+        specifications: [],
+      },
+    ],
+  };
+  const editedVersion = await saveQuoteLineRevisions(db, actor, editInput);
+  expect(await saveQuoteLineRevisions(db, actor, editInput)).toBe(
+    editedVersion,
+  );
+  const edited = (await preparation.find(draft.requestId))!;
+  expect(edited.originalSource).toEqual(initial.originalSource);
+  expect(edited.source.lines[1].productSnapshot.catalogBasis).toBeTruthy();
+  expect(edited.prices[1].unitPriceCents).toBeNull();
+  expect(edited.terms?.leadTime).toBe("");
+  const preview = await revisions.customerProposedChanges(
+    "pricing-profile",
+    draft.requestId,
+    first.id,
+  );
+  expect(preview.map((change) => change.field)).toContain("Quantities");
+  expect(
+    await revisions.customerProposedChanges(
+      "not-owner",
+      draft.requestId,
+      first.id,
+    ),
+  ).toEqual([]);
+  await expect(
+    revisions.issueRevision(actor, {
+      ...issueInput,
+      preparationVersion: editedVersion,
+    }),
+  ).rejects.toThrow();
+  const pricedVersion = await preparation.savePrices(
+    draft.requestId,
+    editedVersion,
+    [
+      { unitPriceCents: 300, discountBasisPoints: 1000 },
+      { unitPriceCents: 250, discountBasisPoints: 0 },
+    ],
+    "Reviewed final USD pricing",
+    crypto.randomUUID(),
+  );
+  const finalVersion = await preparation.saveTerms(
+    draft.requestId,
+    pricedVersion,
+    {
+      ...commercialTerms(),
+      destination: { ...commercialAddress, city: "Boston" },
+      addressReplacementReason: "Buyer confirmed new site",
+      shipmentMode: "split",
+      splitPlan: "Line1 on day10; line2 on day20",
+      transportMethod: "Ocean freight",
+      incoterm: "DAP",
+      termReplacementReason: "Buyer confirmed import handling",
+      namedPlace: "Boston, US",
+      leadTime: "20 days for revised quantities",
+      taxTreatment: "Collected",
+      charges: {
+        ...commercialTerms().charges,
+        salesTax: 100,
+        freight: 4000,
+        dutiesImport: 0,
+      },
+    },
+    crypto.randomUUID(),
+  );
+  const issue = {
+    ...issueInput,
+    preparationVersion: finalVersion,
+    commandId: crypto.randomUUID(),
+  };
+  const second = await revisions.issueRevision(actor, issue);
+  expect(await revisions.issueRevision(actor, issue)).toEqual(second);
+  expect(second.snapshot.revisionNumber).toBe(2);
+  expect(second.snapshot.previousRevisionId).toBe(first.id);
+  expect(
+    await revisions.customerProposedChanges(
+      "pricing-profile",
+      draft.requestId,
+      first.id,
+    ),
+  ).toEqual([]);
+  expect(second.snapshot.originalRfqSource).toEqual(initial.originalSource);
+  expect(second.snapshot.differences?.map((change) => change.field)).toEqual(
+    expect.arrayContaining([
+      "Products",
+      "Quantities",
+      "Specifications",
+      "Delivery address",
+      "Shipment plan",
+      "Transport",
+      "Sales tax",
+      "USD prices and discounts",
+      "Freight",
+      "Import terms and charges",
+      "Lead time",
+    ]),
+  );
+  expect((await revisions.history(draft.requestId))[1]).toEqual(first);
+  expect(await revisions.customerHistory("not-owner", draft.requestId)).toEqual(
+    [],
+  );
+  const visible = await revisions.customerHistory(
+    "pricing-profile",
+    draft.requestId,
+  );
+  expect(visible.map((revision) => revision.revisionNumber)).toEqual([2, 1]);
+  expect(JSON.stringify(visible)).not.toMatch(
+    /taxEvidenceId|issuedBy|987654|addressReplacementReason/,
+  );
+  await expect(
+    revisions.startNext(actor, draft.requestId, first.id, finalVersion),
+  ).rejects.toMatchObject({ status: 409 });
+  await expect(
+    revisions.issueRevision(actor, {
+      ...issue,
+      commandId: crypto.randomUUID(),
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  const thirdDraft = await revisions.startNext(
+    actor,
+    draft.requestId,
+    second.id,
+    finalVersion,
+  );
+  const thirdVersion = await preparation.savePrices(
+    draft.requestId,
+    thirdDraft.version,
+    thirdDraft.prices.map((price) => ({ ...price, unitPriceCents: 400 })),
+    "Third reviewed offer",
+    crypto.randomUUID(),
+  );
+  const successorInput = {
+    ...issue,
+    preparationVersion: thirdVersion,
+    baseRevisionId: second.id,
+    changeReason: "Revised USD offer",
+    commandId: crypto.randomUUID(),
+  };
+  const successors = await Promise.allSettled([
+    revisions.issueRevision(actor, successorInput),
+    revisions.issueRevision(actor, {
+      ...successorInput,
+      commandId: crypto.randomUUID(),
+    }),
+  ]);
+  expect(
+    successors.filter((result) => result.status === "fulfilled"),
+  ).toHaveLength(1);
+  expect(
+    (await revisions.history(draft.requestId)).map(
+      (revision) => revision.snapshot.revisionNumber,
+    ),
+  ).toEqual([3, 2, 1]);
 });

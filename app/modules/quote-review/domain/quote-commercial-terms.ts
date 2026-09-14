@@ -92,7 +92,16 @@ export function validateCommercialTerms(
     throw new Error("Tax amount must be zero when not collected");
   const requiresCurrencyReview =
     source.amounts.manualCommercialReview ||
-    source.lines.some((line) => line.currency !== "USD");
+    source.lines.some(
+      (line) =>
+        line.currency !== "USD" ||
+        (line.productSnapshot?.offer &&
+          line.productSnapshot.offer.currency !== "USD") ||
+        (line.lineKind === "configured_assembly" &&
+          line.configuredAssembly.snapshot.productBasis?.some(
+            (product) => product.offer?.currency !== "USD",
+          )),
+    );
   if (requiresCurrencyReview && input.manualCurrencyConfirmed !== true)
     throw new Error("Confirm manual USD pricing and import terms");
   return {

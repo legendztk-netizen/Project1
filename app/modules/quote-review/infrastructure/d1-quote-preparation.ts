@@ -18,6 +18,8 @@ interface DraftRow {
   source_snapshot_json: string;
   prices_json: string;
   terms_json: string | null;
+  quoted_lines_json: string | null;
+  base_revision_id: string | null;
   version: number;
 }
 const hash = (value: string) => digest(new TextEncoder().encode(value).buffer);
@@ -30,11 +32,21 @@ export function createQuotePreparation(db: D1Database, actor: AdminIdentity) {
       .prepare("SELECT * FROM quote_preparation_drafts WHERE request_id=?")
       .bind(requestId)
       .first<DraftRow>();
+    const originalSource = row
+      ? (JSON.parse(row.source_snapshot_json) as QuoteRequestSnapshot)
+      : null;
     return row
       ? {
           requestId: row.request_id,
           sourceHash: row.source_hash,
-          source: JSON.parse(row.source_snapshot_json) as QuoteRequestSnapshot,
+          originalSource: originalSource!,
+          source: {
+            ...originalSource!,
+            lines: row.quoted_lines_json
+              ? JSON.parse(row.quoted_lines_json)
+              : originalSource!.lines,
+          } as QuoteRequestSnapshot,
+          baseRevisionId: row.base_revision_id,
           prices: JSON.parse(row.prices_json) as QuotedLinePrice[],
           terms: row.terms_json
             ? (JSON.parse(row.terms_json) as QuoteCommercialTerms)
@@ -99,9 +111,17 @@ export function createQuotePreparation(db: D1Database, actor: AdminIdentity) {
         await db.batch([
           db
             .prepare(
-              "UPDATE quote_preparation_drafts SET terms_json=?,version=version+1,updated_by=?,updated_at=? WHERE request_id=? AND version=?",
+              "UPDATE quote_preparation_drafts SET terms_json=?,version=version+1,updated_by=?,updated_at=? WHERE request_id=? AND version=? AND NOT EXISTS(SELECT 1 FROM quote_revisions WHERE request_id=? AND preparation_version=?)",
             )
-            .bind(JSON.stringify(terms), actor.id, now, requestId, version),
+            .bind(
+              JSON.stringify(terms),
+              actor.id,
+              now,
+              requestId,
+              version,
+              requestId,
+              version,
+            ),
           db
             .prepare(
               "INSERT INTO quote_pricing_commands(id,request_id,actor_id,payload_hash,resulting_version) SELECT ?,?,?,?,? WHERE changes()=1",
@@ -229,9 +249,17 @@ export function createQuotePreparation(db: D1Database, actor: AdminIdentity) {
         await db.batch([
           db
             .prepare(
-              "UPDATE quote_preparation_drafts SET prices_json=?,version=version+1,updated_by=?,updated_at=? WHERE request_id=? AND version=?",
+              "UPDATE quote_preparation_drafts SET prices_json=?,version=version+1,updated_by=?,updated_at=? WHERE request_id=? AND version=? AND NOT EXISTS(SELECT 1 FROM quote_revisions WHERE request_id=? AND preparation_version=?)",
             )
-            .bind(JSON.stringify(prices), actor.id, now, requestId, version),
+            .bind(
+              JSON.stringify(prices),
+              actor.id,
+              now,
+              requestId,
+              version,
+              requestId,
+              version,
+            ),
           db
             .prepare(
               "INSERT INTO quote_pricing_commands(id,request_id,actor_id,payload_hash,resulting_version) SELECT ?,?,?,?,? WHERE changes()=1",

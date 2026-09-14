@@ -1,5 +1,6 @@
 import { formatQuoteAmounts } from "../../quote-list/domain/quote-currency-totals";
 import { CustomerQuoteOffer } from "../../quote-review/ui/customer-quote-offer";
+import { QuoteRevisionChanges } from "../../quote-review/ui/quote-revision-changes";
 import { ArrowLeft, FileText } from "lucide-react";
 import { Link, data, redirect } from "react-router";
 
@@ -170,6 +171,26 @@ export default function CustomerQuoteDetail({
 
         {quoteRequest.currentOffer ? (
           <CustomerQuoteOffer offer={quoteRequest.currentOffer} />
+        ) : null}
+        {quoteRequest.proposedChanges?.length ? (
+          <section>
+            <h2>Proposed revision · Not yet issued</h2>
+            <QuoteRevisionChanges changes={quoteRequest.proposedChanges} />
+          </section>
+        ) : null}
+        {(quoteRequest.offerHistory?.length ?? 0) > 1 ? (
+          <section>
+            <h2>Previous quote versions</h2>
+            {quoteRequest.offerHistory!.slice(1).map((offer) => (
+              <details key={offer.id}>
+                <summary>
+                  Revision {offer.revisionNumber} ·{" "}
+                  {customerQuoteDateTime.format(new Date(offer.issuedAt))}
+                </summary>
+                <CustomerQuoteOffer offer={offer} />
+              </details>
+            ))}
+          </section>
         ) : null}
         <section className="customer-quote-section">
           <h2>Submitted products</h2>

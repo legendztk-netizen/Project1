@@ -87,3 +87,36 @@ test RFQ at USD245; desktop and390px views inspected without horizontal overflow
 Both review axes identified the missing length pricing basis and concurrency
 coverage; corrected. Standards review also identified per-RFQ list queries; the
 list now obtains only offer availability in its existing owned-record query.
+
+## Ticket 07 / #55
+
+`/admin/quotes/:requestId/revisions` starts a version-checked preparation from the
+current immutable offer. Published preparations cannot be edited directly. Product
+replacement/addition resolves the current item-aware catalogue; existing captured
+products remain historical. Structured quantity/length edits and reviewed Surface
+finish, Marking and Packaging amendments are supported. Product changes reset
+commercial review and replacement prices require explicit USD entry.
+
+Issuance requires material differences and a reason, advances the current offer
+atomically and retains every previous version. Original RFQ evidence is retained
+separately from effective quoted lines. Customer detail derives current/history
+from one read and displays owned proposed changes as Not yet issued. Internal
+review flags, reference cost objects and arbitrary nested metadata are excluded.
+No PI mutation or lifecycle work is included here.
+
+Migration0067 advances local readiness to68. Twenty-four focused tests passed,
+including actual local D1 successor races, replay, stale/no-op rejection,
+product edits, original evidence retention, ownership, safe nested projections
+and consistent current/history reads. Typecheck passed. Browser issued revision2
+of the local test RFQ at USD132.50 (50 pieces), while revision1 remains USD245
+(100 pieces). Desktop and390px history inspected; no horizontal overflow.
+Review corrections covered unissued customer preview, stable line ordering,
+restricted named amendments and explicit customer-safe difference projection.
+Assembly component amendments now have structured End A/B and ferrule, measurement,
+Clocking and protection controls. Explicit all-component current-catalogue review
+is required before rebuilding through the existing configurator validator. The
+outer product snapshot is synchronized with rebuilt component evidence; unchanged
+assemblies retain historical selections. Mixed/non-USD amended reference offers
+require the separate final USD/import-term confirmation. Four additional real D1
+cases cover protection, unsafe selections, double-elbow135-degree clocking,
+original snapshot retention and the hose-replacement boundary. Build passed.

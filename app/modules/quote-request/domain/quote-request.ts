@@ -154,6 +154,12 @@ export type CustomerQuoteProgressCode =
   (typeof customerQuoteProgressStages)[number]["code"];
 
 export interface CustomerQuoteProjection extends QuoteRequestRecord {
+  proposedChanges?: import("../../quote-review/domain/quote-revision-differences").QuoteRevisionDifference[];
+  offerHistory?: Array<
+    import("../../quote-review/domain/quote-revision").CustomerQuoteRevision & {
+      id: string;
+    }
+  >;
   currentOffer?:
     | import("../../quote-review/domain/quote-revision").CustomerQuoteRevision
     | null;

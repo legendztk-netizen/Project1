@@ -417,15 +417,26 @@ export function createQuoteRequestService(
           .findOwned(account.profile.id, requestId)
           .then(async (record) => {
             if (!record) return null;
-            const currentOffer = await createQuoteRevisions(
-              env.DB,
-            ).customerCurrent(account.profile.id, record.id);
+            const revisions = createQuoteRevisions(env.DB);
+            const offerHistory = await revisions.customerHistory(
+              account.profile.id,
+              record.id,
+            );
+            const currentOffer = offerHistory[0] ?? null;
             return {
               ...customerQuoteProjection(
                 record,
                 currentOffer ? "QUOTE_READY" : "RFQ_SUBMITTED",
               ),
               currentOffer,
+              offerHistory,
+              proposedChanges: currentOffer
+                ? await revisions.customerProposedChanges(
+                    account.profile.id,
+                    record.id,
+                    currentOffer.id,
+                  )
+                : [],
             };
           }),
       };
