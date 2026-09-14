@@ -99,6 +99,9 @@ export default function QuoteReviewDetail({
           <div>
             <span className="eyebrow">不可变客户请求快照</span>
             <h1>{review.referenceNumber}</h1>
+            <Link to={`/admin/quotes/${review.id}/private`}>
+              内部备注与私有证明
+            </Link>
             <p>提交于 {formatBeijingDateTime(review.submittedAt)}</p>
           </div>
           <span

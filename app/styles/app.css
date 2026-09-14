@@ -685,6 +685,31 @@ a {
   gap: 14px;
 }
 
+.private-review-page .admin-quote-section {
+  margin-bottom: 20px;
+}
+
+.private-review-page article {
+  padding: 12px 0;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--line-strong);
+  overflow-wrap: anywhere;
+}
+
+.private-review-page .button {
+  justify-self: start;
+  gap: 8px;
+}
+
+.private-review-page .commercial-settings-form textarea,
+.private-review-page .commercial-settings-form select {
+  border: 1px solid #89959c;
+  padding: 10px;
+  font: inherit;
+  width: 100%;
+  min-width: 0;
+}
+
 .commercial-settings-form label {
   display: grid;
   gap: 7px;

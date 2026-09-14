@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 62,
+  "schemaVersion": 64,
   "migrations": [
     "0000_initial_catalog_release.sql",
     "0001_add_admin_identities.sql",
@@ -62,6 +62,8 @@
     "0058_assembly_relation_identifier.sql",
     "0059_catalog_cutover.sql",
     "0060_catalog_cutover_freeze_ownership.sql",
-    "0061_catalog_cutover_request_audit.sql"
+    "0061_catalog_cutover_request_audit.sql",
+    "0062_private_quote_review.sql",
+    "0063_private_review_commands.sql"
   ]
 }
