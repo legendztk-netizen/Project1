@@ -2,6 +2,11 @@ import type { AdminIdentity } from "#workers/admin-access";
 import type { QuoteRequestSnapshot } from "../../quote-request/domain/quote-request";
 import { digest } from "../domain/private-review";
 import {
+  validateCommercialTerms,
+  commercialTotals,
+  type QuoteCommercialTerms,
+} from "../domain/quote-commercial-terms";
+import {
   initialQuotePrices,
   quoteLineTotals,
   type QuotedLinePrice,
@@ -12,6 +17,7 @@ interface DraftRow {
   source_hash: string;
   source_snapshot_json: string;
   prices_json: string;
+  terms_json: string | null;
   version: number;
 }
 const hash = (value: string) => digest(new TextEncoder().encode(value).buffer);
@@ -30,12 +36,106 @@ export function createQuotePreparation(db: D1Database, actor: AdminIdentity) {
           sourceHash: row.source_hash,
           source: JSON.parse(row.source_snapshot_json) as QuoteRequestSnapshot,
           prices: JSON.parse(row.prices_json) as QuotedLinePrice[],
+          terms: row.terms_json
+            ? (JSON.parse(row.terms_json) as QuoteCommercialTerms)
+            : null,
           version: row.version,
         }
       : null;
   }
   return {
     find,
+    async saveTerms(
+      requestId: string,
+      version: number,
+      input: QuoteCommercialTerms,
+      commandId: string,
+    ) {
+      if (!/^[0-9a-f-]{36}$/.test(commandId))
+        throw new Response("Command required", { status: 400 });
+      const draft = await find(requestId);
+      if (!draft) throw new Response("Not found", { status: 404 });
+      const terms = validateCommercialTerms(input, draft.source);
+      const payloadHash = await hash(
+        JSON.stringify({ intent: "terms", requestId, version, terms }),
+      );
+      async function replay() {
+        const row = await db
+          .prepare(
+            "SELECT actor_id,payload_hash,resulting_version FROM quote_pricing_commands WHERE id=?",
+          )
+          .bind(commandId)
+          .first<{
+            actor_id: string;
+            payload_hash: string;
+            resulting_version: number;
+          }>();
+        if (!row) return null;
+        if (row.actor_id !== actor.id || row.payload_hash !== payloadHash)
+          throw new Response("Command conflict", { status: 409 });
+        return row.resulting_version;
+      }
+      const prior = await replay();
+      if (prior) return prior;
+      if (draft.version !== version)
+        throw new Response("Draft changed; reload before saving", {
+          status: 409,
+        });
+      commercialTotals(draft.source, draft.prices, terms.charges);
+      if (
+        terms.taxEvidenceId &&
+        !(await db
+          .prepare(
+            "SELECT id FROM quote_private_evidence WHERE id=? AND request_id=? AND kind='tax_exemption' AND visibility='internal'",
+          )
+          .bind(terms.taxEvidenceId, requestId)
+          .first())
+      )
+        throw new Response("Tax evidence must belong to this RFQ", {
+          status: 400,
+        });
+      const now = new Date().toISOString();
+      try {
+        await db.batch([
+          db
+            .prepare(
+              "UPDATE quote_preparation_drafts SET terms_json=?,version=version+1,updated_by=?,updated_at=? WHERE request_id=? AND version=?",
+            )
+            .bind(JSON.stringify(terms), actor.id, now, requestId, version),
+          db
+            .prepare(
+              "INSERT INTO quote_pricing_commands(id,request_id,actor_id,payload_hash,resulting_version) SELECT ?,?,?,?,? WHERE changes()=1",
+            )
+            .bind(commandId, requestId, actor.id, payloadHash, version + 1),
+          db
+            .prepare(
+              "INSERT INTO admin_audit_events(id,event_type,entity_type,entity_id,actor_id,payload_json,occurred_at) SELECT ?,'quote_commercial.changed','quote_preparation',?,?,?,? WHERE EXISTS(SELECT 1 FROM quote_pricing_commands WHERE id=?)",
+            )
+            .bind(
+              `quote-terms:${commandId}`,
+              requestId,
+              actor.id,
+              JSON.stringify({
+                former: draft.terms,
+                current: terms,
+                version: version + 1,
+              }),
+              now,
+              commandId,
+            ),
+        ]);
+      } catch (error) {
+        const completed = await replay();
+        if (completed) return completed;
+        throw error;
+      }
+      const completed = await replay();
+      if (!completed)
+        throw new Response("Draft changed; reload before saving", {
+          status: 409,
+        });
+      return completed;
+    },
     async start(requestId: string) {
       const existing = await find(requestId);
       if (existing) return existing;

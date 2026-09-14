@@ -12,6 +12,10 @@ import { RouterContextProvider } from "react-router";
 import { cloudflareContext } from "../workers/context";
 import { loader as pricingLoader } from "../app/modules/admin/routes/quote-pricing";
 import { createD1CatalogItemRepository } from "../app/modules/catalog/infrastructure/d1-catalog-item-repository";
+import {
+  commercialAddress,
+  commercialTerms,
+} from "./fixtures/quote-commercial";
 
 const directory = mkdtempSync(join(tmpdir(), "quote-preparation-"));
 let platform: Awaited<ReturnType<typeof getPlatformProxy<{ DB: D1Database }>>>;
@@ -25,6 +29,9 @@ const actor: AdminIdentity = {
 };
 const source = {
   version: 2,
+  destination: commercialAddress,
+  amounts: { manualCommercialReview: true },
+  importResponsibility: { fulfillmentTerm: "DDP" },
   lines: [
     {
       lineKind: "standard",
@@ -242,4 +249,92 @@ it("exposes legacy cost only in authorized Admin projection, preserving item/ima
   expect(
     (await createQuotePreparation(db, actor).find("pricing-rfq"))?.prices,
   ).toEqual(saved?.prices);
+});
+
+it("persists terms atomically, rejects missing tax evidence and shares pricing concurrency", async () => {
+  const service = createQuotePreparation(db, actor);
+  const draft = (await service.find("pricing-rfq"))!;
+  await expect(
+    service.saveTerms(
+      "pricing-rfq",
+      draft.version,
+      {
+        ...commercialTerms(),
+        taxTreatment: "Exempt",
+        taxEvidenceId: "missing-file",
+      },
+      crypto.randomUUID(),
+    ),
+  ).rejects.toMatchObject({ status: 400 });
+  const command = crypto.randomUUID();
+  const version = await service.saveTerms(
+    "pricing-rfq",
+    draft.version,
+    commercialTerms(),
+    command,
+  );
+  const equivalent = Object.fromEntries(
+    Object.entries({
+      ...commercialTerms(),
+      leadTime: ` ${commercialTerms().leadTime} `,
+    }).reverse(),
+  ) as unknown as ReturnType<typeof commercialTerms>;
+  expect(
+    await service.saveTerms("pricing-rfq", draft.version, equivalent, command),
+  ).toBe(version);
+  await expect(
+    service.savePrices(
+      "pricing-rfq",
+      draft.version,
+      draft.prices,
+      "stale after terms",
+      crypto.randomUUID(),
+    ),
+  ).rejects.toMatchObject({ status: 409 });
+  const saved = (await service.find("pricing-rfq"))!;
+  expect(saved.terms).toEqual(commercialTerms());
+  expect(saved.source).toEqual(source);
+});
+
+it("requires an associated private exemption record, not another RFQ's evidence", async () => {
+  await db
+    .prepare(
+      "INSERT INTO customer_quote_requests(id,reference_number,profile_id,purchasing_context_id,source_session_id,source_session_version,source_address_id,purchasing_context_kind,fulfillment_term,currency,merchandise_subtotal,service_fee_total,idempotency_key,snapshot_json,submitted_at) SELECT 'other-tax-rfq','QR-OTHER-TAX',profile_id,purchasing_context_id,'other-session',1,source_address_id,purchasing_context_kind,fulfillment_term,currency,merchandise_subtotal,service_fee_total,'other-tax-command',snapshot_json,submitted_at FROM customer_quote_requests WHERE id='pricing-rfq'",
+    )
+    .run();
+  for (const requestId of ["pricing-rfq", "other-tax-rfq"]) {
+    await db
+      .prepare(
+        "INSERT INTO quote_private_evidence(id,request_id,actor_id,kind,filename,content_type,byte_size,checksum,object_key,created_at) VALUES(?,?,?,'tax_exemption','exemption.pdf','application/pdf',100,'test-checksum',?,'2026-09-14')",
+      )
+      .bind(`tax:${requestId}`, requestId, actor.id, `private/${requestId}`)
+      .run();
+  }
+  const service = createQuotePreparation(db, actor);
+  const draft = (await service.find("pricing-rfq"))!;
+  await expect(
+    service.saveTerms(
+      "pricing-rfq",
+      draft.version,
+      {
+        ...commercialTerms(),
+        taxTreatment: "Exempt",
+        taxEvidenceId: "tax:other-tax-rfq",
+      },
+      crypto.randomUUID(),
+    ),
+  ).rejects.toMatchObject({ status: 400 });
+  await service.saveTerms(
+    "pricing-rfq",
+    draft.version,
+    {
+      ...commercialTerms(),
+      taxTreatment: "Exempt",
+      taxEvidenceId: "tax:pricing-rfq",
+    },
+    crypto.randomUUID(),
+  );
+  expect((await service.find("pricing-rfq"))?.terms?.taxEvidenceId).toBe(
+    "tax:pricing-rfq",
+  );
 });

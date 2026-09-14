@@ -44,3 +44,23 @@ desktop/mobile inspected. Migration0064 advances local readiness to 65.
 
 Review findings corrected: captured sales-unit labelling, honest legacy-cost
 provenance, and meaningful private-cost/catalog-change integration coverage.
+
+## Ticket 05 / #52
+
+`/admin/quotes/:requestId/terms` records confirmed delivery address, reviewed
+replacements, shipment plan, transport, packing estimate, quantity-sensitive lead
+time, Incoterm/named place, explicit tax treatment and separately itemized USD
+charges. Freight-review confirmation is required; actual packing data is optional.
+Exemption evidence must be a private tax record belonging to the same RFQ.
+Original RFQ references remain unchanged; no automatic FX is performed.
+
+Schema migration0065 advances local readiness to66. Eight focused tests cover
+domain completeness, DAP and split-plan preservation, optional actual packing,
+real D1 persistence, associated/foreign evidence, canonical command replay and
+shared price/terms version checks. Browser saved the labelled local test RFQ:
+USD225 merchandise plus USD20 freight = USD245; version2 advanced to3.
+Desktop and390px mobile layouts inspected without horizontal overflow.
+
+Review fixes: test setup ordering, canonical payload hashing, freight review
+confirmation and missing acceptance cases. Separate pricing/terms SQL remains
+explicit; common command-table semantics are covered together by integration tests.

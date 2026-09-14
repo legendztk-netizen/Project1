@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 65,
+  "schemaVersion": 66,
   "migrations": [
     "0000_initial_catalog_release.sql",
     "0001_add_admin_identities.sql",
@@ -65,6 +65,7 @@
     "0061_catalog_cutover_request_audit.sql",
     "0062_private_quote_review.sql",
     "0063_private_review_commands.sql",
-    "0064_quote_preparation.sql"
+    "0064_quote_preparation.sql",
+    "0065_quote_commercial_terms.sql"
   ]
 }

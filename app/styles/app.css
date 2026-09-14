@@ -701,6 +701,27 @@ a {
   gap: 8px;
 }
 
+.private-review-page fieldset {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 20px 0;
+  border: 0;
+  border-top: 1px solid #c7cdd1;
+}
+
+.private-review-page .commercial-settings-form .quote-confirmation {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.private-review-page .commercial-settings-form input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
+
 .private-review-page .commercial-settings-form textarea,
 .private-review-page .commercial-settings-form input,
 .private-review-page .commercial-settings-form select {

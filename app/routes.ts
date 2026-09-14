@@ -64,6 +64,10 @@ export default [
   route("admin", "modules/admin/routes/admin-home.tsx"),
   route("admin/quotes", "modules/admin/routes/quote-reviews.tsx"),
   route(
+    "admin/quotes/:requestId/terms",
+    "modules/admin/routes/quote-commercial-terms.tsx",
+  ),
+  route(
     "admin/quotes/:requestId/pricing",
     "modules/admin/routes/quote-pricing.tsx",
   ),

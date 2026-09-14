@@ -101,6 +101,11 @@ export default function QuotePricing({
           返回询价详情
         </Link>
         <h1>报价定价 · USD</h1>
+        {draft ? (
+          <Link to={`/admin/quotes/${params.requestId}/terms`}>
+            商业与交付条款
+          </Link>
+        ) : null}
         {actionData?.error ? <p role="alert">{actionData.error}</p> : null}
         {!draft ? (
           <Form method="post">
