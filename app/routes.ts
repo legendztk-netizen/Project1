@@ -64,6 +64,22 @@ export default [
   route("admin", "modules/admin/routes/admin-home.tsx"),
   route("admin/quotes", "modules/admin/routes/quote-reviews.tsx"),
   route(
+    "admin/quotes/:requestId/conversation",
+    "modules/admin/routes/quote-conversation.tsx",
+  ),
+  route(
+    "admin/quotes/:requestId/conversation/attachments/:messageId",
+    "modules/admin/routes/quote-conversation-attachment.ts",
+  ),
+  route(
+    "account/quotes/:requestId/conversation",
+    "modules/customer-identity/routes/customer-quote-conversation.tsx",
+  ),
+  route(
+    "account/quotes/:requestId/conversation/attachments/:messageId",
+    "modules/customer-identity/routes/customer-conversation-attachment.ts",
+  ),
+  route(
     "admin/quotes/:requestId/terms",
     "modules/admin/routes/quote-commercial-terms.tsx",
   ),

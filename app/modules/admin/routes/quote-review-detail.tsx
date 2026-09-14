@@ -100,6 +100,7 @@ export default function QuoteReviewDetail({
             <span className="eyebrow">不可变客户请求快照</span>
             <h1>{review.referenceNumber}</h1>
             <Link to={`/admin/quotes/${review.id}/pricing`}>报价定价</Link>
+            <Link to={`/admin/quotes/${review.id}/conversation`}>客户会话</Link>
             <Link to={`/admin/quotes/${review.id}/private`}>
               内部备注与私有证明
             </Link>

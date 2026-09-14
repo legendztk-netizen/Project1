@@ -21,7 +21,7 @@ function record(row: QuoteRequestRow): QuoteRequestRecord {
   };
 }
 
-const ownedQuoteRequestWhere = `
+export const ownedQuoteRequestWhere = `
   INNER JOIN customer_purchasing_contexts context
     ON context.id = request.purchasing_context_id
   WHERE (

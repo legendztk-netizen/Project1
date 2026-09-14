@@ -120,3 +120,31 @@ assemblies retain historical selections. Mixed/non-USD amended reference offers
 require the separate final USD/import-term confirmation. Four additional real D1
 cases cover protection, unsafe selections, double-elbow135-degree clocking,
 original snapshot retention and the hose-replacement boundary. Build passed.
+
+## Ticket 08 / #56
+
+One authenticated customer-visible conversation is shared by all revisions of
+an RFQ. Admin and customer detail link to their respective conversation routes;
+messages are append-only, plaintext, role/time-labelled and cursor-paginated.
+Customer authorization uses current RFQ ownership, including current organization
+primary-contact membership. Internal notes and review evidence are not projected.
+
+Optional PDF/PNG/JPEG uploads are structurally validated, extension-normalized,
+limited to 10 MiB, and stored privately with checksums. Downloads require the
+same quote permission and return no-store, sandboxed attachment responses.
+Structural validation is not a claim of malware scanning. Customer sends are
+limited to 20 per ten minutes; a conversation has a 100 MiB attachment budget.
+Atomic reservations precede uploads. Expired reservations are fenced against
+late appends, reconciled on the next authorized send, and replaced by empty R2
+tombstones before releasing quota; conditional uploads cannot resurrect bytes.
+Committed attachments are never overwritten during reconciliation. Unmappable
+pre-fix legacy upload reservations require inventory-based manual reconciliation.
+
+Migrations0068/0069 were applied to local D1 (schema70). Thirty-five focused tests
+passed across four files, including actual isolated D1/R2 ownership, concurrent
+commands, immutable records, replay normalization, interrupted upload/release,
+late writes, retained committed bytes, and route/CSRF boundaries. Typecheck and
+build passed. Admin desktop and390px conversation screens were inspected with a
+labelled local test message; no horizontal overflow. Both review axes identified
+reservation recovery, which was corrected and covered by failure-path tests.
+This ticket does not send email; notification delivery belongs to #57.

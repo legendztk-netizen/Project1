@@ -153,6 +153,12 @@ export default function CustomerQuoteDetail({
             {quoteRequest.progress.label}
           </span>
         </header>
+        <Link
+          className="button button-secondary"
+          to={`/account/quotes/${quoteRequest.id}/conversation`}
+        >
+          Quote conversation
+        </Link>
 
         <section
           className="customer-quote-progress"
