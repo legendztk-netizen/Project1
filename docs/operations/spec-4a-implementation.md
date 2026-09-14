@@ -148,3 +148,34 @@ build passed. Admin desktop and390px conversation screens were inspected with a
 labelled local test message; no horizontal overflow. Both review axes identified
 reservation recovery, which was corrected and covered by failure-path tests.
 This ticket does not send email; notification delivery belongs to #57.
+
+## Ticket 09 / #57
+
+Admin customer-visible messages now append a notification outbox row in the same
+D1 batch. Post-commit dispatch and a separate every-minute recovery sweep feed
+the bound Queue consumer. Sweeps are bounded to five batches of100; hourly
+registration cleanup remains independent. Source messages survive delivery
+failures. Frozen recipient/payload, provider idempotency keys, leases and bounded
+retries prevent unsafe resends; uncertain attempts stop within23hours of the
+first provider attempt rather than crossing its24hour deduplication window.
+
+The reply address uses32random bytes; only its hash and an authenticated encrypted
+payload persist. Current customer/organization authorization is rechecked before
+delivery and reply-token resolution. Dedicated preview/production notification
+encryption secrets are independent of session-key rotation. They must be retained
+with D1 backups; notification-key rotation requires a keyring migration.
+
+`/admin/quote-notifications` provides bounded cursor history and an unresolved
+failure filter. Local captures are Admin-only escaped pages and explicitly marked
+not sent. Private attachment bytes, keys, internal review notes and costs are not
+email content. No marketing subscription changes or real email were made.
+
+Migration0070 was applied to local D1 (schema71). Forty-nine notification,
+Worker/route and environment tests passed after review corrections; the connected
+conversation transaction also passed its23 real D1/R2 cases. Coverage includes
+atomic rollback, Queue retries, ownership revocation, frozen payloads, provider
+uncertainty, session-key rotation, multi-batch recovery, and failures older than
+50new notifications. Typecheck and build passed. Actual local Admin message
+produced one Queue-consumed stub capture; desktop and390px notification views
+were inspected without horizontal overflow. Both review axes' findings on
+history visibility, recovery cadence and key retention were corrected.

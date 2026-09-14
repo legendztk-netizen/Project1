@@ -4,6 +4,7 @@ import type {
   ConversationMessage,
 } from "../domain/quote-conversation";
 import { ownedQuoteRequestWhere } from "../../quote-request/infrastructure/d1-quote-request-repository";
+import { quoteNotificationOutboxStatement } from "../../quote-notifications";
 
 export interface ConversationCommand {
   id: string;
@@ -333,6 +334,11 @@ export function createD1QuoteConversationRepository(database: D1Database) {
           ),
       );
       statements.push(
+        quoteNotificationOutboxStatement(database, {
+          messageId: command.id,
+          requestId: command.requestId,
+          createdAt: command.createdAt,
+        }),
         database
           .prepare("DELETE FROM quote_conversation_reservations WHERE id=?")
           .bind(command.id),

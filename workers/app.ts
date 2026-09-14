@@ -13,6 +13,10 @@ import {
 } from "./environment";
 import { createHealthResponse } from "./health";
 import { createRegistrationConfigurationService } from "../app/modules/customer-identity/application/registration-configuration-service";
+import {
+  consumeQuoteNotifications,
+  dispatchQuoteNotifications,
+} from "./quote-notifications";
 
 const requestHandler = createRequestHandler(
   () => import("virtual:react-router/server-build"),
@@ -78,10 +82,16 @@ export default {
 
   scheduled(controller, env, ctx) {
     validateRuntimeEnvironment(env);
-    ctx.waitUntil(
-      createRegistrationConfigurationService(env, {
-        now: () => new Date(controller.scheduledTime),
-      }).cleanupExpired(),
-    );
+    ctx.waitUntil(dispatchQuoteNotifications(env));
+    if (controller.cron === "17 * * * *")
+      ctx.waitUntil(
+        createRegistrationConfigurationService(env, {
+          now: () => new Date(controller.scheduledTime),
+        }).cleanupExpired(),
+      );
+  },
+  async queue(batch, env) {
+    validateRuntimeEnvironment(env);
+    await consumeQuoteNotifications(batch, env);
   },
 } satisfies ExportedHandler<ApplicationBindings>;

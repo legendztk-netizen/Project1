@@ -9,6 +9,8 @@ import {
   requireReviewMutation,
 } from "../../quote-review/domain/private-review";
 import { QuoteConversationPanel } from "../../quote-conversation/ui/quote-conversation-panel";
+import { cloudflareContext } from "#workers/context";
+import { dispatchQuoteNotifications } from "#workers/quote-notifications";
 
 export function headers() {
   return {
@@ -46,6 +48,9 @@ export async function action({ context, params, request }: Route.ActionArgs) {
       body: String(form.get("body") ?? ""),
       attachment: file && typeof file !== "string" && file.size ? file : null,
     });
+    context
+      .get(cloudflareContext)
+      .ctx.waitUntil(dispatchQuoteNotifications(env));
   } catch (error) {
     if (error instanceof Response && error.status === 400)
       return data(
@@ -74,6 +79,7 @@ export default function AdminQuoteConversation({
           返回询价
         </Link>
         <h1>客户会话</h1>
+        <Link to="/admin/quote-notifications">邮件通知状态</Link>
         <QuoteConversationPanel
           admin
           messages={loaderData.conversation.messages}

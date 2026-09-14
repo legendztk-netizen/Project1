@@ -188,6 +188,14 @@ it("reads empty without creating a row, exchanges both roles and retains history
     ...sendInput(requestId),
     body: "Confirmed",
   });
+  expect(
+    await db
+      .prepare(
+        "SELECT message_id,state FROM quote_notification_outbox WHERE request_id=?",
+      )
+      .bind(requestId)
+      .all(),
+  ).toMatchObject({ results: [{ message_id: reply.id, state: "pending" }] });
   expect(first).toMatchObject({
     authorRole: "customer",
     deliveryState: "available",
@@ -229,14 +237,14 @@ it("checks ownership for reads, sends and downloads and permits operational suba
   const input = sendInput(requestId, pdf());
   const message = await service().send(input);
   for (const operation of [
-    service(other).list(requestId),
-    service(other).send(input),
-    service(other).download(requestId, message.id),
-    service(other).reconcileExpired(requestId),
-    service().list("missing"),
-    service(admin).list("missing"),
+    () => service(other).list(requestId),
+    () => service(other).send(input),
+    () => service(other).download(requestId, message.id),
+    () => service(other).reconcileExpired(requestId),
+    () => service().list("missing"),
+    () => service(admin).list("missing"),
   ])
-    await expect(operation).rejects.toMatchObject({ status: 404 });
+    await expect(operation()).rejects.toMatchObject({ status: 404 });
   const secondQuote = await quote();
   expect(await service(admin).reconcileExpired(requestId)).toEqual({
     released: 0,

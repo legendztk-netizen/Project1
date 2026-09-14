@@ -85,7 +85,7 @@ describe("environment configuration contract", () => {
     ).toBe(true);
   });
 
-  it("advertises only the scheduled cleanup handler exported by the Worker", () => {
+  it("advertises scheduled recovery and the notification Queue consumer", () => {
     const wrangler = readJson("wrangler.jsonc") as {
       env: Record<
         "preview" | "production",
@@ -103,8 +103,12 @@ describe("environment configuration contract", () => {
       wrangler.env.preview,
       wrangler.env.production,
     ]) {
-      expect(definition.queues?.consumers).toBeUndefined();
-      expect(definition.triggers?.crons).toEqual(["17 * * * *"]);
+      expect(definition.queues?.consumers).toHaveLength(1);
+      expect(definition.queues?.consumers?.[0]).toMatchObject({
+        max_batch_size: 10,
+        max_retries: 3,
+      });
+      expect(definition.triggers?.crons).toEqual(["17 * * * *", "* * * * *"]);
     }
   });
 

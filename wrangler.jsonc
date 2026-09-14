@@ -12,7 +12,7 @@
   },
   "upload_source_maps": true,
   "triggers": {
-    "crons": ["17 * * * *"]
+    "crons": ["17 * * * *", "* * * * *"]
   },
   "vars": {
     "APP_ENV": "local",
@@ -44,6 +44,13 @@
     "binding": "IMAGES"
   },
   "queues": {
+    "consumers": [
+      {
+        "queue": "hydraulic-hose-async-jobs-local",
+        "max_batch_size": 10,
+        "max_retries": 3
+      }
+    ],
     "producers": [
       {
         "binding": "ASYNC_JOBS",
@@ -55,7 +62,7 @@
     "preview": {
       "name": "hydraulic-hose-rfq-platform-preview",
       "triggers": {
-        "crons": ["17 * * * *"]
+        "crons": ["17 * * * *", "* * * * *"]
       },
       "vars": {
         "APP_ENV": "preview",
@@ -70,7 +77,7 @@
         "EMAIL_REPLY_DOMAIN": "reply.preview.example.invalid"
       },
       "secrets": {
-        "required": ["PREVIEW_SESSION_SIGNING_KEY", "PREVIEW_RESEND_API_KEY"]
+        "required": ["PREVIEW_SESSION_SIGNING_KEY", "PREVIEW_RESEND_API_KEY", "PREVIEW_NOTIFICATION_ENCRYPTION_KEY"]
       },
       "d1_databases": [
         {
@@ -91,6 +98,13 @@
         "binding": "IMAGES"
       },
       "queues": {
+        "consumers": [
+          {
+            "queue": "hydraulic-hose-async-jobs-preview",
+            "max_batch_size": 10,
+            "max_retries": 3
+          }
+        ],
         "producers": [
           {
             "binding": "ASYNC_JOBS",
@@ -102,7 +116,7 @@
     "production": {
       "name": "hydraulic-hose-rfq-platform-production",
       "triggers": {
-        "crons": ["17 * * * *"]
+        "crons": ["17 * * * *", "* * * * *"]
       },
       "vars": {
         "APP_ENV": "production",
@@ -119,7 +133,8 @@
       "secrets": {
         "required": [
           "PRODUCTION_SESSION_SIGNING_KEY",
-          "PRODUCTION_RESEND_API_KEY"
+          "PRODUCTION_RESEND_API_KEY",
+          "PRODUCTION_NOTIFICATION_ENCRYPTION_KEY"
         ]
       },
       "d1_databases": [
@@ -141,6 +156,13 @@
         "binding": "IMAGES"
       },
       "queues": {
+        "consumers": [
+          {
+            "queue": "hydraulic-hose-async-jobs-production",
+            "max_batch_size": 10,
+            "max_retries": 3
+          }
+        ],
         "producers": [
           {
             "binding": "ASYNC_JOBS",

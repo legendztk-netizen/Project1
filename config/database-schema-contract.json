@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 70,
+  "schemaVersion": 71,
   "migrations": [
     "0000_initial_catalog_release.sql",
     "0001_add_admin_identities.sql",
@@ -70,6 +70,7 @@
     "0066_immutable_quote_revisions.sql",
     "0067_quote_revision_preparation.sql",
     "0068_quote_conversation.sql",
-    "0069_quote_conversation_upload_limits.sql"
+    "0069_quote_conversation_upload_limits.sql",
+    "0070_quote_notifications.sql"
   ]
 }

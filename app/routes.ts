@@ -64,6 +64,14 @@ export default [
   route("admin", "modules/admin/routes/admin-home.tsx"),
   route("admin/quotes", "modules/admin/routes/quote-reviews.tsx"),
   route(
+    "admin/quote-notifications",
+    "modules/admin/routes/quote-notifications.tsx",
+  ),
+  route(
+    "admin/quote-notifications/:notificationId/capture",
+    "modules/admin/routes/quote-notification-capture.tsx",
+  ),
+  route(
     "admin/quotes/:requestId/conversation",
     "modules/admin/routes/quote-conversation.tsx",
   ),
