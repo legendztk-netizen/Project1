@@ -1,6 +1,6 @@
 # Spec 11：产品条目级发布、产品管理与总成管理重构
 
-> 状态：本地版本已完成并验收（2026-09-10）。本轮按用户确认仅交付本地，远程部署另行验收。
+> 状态：Completed（本地范围，2026-09-14 复核关闭）。本轮按用户确认仅交付本地，远程部署另行验收。
 > 验收记录：[Spec 11 本地验收](../operations/spec-11-local-acceptance.md)。原需求于 2026-09-08 确认。技术栈保持 TypeScript、React Router、
 > Cloudflare Workers、D1 与 R2。本 Spec 扩展并部分取代 Spec 8 和 Spec 9；
 > 已确认 Draft 差异转独立待审核请求、原币种多币种价格和既有 Dash 匹配边界。
