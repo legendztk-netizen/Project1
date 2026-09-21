@@ -336,3 +336,26 @@ remain #63; this section does not claim those are finished.
 The isolated staged-tree validation additionally passed frozen installation,
 typecheck, production-format local build and77 tests across five acceptance/
 projection suites, without depending on #61/#62 working files.
+
+## Ticket 13 (#61): Email acceptance and acceptance copies
+
+Authorized Admin review can record acceptance from a verified, privately stored
+customer email for the exact current PI/hash. Legal name and explicit general/
+custom acknowledgements must be supported by the original message. Acceptance,
+evidence, audit and a durable copy intent commit together. Admin review pages
+expose the evidence and delivery state without exposing private storage keys.
+
+Website and email acceptance use the same immutable copy outbox. Local delivery
+is explicitly a stub. Missing encryption configuration fails into a recoverable
+state rather than blocking the review page. Automatic retries are bounded;
+after the provider idempotency window, an audited reconciliation must establish
+delivery or explicitly confirm non-delivery before starting a new delivery
+generation. The original acceptance and encrypted copy remain unchanged.
+
+Migration0077 advances schema77 to78. The implementation agent passed86 scoped
+tests; independent Standards/Spec review passed32 tests and found no Spec gap.
+Standards review requested English customer-date formatting in the copy body;
+this was corrected using the existing ET formatter, with21 targeted tests passing
+and an assertion that the stored UTC evidence remains unchanged.
+The staged tree independently passed frozen installation, typecheck and build.
+Cross-ticket browser, broad regression and final sign-off remain #63.

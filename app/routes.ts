@@ -84,6 +84,22 @@ export default [
     "modules/customer-identity/routes/proforma-invoice-accept.tsx",
   ),
   route(
+    "admin/quotes/:requestId/pi/:piId/email-acceptance",
+    "modules/admin/routes/pi-email-acceptance.ts",
+  ),
+  route(
+    "admin/pi-acceptance-copies/data",
+    "modules/admin/routes/pi-acceptance-copies.ts",
+  ),
+  route(
+    "admin/pi-acceptance-copies",
+    "modules/admin/routes/pi-acceptance-copies-page.tsx",
+  ),
+  route(
+    "admin/quotes/:requestId/pi/:piId/email-review",
+    "modules/admin/routes/pi-email-acceptance-page.tsx",
+  ),
+  route(
     "admin/quote-inbound-email",
     "modules/admin/routes/quote-inbound-email.tsx",
   ),

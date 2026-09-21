@@ -190,6 +190,7 @@ export default function ProformaInvoice({
           返回询价详情
         </Link>
         <h1>形式发票 PI</h1>
+        <Link to="/admin/pi-acceptance-copies">PI 接受回执</Link>
         {actionData?.error && <p role="alert">{actionData.error}</p>}
         {(readiness.pdfJobs ?? []).map((job) => (
           <section key={job.commandId} className="admin-quote-section">
@@ -231,6 +232,12 @@ export default function ProformaInvoice({
               合计 USD {(current.snapshot.totals.totalCents / 100).toFixed(2)}
             </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+              <Link
+                className="button button-secondary"
+                to={`${base}/${encodeURIComponent(current.id)}/email-review`}
+              >
+                登记客户邮件接受
+              </Link>
               <a
                 className="button button-secondary"
                 href={`${base}/${encodeURIComponent(current.id)}/pdf?disposition=inline`}

@@ -24,6 +24,10 @@ import {
 } from "./quote-inbound-email";
 import { createInboundEmailVerifier } from "./inbound-email-verifier";
 import { piPdfJobs } from "./proforma-invoice";
+import {
+  consumePiAcceptanceCopy,
+  dispatchPiAcceptanceCopies,
+} from "./pi-email-acceptance";
 
 const requestHandler = createRequestHandler(
   () => import("virtual:react-router/server-build"),
@@ -97,6 +101,7 @@ export default {
     ctx.waitUntil(dispatchQuoteNotifications(env));
     ctx.waitUntil(dispatchInboundEmail(env));
     ctx.waitUntil(piPdfJobs(env).dispatch());
+    ctx.waitUntil(dispatchPiAcceptanceCopies(env));
     if (controller.cron === "17 * * * *")
       ctx.waitUntil(
         createRegistrationConfigurationService(env, {
@@ -107,6 +112,7 @@ export default {
   async queue(batch, env) {
     validateRuntimeEnvironment(env);
     await consumeQuoteNotifications(batch, env, async (message) => {
+      if (await consumePiAcceptanceCopy(message, env)) return true;
       if (await piPdfJobs(env).consume(message.body)) {
         message.ack();
         return true;
