@@ -394,3 +394,120 @@ focused tests passed after that fix, and independent review passed nine customer
 route tests confirming the race is covered. Both review axes have no remaining
 actionable blocker. Real-provider delivery and production deployment remain out
 of scope.
+
+## Ticket 15 (#63): Final acceptance completed 2026-09-21
+
+The isolated `test/fixtures/pi-flow-server.ts` harness runs the built Worker
+with temporary real local D1/R2, normal customer OTP sessions, explicit TEST
+seller/payment values and deterministic local Queue/email adapters. It does
+not modify shared seller settings, send real email or create an Order.
+`test/fixtures/pi-flow-README.md` maps each boundary and failure requirement to
+its executable evidence and states where a service test is not a browser test.
+
+On 2026-09-21, a browser walkthrough starting from a bare TEST RFQ performed
+Admin private-note review, explicit USD pricing/discount, address and commercial
+terms review, Quote Revision issuance, queued PDF generation, customer PDF
+viewing and explicit acceptance. My Quotes displayed PI Accepted. A second
+Quote Revision changed transport at the same USD55 accepted total; replacement
+produced PI version2, retained version1's acceptance/PDF and displayed version1
+as superseded in Admin history. Version2 initially required its own PDF view and
+fresh acknowledgements, then produced a distinct acceptance and PI Accepted
+state. Both acceptance copies completed through local scheduler/Queue stubs.
+No payment, binding third-party transaction or production release occurred.
+
+Focused browser checks also covered 390px mobile acceptance and Admin copy/
+lifecycle surfaces, with no horizontal overflow. The generated three-page PDF
+was downloaded and every page rendered and visually inspected. Mandatory PDF
+semantic/render tests passed10/10 with `PI_PDF_ACCEPTANCE=1` and the bundled
+Python interpreter. The local shared database applied through migration0078
+(schema79); repeated `pnpm migrate` reported no migrations to apply and health
+reported ready with no missing migrations.
+
+Initial broad unit/integration verification passed971 tests (136 files), with
+three opt-in skips. Two PDF skips were independently rerun as mandatory tests;
+the remaining catalog-cutover backup rehearsal requires an external backup and
+is not claimed as executed. The subsequent complete `pnpm check` passed975 tests
+across137 files, plus formatting, lint, typecheck, build and local deploy dry-run.
+Final independent smoke/deployment validation passed all four pipeline stages
+and all38 tests across seven files, including teardown. Earlier smoke failures are not
+counted as passes: the PI fixture queue-dispatch race was repaired, and a later
+run passed37/38 with one catalog-route socket closure under investigation.
+
+Redacted gitleaks scans reported no findings across135 commits and the source
+worktree. Directory scanning excludes dependency/build caches and files above
+5MiB; external documents and database backups are not claimed as fully scanned.
+Concurrent catalog maintenance and email-provider changes are excluded from
+this ticket's commit and must not be reverted during acceptance. The existing
+Worker smoke navigation assertions are an exception: HEAD already contains the
+new navigation, so its obsolete label expectations belong to this regression
+repair, not to the uncommitted catalog implementation.
+
+Final review corrected synchronous fixture queries and incomplete timeout
+cleanup: all fixture commands now use tracked asynchronous process groups,
+bounded startup/query deadlines and TERM/KILL escalation before deleting test
+storage. Four independent cleanup tests passed, including a stubborn descendant
+and a query timeout that leaves the event loop responsive. The HTTP regression
+now publishes changed catalog data for the RFQ SKU after PI issuance and compares
+the existing PDF bytes, PI record and all Quote Revision JSON/hashes. Standards
+and Spec re-review reported no remaining actionable findings; the newest HTTP
+assertions passed in the final serialized smoke run. An independent export
+of the staged tree passed frozen installation, typecheck and the four cleanup
+tests without concurrent uncommitted catalog/provider changes. Final deployment
+validation runs in that independent directory so unit environment-build tests
+cannot mutate its build during Worker smoke requests.
+
+Production prerequisites remain separate: real seller registered address and
+reviewed payment instructions; environment-specific Cloudflare resources and
+Access settings; retained encryption secrets; an authenticated sending domain,
+provider credentials and routed reply domain; provider/Queue operational
+verification and an explicit user decision to deploy. Local captures are not
+proof of internet email delivery. Payment verification and Order creation remain
+Spec4B, and are never inferred from PI acceptance.
+
+Reproducible final commands (use the project's pinned Node/pnpm runtime):
+
+```sh
+pnpm install --frozen-lockfile
+pnpm check
+pnpm migrate
+pnpm migrate
+pnpm migrate:verify
+pnpm deploy:validate:production
+PI_PDF_ACCEPTANCE=1 PI_PDF_PYTHON=/path/to/python3 pnpm exec vitest run test/proforma-invoice-pdf.test.ts
+gitleaks git --redact .
+gitleaks dir --redact --max-target-megabytes 5 .
+```
+
+The deployment validation command invokes production build, Wrangler dry-run
+and `pnpm test:smoke`; it does not perform live deployment. Do not run the unit
+environment-build tests concurrently with smoke against the same build folder.
+The Python interpreter must provide the PDF libraries documented above. See the
+fixture README for the isolated manual browser workflow and local-only Queue
+controls. Reports remain redacted; no live provider credentials are needed.
+
+The first independent staged-tree pipeline exposed obsolete navigation labels,
+a catalog-mutation fixture that attempted two simultaneously published releases,
+and another idle HTTP socket closure. These were not accepted as passing. The
+catalog fixture must supersede the old release without weakening publication
+guards. The long Worker suite now requests `Connection: close` because its
+synchronous Wrangler calls can delay idle-close processing; failures are never
+retried and no production networking behavior changes. This addresses socket
+reuse as a test-harness risk, not a proven diagnosis of every earlier closure.
+After these repairs, all27 Worker-route tests passed in the independent tree,
+and all three PI-flow tests passed, including the catalog mutation and renewed
+acceptance scenario. The independent tree also passed the ten unchanged catalog
+tests whose working-tree counterparts belong to concurrent user changes. No
+test was skipped or retried to obtain these focused results. The final complete
+pipeline subsequently passed without failures or skips.
+
+A subsequent complete run passed all38 assertions but failed its PI teardown
+on a transient `kill(group, 0)` EPERM probe. It was not recorded as a successful
+pipeline. Liveness EPERM now means "still present" during the bounded exit wait;
+actual TERM/KILL errors still fail closed and retain test state. A deterministic
+probe-denial/signal-denial test supplements real process-tree tests: all five
+cleanup tests passed. Final acceptance includes the complete pipeline and
+teardown, not just its business assertion count: the last independent run
+finished all seven files /38 tests and reported production validation completed.
+Post-fix typecheck, lint and formatting also passed. Both review axes have no
+remaining actionable findings. Local storefront/Admin remain available on5175;
+only temporary test processes were stopped.

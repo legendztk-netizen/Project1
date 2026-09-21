@@ -14,6 +14,14 @@ let persistenceDirectory: string;
 let preview: ChildProcess;
 let previewExit: Promise<number | null>;
 
+// Synchronous Wrangler calls can delay processing idle-socket close events.
+// Keep each smoke request independent; never retry failed mutations.
+function fetch(input: string | URL, init?: RequestInit) {
+  const headers = new Headers(init?.headers);
+  headers.set("Connection", "close");
+  return globalThis.fetch(input, { ...init, headers });
+}
+
 interface D1QueryResult<T> {
   results: T[];
   success: boolean;
@@ -2728,8 +2736,10 @@ describe("Cloudflare Worker route surfaces", () => {
 
     expect(response.status).toBe(200);
     expect(page).toContain("产品数据维护");
-    expect(page).toContain("批量导入产品");
-    expect(page).toContain("手动新增/编辑产品");
+    expect(page).toContain("产品审核与发布");
+    expect(page).toContain('href="/admin/catalog/requests"');
+    expect(page).toContain("管理所有产品");
+    expect(page).toContain('href="/admin/catalog/products"');
     expect(page).toContain("Hose Series and Variants / 胶管系列和子体");
     expect(page).toContain("Edit Hose Variant / 编辑胶管子体");
     expect(page).toContain('name="variant.sku"');

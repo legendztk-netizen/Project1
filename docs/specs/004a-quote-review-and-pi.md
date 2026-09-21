@@ -1,6 +1,8 @@
 # Spec 4A: Quote Review, Quote Revision, and PI
 
-> Status: In progress. Tickets through #59 are implemented and pushed. Remaining #60-#63 are authorized for sequential implementation and final acceptance; no per-ticket user approval is required unless a new business decision is needed.
+> Status: Complete and locally accepted on 2026-09-21. Tickets #49-#63 are complete. Production deployment, real-provider email delivery and payment/Order creation are not included.
+
+Implementation and acceptance evidence: [Spec 4A operations record](https://github.com/legendztk-netizen/Project1/blob/main/docs/operations/spec-4a-implementation.md).
 
 ## Problem Statement
 

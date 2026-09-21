@@ -1,0 +1,101 @@
+// TEST ONLY. This entry point is never referenced by application configuration.
+import worker from "__PI_FLOW_BUILT_WORKER__";
+
+const pending = [];
+let lastBatch = [];
+const queue = {
+  async send(body) {
+    pending.push(structuredClone(body));
+  },
+  async sendBatch(messages) {
+    for (const message of messages) await this.send(message.body);
+  },
+};
+
+function eventLifecycle(ctx) {
+  const work = [];
+  return {
+    context: {
+      waitUntil(promise) {
+        work.push(Promise.resolve(promise));
+        ctx.waitUntil(promise);
+      },
+      passThroughOnException() { ctx.passThroughOnException(); },
+    },
+    async complete() {
+      // A task may register more work while settling. Drain to quiescence.
+      for (let offset = 0; offset < work.length;) {
+        const batch = work.slice(offset);
+        offset = work.length;
+        await Promise.all(batch);
+      }
+    },
+  };
+}
+
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    if (
+      env.APP_ENV !== "local" ||
+      env.PI_FLOW_TEST_ONLY !== "TEST DATA - NEVER DEPLOY" ||
+      !["127.0.0.1", "localhost"].includes(url.hostname)
+    )
+      return new Response("Test fixture is loopback-only", { status: 403 });
+    const bindings = { ...env, ASYNC_JOBS: queue };
+    const lifecycle = eventLifecycle(ctx);
+    if (url.pathname === "/__test/pi/scheduled" && request.method === "POST") {
+      if (request.headers.get("origin") !== url.origin)
+        return new Response("Origin required", { status: 403 });
+      await worker.scheduled(
+        { cron: "* * * * *", scheduledTime: Date.now(), noRetry() {} },
+        bindings,
+        lifecycle.context,
+      );
+      await lifecycle.complete();
+      return Response.json({ scheduled: true, pending: pending.length });
+    }
+    if (url.pathname === "/__test/pi/queue" && request.method === "POST") {
+      if (request.headers.get("origin") !== url.origin)
+        return new Response("Origin required", { status: 403 });
+      const bodies = url.searchParams.has("replay")
+        ? structuredClone(lastBatch)
+        : pending.splice(0);
+      if (!url.searchParams.has("replay")) lastBatch = structuredClone(bodies);
+      let acknowledged = 0;
+      let retries = 0;
+      await worker.queue(
+        {
+          queue: "pi-flow-test-stub",
+          messages: bodies.map((body) => ({
+            id: crypto.randomUUID(),
+            timestamp: new Date(),
+            attempts: 1,
+            body,
+            ack() {
+              acknowledged++;
+            },
+            retry() {
+              retries++;
+              pending.push(body);
+            },
+          })),
+          ackAll() {
+            acknowledged = bodies.length;
+          },
+          retryAll() {
+            retries = bodies.length;
+            pending.push(...bodies);
+          },
+        },
+        bindings,
+        lifecycle.context,
+      );
+      await lifecycle.complete();
+      return Response.json({ delivered: bodies.length, acknowledged, retries });
+    }
+    const response = await worker.fetch(request, bindings, lifecycle.context);
+    await lifecycle.complete();
+    return response;
+  },
+};

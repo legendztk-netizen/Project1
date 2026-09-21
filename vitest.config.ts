@@ -10,6 +10,9 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    // Integration files start real local workerd/D1 instances.
+    maxWorkers: 2,
+    testTimeout: 15000,
     include: ["test/**/*.test.{ts,tsx}"],
     exclude: ["test/smoke/**/*.test.ts", "node_modules/**"],
   },
