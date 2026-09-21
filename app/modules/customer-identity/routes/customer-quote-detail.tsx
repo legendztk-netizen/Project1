@@ -159,6 +159,12 @@ export default function CustomerQuoteDetail({
         >
           Quote conversation
         </Link>
+        <Link
+          className="button button-secondary"
+          to={`/account/quotes/${quoteRequest.id}/pi`}
+        >
+          <FileText aria-hidden="true" size={18} /> Proforma invoice
+        </Link>
 
         <section
           className="customer-quote-progress"
@@ -169,7 +175,7 @@ export default function CustomerQuoteDetail({
             <strong>{quoteRequest.progress.label}</strong>
             <p>
               {quoteRequest.currentOffer
-                ? "Your formal quote is ready. PI preparation is pending."
+                ? "Your formal quote is ready."
                 : "We received your request and will prepare the formal quote."}
             </p>
           </div>

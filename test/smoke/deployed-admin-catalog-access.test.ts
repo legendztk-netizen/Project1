@@ -157,6 +157,8 @@ beforeAll(async () => {
       "--var",
       "PREVIEW_SESSION_SIGNING_KEY:test-session-key-1234567890",
       "--var",
+      "PREVIEW_NOTIFICATION_ENCRYPTION_KEY:test-notification-key-1234567890",
+      "--var",
       "PREVIEW_RESEND_API_KEY:test-resend-key",
     ],
     { cwd: process.cwd(), stdio: ["ignore", "ignore", "inherit"] },

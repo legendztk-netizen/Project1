@@ -1,0 +1,27 @@
+title = "Hose platform secret scan"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Reviewed public measurement diagram filenames, not API keys"
+regexTarget = "secret"
+regexes = [
+  '''^M01-straight-male-to-straight-male\.png$''',
+  '''^M02-female-seat-to-female-seat\.png$''',
+  '''^M03-straight-to-45-elbow\.png$''',
+  '''^M04-straight-to-90-elbow\.png$''',
+  '''^M05-45-elbow-to-45-elbow\.png$''',
+  '''^M06-90-elbow-to-90-elbow\.png$''',
+  '''^M04-diagram\.png$''',
+  '''^(JIC|ORFS)_F_SW_90_MEDIUM$''',
+  '''^test-notification-key-1234567890$''',
+]
+
+[[allowlists]]
+description = "Dependency caches and generated build output; source is scanned"
+paths = [ '''(^|/)(node_modules|build|\.git|\.wrangler|\.react-router)/''' ]
+
+[[allowlists]]
+description = "Ignored local captures of third-party public webpages, not shipped source"
+paths = [ '''^tmp/ffx-04-04w(-lines)?\.html$''' ]

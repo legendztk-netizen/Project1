@@ -38,18 +38,31 @@ function bindingsFor(environment: "local" | "preview" | "production") {
       ? {
           PREVIEW_RESEND_API_KEY: "unit-test-resend-key",
           PREVIEW_SESSION_SIGNING_KEY: "unit-test-session-key",
+          PREVIEW_NOTIFICATION_ENCRYPTION_KEY: "unit-test-notification-key",
         }
       : {}),
     ...(environment === "production"
       ? {
           PRODUCTION_RESEND_API_KEY: "unit-test-resend-key",
           PRODUCTION_SESSION_SIGNING_KEY: "unit-test-session-key",
+          PRODUCTION_NOTIFICATION_ENCRYPTION_KEY: "unit-test-notification-key",
         }
       : {}),
   };
 }
 
 describe("runtime environment validation", () => {
+  it.each(["preview", "production"] as const)(
+    "requires the notification encryption key in %s",
+    (environment) => {
+      const bindings = bindingsFor(environment);
+      const key = `${environment.toUpperCase()}_NOTIFICATION_ENCRYPTION_KEY`;
+      Reflect.deleteProperty(bindings, key);
+      expect(() => validateRuntimeEnvironment(bindings)).toThrow(
+        `Missing secret ${key}`,
+      );
+    },
+  );
   it.each(["local", "preview", "production"] as const)(
     "accepts a complete %s environment",
     (environment) => {

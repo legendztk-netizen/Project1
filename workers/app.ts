@@ -23,6 +23,7 @@ import {
   receiveQuoteEmailEvent,
 } from "./quote-inbound-email";
 import { createInboundEmailVerifier } from "./inbound-email-verifier";
+import { piPdfJobs } from "./proforma-invoice";
 
 const requestHandler = createRequestHandler(
   () => import("virtual:react-router/server-build"),
@@ -95,6 +96,7 @@ export default {
     validateRuntimeEnvironment(env);
     ctx.waitUntil(dispatchQuoteNotifications(env));
     ctx.waitUntil(dispatchInboundEmail(env));
+    ctx.waitUntil(piPdfJobs(env).dispatch());
     if (controller.cron === "17 * * * *")
       ctx.waitUntil(
         createRegistrationConfigurationService(env, {
@@ -104,10 +106,12 @@ export default {
   },
   async queue(batch, env) {
     validateRuntimeEnvironment(env);
-    await consumeQuoteNotifications(
-      batch,
-      env,
-      (await quoteInboundEmail(env)).consume,
-    );
+    await consumeQuoteNotifications(batch, env, async (message) => {
+      if (await piPdfJobs(env).consume(message.body)) {
+        message.ack();
+        return true;
+      }
+      return (await quoteInboundEmail(env)).consume(message);
+    });
   },
 } satisfies ExportedHandler<ApplicationBindings>;

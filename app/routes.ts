@@ -64,6 +64,22 @@ export default [
   route("admin", "modules/admin/routes/admin-home.tsx"),
   route("admin/quotes", "modules/admin/routes/quote-reviews.tsx"),
   route(
+    "admin/quotes/:requestId/pi",
+    "modules/admin/routes/proforma-invoice.tsx",
+  ),
+  route(
+    "admin/quotes/:requestId/pi/:piId/pdf",
+    "modules/admin/routes/proforma-invoice-download.tsx",
+  ),
+  route(
+    "account/quotes/:requestId/pi/:piId?",
+    "modules/customer-identity/routes/proforma-invoice.tsx",
+  ),
+  route(
+    "account/quotes/:requestId/pi/:piId/pdf",
+    "modules/customer-identity/routes/proforma-invoice-download.tsx",
+  ),
+  route(
     "admin/quote-inbound-email",
     "modules/admin/routes/quote-inbound-email.tsx",
   ),

@@ -239,3 +239,76 @@ race is guarded atomically at reservation creation/reuse; four cleanup
 interleavings verify no resurrected uploads or stranded quota. Both review axes
 are cleared after corrections. Schema73 recovery migration also passed actual
 Wrangler preservation/backfill tests and was applied to local D1.
+
+## Ticket 11 (#59): Fixed PI
+
+PI issuance freezes the current Quote Revision, seller identity, approved public
+specifications, commercial terms, cancellation conditions and acknowledgement
+versions. Missing registered address or payment instructions blocks issuance.
+The default deadline adds 14 calendar days in America/New_York, including DST
+transitions; customer dates use ET and Admin dates use Beijing Time.
+
+Private R2 stores immutable PDF bytes and their hash. Downloads recheck customer
+ownership and verify those bytes. Current instructions for the selected payment
+channel appear alongside the PI; obsolete bank details are not embedded in it.
+Infrastructure failures return a retryable error while preserving the command
+identity. The implementation does not create an Order or record payment.
+
+Licensed, hash-checked font assets are served through ASSETS. CJK fonts use
+offline subsets, with bounded per-render font loading and concurrency. Real
+workerd tests cover multilingual rendering and guard failures; these local
+checks are not a claim about production peak memory or deployment readiness.
+
+Resumed verification on 2026-09-16: the five focused suites passed 78 tests;
+the two optional PDF extraction checks initially skipped under system Python,
+then all 10 PDF tests passed using the bundled Python with pypdf. The registered
+local D1 migration and real workerd suites passed 12 tests. Typecheck passed.
+The D1 test now requires the registered migration rather than a scratch fallback.
+Shared local commercial settings were not overwritten with test seller data.
+
+Review corrections: domain validation now returns an actionable 400 rather than
+an uncertain-infrastructure 503. Seller addresses require Latin content as a
+minimum safeguard; Admin still verifies the actual English registered address.
+Run PDF acceptance with `PI_PDF_ACCEPTANCE=1` and `PI_PDF_PYTHON` pointing to a
+Python installation containing pypdf, pypdfium2 and Pillow. This mode fails when
+its dependencies are missing and checks raster ink, page boundaries and margins.
+The three-page multilingual fixture was also visually inspected on 2026-09-16.
+
+Migration0075 adds durable PDF jobs after the concurrently supplied catalog
+migration0074. Issuance reserves immutable inputs; Queue consumption renders
+the PDF. Scheduled recovery redispatches due work. Five failed attempts retain
+a failed job visible on the Admin PI page, with an explicit authorized retry.
+Lease tokens guard job completion, while immutable intent and publication
+checks prevent conflicting authoritative PDFs. No private error text is stored
+in the job state. Both review axes found no remaining blocker in the bounded
+correction review. Six focused suites passed86 tests including real local D1
+and workerd; local schema76 health and production-format local build passed.
+
+Verification resumed on 2026-09-21: all six PI suites passed (86 tests), including
+mandatory PDF acceptance checks. Exporting the staged tree into an independent
+directory and running frozen-lockfile installation, typecheck and build passed.
+The deployed-style Admin authentication smoke test passed after supplying its
+missing test-only notification encryption key; runtime validation was retained.
+The full smoke run and final cross-ticket acceptance are recorded separately.
+
+An additional four-suite run from that independent directory passed 75 tests;
+the new failed-job dispatch exclusion and retry audit assertions also passed.
+Gitleaks8.30.1 (official release archive checksum verified) scanned all131 Git
+commits and the source worktree. Reviewed allowlists contain exact public image
+names/SKU identifiers, one explicit test key and two ignored third-party HTML
+captures. No project secret remained reported. Dependency/build caches and files
+over5MiB were excluded from directory scanning; no tracked/staged file exceeds
+that size. This is not a claim that external documents or database backups were
+fully secret-scanned. Reports were kept outside the repository, with redaction.
+
+Migration0074 is an unchanged, externally supplied catalog-import prerequisite
+that was already applied to the shared local database before this continuation.
+It is retained in chronological order, not attributed to PI business scope;
+renumbering or omitting it would invalidate the existing migration history.
+The PI-specific D1 dead-letter implementation is recorded in ADR004; no broker
+DLQ is represented as configured. Failed jobs are excluded from automatic
+dispatch, and manual retry preserves the command and records an Admin audit.
+
+Spec4A remains in progress: #60-#63 still need their integration, verification
+and completion records. No production resources or actual seller/payment
+settings have been changed for these tests.
