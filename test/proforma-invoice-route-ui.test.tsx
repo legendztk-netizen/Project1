@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import AdminPi from "../app/modules/admin/routes/proforma-invoice";
 import CustomerPi from "../app/modules/customer-identity/routes/proforma-invoice";
 import type { PiRecord, PiReadiness } from "../workers/proforma-invoice";
+import type { PiAcceptanceStatus } from "../workers/pi-acceptance";
 
 vi.mock("../app/modules/customer-identity/ui/account-workspace", () => ({
   AccountWorkspace: ({ children }: { children: ReactNode }) => (
@@ -21,6 +22,7 @@ function render(element: ReactNode) {
 }
 const invoice = {
   id: "fixed-pi",
+  snapshotHash: "a".repeat(64),
   snapshot: {
     documentNumber: "PI-EXACT",
     documentVersion: 1,
@@ -39,10 +41,23 @@ const invoice = {
     instructions: "Selected bank details\n<script>not executable</script>",
   },
 } as PiRecord;
+const currentStatus: PiAcceptanceStatus = {
+  piId: invoice.id,
+  documentVersion: 1,
+  snapshotHash: invoice.snapshotHash,
+  current: true,
+  expired: false,
+  status: "PI Ready",
+  canAccept: false,
+  viewId: null,
+  acceptance: null,
+};
 
 it("shows the exact protected PI links, USD total and selected instructions in English", () => {
   const html = render(
-    <CustomerPi loaderData={{ requestId: "request", invoice }} />,
+    <CustomerPi
+      loaderData={{ requestId: "request", invoice, status: currentStatus }}
+    />,
   );
   expect(html).toContain("USD 123.45");
   expect(html).toContain(
@@ -62,6 +77,7 @@ it("shows actionable unavailable-instructions and unissued states without paymen
       loaderData={{
         requestId: "request",
         invoice: { ...invoice, paymentInstructions: null },
+        status: currentStatus,
       }}
     />,
   );

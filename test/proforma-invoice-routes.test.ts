@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   adminDownload: vi.fn(),
   customerCurrent: vi.fn(),
   customerRead: vi.fn(),
+  customerHistory: vi.fn(),
   customerDownload: vi.fn(),
 }));
 vi.mock("../workers/pi-acceptance", () => ({
@@ -29,6 +30,7 @@ vi.mock("../workers/proforma-invoice", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../workers/proforma-invoice")>()),
   proformaInvoices: () => ({ ...mocks, reserve: mocks.issue }),
   piPdfJobs: () => ({ dispatch: async () => {} }),
+  piLifecycle: () => ({ customerHistory: mocks.customerHistory }),
 }));
 vi.mock(
   "../app/modules/customer-identity/application/customer-identity-service",
@@ -141,6 +143,7 @@ function args(
 }
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.customerHistory.mockResolvedValue([]);
   mocks.readSession.mockResolvedValue({ id: "authenticated-profile" });
   mocks.readiness.mockResolvedValue({
     quoteRevision: { id: "quote-revision", hash: "exact-captured-hash" },
@@ -279,12 +282,20 @@ it("requires a real customer session for page and PDF reads", async () => {
 it("uses authenticated ownership and returns only the service's selected current instructions", async () => {
   const invoice = {
     id: "pi-exact",
+    snapshotHash: "a".repeat(64),
     paymentInstructions: {
       ...selection,
       instructions: "Selected current instructions",
     },
   };
   mocks.customerCurrent.mockResolvedValue(invoice);
+  mocks.customerHistory.mockResolvedValue([
+    {
+      id: invoice.id,
+      snapshotHash: invoice.snapshotHash,
+      lifecycle: { isCurrent: true, state: "current", canAccept: true },
+    },
+  ]);
   const result = await customer(
     args({ query: "?profileId=attacker&paymentChannel=paypal" }),
   );

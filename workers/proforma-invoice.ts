@@ -8,11 +8,34 @@ import {
 import { conditionsForQuote } from "../app/modules/proforma-invoice/domain/pi-policy";
 import { createPiPdfRenderer } from "./pi-fonts";
 import { createPiPdfJobs } from "../app/modules/proforma-invoice/application/pi-pdf-jobs";
+import { createPiLifecycleService } from "../app/modules/proforma-invoice/application/pi-lifecycle-service";
 
 export function piPdfJobs(env: ApplicationBindings) {
-  return createPiPdfJobs(env.DB, env.ASYNC_JOBS, (commandId) =>
-    proformaInvoices(env).renderReserved(commandId),
-  );
+  return createPiPdfJobs(env.DB, env.ASYNC_JOBS, async (commandId) => {
+    const replacement = await env.DB.prepare(
+      `SELECT r.pi_id FROM pi_replacement_intents r
+       JOIN proforma_invoice_intents i ON i.id=r.pi_id WHERE i.command_id=?`,
+    )
+      .bind(commandId)
+      .first();
+    return replacement
+      ? piLifecycle(env).renderReserved(commandId)
+      : proformaInvoices(env).renderReserved(commandId);
+  });
+}
+
+export function piLifecycle(env: ApplicationBindings) {
+  return createPiLifecycleService(env.DB, env.PRIVATE_FILES, {
+    conditions: conditionsForQuote,
+    renderPdf: env.ASSETS
+      ? createPiPdfRenderer(env.ASSETS)
+      : async () => {
+          throw new Response("PI PDF font loader is not configured", {
+            status: 503,
+            headers: piPrivateHeaders(),
+          });
+        },
+  });
 }
 
 export const piPrivateHeaders = () => ({

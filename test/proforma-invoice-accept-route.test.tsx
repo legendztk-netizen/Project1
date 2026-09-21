@@ -41,6 +41,7 @@ vi.mock("../workers/pi-acceptance", async (original) => ({
 vi.mock("../workers/proforma-invoice", async (original) => ({
   ...(await original<typeof import("../workers/proforma-invoice")>()),
   proformaInvoices: () => mocks,
+  piLifecycle: () => ({ customerHistory: async () => [] }),
 }));
 vi.mock(
   "../app/modules/customer-identity/application/customer-identity-service",

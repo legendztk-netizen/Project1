@@ -234,6 +234,12 @@ export default function ProformaInvoice({
             <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
               <Link
                 className="button button-secondary"
+                to={`${base}/lifecycle`}
+              >
+                PI 历史与替换
+              </Link>
+              <Link
+                className="button button-secondary"
                 to={`${base}/${encodeURIComponent(current.id)}/email-review`}
               >
                 登记客户邮件接受

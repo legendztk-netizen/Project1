@@ -100,6 +100,10 @@ export default [
     "modules/admin/routes/pi-email-acceptance-page.tsx",
   ),
   route(
+    "admin/quotes/:requestId/pi/lifecycle",
+    "modules/admin/routes/proforma-invoice-lifecycle.tsx",
+  ),
+  route(
     "admin/quote-inbound-email",
     "modules/admin/routes/quote-inbound-email.tsx",
   ),

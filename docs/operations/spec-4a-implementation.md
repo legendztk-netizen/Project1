@@ -359,3 +359,38 @@ this was corrected using the existing ET formatter, with21 targeted tests passin
 and an assertion that the stored UTC evidence remains unchanged.
 The staged tree independently passed frozen installation, typecheck and build.
 Cross-ticket browser, broad regression and final sign-off remain #63.
+
+## Ticket 14 (#62): PI expiry, replacement and history
+
+Migration0078 advances schema78 to79. Replacement reserves reviewed PI/head,
+acceptance, Quote Revision, seller and payment versions before the existing
+durable PDF job renders. Queue routing selects the lifecycle renderer for
+replacement intents. Publication atomically advances the head, supersedes the
+previous PI and appends its audit; retries preserve exact PDF bytes and history.
+Material changes require a newer issued Quote Revision and renewed acceptance.
+Seller estimate errors cannot adjust protected accepted totals; lower actual
+costs do not trigger automatic refunds. No Order or payment is created.
+
+The Chinese Admin lifecycle page provides reviewed replacement, retry and history
+controls. Customer history uses English/ET dates and a minimal owned projection
+without payment queries. Expired unaccepted and superseded PIs are read-only;
+customer responses omit their payment instructions, including serialized loader
+data. Current accepted PIs retain selected instructions after the offer deadline.
+
+Focused verification passed124 tests across11 suites, including real local D1/R2,
+durable queue consumption, actual Quote Revision issuance, exact PDF delivery,
+renewed website acceptance, concurrency, rollback, bank-to-PayPal privacy and the
+three existing PI route suites. TypeScript, focused lint and formatting passed.
+The replay test separately checks successful replacement replay and rejection of
+the original issuance command resolved through the first PI identity. Full smoke,
+browser acceptance and final cross-ticket sign-off remain #63; no new build or
+production verification is claimed here.
+
+The main agent independently exported the staged tree and passed frozen install,
+typecheck, local production-format build and56 tests across five suites. Final
+review identified a loader race after the invoice read; the final lifecycle
+projection now removes stale payment instructions before serialization. Fifty
+focused tests passed after that fix, and independent review passed nine customer
+route tests confirming the race is covered. Both review axes have no remaining
+actionable blocker. Real-provider delivery and production deployment remain out
+of scope.

@@ -72,11 +72,13 @@ export function createProformaInvoiceService(
   const now = () => piUtcInstant((options.now?.() ?? new Date()).toISOString());
   const render = options.renderPdf ?? renderProformaInvoicePdf;
 
-  async function publicRecord(row: PiRow) {
+  async function publicRecord(row: PiRow, includePaymentInstructions = true) {
     if ((await sha(row.snapshot_json)) !== row.snapshot_hash)
       throw new Response("PI snapshot integrity failure", { status: 409 });
     const snapshot = JSON.parse(row.snapshot_json) as ProformaInvoiceSnapshot;
-    const currentPayment = await repository.currentPayment(row.payment_channel);
+    const currentPayment = includePaymentInstructions
+      ? await repository.currentPayment(row.payment_channel)
+      : null;
     let paymentInstructions: ReturnType<
       typeof publicPiPaymentInstructions
     > | null = null;
@@ -103,6 +105,35 @@ export function createProformaInvoiceService(
       },
       paymentInstructions,
     };
+  }
+
+  async function customerPaymentActionable(row: PiRow) {
+    return !!(await db
+      .prepare(
+        `SELECT h.pi_id FROM proforma_invoice_heads h
+      WHERE h.request_id=? AND h.pi_id=? AND (
+        EXISTS(SELECT 1 FROM pi_acceptances a WHERE a.pi_id=h.pi_id)
+        OR (? > ? AND ?=(SELECT id FROM quote_revisions WHERE request_id=h.request_id ORDER BY revision_number DESC LIMIT 1)))`,
+      )
+      .bind(
+        row.request_id,
+        row.id,
+        row.valid_until,
+        now(),
+        row.quote_revision_id,
+      )
+      .first());
+  }
+
+  async function customerRecord(row: PiRow) {
+    const record = await publicRecord(
+      row,
+      await customerPaymentActionable(row),
+    );
+    // Rendering the projection may yield while a replacement publishes.
+    if (record.paymentInstructions && !(await customerPaymentActionable(row)))
+      record.paymentInstructions = null;
+    return record;
   }
 
   async function bytes(row: PiRow, disposition: "inline" | "attachment") {
@@ -438,13 +469,13 @@ export function createProformaInvoiceService(
       customer(profileId);
       await repository.requireOwnedQuote(profileId, requestId);
       const row = await repository.owned(profileId, requestId);
-      return row ? publicRecord(row) : null;
+      return row ? customerRecord(row) : null;
     },
     async customerRead(profileId: string, requestId: string, piId: string) {
       customer(profileId);
       const row = await repository.owned(profileId, requestId, piId);
       if (!row) throw new Response("Not found", { status: 404 });
-      return publicRecord(row);
+      return customerRecord(row);
     },
     async customerDownload(
       profileId: string,

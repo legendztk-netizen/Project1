@@ -8,9 +8,14 @@ import {
   piPrivateHeaders,
   piRouteId,
   type PiRecord,
+  piLifecycle,
 } from "#workers/proforma-invoice";
 import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
 import { AccountWorkspace } from "../ui/account-workspace";
+import {
+  PiLifecycleHistory,
+  type PiLifecycleHistoryItem,
+} from "../../proforma-invoice/ui/pi-lifecycle-history";
 
 export const headers = piPrivateHeaders;
 export function meta() {
@@ -27,7 +32,23 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
   const status = invoice
     ? await piAcceptance(env).customerStatus(profileId, requestId, invoice.id)
     : null;
-  return data({ requestId, invoice, status }, { headers: headers() });
+  const history = invoice
+    ? await piLifecycle(env).customerHistory(profileId, requestId)
+    : [];
+  const latest = history.find(
+    (record) =>
+      record.id === invoice?.id && record.snapshotHash === invoice.snapshotHash,
+  )?.lifecycle;
+  // Status/history reads may observe a replacement after the invoice read.
+  const safeInvoice =
+    invoice &&
+    !(latest?.isCurrent && (latest.state === "accepted" || latest.canAccept))
+      ? { ...invoice, paymentInstructions: null }
+      : invoice;
+  return data(
+    { requestId, invoice: safeInvoice, status, history },
+    { headers: headers() },
+  );
 }
 
 export default function ProformaInvoice({
@@ -37,13 +58,24 @@ export default function ProformaInvoice({
     requestId: string;
     invoice: PiRecord | null;
     status?: PiAcceptanceStatus | null;
+    history?: PiLifecycleHistoryItem[];
   };
 }) {
-  const { requestId, invoice, status } = loaderData;
+  const { requestId, invoice, status, history = [] } = loaderData;
+  const lifecycle = history.find(
+    (record) => record.id === invoice?.id,
+  )?.lifecycle;
   const base = `/account/quotes/${encodeURIComponent(requestId)}`;
   const snapshot = invoice?.snapshot;
+  const showPaymentInstructions = lifecycle
+    ? lifecycle.isCurrent &&
+      (lifecycle.state === "accepted" || lifecycle.canAccept)
+    : status?.current && (!!status.acceptance || !status.expired);
   const target =
-    status?.current && !status.expired && snapshot
+    status?.current &&
+    !status.expired &&
+    snapshot &&
+    (!lifecycle || lifecycle.canAccept)
       ? `&${new URLSearchParams({ documentVersion: String(snapshot.documentVersion), snapshotHash: invoice.snapshotHash })}`
       : "";
   return (
@@ -68,6 +100,11 @@ export default function ProformaInvoice({
                   Version {snapshot.documentVersion} · Quote revision{" "}
                   {snapshot.quoteRevision.number}
                 </p>
+                {lifecycle && (
+                  <p>
+                    <strong>{lifecycle.label}</strong>
+                  </p>
+                )}
               </div>
             </header>
             <dl className="customer-quote-summary">
@@ -105,15 +142,21 @@ export default function ProformaInvoice({
             {status && (
               <section className="customer-quote-section">
                 <h2>
-                  {status.acceptance
-                    ? "PI Accepted"
-                    : !status.current
-                      ? "Previous PI"
-                      : status.expired
-                        ? "PI Expired"
-                        : "PI Ready"}
+                  {lifecycle?.state === "superseded"
+                    ? "PI Superseded"
+                    : status.acceptance
+                      ? "PI Accepted"
+                      : !status.current
+                        ? "Previous PI"
+                        : status.expired
+                          ? "PI Expired"
+                          : "PI Ready"}
                 </h2>
-                {(status.acceptance || (status.current && !status.expired)) && (
+                {lifecycle?.awaitingReplacement && <p>Updated PI pending</p>}
+                {(status.acceptance ||
+                  (status.current &&
+                    !status.expired &&
+                    (!lifecycle || lifecycle.canAccept))) && (
                   <Link
                     className="button button-primary"
                     to={`${base}/pi/${encodeURIComponent(invoice.id)}/accept`}
@@ -125,27 +168,29 @@ export default function ProformaInvoice({
                 )}
               </section>
             )}
-            <section className="customer-quote-section">
-              <h2>Payment instructions</h2>
-              {invoice.paymentInstructions ? (
-                <>
-                  <p>
-                    {invoice.paymentInstructions.channel === "paypal"
-                      ? "PayPal"
-                      : "Bank Transfer"}{" "}
-                    · Version {invoice.paymentInstructions.version}
+            {showPaymentInstructions && (
+              <section className="customer-quote-section">
+                <h2>Payment instructions</h2>
+                {invoice.paymentInstructions ? (
+                  <>
+                    <p>
+                      {invoice.paymentInstructions.channel === "paypal"
+                        ? "PayPal"
+                        : "Bank Transfer"}{" "}
+                      · Version {invoice.paymentInstructions.version}
+                    </p>
+                    <p style={{ whiteSpace: "pre-wrap" }}>
+                      {invoice.paymentInstructions.instructions}
+                    </p>
+                  </>
+                ) : (
+                  <p role="alert">
+                    Current payment instructions are unavailable. Contact
+                    Support before sending payment.
                   </p>
-                  <p style={{ whiteSpace: "pre-wrap" }}>
-                    {invoice.paymentInstructions.instructions}
-                  </p>
-                </>
-              ) : (
-                <p role="alert">
-                  Current payment instructions are unavailable. Contact Support
-                  before sending payment.
-                </p>
-              )}
-            </section>
+                )}
+              </section>
+            )}
             <section className="customer-quote-section">
               <h2>Seller</h2>
               <p>{snapshot.seller.legalName}</p>
@@ -155,6 +200,7 @@ export default function ProformaInvoice({
             </section>
           </>
         )}
+        <PiLifecycleHistory records={history} />
       </main>
     </AccountWorkspace>
   );
