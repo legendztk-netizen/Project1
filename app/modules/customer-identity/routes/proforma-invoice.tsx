@@ -1,6 +1,7 @@
 import { Link, data, type LoaderFunctionArgs } from "react-router";
 import { ArrowLeft, Download, Eye } from "lucide-react";
 import { cloudflareContext } from "#workers/context";
+import { piAcceptance, type PiAcceptanceStatus } from "#workers/pi-acceptance";
 import {
   proformaInvoices,
   piCustomerProfile,
@@ -23,17 +24,28 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
   const invoice = params.piId
     ? await service.customerRead(profileId, requestId, piRouteId(params.piId))
     : await service.customerCurrent(profileId, requestId);
-  return data({ requestId, invoice }, { headers: headers() });
+  const status = invoice
+    ? await piAcceptance(env).customerStatus(profileId, requestId, invoice.id)
+    : null;
+  return data({ requestId, invoice, status }, { headers: headers() });
 }
 
 export default function ProformaInvoice({
   loaderData,
 }: {
-  loaderData: { requestId: string; invoice: PiRecord | null };
+  loaderData: {
+    requestId: string;
+    invoice: PiRecord | null;
+    status?: PiAcceptanceStatus | null;
+  };
 }) {
-  const { requestId, invoice } = loaderData;
+  const { requestId, invoice, status } = loaderData;
   const base = `/account/quotes/${encodeURIComponent(requestId)}`;
   const snapshot = invoice?.snapshot;
+  const target =
+    status?.current && !status.expired && snapshot
+      ? `&${new URLSearchParams({ documentVersion: String(snapshot.documentVersion), snapshotHash: invoice.snapshotHash })}`
+      : "";
   return (
     <AccountWorkspace activeView="my-quotes">
       <main
@@ -75,7 +87,7 @@ export default function ProformaInvoice({
             <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
               <a
                 className="button button-secondary"
-                href={`${base}/pi/${encodeURIComponent(invoice.id)}/pdf?disposition=inline`}
+                href={`${base}/pi/${encodeURIComponent(invoice.id)}/pdf?disposition=inline${target}`}
                 target="_blank"
                 rel="noreferrer"
               >
@@ -84,12 +96,35 @@ export default function ProformaInvoice({
               </a>
               <a
                 className="button button-secondary"
-                href={`${base}/pi/${encodeURIComponent(invoice.id)}/pdf`}
+                href={`${base}/pi/${encodeURIComponent(invoice.id)}/pdf${target ? `?${target.slice(1)}` : ""}`}
               >
                 <Download size={18} />
                 Download PI
               </a>
             </div>
+            {status && (
+              <section className="customer-quote-section">
+                <h2>
+                  {status.acceptance
+                    ? "PI Accepted"
+                    : !status.current
+                      ? "Previous PI"
+                      : status.expired
+                        ? "PI Expired"
+                        : "PI Ready"}
+                </h2>
+                {(status.acceptance || (status.current && !status.expired)) && (
+                  <Link
+                    className="button button-primary"
+                    to={`${base}/pi/${encodeURIComponent(invoice.id)}/accept`}
+                  >
+                    {status.acceptance
+                      ? "Acceptance record"
+                      : "Review and accept PI"}
+                  </Link>
+                )}
+              </section>
+            )}
             <section className="customer-quote-section">
               <h2>Payment instructions</h2>
               {invoice.paymentInstructions ? (

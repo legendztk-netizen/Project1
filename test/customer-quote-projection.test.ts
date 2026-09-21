@@ -7,6 +7,28 @@ import {
 } from "../app/modules/quote-request/domain/quote-request";
 
 describe("customer quote projection", () => {
+  it("derives accepted current PI status without advancing payment or orders", () => {
+    const record = {
+      id: "request",
+      referenceNumber: "QR",
+      snapshot: null as never,
+      submittedAt: "2026-09-21",
+      hasCurrentOffer: true,
+    };
+    expect(customerQuoteProjection(record).progress.code).toBe("QUOTE_READY");
+    expect(
+      customerQuoteProjection({
+        ...record,
+        acceptedCurrentPiQuoteRevisionId: "revision",
+      }).progress,
+    ).toEqual({ code: "PI_ACCEPTED", label: "PI Accepted" });
+    expect(
+      customerQuoteProjection({
+        ...record,
+        acceptedCurrentPiQuoteRevisionId: null,
+      }).progress.code,
+    ).toBe("QUOTE_READY");
+  });
   it("exposes only the truthful RFQ stage while reserving the agreed lifecycle", () => {
     const record = {
       id: "request-1",

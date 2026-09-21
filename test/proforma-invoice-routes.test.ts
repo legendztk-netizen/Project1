@@ -22,6 +22,9 @@ const mocks = vi.hoisted(() => ({
   customerRead: vi.fn(),
   customerDownload: vi.fn(),
 }));
+vi.mock("../workers/pi-acceptance", () => ({
+  piAcceptance: () => ({ customerStatus: async () => null }),
+}));
 vi.mock("../workers/proforma-invoice", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../workers/proforma-invoice")>()),
   proformaInvoices: () => ({ ...mocks, reserve: mocks.issue }),

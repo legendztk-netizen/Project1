@@ -312,3 +312,27 @@ dispatch, and manual retry preserves the command and records an Admin audit.
 Spec4A remains in progress: #60-#63 still need their integration, verification
 and completion records. No production resources or actual seller/payment
 settings have been changed for these tests.
+
+## Ticket 12 (#60): Customer PI acceptance
+
+The verified customer must successfully view/download the exact current PDF
+before accepting. The server checks PDF bytes and ownership before recording
+view evidence. Explicit legal name, general terms and custom-line specification/
+cancellation acknowledgements are tied to the immutable PI and policy versions.
+The acceptance, audit and command receipt commit atomically. Expiry, replacement,
+revoked ownership and stale targets fail closed; equivalent retries return the
+original evidence without creating another acceptance.
+
+My Quotes reads current acceptance in its ownership-filtered query and displays
+PI Accepted only for the corresponding current PI/Quote Revision. Historical
+acceptance remains retained. Nothing here confirms payment, creates an Order or
+releases production. Migration0076 advances schema76 to77.
+
+Implementation verification:163 tests passed across ten scoped suites, including
+registered migration regression and isolated real local D1. Full typecheck
+passed after correcting an unrelated invalid test-query option. Standards and
+Spec reviews found no actionable issue. Browser and cross-ticket acceptance
+remain #63; this section does not claim those are finished.
+The isolated staged-tree validation additionally passed frozen installation,
+typecheck, production-format local build and77 tests across five acceptance/
+projection suites, without depending on #61/#62 working files.

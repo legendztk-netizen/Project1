@@ -80,6 +80,10 @@ export default [
     "modules/customer-identity/routes/proforma-invoice-download.tsx",
   ),
   route(
+    "account/quotes/:requestId/pi/:piId/accept",
+    "modules/customer-identity/routes/proforma-invoice-accept.tsx",
+  ),
+  route(
     "admin/quote-inbound-email",
     "modules/admin/routes/quote-inbound-email.tsx",
   ),

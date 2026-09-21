@@ -135,6 +135,7 @@ export type QuoteRequestSnapshot =
 
 export interface QuoteRequestRecord {
   hasCurrentOffer?: boolean;
+  acceptedCurrentPiQuoteRevisionId?: string | null;
   id: string;
   referenceNumber: string;
   snapshot: QuoteRequestSnapshot;
@@ -171,7 +172,11 @@ export interface CustomerQuoteProjection extends QuoteRequestRecord {
 
 export function customerQuoteProjection(
   record: QuoteRequestRecord,
-  progressCode: CustomerQuoteProgressCode = "RFQ_SUBMITTED",
+  progressCode: CustomerQuoteProgressCode = record.acceptedCurrentPiQuoteRevisionId
+    ? "PI_ACCEPTED"
+    : record.hasCurrentOffer
+      ? "QUOTE_READY"
+      : "RFQ_SUBMITTED",
 ): CustomerQuoteProjection {
   const current = customerQuoteProgressStages.find(
     ({ code }) => code === progressCode,

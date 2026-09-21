@@ -9,6 +9,7 @@ interface QuoteRequestRow {
   snapshot_json: string;
   submitted_at: string;
   has_current_offer?: number;
+  accepted_current_pi_quote_revision_id?: string | null;
 }
 
 function record(row: QuoteRequestRow): QuoteRequestRecord {
@@ -18,8 +19,22 @@ function record(row: QuoteRequestRow): QuoteRequestRecord {
     snapshot: JSON.parse(row.snapshot_json) as QuoteRequestSnapshot,
     submittedAt: row.submitted_at,
     hasCurrentOffer: row.has_current_offer === 1,
+    acceptedCurrentPiQuoteRevisionId:
+      row.accepted_current_pi_quote_revision_id ?? null,
   };
 }
+
+// Project in the same ownership-filtered query; historical acceptances do not
+// advance the current quote, and a valid acceptance survives its PI deadline.
+const acceptedCurrentPiRevisionSql = `(SELECT p.quote_revision_id
+  FROM proforma_invoice_heads h
+  JOIN proforma_invoices p ON p.id=h.pi_id AND p.request_id=h.request_id
+  JOIN pi_acceptances a ON a.pi_id=p.id AND a.request_id=p.request_id
+    AND a.quote_revision_id=p.quote_revision_id AND a.document_version=p.document_version
+    AND a.snapshot_hash=p.snapshot_hash AND a.purchasing_context_id=request.purchasing_context_id
+  WHERE h.request_id=request.id AND p.quote_revision_id=(
+    SELECT revision.id FROM quote_revisions revision WHERE revision.request_id=request.id
+    ORDER BY revision.revision_number DESC LIMIT 1))`;
 
 export const ownedQuoteRequestWhere = `
   INNER JOIN customer_purchasing_contexts context
@@ -271,7 +286,8 @@ export function createD1QuoteRequestRepository(database: D1Database) {
         .prepare(
           `SELECT request.id, request.reference_number,
                   request.snapshot_json, request.submitted_at,
-                  EXISTS(SELECT 1 FROM quote_revisions revision WHERE revision.request_id=request.id) AS has_current_offer
+                  EXISTS(SELECT 1 FROM quote_revisions revision WHERE revision.request_id=request.id) AS has_current_offer,
+                  ${acceptedCurrentPiRevisionSql} AS accepted_current_pi_quote_revision_id
            FROM customer_quote_requests request
            ${ownedQuoteRequestWhere}
            ORDER BY request.submitted_at DESC, request.id DESC`,
@@ -285,7 +301,9 @@ export function createD1QuoteRequestRepository(database: D1Database) {
       const row = await database
         .prepare(
           `SELECT request.id, request.reference_number,
-                  request.snapshot_json, request.submitted_at
+                  request.snapshot_json, request.submitted_at,
+                  EXISTS(SELECT 1 FROM quote_revisions revision WHERE revision.request_id=request.id) AS has_current_offer,
+                  ${acceptedCurrentPiRevisionSql} AS accepted_current_pi_quote_revision_id
            FROM customer_quote_requests request
            ${ownedQuoteRequestWhere}
            AND request.id = ?`,

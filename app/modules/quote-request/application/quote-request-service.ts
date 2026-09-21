@@ -399,12 +399,7 @@ export function createQuoteRequestService(
       const records = await repository.listOwned(account.profile.id);
       return {
         authenticated: true as const,
-        records: records.map((record) =>
-          customerQuoteProjection(
-            record,
-            record.hasCurrentOffer ? "QUOTE_READY" : "RFQ_SUBMITTED",
-          ),
-        ),
+        records: records.map((record) => customerQuoteProjection(record)),
       };
     },
 
@@ -426,7 +421,12 @@ export function createQuoteRequestService(
             return {
               ...customerQuoteProjection(
                 record,
-                currentOffer ? "QUOTE_READY" : "RFQ_SUBMITTED",
+                currentOffer &&
+                  record.acceptedCurrentPiQuoteRevisionId === currentOffer.id
+                  ? "PI_ACCEPTED"
+                  : currentOffer
+                    ? "QUOTE_READY"
+                    : "RFQ_SUBMITTED",
               ),
               currentOffer,
               offerHistory,
