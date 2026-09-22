@@ -1,4 +1,10 @@
 import {
+  importHelperSheets,
+  importOperations,
+  importTemplateFields,
+  integratedPriceFields,
+} from "./catalog-import-template";
+import {
   validateCatalogWorksheetRecord,
   catalogWorksheetContracts,
   type CatalogWorkbookSheet,
@@ -140,6 +146,9 @@ export async function planItemImport(input: {
     code: string,
   ): Promise<ImportBaseline | null>;
 }): Promise<ItemImportPlan> {
+  const splitTemplate = input.sheets.some((sheet) =>
+    (sheet.data[0] ?? []).some((cell) => String(cell).endsWith("[必填]")),
+  );
   const proposals = new Map<string, ImportProposal>();
   const assignments = new Map<string, Map<string, string>>();
   const issues: string[] = [];
@@ -147,6 +156,7 @@ export async function planItemImport(input: {
   const records: { source: ImportSource; prefix: string; errors: string[] }[] =
     [];
   for (const sheet of input.sheets) {
+    if (importHelperSheets.includes(sheet.sheet)) continue;
     const prefix = sheet.sheet.slice(0, 2);
     const contract = catalogWorksheetContracts.find(
       (c) => c.name.slice(0, 2) === prefix,
@@ -155,8 +165,16 @@ export async function planItemImport(input: {
       issues.push(`未知工作表：${sheet.sheet}`);
       continue;
     }
+    const fields =
+      prefix === "07"
+        ? contract.fields
+        : [
+            ...contract.fields,
+            ...importTemplateFields(prefix),
+            ...integratedPriceFields,
+          ];
     const aliases = new Map(
-      contract.fields.flatMap((f) => [
+      fields.flatMap((f) => [
         [normalizeHeader(f.header), f.key],
         [f.key, f.key],
       ]),
@@ -172,6 +190,10 @@ export async function planItemImport(input: {
       aliases.set(header, key);
       aliases.set(key, key);
     }
+    if (prefix !== "07")
+      for (const f of importTemplateFields(prefix)) {
+        aliases.set(normalizeHeader(`${f.header} [${f.requirement}]`), f.key);
+      }
     const headers = (sheet.data[0] ?? []).map(
       (h) => aliases.get(normalizeHeader(h)) ?? normalizeHeader(h),
     );
@@ -182,11 +204,28 @@ export async function planItemImport(input: {
       const cells = sheet.data[i];
       if (cells.every((c) => c === null || String(c).trim() === "")) continue;
       const values: Record<string, CatalogWorkbookCell> = {};
+      const requestedOperation = String(
+        cells[headers.indexOf("updateDelete")] ?? "",
+      ).trim();
       const errors = duplicateHeaders.map((h) => `重复列：${h}`);
+      if (
+        headers.includes("updateDelete") &&
+        !importOperations.includes(
+          requestedOperation as (typeof importOperations)[number],
+        )
+      )
+        errors.push("Update Delete：请选择 Update、PartialUpdate 或 Delete");
       headers.forEach((key, column) => {
         if (!key) return;
+        if (
+          requestedOperation === "Delete" &&
+          !["sku", "adapterSku", "compatibilityId", "updateDelete"].includes(
+            key,
+          )
+        )
+          return;
         const raw = cells[column] ?? null;
-        const field = contract.fields.find((f) => f.key === key);
+        const field = [...fields].reverse().find((f) => f.key === key);
         const blank = raw === null || String(raw).trim() === "";
         const numeric = field?.kind === "number" || key === "amount";
         values[key] = blank
@@ -198,9 +237,30 @@ export async function planItemImport(input: {
               : raw;
         if (numeric && !blank && !Number.isFinite(Number(raw)))
           errors.push(`${key}：数值无效`);
-        if (field?.required && blank)
+        if (
+          contract.fields.find((f) => f.key === key)?.required &&
+          blank &&
+          !splitTemplate &&
+          !requestedOperation
+        )
           errors.push(`${key}：已提供的必填列不能为空`);
       });
+      if (requestedOperation === "PartialUpdate") {
+        for (const key of Object.keys(values))
+          if (values[key] === null) delete values[key];
+      }
+      if (
+        splitTemplate &&
+        prefix !== "04" &&
+        requestedOperation !== "PartialUpdate" &&
+        requestedOperation !== "Delete"
+      ) {
+        if (values.currency === null) delete values.currency;
+        if (values.catalogPublicationStatus === null)
+          delete values.catalogPublicationStatus;
+        if (values.technicalDataStatus === null)
+          values.technicalDataStatus = "Complete";
+      }
       const source = { sheet: sheet.sheet, row: i + 1, values, cells };
       if (prefix === "04") {
         relations.push({
@@ -208,9 +268,13 @@ export async function planItemImport(input: {
           source,
           issues: [
             ...errors,
-            ...validateCatalogWorksheetRecord(contract.name, values).map(
-              (f) => `${f.field}：${f.message}`,
-            ),
+            ...(requestedOperation === "PartialUpdate" ||
+            requestedOperation === "Delete"
+              ? values.compatibilityId
+                ? []
+                : [{ field: "compatibilityId", message: "兼容编号必填" }]
+              : validateCatalogWorksheetRecord(contract.name, values)
+            ).map((f) => `${f.field}：${f.message}`),
           ],
         });
         continue;
@@ -315,6 +379,40 @@ export async function planItemImport(input: {
       parent.issues.push("系列图片引用与版本列冲突");
     patch(parent, "mediaVersionId", id);
   }
+  function applyPrice(
+    child: ImportProposal,
+    v: Record<string, CatalogWorkbookCell>,
+  ) {
+    if (child.command.payload.kind !== "sku") return;
+    const price = child.command.payload.price;
+    const currency =
+      "currency" in v ? String(v.currency ?? "") : (price?.currency ?? "USD");
+    if (!itemCurrencies.includes(currency as (typeof itemCurrencies)[number]))
+      child.issues.push("币种无效");
+    if ("referencePriceUsd" in v && currency !== "USD")
+      child.issues.push("USD 专用价格列只能使用 USD；请修正价格及币种");
+    if (
+      "referencePriceUsd" in v &&
+      "amount" in v &&
+      v.referencePriceUsd !== v.amount
+    )
+      child.issues.push("两种零售价格列冲突");
+    if (!price)
+      child.command.payload.price = {
+        amount: null,
+        currency: "USD",
+        packageLengthFt: null,
+      };
+    if ("currency" in v || !price) patch(child, "price.currency", currency);
+    if ("amount" in v || "referencePriceUsd" in v)
+      patch(
+        child,
+        "price.amount",
+        "amount" in v ? v.amount : (v.referencePriceUsd ?? null),
+      );
+    for (const key of ["packageLengthFt", ...packagingFields.map((f) => f.key)])
+      if (key in v) patch(child, `price.${key}`, v[key]);
+  }
   // Master data first, irrespective of workbook tab order, so offers can find newly imported parents.
   for (const { source, prefix, errors } of records.filter(
     (r) => r.prefix !== "07",
@@ -328,6 +426,32 @@ export async function planItemImport(input: {
     }
     const child = await proposal(type, "sku", sku);
     attach(child, source, errors);
+    const operation = String(v.updateDelete ?? "");
+    if (
+      importOperations.includes(operation as (typeof importOperations)[number])
+    ) {
+      const previous = child.command.source.importOperation;
+      if (previous && previous !== operation)
+        child.issues.push("同一 SKU 的 Update Delete 操作冲突");
+      child.command.source.importOperation =
+        operation as (typeof importOperations)[number];
+      child.command.mode = operation === "Update" ? "create" : "edit";
+      if (operation === "Update" && child.baseline)
+        child.issues.push("Update 只能新增，SKU 已存在");
+      if (operation !== "Update" && !child.baseline)
+        child.issues.push(`${operation} 要求 SKU 已存在`);
+      if (operation === "Delete") {
+        child.command.source.operation = "delete";
+        child.command.targetState = "discontinued";
+        continue;
+      }
+    }
+    if (
+      "updateDelete" in v &&
+      !importOperations.includes(operation as (typeof importOperations)[number])
+    )
+      child.command.source.importOperation =
+        operation as (typeof importOperations)[number];
     const current = ownedProductValues(child.command.payload);
     const seriesCode = String(
       v[importSeriesKeys[type]] ??
@@ -354,13 +478,20 @@ export async function planItemImport(input: {
         f.key === "sku" && "adapterSku" in v ? "adapterSku" : f.key;
       if (sourceKey in v) patch(child, `variant.${f.key}`, v[sourceKey]);
     }
+    if (integratedPriceFields.some((f) => f.key in v)) applyPrice(child, v);
     if (seriesCode)
       patch(child, `variant.${importSeriesKeys[type]}`, seriesCode);
     if (parent)
       for (const f of productFields(type, "series")) {
         const sourceKey =
-          f.key === "interfaceStandard" ? "connectionStandard" : f.key;
-        if (f.key !== "seriesCode" && sourceKey in v)
+          f.key === "interfaceStandard" && !(f.key in v)
+            ? "connectionStandard"
+            : f.key;
+        if (
+          f.key !== "seriesCode" &&
+          sourceKey in v &&
+          !(operation === "Update" && parent.baseline && v[sourceKey] === null)
+        )
           patch(parent, `series.${f.key}`, v[sourceKey]);
       }
     if ("catalogPublicationStatus" in v) {
@@ -370,7 +501,15 @@ export async function planItemImport(input: {
     }
     if ("mediaVersionId" in v) patch(child, "mediaVersionId", v.mediaVersionId);
     await legacySeriesImage(parent, v);
-    if (parent && "seriesMediaVersionId" in v)
+    if (
+      parent &&
+      "seriesMediaVersionId" in v &&
+      !(
+        String(v.updateDelete) === "Update" &&
+        parent.baseline &&
+        v.seriesMediaVersionId === null
+      )
+    )
       patch(parent, "mediaVersionId", v.seriesMediaVersionId);
   }
   for (const { source, errors } of records.filter((r) => r.prefix === "07")) {
@@ -413,35 +552,7 @@ export async function planItemImport(input: {
           importRuleKeys.some((key) => error.startsWith(`${key}：`)),
         ),
       );
-    if (child.command.payload.kind !== "sku") continue;
-    const price = child.command.payload.price;
-    const currency =
-      "currency" in v ? String(v.currency ?? "") : (price?.currency ?? "USD");
-    if (!itemCurrencies.includes(currency as (typeof itemCurrencies)[number]))
-      child.issues.push("币种无效");
-    if ("referencePriceUsd" in v && currency !== "USD")
-      child.issues.push("USD 专用价格列只能使用 USD；请修正价格及币种");
-    if (
-      "referencePriceUsd" in v &&
-      "amount" in v &&
-      v.referencePriceUsd !== v.amount
-    )
-      child.issues.push("两种零售价格列冲突");
-    if (!price)
-      child.command.payload.price = {
-        amount: null,
-        currency: "USD",
-        packageLengthFt: null,
-      };
-    if ("currency" in v || !price) patch(child, "price.currency", currency);
-    if ("amount" in v || "referencePriceUsd" in v)
-      patch(
-        child,
-        "price.amount",
-        "amount" in v ? v.amount : (v.referencePriceUsd ?? null),
-      );
-    for (const key of ["packageLengthFt", ...packagingFields.map((f) => f.key)])
-      if (key in v) patch(child, `price.${key}`, v[key]);
+    applyPrice(child, v);
     if (parent)
       for (const key of importRuleKeys)
         if (key in v) {
@@ -456,7 +567,15 @@ export async function planItemImport(input: {
     }
     if ("mediaVersionId" in v) patch(child, "mediaVersionId", v.mediaVersionId);
     await legacySeriesImage(parent, v);
-    if (parent && "seriesMediaVersionId" in v)
+    if (
+      parent &&
+      "seriesMediaVersionId" in v &&
+      !(
+        String(v.updateDelete) === "Update" &&
+        parent.baseline &&
+        v.seriesMediaVersionId === null
+      )
+    )
       patch(parent, "mediaVersionId", v.seriesMediaVersionId);
   }
   for (const p of proposals.values())
@@ -474,6 +593,19 @@ export async function planItemImport(input: {
     }
   const requests: ImportProposal[] = [];
   for (const p of proposals.values()) {
+    if (splitTemplate && p.command.source.operation !== "delete") {
+      const values = ownedProductValues(p.command.payload);
+      for (const f of productFields(
+        p.command.payload.productType,
+        p.command.payload.kind,
+      )) {
+        if (
+          f.required &&
+          (values[f.key] == null || String(values[f.key]).trim() === "")
+        )
+          p.issues.push(`${f.key}：必填项不能为空（与手动新增一致）`);
+      }
+    }
     p.issues = [...new Set(p.issues)];
     const base = await input.baseline(
       p.command.payload.productType,
@@ -482,6 +614,7 @@ export async function planItemImport(input: {
     );
     if (
       base &&
+      p.command.source.operation !== "delete" &&
       !p.issues.length &&
       stable(comparable(base.payload)) ===
         stable(comparable(p.command.payload)) &&
@@ -491,7 +624,10 @@ export async function planItemImport(input: {
     requests.push(p);
   }
   for (const p of requests)
-    if (p.command.payload.kind === "sku") {
+    if (
+      p.command.payload.kind === "sku" &&
+      p.command.source.operation !== "delete"
+    ) {
       const payload = p.command.payload;
       const code = String(
         ownedProductValues(payload)[importSeriesKeys[payload.productType]] ??

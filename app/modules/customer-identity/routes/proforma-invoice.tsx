@@ -12,6 +12,7 @@ import {
 } from "#workers/proforma-invoice";
 import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
 import { AccountWorkspace } from "../ui/account-workspace";
+import { CustomerQuoteNavigation } from "../ui/customer-quote-navigation";
 import {
   PiLifecycleHistory,
   type PiLifecycleHistoryItem,
@@ -89,6 +90,7 @@ export default function ProformaInvoice({
           Back to quote
         </Link>
         <h1>Proforma invoice</h1>
+        <CustomerQuoteNavigation requestId={requestId} />
         {!invoice || !snapshot ? (
           <p>No proforma invoice has been issued for this quote.</p>
         ) : (

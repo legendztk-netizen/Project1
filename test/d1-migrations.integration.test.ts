@@ -1432,11 +1432,12 @@ describe("real local D1 migration lifecycle", () => {
     rmSync(join(fixture.directory, "migrations", diagramVersionMigration));
     rmSync(join(fixture.directory, "migrations", protectionPricingMigration));
     rmSync(join(fixture.directory, "migrations", globalConfiguratorMigration));
-    // Cutover guards depend on the registry tables intentionally deferred here.
+    // Cutover guards and their display-cache triggers depend on deferred tables.
     const cutoverMigrations = [
       "0059_catalog_cutover.sql",
       "0060_catalog_cutover_freeze_ownership.sql",
       "0061_catalog_cutover_request_audit.sql",
+      "0080_quote_list_display_cache.sql",
     ];
     for (const migration of cutoverMigrations)
       rmSync(join(fixture.directory, "migrations", migration));

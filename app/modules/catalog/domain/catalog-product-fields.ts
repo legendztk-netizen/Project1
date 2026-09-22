@@ -120,10 +120,10 @@ export function productFields(
           ...field,
           key: key === "adapterSku" ? "sku" : key,
           required:
+            ["sku", "adapterSku"].includes(key) ||
             field.required ||
-            (["notes", "workingPsi"].includes(key) && type === "hose") ||
+            (["workingPsi"].includes(key) && type === "hose") ||
             ([
-              "notes",
               "maxWorkingBar",
               "dimensionAMm",
               "cutoffBMm",

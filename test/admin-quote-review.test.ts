@@ -8,6 +8,75 @@ import {
 } from "../app/modules/quote-review/domain/admin-quote-review";
 import { customerQuoteDateTime } from "../app/modules/quote-request/ui/customer-quote-presentation";
 
+it("filters completed technical reviews without treating PI acceptance as approval", () => {
+  const snapshot = {
+    lines: [
+      {
+        lineKind: "configured_assembly",
+        configuredAssembly: {
+          snapshot: { review: { outcome: "technical_review", issues: [] } },
+        },
+      },
+    ],
+  };
+  const pending = projectAdminQuoteReview({
+    ...source(snapshot),
+    reviewState: "pi_accepted",
+  });
+  expect(pending.technicalReview.state).toBe("required");
+  const completed = projectAdminQuoteReview({
+    ...source(snapshot, { id: "completed" }),
+    technicalCompletion: {
+      actor: "admin",
+      at: "2026-09-21",
+      conclusion: "Reviewed",
+      basis: "draft:1",
+    },
+  });
+  expect(
+    filterAdminQuoteReviews(
+      [pending, completed],
+      parseAdminQuoteReviewFilters(
+        new URL("https://example.test/?technical=completed"),
+      ),
+    ),
+  ).toEqual([completed]);
+  expect(
+    filterAdminQuoteReviews(
+      [completed, pending],
+      parseAdminQuoteReviewFilters(
+        new URL("https://example.test/?sort=technical_first"),
+      ),
+    )[0],
+  ).toBe(pending);
+  expect(
+    projectAdminQuoteReview({
+      ...source({ lines: [{ lineKind: "standard" }] }),
+      technicalReviewInvalidated: true,
+    }).technicalReview.state,
+  ).toBe("required");
+});
+
+it("keeps accepted PIs out of the awaiting-review queue", () => {
+  const accepted = projectAdminQuoteReview({
+    id: "accepted",
+    referenceNumber: "RFQ-1",
+    submittedAt: "2026-09-21T00:00:00Z",
+    snapshot: {},
+    reviewState: "pi_accepted",
+  });
+  const filters = parseAdminQuoteReviewFilters(
+    new URL("https://test.invalid/?review=awaiting_review"),
+  );
+  expect(filterAdminQuoteReviews([accepted], filters)).toEqual([]);
+  const acceptedFilter = parseAdminQuoteReviewFilters(
+    new URL("https://test.invalid/?review=pi_accepted"),
+  );
+  expect(filterAdminQuoteReviews([accepted], acceptedFilter)).toEqual([
+    accepted,
+  ]);
+});
+
 function source(
   snapshot: unknown,
   overrides: Partial<{

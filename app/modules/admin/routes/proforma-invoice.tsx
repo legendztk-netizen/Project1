@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { IssueProformaInvoiceCommand } from "../../proforma-invoice/application/proforma-invoice-service";
 import { PiValidationError } from "../../proforma-invoice/domain/proforma-invoice";
 import {
@@ -7,6 +7,7 @@ import {
   data,
   redirect,
   useNavigation,
+  useRevalidator,
   type ActionFunctionArgs,
   type LoaderFunctionArgs,
 } from "react-router";
@@ -37,6 +38,7 @@ export const headers = piPrivateHeaders;
 export async function loader({ context, params }: LoaderFunctionArgs) {
   const { env, adminIdentity } = requireAdminRequestContext(context);
   const requestId = piRouteId(params.requestId);
+  if (env.APP_ENV === "local") await piPdfJobs(env).dispatch();
   const readiness = await proformaInvoices(env).readiness(
     adminIdentity,
     requestId,
@@ -141,7 +143,9 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
             ? "报价或所选版本已变化，请刷新后重新审核。"
             : status === 503
               ? "签发服务暂时不可用，结果尚未确认。请稍后重试。"
-              : "签发未完成：请核对报价商业条款、技术确认、卖方地址、付款版本与有效期。",
+              : error instanceof PiValidationError
+                ? `签发校验未通过：${error.message}`
+                : "签发未完成：请核对报价商业条款、技术确认、卖方地址、付款版本与有效期。",
         commandId: status === 503 ? input.commandId : undefined,
       },
       { status, headers: headers() },
@@ -163,6 +167,17 @@ export default function ProformaInvoice({
   const { seller, quoteRevision, current, payments } = readiness;
   const [selected, setSelected] = useState("");
   const pending = useNavigation().state !== "idle";
+  const revalidator = useRevalidator();
+  const generating = (readiness.pdfJobs ?? []).some(
+    (job) => job.state !== "failed",
+  );
+  useEffect(() => {
+    if (!generating || pending || revalidator.state !== "idle") return;
+    const timer = setTimeout(() => {
+      void revalidator.revalidate();
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [generating, pending, revalidator]);
   const payment = payments.find(
     (item) =>
       JSON.stringify({
@@ -190,14 +205,19 @@ export default function ProformaInvoice({
           返回询价详情
         </Link>
         <h1>形式发票 PI</h1>
-        <Link to="/admin/pi-acceptance-copies">PI 接受回执</Link>
+        <Link
+          className="button button-primary"
+          to={`/admin/pi-acceptance-copies?requestId=${encodeURIComponent(requestId)}`}
+        >
+          PI 接受回执
+        </Link>
         {actionData?.error && <p role="alert">{actionData.error}</p>}
         {(readiness.pdfJobs ?? []).map((job) => (
           <section key={job.commandId} className="admin-quote-section">
             <p role="status">
               {job.state === "failed"
                 ? "PDF 生成失败，需要人工处理。"
-                : "PDF 正在后台生成，请刷新查看。"}
+                : "PDF 正在生成或等待重试，完成后本页会自动更新。"}
             </p>
             {job.state === "failed" && (
               <Form method="post">

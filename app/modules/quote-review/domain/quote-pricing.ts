@@ -1,8 +1,65 @@
 import type { QuoteRequestLine } from "../../quote-request/domain/quote-request";
+import { configuredAssemblyMerchandiseAmount } from "../../quote-list/domain/quote-list-refresh";
+
+export function referencePriceAdjustment(
+  line: QuoteRequestLine,
+  finalCents: number | null,
+) {
+  const reference = referenceMerchandiseCents(line);
+  return reference === null || finalCents === null
+    ? null
+    : (1 - finalCents / reference) * 100;
+}
+
+export function referenceMerchandiseCents(line: QuoteRequestLine) {
+  const currency = line.refresh?.current.currency ?? line.currency;
+  if (currency !== "USD") return null;
+  let reference: number | null = null;
+  if (line.refresh) reference = line.refresh.current.merchandiseAmount;
+  else if (line.lineKind === "standard")
+    reference =
+      line.referenceUnitPrice === null
+        ? null
+        : line.referenceUnitPrice * line.quantity;
+  else if (line.lineKind === "length_based_hose")
+    reference = line.estimatedMerchandiseAmount;
+  else {
+    try {
+      reference = configuredAssemblyMerchandiseAmount({
+        basis: line.configuredAssembly.estimateBasis,
+        snapshot: line.configuredAssembly.snapshot,
+        quantity: line.quantity,
+      });
+    } catch {
+      return null;
+    }
+  }
+  if (reference == null || !Number.isFinite(reference) || reference <= 0)
+    return null;
+  return reference * 100;
+}
 
 export interface QuotedLinePrice {
   unitPriceCents: number | null;
   discountBasisPoints: number;
+}
+
+export function submittedReferencePrice(line: QuoteRequestLine) {
+  if (line.refresh) {
+    return {
+      currency: line.refresh.current.currency ?? line.currency,
+      amount: line.refresh.current.totalReferenceAmount,
+    };
+  }
+  return {
+    currency: line.currency,
+    amount:
+      line.lineKind === "standard"
+        ? line.referenceUnitPrice === null
+          ? null
+          : line.referenceUnitPrice * line.quantity
+        : line.currentEstimateAmount,
+  };
 }
 
 export function parseUsdCents(value: string): number {

@@ -19,6 +19,15 @@ const urls = import.meta.glob<string>(
 const assetUrls = new Map(
   Object.entries(urls).map(([path, url]) => [path.split("/").pop()!, url]),
 );
+const developmentFonts = import.meta.hot
+  ? import.meta.glob<string>(
+      [
+        "../app/modules/proforma-invoice/domain/fonts/NotoSans-Regular.ttf",
+        "../app/modules/proforma-invoice/domain/fonts/chunks/*.ttf",
+      ],
+      { query: "?inline", import: "default" },
+    )
+  : {};
 
 export const PI_WORKER_MAX_FONT_BYTES = 2 * 1024 * 1024;
 export const PI_WORKER_MAX_TEXT_CHARACTERS = 50000;
@@ -64,6 +73,24 @@ export function createPiPdfRenderer(assets: PiFontAssetsBinding) {
           fontkit,
           snapshot,
           loadFont: async (asset) => {
+            if (import.meta.hot) {
+              const entry = Object.entries(developmentFonts).find(([path]) =>
+                path.endsWith(`/${asset.filename}`),
+              );
+              if (!entry)
+                throw unavailable("PI development font is unavailable");
+              const url = await entry[1]();
+              const prefix = url.indexOf(";base64,");
+              if (!url.startsWith("data:") || prefix < 0)
+                throw unavailable("Invalid PI development font asset");
+              const bytes = Uint8Array.from(
+                atob(url.slice(prefix + 8)),
+                (character) => character.charCodeAt(0),
+              );
+              if (bytes.byteLength !== asset.byteLength)
+                throw unavailable("Invalid PI development font length");
+              return bytes;
+            }
             const path = assetUrls.get(asset.filename);
             if (!path || !path.startsWith("/") || path.startsWith("//"))
               throw unavailable("PI font asset URL is unavailable");

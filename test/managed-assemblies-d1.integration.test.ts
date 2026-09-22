@@ -92,6 +92,31 @@ it("gates published inputs until generation, preserves manual identity and exclu
   ]);
   const [combination] = await assemblies.all();
   expect(combination).toBeDefined();
+  async function expectPointAvailability(expected: boolean) {
+    const input = {
+      releaseId: "active-release",
+      hoseSku: combination.hoseSku,
+      endACompatibilityId: combination.endACompatibilityId,
+      endBCompatibilityId: combination.endBCompatibilityId,
+    };
+    expect(await config.hasDerivedAssemblyCombination(input)).toBe(expected);
+    expect(
+      await config.hasDerivedAssemblyCombination({
+        ...input,
+        identity: combination.identity,
+      }),
+    ).toBe(expected);
+  }
+  await expectPointAvailability(true);
+  expect(
+    await config.hasDerivedAssemblyCombination({
+      releaseId: "active-release",
+      hoseSku: combination.hoseSku,
+      endACompatibilityId: "nonexistent",
+      endBCompatibilityId: combination.endBCompatibilityId,
+      identity: combination.identity,
+    }),
+  ).toBe(false);
   expect(
     await config.findCompatibleEndA("active-release", "601R1_001"),
   ).toHaveLength(1);
@@ -99,7 +124,9 @@ it("gates published inputs until generation, preserves manual identity and exclu
   await assemblies.add(combination, manualCommand);
   await assemblies.add(combination, manualCommand);
   expect(await assemblies.pending()).toEqual(["601R1"]);
+  await expectPointAvailability(false);
   await assemblies.update(command());
+  await expectPointAvailability(true);
   await expect(assemblies.add(combination, command())).rejects.toThrow(
     "已存在",
   );
@@ -118,6 +145,7 @@ it("gates published inputs until generation, preserves manual identity and exclu
     disabled: true,
     pending: false,
   });
+  await expectPointAvailability(false);
   expect(
     await config.hasDerivedAssemblyCombination({
       releaseId: "active-release",
@@ -132,6 +160,7 @@ it("gates published inputs until generation, preserves manual identity and exclu
     "检修完成",
     command(),
   );
+  await expectPointAvailability(true);
   expect(
     await config.findCompatibleEndA("active-release", "601R1_001"),
   ).toHaveLength(1);
@@ -392,4 +421,85 @@ it("counts the entire filtered combination set independently of pagination", asy
   expect(await assemblies.count({ q: "missing-combination-for-count" })).toBe(
     0,
   );
+});
+
+it("partially updates and deletes a relation by ID without deleting its component products", async () => {
+  async function source(values: Record<string, string | number | null>) {
+    const batch = await importRows([
+      {
+        sheet: "04_兼容压接",
+        data: [Object.keys(values), Object.values(values)],
+      },
+    ]);
+    return (await db
+      .prepare(
+        "SELECT id FROM catalog_pending_relation_sources WHERE batch_id=?",
+      )
+      .bind(batch)
+      .first<{ id: string }>())!.id;
+  }
+  const existing = await db
+    .prepare(
+      "SELECT payload_json FROM catalog_assembly_relation_overrides LIMIT 1",
+    )
+    .first<{ payload_json: string }>();
+  const endpoint = JSON.parse(existing!.payload_json);
+  const id = endpoint.compatibility_id;
+  const partial = await source({
+    updateDelete: "PartialUpdate",
+    compatibilityId: id,
+    crimpProgram: "PARTIAL-ONLY",
+    finalCrimpDiameterMm: null,
+  });
+  await assemblies.processSource(partial, "apply", "修改压接程序", command());
+  const modified = await db
+    .prepare(
+      "SELECT payload_json FROM catalog_assembly_relation_overrides WHERE json_extract(payload_json,'$.compatibility_id')=?",
+    )
+    .bind(id)
+    .first<{ payload_json: string }>();
+  expect(JSON.parse(modified!.payload_json)).toMatchObject({
+    crimp_program: "PARTIAL-ONLY",
+    final_crimp_diameter_mm: endpoint.final_crimp_diameter_mm,
+  });
+  const duplicate = await source({
+    ...Object.fromEntries(
+      Object.entries(endpoint).map(([k, v]) => [
+        k.replace(/_([a-z])/g, (_m, c: string) => c.toUpperCase()),
+        v,
+      ]),
+    ),
+    updateDelete: "Update",
+    compatibilityId: id,
+  } as Record<string, string | number | null>);
+  await expect(
+    assemblies.processSource(duplicate, "apply", "不能覆盖", command()),
+  ).rejects.toThrow("已存在");
+  const del = await source({ updateDelete: "Delete", compatibilityId: id });
+  const context = command();
+  await assemblies.processSource(del, "apply", "删除关系", context);
+  await assemblies.processSource(del, "apply", "删除关系", context);
+  expect(await assemblies.pending()).toContain(endpoint.hose_series);
+  await assemblies.update(command());
+  const blocked = await db
+    .prepare(
+      "SELECT payload_json FROM catalog_assembly_relation_overrides WHERE json_extract(payload_json,'$.compatibility_id')=?",
+    )
+    .bind(id)
+    .first<{ payload_json: string }>();
+  expect(JSON.parse(blocked!.payload_json)).toMatchObject({
+    import_deleted: true,
+    rfq_eligibility: "Blocked",
+  });
+  expect(await items.findPayload("sku", endpoint.hose_sku)).toBeTruthy();
+  expect(
+    (
+      await db
+        .prepare(
+          "SELECT payload_json FROM catalog_assembly_generated_endpoints WHERE json_extract(payload_json,'$.compatibility_id')=?",
+        )
+        .bind(id)
+        .all()
+    ).results,
+  ).toEqual([]);
 });

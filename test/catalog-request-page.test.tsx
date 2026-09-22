@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import CatalogRequests from "../app/modules/admin/routes/catalog-requests";
+import type { CatalogItemCommand } from "../app/modules/catalog/domain/catalog-item-publication";
 afterEach(cleanup);
 function setup(canEdit = true, status = "pending") {
   const request = {
@@ -19,6 +20,11 @@ function setup(canEdit = true, status = "pending") {
     issues: [],
     dependencies: [],
     command: {
+      source: {
+        channel: "excel",
+        batchId: "batch-1",
+        row: 2,
+      } satisfies CatalogItemCommand["source"],
       payload: {
         kind: "sku",
         productType: "hose",
@@ -74,6 +80,7 @@ it("requires explicit selection and uses separate request and target-state filte
     "pending",
   );
   expect(screen.getByLabelText("目标产品状态")).toBeTruthy();
+  expect(screen.getByRole("cell", { name: "更新" })).toBeTruthy();
   const button = screen.getByRole("button", {
     name: "批准选中条目",
   }) as HTMLButtonElement;

@@ -54,6 +54,7 @@ import {
   type PasswordAttemptKind,
   PasswordAttemptRejected,
 } from "../infrastructure/d1-customer-identity-repository";
+import { deliverCustomerOtp } from "../infrastructure/resend-otp-delivery";
 
 type IdentityDigestPurpose =
   | "otp-request-ip"
@@ -109,41 +110,10 @@ function requestIp(
   );
 }
 
-async function deliverOtp(input: {
-  code: string;
-  email: string;
-  env: ApplicationBindings;
-  purpose: EmailOtpPurpose;
-}) {
-  if (input.env.EMAIL_DELIVERY_MODE === "stub") {
-    return;
-  }
-
-  const apiKey =
-    input.env.APP_ENV === "preview"
-      ? input.env.PREVIEW_RESEND_API_KEY
-      : input.env.PRODUCTION_RESEND_API_KEY;
-  if (!apiKey) throw new Error("Resend API key is not configured");
-  const response = await fetch("https://api.resend.com/emails", {
-    body: JSON.stringify({
-      from: input.env.EMAIL_FROM,
-      subject: "Your Hydraulic Supply verification code",
-      text: `Your verification code is ${input.code}. It expires in 10 minutes. If you did not request this code, you can ignore this email.`,
-      to: [input.email],
-    }),
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    method: "POST",
-  });
-  if (!response.ok) throw new Error("Email delivery failed");
-}
-
 export function createCustomerIdentityService(
   env: ApplicationBindings,
   options: {
-    deliver?: typeof deliverOtp;
+    deliver?: typeof deliverCustomerOtp;
     now?: () => Date;
     otp?: () => string;
     passwordScreening?: PasswordScreeningProvider;
@@ -152,7 +122,7 @@ export function createCustomerIdentityService(
 ) {
   const repository =
     options.repository ?? createD1CustomerIdentityRepository(env.DB);
-  const sendOtp = options.deliver ?? deliverOtp;
+  const sendOtp = options.deliver ?? deliverCustomerOtp;
   const secret = customerIdentitySigningKey(env);
   const now = options.now ?? (() => new Date());
   const otp = options.otp ?? generateSixDigitOtp;
@@ -264,7 +234,13 @@ export function createCustomerIdentityService(
     }
 
     try {
-      await sendOtp({ code, email, env, purpose: input.purpose });
+      await sendOtp({
+        challengeId,
+        code,
+        email,
+        env,
+        purpose: input.purpose,
+      });
       await repository.activateDeliveredChallenge({
         deliveredAt: now().toISOString(),
         email,

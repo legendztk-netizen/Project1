@@ -5,6 +5,7 @@ import {
   Link,
   redirect,
   useNavigation,
+  useSearchParams,
   type ActionFunctionArgs,
   type LoaderFunctionArgs,
 } from "react-router";
@@ -142,6 +143,11 @@ export default function PiAcceptanceCopiesPage({
 }) {
   const busy = useNavigation().state !== "idle";
   const { page, unresolved, local, capture } = loaderData;
+  const [searchParams] = useSearchParams();
+  const sourceRequestId = searchParams.get("requestId");
+  const sourceQuery = sourceRequestId
+    ? `&requestId=${encodeURIComponent(sourceRequestId)}`
+    : "";
   const filter = unresolved ? "unresolved" : "all";
   const states: Record<string, string> = {
     pending: "待发送",
@@ -158,19 +164,32 @@ export default function PiAcceptanceCopiesPage({
         className="admin-main private-review-page"
         style={{ minWidth: 0, overflowWrap: "anywhere" }}
       >
+        <Link
+          className="button button-secondary"
+          to={
+            sourceRequestId
+              ? `/admin/quotes/${encodeURIComponent(sourceRequestId)}`
+              : "/admin/quotes"
+          }
+        >
+          <ArrowLeft size={18} aria-hidden="true" />
+          {sourceRequestId ? "返回询价快照" : "返回询价列表"}
+        </Link>
         <h1>PI 接受确认副本</h1>
         <nav
           aria-label="副本状态筛选"
           style={{ display: "flex", flexWrap: "wrap", gap: 16 }}
         >
           <Link
-            to="?filter=unresolved"
+            className="button button-primary"
+            to={`?filter=unresolved${sourceQuery}`}
             aria-current={unresolved ? "page" : undefined}
           >
             待人工处理
           </Link>
           <Link
-            to="?filter=all"
+            className="button button-primary"
+            to={`?filter=all${sourceQuery}`}
             aria-current={!unresolved ? "page" : undefined}
           >
             全部副本
@@ -178,7 +197,7 @@ export default function PiAcceptanceCopiesPage({
         </nav>
         {capture && (
           <section className="admin-quote-section">
-            <Link to={`?filter=${filter}`}>
+            <Link to={`?filter=${filter}${sourceQuery}`}>
               <ArrowLeft size={17} /> 关闭本地测试邮件
             </Link>
             <h2>本地邮件副本</h2>
@@ -239,7 +258,7 @@ export default function PiAcceptanceCopiesPage({
                 </Link>
                 {local && !!row.has_local_capture && (
                   <Link
-                    to={`?filter=${filter}&capture=${encodeURIComponent(row.id)}`}
+                    to={`?filter=${filter}&capture=${encodeURIComponent(row.id)}${sourceQuery}`}
                   >
                     <Eye size={17} /> 查看本地测试邮件
                   </Link>
@@ -277,7 +296,7 @@ export default function PiAcceptanceCopiesPage({
         </div>
         {page.nextCursor && (
           <Link
-            to={`?filter=${filter}&before=${encodeURIComponent(page.nextCursor)}`}
+            to={`?filter=${filter}&before=${encodeURIComponent(page.nextCursor)}${sourceQuery}`}
           >
             更早的副本
           </Link>

@@ -492,7 +492,11 @@ export function createD1ItemImportReview(
             );
           } else {
             // Revalidate after parent approvals in this batch. Import issues require an explicit audited correction.
-            if (row.command.payload.kind === "sku" && row.batchId) {
+            if (
+              row.command.payload.kind === "sku" &&
+              row.batchId &&
+              row.command.source.operation !== "delete"
+            ) {
               const related = (await all()).find(
                 (r) =>
                   r.batchId === row.batchId &&

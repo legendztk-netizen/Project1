@@ -134,6 +134,13 @@ export type QuoteRequestSnapshot =
   IndividualQuoteRequestSnapshot | OrganizationQuoteRequestSnapshot;
 
 export interface QuoteRequestRecord {
+  currentPi?: {
+    quoteRevisionId: string;
+    currentQuoteRevisionId: string;
+    validUntil: string;
+    totalCents: number | null;
+    currency: string | null;
+  } | null;
   hasCurrentOffer?: boolean;
   acceptedCurrentPiQuoteRevisionId?: string | null;
   id: string;
@@ -144,8 +151,10 @@ export interface QuoteRequestRecord {
 
 export const customerQuoteProgressStages = [
   { code: "RFQ_SUBMITTED", label: "RFQ Submitted" },
-  { code: "QUOTE_READY", label: "Quote Ready" },
+  { code: "PI_ISSUED", label: "PI Issued" },
   { code: "PI_ACCEPTED", label: "PI Accepted" },
+  { code: "PI_EXPIRED", label: "PI Expired" },
+  { code: "PI_REPLACEMENT_REQUIRED", label: "PI Awaiting Replacement" },
   { code: "PAYMENT_PENDING", label: "Payment Pending" },
   { code: "PAYMENT_CONFIRMED", label: "Payment Confirmed" },
   { code: "ORDER_CREATED", label: "Order Created" },
@@ -172,11 +181,7 @@ export interface CustomerQuoteProjection extends QuoteRequestRecord {
 
 export function customerQuoteProjection(
   record: QuoteRequestRecord,
-  progressCode: CustomerQuoteProgressCode = record.acceptedCurrentPiQuoteRevisionId
-    ? "PI_ACCEPTED"
-    : record.hasCurrentOffer
-      ? "QUOTE_READY"
-      : "RFQ_SUBMITTED",
+  progressCode: CustomerQuoteProgressCode = customerQuoteProgress(record),
 ): CustomerQuoteProjection {
   const current = customerQuoteProgressStages.find(
     ({ code }) => code === progressCode,
@@ -185,6 +190,24 @@ export function customerQuoteProjection(
     ...record,
     progress: { ...current },
   };
+}
+
+export function customerQuoteProgress(
+  record: QuoteRequestRecord,
+  now = Date.now(),
+): CustomerQuoteProgressCode {
+  if (
+    record.currentPi &&
+    record.currentPi.quoteRevisionId !== record.currentPi.currentQuoteRevisionId
+  )
+    return "PI_REPLACEMENT_REQUIRED";
+  return record.acceptedCurrentPiQuoteRevisionId
+    ? "PI_ACCEPTED"
+    : record.currentPi
+      ? Date.parse(record.currentPi.validUntil) <= now
+        ? "PI_EXPIRED"
+        : "PI_ISSUED"
+      : "RFQ_SUBMITTED";
 }
 
 export type QuoteRequestErrorCode =

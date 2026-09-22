@@ -6,6 +6,7 @@ import { Link, data, redirect } from "react-router";
 
 import type { Route } from "./+types/customer-quote-detail";
 import { AccountWorkspace } from "../ui/account-workspace";
+import { CustomerQuoteNavigation } from "../ui/customer-quote-navigation";
 import { createQuoteRequestService } from "../../quote-request/application/quote-request-service";
 import type { AnonymousQuoteLine } from "../../quote-list/domain/anonymous-quote-list";
 import {
@@ -153,18 +154,7 @@ export default function CustomerQuoteDetail({
             {quoteRequest.progress.label}
           </span>
         </header>
-        <Link
-          className="button button-secondary"
-          to={`/account/quotes/${quoteRequest.id}/conversation`}
-        >
-          Quote conversation
-        </Link>
-        <Link
-          className="button button-secondary"
-          to={`/account/quotes/${quoteRequest.id}/pi`}
-        >
-          <FileText aria-hidden="true" size={18} /> Proforma invoice
-        </Link>
+        <CustomerQuoteNavigation requestId={quoteRequest.id} />
 
         <section
           className="customer-quote-progress"
@@ -175,7 +165,7 @@ export default function CustomerQuoteDetail({
             <strong>{quoteRequest.progress.label}</strong>
             <p>
               {quoteRequest.currentOffer
-                ? "Your formal quote is ready."
+                ? "Your published quote is shown below. Review the PI when issued."
                 : "We received your request and will prepare the formal quote."}
             </p>
           </div>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import "../ui/pi-acceptance-form.css";
 import {
   Form,
   Link,
@@ -195,7 +196,7 @@ function AcceptanceForm({
         checked[`specifications-${index}`] && checked[`cancellation-${index}`],
     );
   return (
-    <Form method="post" className="commercial-settings-form">
+    <Form method="post" className="commercial-settings-form pi-acceptance-form">
       <input type="hidden" name="intent" value="accept" />
       <input type="hidden" name="piId" value={status.piId} />
       <input
@@ -241,7 +242,10 @@ function AcceptanceForm({
           checked={general}
           onChange={(event) => setGeneral(event.target.checked)}
         />
-        <span>{conditions.generalAcknowledgement.text}</span>
+        <span>
+          <strong>PI terms confirmation</strong>
+          {conditions.generalAcknowledgement.text}
+        </span>
       </label>
       {policies.map((policy, index) => {
         const line = invoice.snapshot.lines.find(
@@ -251,8 +255,7 @@ function AcceptanceForm({
           <section className="customer-quote-section" key={policy.lineId}>
             <h2>{line?.displayName ?? policy.lineId}</h2>
             <p>
-              Line {policy.lineId} · SKU {line?.sku} · Quantity {line?.quantity}{" "}
-              {line?.salesUnit}
+              SKU {line?.sku} · Quantity {line?.quantity} {line?.salesUnit}
             </p>
             <label className="quote-confirmation">
               <input
@@ -267,7 +270,10 @@ function AcceptanceForm({
                   }))
                 }
               />
-              <span>{policy.text}</span>
+              <span>
+                <strong>Specifications confirmation</strong>
+                {policy.text}
+              </span>
             </label>
             <label className="quote-confirmation">
               <input
@@ -283,7 +289,8 @@ function AcceptanceForm({
                 }
               />
               <span>
-                I acknowledge the cancellation conditions for this line:{" "}
+                <strong>Cancellation acknowledgement</strong>I acknowledge the
+                cancellation conditions for this line:{" "}
                 {conditions.cancellation.text}
               </span>
             </label>

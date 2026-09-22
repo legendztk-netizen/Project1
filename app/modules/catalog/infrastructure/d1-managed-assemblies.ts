@@ -601,7 +601,7 @@ export function createD1ManagedAssemblies(
       const original = JSON.parse(source.source_json) as {
         values: Record<string, CatalogWorkbookCell>;
       };
-      const values = original.values;
+      let values = original.values;
       if (disposition !== "apply") {
         const dependency = await database
           .prepare(
@@ -623,9 +623,91 @@ export function createD1ManagedAssemblies(
         throw new CatalogItemRejected(
           "缺行不能直接应用为关系：请明确停用相关组合，或拒绝此迁移来源以保留现有关系",
         );
+      const operation = String(values.updateDelete ?? "");
+      if (
+        "updateDelete" in values &&
+        !["Update", "PartialUpdate", "Delete"].includes(operation)
+      )
+        throw new CatalogItemRejected("Update Delete 操作无效");
+      if (operation) {
+        const sourceIssues = JSON.parse(source.issues_json) as string[];
+        if (sourceIssues.length)
+          throw new CatalogItemRejected(sourceIssues.join("；"));
+        const override = await database
+          .prepare(
+            "SELECT payload_json FROM catalog_assembly_relation_overrides WHERE json_extract(payload_json,'$.compatibility_id')=?",
+          )
+          .bind(String(values.compatibilityId ?? ""))
+          .first<{ payload_json: string }>();
+        const existing = override
+          ? (JSON.parse(override.payload_json) as AssemblyEndpoint & {
+              import_deleted?: boolean;
+            })
+          : await database
+              .prepare(
+                "SELECT * FROM catalog_runtime_compatibilities WHERE import_id=? AND compatibility_id=?",
+              )
+              .bind(current.importId, String(values.compatibilityId ?? ""))
+              .first<AssemblyEndpoint & { import_deleted?: boolean }>();
+        if (operation === "Update" && existing)
+          throw new CatalogItemRejected("Update 只能新增，兼容编号已存在", 409);
+        if (operation !== "Update" && (!existing || existing.import_deleted))
+          throw new CatalogItemRejected(`${operation} 要求兼容关系已存在`, 404);
+        if (existing && operation === "Delete") {
+          const hose = await database
+            .prepare(
+              "SELECT hose_series FROM catalog_runtime_hose_variants WHERE import_id=? AND sku=?",
+            )
+            .bind(current.importId, existing.hose_sku)
+            .first<{ hose_series: string }>();
+          const series = hose?.hose_series ?? existing.hose_series;
+          if (!series) throw new CatalogItemRejected("无法确定关系所属系列");
+          return record(
+            "apply",
+            series,
+            await token(series),
+            {
+              sourceId,
+              reason,
+              request,
+              endpointIdentity: triple(existing),
+              endpoint: {
+                ...existing,
+                source: "import",
+                catalog_publication_status: "Archived",
+                rfq_eligibility: "Blocked",
+                import_deleted: true,
+              },
+            },
+            context,
+            current.generation,
+          );
+        }
+        if (existing && operation === "PartialUpdate") {
+          const inherited = Object.fromEntries(
+            Object.entries(existing).map(([key, value]) => [
+              key.replace(/_([a-z])/g, (_match, c: string) => c.toUpperCase()),
+              value,
+            ]),
+          );
+          values = { ...inherited, ...values } as Record<
+            string,
+            CatalogWorkbookCell
+          >;
+          // A relation identity keeps its original three components.
+          if (
+            String(values.hoseSku) !== existing.hose_sku ||
+            String(values.hoseEndSku) !== existing.hose_end_sku ||
+            String(values.ferruleSku) !== existing.ferrule_sku
+          )
+            throw new CatalogItemRejected(
+              "PartialUpdate 不可更换关系的三件套 SKU；请新增关系",
+            );
+        }
+      }
       const issues = validateCatalogWorksheetRecord(
         "04_兼容压接",
-        original.values,
+        values,
       ).filter((i) => i.severity === "error");
       if (issues.length)
         throw new CatalogItemRejected(

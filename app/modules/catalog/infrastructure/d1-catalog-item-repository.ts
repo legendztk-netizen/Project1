@@ -251,6 +251,35 @@ export function createD1CatalogItemRepository(
     };
   }
   async function validate(input: CatalogItemCommand, fromRequest: boolean) {
+    if (
+      input.payload.kind === "sku" &&
+      input.source.importOperation !== undefined
+    ) {
+      const operation = input.source.importOperation;
+      if (!["Update", "PartialUpdate", "Delete"].includes(operation))
+        throw new CatalogItemRejected("导入操作无效");
+      if (
+        (operation === "Delete") !== (input.source.operation === "delete") ||
+        input.mode !== (operation === "Update" ? "create" : "edit")
+      )
+        throw new CatalogItemRejected("导入操作冲突，请修正操作列后重新导入");
+      const existing =
+        (await findProductPayload(
+          input.payload.productType,
+          "sku",
+          itemCode(input.payload),
+        )) ??
+        (await findProductPayload(
+          input.payload.productType,
+          "sku",
+          itemCode(input.payload),
+          true,
+        ));
+      if (operation === "Update" && existing)
+        throw new CatalogItemRejected("Update 只能新增，SKU 已存在", 409);
+      if (operation !== "Update" && !existing)
+        throw new CatalogItemRejected(`${operation} 要求 SKU 已存在`, 404);
+    }
     if (!input.actorId || !/^[A-Za-z0-9:_-]{8,160}$/.test(input.commandId))
       throw new CatalogItemRejected("Invalid command identity / 提交标识无效");
     if (

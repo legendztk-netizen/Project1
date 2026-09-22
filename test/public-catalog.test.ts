@@ -5,7 +5,10 @@ import {
   interfaceGroup,
   matchesCatalogQuery,
 } from "../app/modules/catalog/domain/public-catalog";
-import { publicCatalogItemFromRow } from "../app/modules/catalog/infrastructure/d1-public-catalog-repository";
+import {
+  createD1PublicCatalogRepository,
+  publicCatalogItemFromRow,
+} from "../app/modules/catalog/infrastructure/d1-public-catalog-repository";
 
 function hoseEnd(overrides: Record<string, unknown> = {}) {
   return publicCatalogItemFromRow({
@@ -67,6 +70,35 @@ function hoseEnd(overrides: Record<string, unknown> = {}) {
 }
 
 describe("public catalog read model", () => {
+  it("can reuse one catalog scan for repeated SKU lookups in a request", async () => {
+    let scans = 0;
+    const database = {
+      prepare() {
+        return {
+          bind() {
+            return this;
+          },
+          async first() {
+            scans += 1;
+            return null;
+          },
+        };
+      },
+    } as unknown as D1Database;
+    const catalog = createD1PublicCatalogRepository(database, {
+      cacheItems: true,
+    });
+
+    await Promise.all([
+      catalog.findItem("HOSE"),
+      catalog.findItem("HOSE"),
+      catalog.findItem("HOSE"),
+    ]);
+    await catalog.findItem("HOSE");
+
+    expect(scans).toBe(1);
+  });
+
   it("groups size variants without losing exact SKU selection", () => {
     const variants = [
       hoseEnd(),

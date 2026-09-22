@@ -71,7 +71,16 @@ export function createPiPdfJobs(
           )
           .bind(now().toISOString(), value.commandId, lease)
           .run();
-      } catch {
+      } catch (error) {
+        console.error(
+          "PI PDF generation failed",
+          value.commandId,
+          error instanceof Response
+            ? await error.text()
+            : error instanceof Error
+              ? error.message
+              : "Unknown rendering error",
+        );
         await db
           .prepare(
             `UPDATE proforma_invoice_pdf_jobs SET state=?,next_attempt_at=?,lease_token=NULL,lease_until=NULL

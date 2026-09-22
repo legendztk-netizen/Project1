@@ -315,7 +315,7 @@ export async function validateHoseEndVariantMaintenance(
     fittingSeries: normalizedCode(input.variant.fittingSeries),
     hoseTailDash: input.variant.hoseTailDash.trim(),
     material: input.variant.material.trim(),
-    notes: input.variant.notes.trim(),
+    notes: (input.variant.notes ?? "").trim(),
     sku: normalizedCode(input.variant.sku),
     source: normalizedText(input.variant.source),
     thread: input.variant.thread.trim(),
@@ -329,7 +329,6 @@ export async function validateHoseEndVariantMaintenance(
     [variant.hoseTailDash, "Hose Tail Dash / 胶管尾Dash"],
     [variant.material, "Material / 材质"],
     [variant.coating, "Coating / 表面处理"],
-    [variant.notes, "Notes / 备注"],
   ] as const) {
     requiredText(findings, value, field, variant.sku);
   }

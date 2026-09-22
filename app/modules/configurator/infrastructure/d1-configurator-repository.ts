@@ -118,10 +118,58 @@ export function compatibleHoseEndCandidateFromRow(
   };
 }
 
-const compatibleHoseEndSql = `
-  WITH eligible_endpoint AS (
+function compatibleHoseEndSql(selectedOnly = false) {
+  const compatibilities = selectedOnly
+    ? "scoped_compatibilities"
+    : "catalog_runtime_compatibilities";
+  const skus = selectedOnly ? "scoped_skus" : "catalog_runtime_skus";
+  const ends = selectedOnly ? "scoped_ends" : "catalog_runtime_hose_ends";
+  const series = selectedOnly
+    ? "scoped_series"
+    : "catalog_runtime_hose_end_series";
+  const ferrules = selectedOnly
+    ? "scoped_ferrules"
+    : "catalog_runtime_ferrules";
+  return `
+  WITH scoped_compatibilities AS MATERIALIZED (
+    SELECT * FROM catalog_runtime_compatibilities
+    WHERE import_id = (SELECT source_import_id FROM catalog_releases WHERE id = ?1)
+      AND hose_sku = ?2
+      ${selectedOnly ? "AND hose_end_sku IN (?3, ?4)" : ""}
+  ), scoped_skus AS MATERIALIZED (
+    SELECT * FROM catalog_runtime_skus
+    WHERE import_id = (SELECT source_import_id FROM catalog_releases WHERE id = ?1)
+      AND sku IN (SELECT hose_sku FROM scoped_compatibilities
+        UNION SELECT hose_end_sku FROM scoped_compatibilities
+        UNION SELECT ferrule_sku FROM scoped_compatibilities)
+  ), scoped_ends AS MATERIALIZED (
+    SELECT * FROM catalog_runtime_hose_ends
+    WHERE import_id = (SELECT source_import_id FROM catalog_releases WHERE id = ?1)
+      AND sku IN (SELECT hose_end_sku FROM scoped_compatibilities)
+  ), scoped_series AS MATERIALIZED (
+    SELECT * FROM catalog_runtime_hose_end_series
+    WHERE import_id = (SELECT source_import_id FROM catalog_releases WHERE id = ?1)
+      AND series_code IN (SELECT fitting_series FROM scoped_ends)
+  ), scoped_ferrules AS MATERIALIZED (
+    SELECT * FROM catalog_runtime_ferrules
+    WHERE import_id = (SELECT source_import_id FROM catalog_releases WHERE id = ?1)
+      AND sku IN (SELECT ferrule_sku FROM scoped_compatibilities)
+  ), eligible_endpoint AS (
+    ${
+      selectedOnly
+        ? `
+    SELECT ?1 AS release_id, hose_sku, compatibility_id
+    FROM scoped_compatibilities
+    WHERE import_id = (SELECT source_import_id FROM catalog_releases WHERE id = ?1)
+      AND hose_sku = ?2 AND hose_end_sku IN (?3, ?4)
+    `
+        : `
     SELECT DISTINCT release_id,hose_sku,end_a_compatibility_id AS compatibility_id FROM catalog_available_assembly_combinations
+    WHERE release_id = ?1 AND hose_sku = ?2
     UNION SELECT DISTINCT release_id,hose_sku,end_b_compatibility_id FROM catalog_available_assembly_combinations
+    WHERE release_id = ?1 AND hose_sku = ?2
+    `
+    }
   )
   SELECT c.compatibility_id, c.hose_end_sku, c.ferrule_sku,
          c.assembly_working_bar,
@@ -136,25 +184,25 @@ const compatibleHoseEndSql = `
   FROM catalog_releases r
   INNER JOIN eligible_endpoint derived
     ON derived.release_id = r.id
-  INNER JOIN catalog_runtime_compatibilities c
+  INNER JOIN ${compatibilities} c
     ON c.import_id = r.source_import_id
    AND c.hose_sku = derived.hose_sku
    AND c.compatibility_id = derived.compatibility_id
-  INNER JOIN catalog_runtime_skus hs
+  INNER JOIN ${skus} hs
     ON hs.import_id = c.import_id AND hs.sku = c.hose_sku
-  INNER JOIN catalog_runtime_hose_ends e
+  INNER JOIN ${ends} e
     ON e.import_id = c.import_id AND e.sku = c.hose_end_sku
-  INNER JOIN catalog_runtime_hose_end_series series
+  INNER JOIN ${series} series
     ON series.import_id = e.import_id AND series.series_code = e.fitting_series
-  INNER JOIN catalog_runtime_skus es
+  INNER JOIN ${skus} es
     ON es.import_id = e.import_id AND es.sku = e.sku
-  INNER JOIN catalog_runtime_ferrules f
+  INNER JOIN ${ferrules} f
     ON f.import_id = c.import_id AND f.sku = c.ferrule_sku
-  INNER JOIN catalog_runtime_skus fs
+  INNER JOIN ${skus} fs
     ON fs.import_id = f.import_id AND fs.sku = f.sku
-  WHERE r.id = ?
+  WHERE r.id = ?1
     AND r.status IN ('published', 'superseded')
-    AND c.hose_sku = ?
+    AND c.hose_sku = ?2
     AND NOT EXISTS (SELECT 1 FROM catalog_item_unavailable_hoses blocked WHERE blocked.sku = c.hose_sku)
     AND c.catalog_publication_status = 'Published'
     AND c.rfq_eligibility = 'Eligible'
@@ -172,13 +220,27 @@ const compatibleHoseEndSql = `
     AND fs.supply_availability = 'available_for_quote'
   ORDER BY series.interface_family, series.angle, series.gender, series.swivel_form,
            e.connection_dash, e.hose_tail_dash, e.sku`;
+}
 
 export function createD1ConfiguratorRepository(database: D1Database) {
   return {
     async findCompatibleEndA(releaseId: string, hoseSku: string) {
       const rows = await database
-        .prepare(compatibleHoseEndSql)
+        .prepare(compatibleHoseEndSql())
         .bind(releaseId, hoseSku)
+        .all<CompatibleHoseEndRow>();
+      return rows.results.map(compatibleHoseEndCandidateFromRow);
+    },
+
+    async findSelectedEnds(
+      releaseId: string,
+      hoseSku: string,
+      endA: string,
+      endB: string,
+    ) {
+      const rows = await database
+        .prepare(compatibleHoseEndSql(true))
+        .bind(releaseId, hoseSku, endA, endB)
         .all<CompatibleHoseEndRow>();
       return rows.results.map(compatibleHoseEndCandidateFromRow);
     },
@@ -188,7 +250,64 @@ export function createD1ConfiguratorRepository(database: D1Database) {
       endBCompatibilityId: string;
       hoseSku: string;
       releaseId: string;
+      identity?: string;
     }) {
+      // Apply the availability view's guards to one ordered pair. Filtering
+      // before the runtime joins avoids materializing historical catalogs.
+      if (input.identity) {
+        const row = await database
+          .prepare(
+            `
+          WITH release AS MATERIALIZED (
+            SELECT * FROM catalog_releases WHERE id = ?1
+              AND status IN ('published', 'superseded')
+          ), combinations AS MATERIALIZED (
+            SELECT * FROM catalog_runtime_assembly_combinations
+            WHERE release_id = ?1 AND hose_sku = ?2
+              AND end_a_compatibility_id = ?3 AND end_b_compatibility_id = ?4
+              AND identity = ?5
+          ), endpoints AS MATERIALIZED (
+            SELECT * FROM catalog_runtime_compatibilities
+            WHERE import_id IN (SELECT source_import_id FROM release)
+              AND hose_sku = ?2 AND compatibility_id IN (?3, ?4)
+          ), skus AS MATERIALIZED (
+            SELECT * FROM catalog_runtime_skus
+            WHERE import_id IN (SELECT source_import_id FROM release)
+              AND sku IN (SELECT value FROM json_each(?5))
+          )
+          SELECT 1 AS found FROM combinations c
+          JOIN release r ON r.id = c.release_id
+          JOIN endpoints a ON a.import_id = r.source_import_id AND a.hose_sku = c.hose_sku
+            AND a.compatibility_id = c.end_a_compatibility_id
+            AND a.hose_end_sku = c.end_a_hose_end_sku AND a.ferrule_sku = c.end_a_ferrule_sku
+          JOIN endpoints b ON b.import_id = r.source_import_id AND b.hose_sku = c.hose_sku
+            AND b.compatibility_id = c.end_b_compatibility_id
+            AND b.hose_end_sku = c.end_b_hose_end_sku AND b.ferrule_sku = c.end_b_ferrule_sku
+          WHERE a.catalog_publication_status = 'Published' AND a.rfq_eligibility = 'Eligible'
+            AND b.catalog_publication_status = 'Published' AND b.rfq_eligibility = 'Eligible'
+            AND NOT EXISTS (SELECT 1 FROM catalog_item_unavailable_hoses h WHERE h.sku = c.hose_sku)
+            AND (SELECT COUNT(*) FROM skus p WHERE p.import_id = r.source_import_id
+              AND p.catalog_publication_status = 'Published' AND p.rfq_eligibility = 'Eligible'
+              AND p.supply_availability = 'available_for_quote')
+              = (SELECT COUNT(DISTINCT value) FROM json_each(c.identity))
+            AND NOT EXISTS (
+              SELECT 1 FROM catalog_assembly_exclusions x
+              JOIN catalog_item_publication_state state ON state.mode = 'items' AND state.baseline_release_id = c.release_id
+              WHERE x.identity = c.identity AND x.disabled = 1
+            )
+          LIMIT 1
+        `,
+          )
+          .bind(
+            input.releaseId,
+            input.hoseSku,
+            input.endACompatibilityId,
+            input.endBCompatibilityId,
+            input.identity,
+          )
+          .first<{ found: number }>();
+        return Boolean(row);
+      }
       const row = await database
         .prepare(
           `SELECT 1 AS found FROM catalog_available_assembly_combinations

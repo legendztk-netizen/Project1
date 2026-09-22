@@ -1,12 +1,15 @@
 import { Form, Link, data, redirect, useNavigation } from "react-router";
-import { ArrowLeft, Save } from "lucide-react";
+import { ArrowLeft, ArrowRight, Save } from "lucide-react";
+import { useState } from "react";
 import type { Route } from "./+types/quote-pricing";
 import { requireAdminRequestContext } from "../infrastructure/admin-request-context";
 import { createQuotePreparation } from "../../quote-review/infrastructure/d1-quote-preparation";
 import {
   parseUsdCents,
-  parseDiscount,
+  referencePriceAdjustment,
+  referenceMerchandiseCents,
   quoteLineTotals,
+  submittedReferencePrice,
 } from "../../quote-review/domain/quote-pricing";
 import {
   requireReviewMutation,
@@ -59,9 +62,7 @@ export async function action({ context, params, request }: Route.ActionArgs) {
     try {
       const prices = draft.source.lines.map((_, index) => ({
         unitPriceCents: parseUsdCents(String(form.get(`price-${index}`) ?? "")),
-        discountBasisPoints: parseDiscount(
-          String(form.get(`discount-${index}`) ?? "0"),
-        ),
+        discountBasisPoints: 0,
       }));
       await service.savePrices(
         params.requestId,
@@ -89,6 +90,7 @@ export default function QuotePricing({
 }: Route.ComponentProps) {
   const draft = loaderData.draft;
   const pending = useNavigation().state !== "idle";
+  const [inputs, setInputs] = useState<Record<string, string>>({});
   return (
     <div className="admin-shell" data-surface="admin">
       <AdminNavigation active="quotes" />
@@ -102,8 +104,12 @@ export default function QuotePricing({
         </Link>
         <h1>报价定价 · USD</h1>
         {draft ? (
-          <Link to={`/admin/quotes/${params.requestId}/terms`}>
+          <Link
+            className="button button-primary"
+            to={`/admin/quotes/${params.requestId}/terms`}
+          >
             商业与交付条款
+            <ArrowRight size={18} aria-hidden="true" />
           </Link>
         ) : null}
         {actionData?.error ? <p role="alert">{actionData.error}</p> : null}
@@ -133,7 +139,36 @@ export default function QuotePricing({
             </p>
             {draft.source.lines.map((line, index) => {
               const price = draft.prices[index];
-              const totals = quoteLineTotals(line, price);
+              const inputKey = `${draft.requestId}:${draft.version}:${index}`;
+              const value =
+                inputs[inputKey] ??
+                (price.unitPriceCents === null
+                  ? ""
+                  : (
+                      (price.unitPriceCents *
+                        (1 - price.discountBasisPoints / 10000)) /
+                      100
+                    ).toFixed(2));
+              let finalCents: number | null = null;
+              try {
+                finalCents = parseUsdCents(value);
+              } catch {
+                /* Incomplete input has no estimate. */
+              }
+              const totals = quoteLineTotals(line, {
+                unitPriceCents: finalCents,
+                discountBasisPoints: 0,
+              });
+              const adjustment = referencePriceAdjustment(
+                line,
+                totals.totalCents,
+              );
+              const referenceCents = referenceMerchandiseCents(line);
+              const difference =
+                referenceCents === null || totals.totalCents === null
+                  ? null
+                  : Math.round(referenceCents - totals.totalCents);
+              const reference = submittedReferencePrice(line);
               return (
                 <section className="admin-quote-section" key={index}>
                   <h2>{line.sku}</h2>
@@ -155,12 +190,35 @@ export default function QuotePricing({
                       </dd>
                     </div>
                     <div>
-                      <dt>未折扣金额</dt>
-                      <dd>{money(totals.undiscountedCents)}</dd>
+                      <dt>参考价（本行合计）</dt>
+                      <dd>
+                        {reference.amount === null
+                          ? "未记录"
+                          : `${reference.currency} ${reference.amount.toFixed(2)}`}
+                      </dd>
+                      <dd>
+                        客户提交时的参考估价，包含当时已计算的服务费，不作为正式报价。
+                      </dd>
                     </div>
                     <div>
-                      <dt>折扣金额</dt>
-                      <dd>{money(totals.discountCents)}</dd>
+                      <dt>商品参考金额（不含服务费）</dt>
+                      <dd>
+                        {referenceCents === null
+                          ? "无法比较"
+                          : money(Math.round(referenceCents))}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>
+                        {difference !== null && difference < 0
+                          ? "相对参考价加价金额"
+                          : "相对参考价优惠金额"}
+                      </dt>
+                      <dd>
+                        {difference === null
+                          ? "无法比较"
+                          : money(Math.abs(difference))}
+                      </dd>
                     </div>
                     <div>
                       <dt>行金额</dt>
@@ -193,22 +251,26 @@ export default function QuotePricing({
                       name={`price-${index}`}
                       inputMode="decimal"
                       required
-                      defaultValue={
-                        price.unitPriceCents === null
-                          ? ""
-                          : (price.unitPriceCents / 100).toFixed(2)
+                      value={value}
+                      onChange={(event) =>
+                        setInputs((previous) => ({
+                          ...previous,
+                          [inputKey]: event.target.value,
+                        }))
                       }
                     />
                   </label>
                   <label>
-                    人工数量折扣（%）
+                    {adjustment !== null && adjustment < 0
+                      ? "相对参考价加价（自动计算）"
+                      : "相对参考价折扣（自动计算）"}
                     <input
-                      name={`discount-${index}`}
-                      inputMode="decimal"
-                      required
-                      defaultValue={(price.discountBasisPoints / 100).toFixed(
-                        2,
-                      )}
+                      readOnly
+                      value={
+                        adjustment === null
+                          ? "无法比较"
+                          : `${Math.abs(adjustment).toFixed(2)}%`
+                      }
                     />
                   </label>
                 </section>

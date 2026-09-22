@@ -31,8 +31,7 @@ import {
   type DraftSelectionProvenance,
 } from "../../configurator/domain/assembly-draft-validation";
 import { evaluateAssemblyReview } from "../../configurator/domain/assembly-review";
-import { createD1ConfiguratorRepository } from "../../configurator/infrastructure/d1-configurator-repository";
-import { createD1ConfiguratorReferenceRepository } from "../../configurator-reference/infrastructure/d1-configurator-reference-repository";
+import { createAssemblyPreparationReads } from "./assembly-preparation-reads";
 import { createD1PublicCatalogRepository } from "../../catalog/infrastructure/d1-public-catalog-repository";
 import type { PublicCatalogItem } from "../../catalog/domain/public-catalog";
 import { QuoteListCommandRejected } from "../domain/anonymous-quote-list";
@@ -127,6 +126,8 @@ function currentUnitPrice(
 }
 
 export async function prepareConfiguredAssembly(input: {
+  catalog?: ReturnType<typeof createD1PublicCatalogRepository>;
+  reads?: ReturnType<typeof createAssemblyPreparationReads>;
   database: D1Database;
   draft: unknown;
   quantity: number;
@@ -136,7 +137,8 @@ export async function prepareConfiguredAssembly(input: {
   const raw = object(input.draft);
   const rawHoseSku = stringAt(raw, "hose", "sku");
   const rawReleaseId = stringAt(raw, "catalogRelease", "id");
-  const catalog = createD1PublicCatalogRepository(input.database);
+  const catalog =
+    input.catalog ?? createD1PublicCatalogRepository(input.database);
   const hoseProduct = await catalog.findItem(rawHoseSku);
   const currentDraft = hoseProduct
     ? createHoseConfigurationDraft(hoseProduct)
@@ -150,10 +152,13 @@ export async function prepareConfiguredAssembly(input: {
     );
   }
 
-  const configurator = createD1ConfiguratorRepository(input.database);
-  const candidates = await configurator.findCompatibleEndA(
+  const configurator =
+    input.reads ?? createAssemblyPreparationReads(input.database);
+  const candidates = await configurator.findSelectedEnds(
     currentDraft.catalogRelease.id,
     currentDraft.hose.sku,
+    stringAt(raw, "endA", "hoseEnd", "sku"),
+    stringAt(raw, "endB", "hoseEnd", "sku"),
   );
   const endAInput = {
     compatibilityId: stringAt(raw, "endA", "compatibilityId"),
@@ -190,6 +195,13 @@ export async function prepareConfiguredAssembly(input: {
       endBCompatibilityId: endB.compatibilityId,
       hoseSku: currentDraft.hose.sku,
       releaseId: currentDraft.catalogRelease.id,
+      identity: JSON.stringify([
+        currentDraft.hose.sku,
+        endA.hoseEndSku,
+        endA.ferrule.sku,
+        endB.hoseEndSku,
+        endB.ferrule.sku,
+      ]),
     }))
   ) {
     reject(
@@ -198,9 +210,7 @@ export async function prepareConfiguredAssembly(input: {
   }
   let rebuilt = attachEndBToDraft(attachEndAToDraft(currentDraft, endA), endB);
 
-  const references = await createD1ConfiguratorReferenceRepository(
-    input.database,
-  ).findActiveSnapshot();
+  const references = await configurator.findActiveSnapshot();
   if (!references || references.release.id !== rebuilt.catalogRelease.id) {
     reject(
       "The current configuration reference data is unavailable. Try again later.",

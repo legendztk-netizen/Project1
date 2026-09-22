@@ -190,7 +190,10 @@ async function fixture(organization = false, validUntil?: string) {
       ],
     },
   };
-  const json = JSON.stringify(snapshot);
+  const json = JSON.stringify({
+    ...snapshot,
+    totals: { currency: "USD", totalCents: 25345 },
+  });
   const hash = await piSha256(new TextEncoder().encode(json));
   const pdfHash = await piSha256(pdf);
   await db
@@ -443,6 +446,10 @@ it("projects only accepted current PIs in one list query and drops status on rep
       },
     } as D1Database);
     expect(
+      customerQuoteProjection((await repository.findOwned(f.profileId, f.id))!)
+        .progress.code,
+    ).toBe("PI_ISSUED");
+    expect(
       (await repository.findOwned(f.profileId, f.id))
         ?.acceptedCurrentPiQuoteRevisionId,
     ).toBeNull();
@@ -452,6 +459,10 @@ it("projects only accepted current PIs in one list query and drops status on rep
     const records = await repository.listOwned(f.profileId);
     expect(sql).toHaveLength(1);
     const accepted = records.find((record) => record.id === f.id)!;
+    expect(accepted.currentPi).toMatchObject({
+      currency: "USD",
+      totalCents: 25345,
+    });
     expect(customerQuoteProjection(accepted).progress.code).toBe("PI_ACCEPTED");
     expect(
       customerQuoteProjection((await repository.findOwned(f.profileId, f.id))!)
@@ -463,7 +474,7 @@ it("projects only accepted current PIs in one list query and drops status on rep
     const historical = (await repository.findOwned(f.profileId, f.id))!;
     expect(historical.acceptedCurrentPiQuoteRevisionId).toBeNull();
     expect(customerQuoteProjection(historical).progress.code).toBe(
-      "QUOTE_READY",
+      replace === replacePi ? "PI_ISSUED" : "PI_REPLACEMENT_REQUIRED",
     );
     expect((await counts(f.piId)).accepts).toBe(1);
   }

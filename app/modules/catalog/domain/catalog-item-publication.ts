@@ -107,6 +107,7 @@ export interface CatalogItemCommand {
   source: {
     channel: "manual" | "excel" | "migration";
     operation?: "delete";
+    importOperation?: "Update" | "PartialUpdate" | "Delete";
     batchId?: string;
     reviewVersion?: number;
     row?: number;

@@ -43,6 +43,10 @@ import { createQuoteRequestService } from "../../quote-request/application/quote
 import { QuoteRequestRejected } from "../../quote-request/domain/quote-request";
 import type { RootLoaderData } from "../../../root";
 import { hoseSizeLabel } from "../domain/variant-label";
+import {
+  CustomerQuoteProductPreview,
+  quoteLinePreviewParts,
+} from "../../quote-request/ui/customer-quote-product-preview";
 import "../styles/quote-list.css";
 import { cloudflareContext } from "#workers/context";
 
@@ -997,32 +1001,48 @@ export function QuoteListContent({
               const subtotal = merchandiseEstimate(line, quantity);
               const serviceFee = serviceFeeEstimate(line, quantity);
               return (
-                <article className="quote-line" key={line.id}>
-                  <label className="quote-line-selection">
-                    <input
-                      aria-label={`Include ${line.displayName} in this quote request`}
-                      checked={selectedLineIdSet.has(line.id)}
-                      disabled={navigationBusy}
-                      onChange={(event) => {
-                        const checked = event.currentTarget.checked;
-                        setSelectedLineIds((current) =>
-                          checked
-                            ? [...new Set([...current, line.id])]
-                            : current.filter((lineId) => lineId !== line.id),
-                        );
-                      }}
-                      type="checkbox"
-                    />
-                    <span>Include in this quote request</span>
-                  </label>
+                <article
+                  className="quote-line"
+                  data-selected={selectedLineIdSet.has(line.id)}
+                  key={line.id}
+                >
+                  <header className="quote-line-header">
+                    <label
+                      className="quote-line-selection"
+                      title="Include in this quote request"
+                    >
+                      <input
+                        aria-label={`Include ${line.displayName} in this quote request`}
+                        checked={selectedLineIdSet.has(line.id)}
+                        disabled={navigationBusy}
+                        onChange={(event) => {
+                          const checked = event.currentTarget.checked;
+                          setSelectedLineIds((current) =>
+                            checked
+                              ? [...new Set([...current, line.id])]
+                              : current.filter((lineId) => lineId !== line.id),
+                          );
+                        }}
+                        type="checkbox"
+                      />
+                      <span className="sr-only">
+                        Include in this quote request
+                      </span>
+                    </label>
+                    <div className="quote-line-identity">
+                      <span className="eyebrow">
+                        {line.category.replaceAll("-", " ")}
+                      </span>
+                      <h2>{line.displayName}</h2>
+                      <p>
+                        SKU <strong>{line.sku}</strong>
+                      </p>
+                    </div>
+                    {quoteLinePreviewParts(line).some((part) => part.src) ? (
+                      <CustomerQuoteProductPreview compact line={line} />
+                    ) : null}
+                  </header>
                   <div className="quote-line-main">
-                    <span className="eyebrow">
-                      {line.category.replaceAll("-", " ")}
-                    </span>
-                    <h2>{line.displayName}</h2>
-                    <p>
-                      SKU <strong>{line.sku}</strong>
-                    </p>
                     {line.lengthOrder ? (
                       <p className="quote-line-length">
                         <strong>Made to order</strong>
@@ -1042,10 +1062,6 @@ export function QuoteListContent({
                       <>
                         <dl className="quote-configured-assembly-specs">
                           <div>
-                            <dt>Hose size</dt>
-                            <dd>{configuredHoseSize(line)}</dd>
-                          </div>
-                          <div>
                             <dt>End A</dt>
                             <dd>
                               {line.configuredAssembly.snapshot.configuration
@@ -1058,6 +1074,10 @@ export function QuoteListContent({
                               {line.configuredAssembly.snapshot.configuration
                                 .endB?.hoseEnd.displayName ?? "Not available"}
                             </dd>
+                          </div>
+                          <div>
+                            <dt>Hose size</dt>
+                            <dd>{configuredHoseSize(line)}</dd>
                           </div>
                           <div>
                             <dt>Finished length</dt>
@@ -1260,7 +1280,7 @@ export function QuoteListContent({
                       title="Remove from Quote List"
                       type="button"
                     >
-                      <Trash2 size={17} /> Remove
+                      <Trash2 aria-hidden="true" size={17} />
                     </button>
                   </div>
                 </article>

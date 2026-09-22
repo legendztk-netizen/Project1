@@ -1,11 +1,13 @@
 import { AlertTriangle, FileText, Search } from "lucide-react";
-import { Link } from "react-router";
+import { Link, useRevalidator } from "react-router";
+import { useEffect } from "react";
 
 import type { Route } from "./+types/quote-reviews";
 import {
   formatBeijingDateTime,
+  adminQuoteReviewLabels,
+  adminTechnicalReviewLabels,
   parseAdminQuoteReviewFilters,
-  type AdminTechnicalReviewState,
 } from "../../quote-review/domain/admin-quote-review";
 import { createD1AdminQuoteReviewRepository } from "../../quote-review/infrastructure/d1-admin-quote-review-repository";
 import { AdminQuoteRequestPreview } from "../../quote-review/ui/admin-quote-snapshot";
@@ -26,11 +28,7 @@ export async function loader({ context, request }: Route.LoaderArgs) {
   return { adminIdentity, environment: env.APP_ENV, filters, reviews };
 }
 
-const technicalLabels: Record<AdminTechnicalReviewState, string> = {
-  not_flagged: "未标记",
-  not_recorded: "快照未记录",
-  required: "需要技术审核",
-};
+const technicalLabels = adminTechnicalReviewLabels;
 
 function money(value: number | null) {
   return value === null
@@ -42,6 +40,24 @@ function money(value: number | null) {
 }
 
 export default function QuoteReviews({ loaderData }: Route.ComponentProps) {
+  const revalidator = useRevalidator();
+  useEffect(() => {
+    const refresh = () => {
+      if (
+        document.visibilityState === "visible" &&
+        revalidator.state === "idle"
+      )
+        void revalidator.revalidate();
+    };
+    const timer = setInterval(refresh, 10000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [revalidator]);
   const requiredCount = loaderData.reviews.filter(
     ({ technicalReview }) => technicalReview.state === "required",
   ).length;
@@ -76,9 +92,21 @@ export default function QuoteReviews({ loaderData }: Route.ComponentProps) {
             <small>条询价请求</small>
           </article>
           <article>
-            <span>需要技术审核</span>
+            <span>待技术审核</span>
             <strong>{requiredCount}</strong>
-            <small>按提交快照标记</small>
+            <small>当前配置尚未完成审核</small>
+          </article>
+          <article>
+            <span>技术审核已完成</span>
+            <strong>
+              {
+                loaderData.reviews.filter(
+                  ({ technicalReview }) =>
+                    technicalReview.state === "completed",
+                ).length
+              }
+            </strong>
+            <small>已有管理员审核记录</small>
           </article>
           <article>
             <span>技术状态未记录</span>
@@ -103,19 +131,27 @@ export default function QuoteReviews({ loaderData }: Route.ComponentProps) {
                 name="review"
               >
                 <option value="all">全部</option>
-                <option value="awaiting_review">待审核</option>
+                {Object.entries(adminQuoteReviewLabels).map(
+                  ([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ),
+                )}
               </select>
             </label>
             <label>
-              技术标记
+              技术审核状态
               <select
                 defaultValue={loaderData.filters.technicalReview}
                 name="technical"
               >
                 <option value="all">全部</option>
-                <option value="required">需要技术审核</option>
-                <option value="not_flagged">未标记</option>
-                <option value="not_recorded">快照未记录</option>
+                {Object.entries(technicalLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
               </select>
             </label>
             <label>
@@ -154,7 +190,7 @@ export default function QuoteReviews({ loaderData }: Route.ComponentProps) {
                   <th>商品图片</th>
                   <th>商品</th>
                   <th>参考商品金额</th>
-                  <th>技术标记</th>
+                  <th>技术审核状态</th>
                   <th>提交时间</th>
                   <th>
                     <span className="sr-only">操作</span>
@@ -166,7 +202,7 @@ export default function QuoteReviews({ loaderData }: Route.ComponentProps) {
                   <tr key={review.id}>
                     <td>
                       <strong>{review.referenceNumber}</strong>
-                      <span>待审核</span>
+                      <span>{adminQuoteReviewLabels[review.reviewState]}</span>
                     </td>
                     <td>
                       <strong>

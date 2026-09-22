@@ -1,12 +1,39 @@
-export type AdminQuoteReviewState = "awaiting_review";
+export const adminQuoteReviewLabels = {
+  awaiting_review: "待审核",
+  reviewing: "审核中",
+  quote_ready: "报价已发布",
+  pi_ready: "PI 待接受",
+  pi_expired: "PI 已过期",
+  pi_accepted: "PI 已接受",
+} as const;
+export type AdminQuoteReviewState = keyof typeof adminQuoteReviewLabels;
 export type AdminTechnicalReviewState =
-  "not_flagged" | "not_recorded" | "required";
+  "not_flagged" | "not_recorded" | "required" | "completed";
+
+export const adminTechnicalReviewLabels: Record<
+  AdminTechnicalReviewState,
+  string
+> = {
+  required: "待技术审核",
+  completed: "技术审核已完成",
+  not_flagged: "未触发技术审核",
+  not_recorded: "技术状态未记录",
+};
 
 export interface AdminQuoteReviewSource {
   id: string;
   referenceNumber: string;
   snapshot: unknown;
   submittedAt: string;
+  reviewState?: AdminQuoteReviewState;
+  technicalSnapshot?: unknown;
+  technicalReviewInvalidated?: boolean;
+  technicalCompletion?: {
+    actor: string;
+    at: string;
+    conclusion: string;
+    basis: string;
+  } | null;
 }
 
 export interface AdminQuoteReviewSummary extends AdminQuoteReviewSource {
@@ -78,6 +105,9 @@ function technicalReview(snapshot: unknown) {
     if (!line) {
       hasUnrecordedResult = true;
       continue;
+    }
+    if (jsonArray(line.quotedSpecificationOverrides)?.length) {
+      reasons.push("商品规格已修订，需要重新完成技术审核。");
     }
     if (line.lineKind === "standard" || line.lineKind === "length_based_hose") {
       hasExplicitClearResult = true;
@@ -178,8 +208,21 @@ export function projectAdminQuoteReview(
         : kind === "individual"
           ? "个人采购"
           : null,
-    reviewState: "awaiting_review",
-    technicalReview: technicalReview(source.snapshot),
+    reviewState: source.reviewState ?? "awaiting_review",
+    technicalReview: {
+      ...technicalReview(source.technicalSnapshot ?? source.snapshot),
+      ...(source.technicalReviewInvalidated
+        ? {
+            state: "required" as const,
+            reasons: [
+              ...technicalReview(source.technicalSnapshot ?? source.snapshot)
+                .reasons,
+              "配置或报价修订版本已变化，请重新完成技术审核。",
+            ],
+          }
+        : {}),
+      ...(source.technicalCompletion ? { state: "completed" as const } : {}),
+    },
   };
 }
 
@@ -190,10 +233,14 @@ export function parseAdminQuoteReviewFilters(
   const technicalReview = url.searchParams.get("technical");
   const sort = url.searchParams.get("sort");
   return {
-    reviewState: reviewState === "awaiting_review" ? "awaiting_review" : "all",
+    reviewState:
+      reviewState && Object.hasOwn(adminQuoteReviewLabels, reviewState)
+        ? (reviewState as AdminQuoteReviewState)
+        : "all",
     sort: sort === "technical_first" ? "technical_first" : "newest",
     technicalReview:
       technicalReview === "required" ||
+      technicalReview === "completed" ||
       technicalReview === "not_flagged" ||
       technicalReview === "not_recorded"
         ? technicalReview
@@ -205,6 +252,7 @@ const technicalPriority: Record<AdminTechnicalReviewState, number> = {
   required: 0,
   not_recorded: 1,
   not_flagged: 2,
+  completed: 3,
 };
 
 export function filterAdminQuoteReviews(

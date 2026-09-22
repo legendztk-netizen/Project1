@@ -505,13 +505,18 @@ export function publicCatalogItemFromRow(
 
 // Materialize only the active import before joining runtime overlay views.
 // Otherwise SQLite can repeatedly scan historical imports for each SKU.
-const publicCatalogSql = `
+function buildPublicCatalogSql(singleItem: boolean) {
+  const skuFilter = singleItem ? "AND sku = ?1" : "";
+  const baseSkuFilter = singleItem ? "AND base_sku = ?1" : "";
+
+  return `
 WITH active_catalog_runtime_skus AS MATERIALIZED (
     SELECT * FROM catalog_runtime_skus
     WHERE import_id = (
       SELECT r.source_import_id FROM catalog_active_release ar
       JOIN catalog_releases r ON r.id = ar.release_id
     )
+    ${skuFilter}
   ),
 active_catalog_runtime_sales_offers AS MATERIALIZED (
     SELECT * FROM catalog_runtime_sales_offers
@@ -519,6 +524,7 @@ active_catalog_runtime_sales_offers AS MATERIALIZED (
       SELECT r.source_import_id FROM catalog_active_release ar
       JOIN catalog_releases r ON r.id = ar.release_id
     )
+    ${baseSkuFilter}
   ),
 active_catalog_runtime_product_main_images AS MATERIALIZED (
     SELECT * FROM catalog_runtime_product_main_images
@@ -526,6 +532,7 @@ active_catalog_runtime_product_main_images AS MATERIALIZED (
       SELECT r.source_import_id FROM catalog_active_release ar
       JOIN catalog_releases r ON r.id = ar.release_id
     )
+    ${skuFilter}
   ),
 active_catalog_runtime_hose_variants AS MATERIALIZED (
     SELECT * FROM catalog_runtime_hose_variants
@@ -533,6 +540,7 @@ active_catalog_runtime_hose_variants AS MATERIALIZED (
       SELECT r.source_import_id FROM catalog_active_release ar
       JOIN catalog_releases r ON r.id = ar.release_id
     )
+    ${skuFilter}
   ),
 active_catalog_runtime_hose_series AS MATERIALIZED (
     SELECT * FROM catalog_runtime_hose_series
@@ -547,6 +555,7 @@ active_catalog_runtime_hose_ends AS MATERIALIZED (
       SELECT r.source_import_id FROM catalog_active_release ar
       JOIN catalog_releases r ON r.id = ar.release_id
     )
+    ${skuFilter}
   ),
 active_catalog_runtime_hose_end_series AS MATERIALIZED (
     SELECT * FROM catalog_runtime_hose_end_series
@@ -561,6 +570,7 @@ active_catalog_runtime_ferrules AS MATERIALIZED (
       SELECT r.source_import_id FROM catalog_active_release ar
       JOIN catalog_releases r ON r.id = ar.release_id
     )
+    ${skuFilter}
   ),
 active_catalog_runtime_adapters AS MATERIALIZED (
     SELECT * FROM catalog_runtime_adapters
@@ -568,6 +578,7 @@ active_catalog_runtime_adapters AS MATERIALIZED (
       SELECT r.source_import_id FROM catalog_active_release ar
       JOIN catalog_releases r ON r.id = ar.release_id
     )
+    ${skuFilter}
   ),
 active_catalog_runtime_quick_couplers AS MATERIALIZED (
     SELECT * FROM catalog_runtime_quick_couplers
@@ -575,6 +586,7 @@ active_catalog_runtime_quick_couplers AS MATERIALIZED (
       SELECT r.source_import_id FROM catalog_active_release ar
       JOIN catalog_releases r ON r.id = ar.release_id
     )
+    ${skuFilter}
   ),
 active_catalog_runtime_series_commercial_rules AS MATERIALIZED (
     SELECT * FROM catalog_runtime_series_commercial_rules
@@ -589,6 +601,7 @@ active_catalog_runtime_sku_price_packaging AS MATERIALIZED (
       SELECT r.source_import_id FROM catalog_active_release ar
       JOIN catalog_releases r ON r.id = ar.release_id
     )
+    ${skuFilter}
   )
   SELECT CASE WHEN item_state.mode = 'items' THEN item_state.generation END AS item_generation,
          item_entity.current_revision_id AS item_revision_id,
@@ -695,7 +708,12 @@ active_catalog_runtime_sku_price_packaging AS MATERIALIZED (
   WHERE ar.singleton = 1
     AND r.status = 'published'
     AND s.catalog_publication_status = 'Published'
+    ${singleItem ? "AND s.sku = ?1" : ""}
   ORDER BY s.product_type, s.sku`;
+}
+
+const publicCatalogSql = buildPublicCatalogSql(false);
+const publicCatalogItemSql = buildPublicCatalogSql(true);
 
 function normalizeFerrule(
   row: PublicCatalogRow & { ferrule_hose_tail_dash?: string | null },
@@ -706,12 +724,37 @@ function normalizeFerrule(
   return row;
 }
 
-export function createD1PublicCatalogRepository(database: D1Database) {
-  async function allItems() {
+export function createD1PublicCatalogRepository(
+  database: D1Database,
+  options: { cacheItems?: boolean } = {},
+) {
+  const cachedItems = new Map<string, Promise<PublicCatalogItem | null>>();
+
+  async function loadAllItems() {
     const rows = await database
       .prepare(publicCatalogSql)
       .all<PublicCatalogRow & { ferrule_hose_tail_dash?: string | null }>();
     return rows.results.map(normalizeFerrule).map(publicCatalogItemFromRow);
+  }
+
+  async function loadItem(sku: string) {
+    const row = await database
+      .prepare(publicCatalogItemSql)
+      .bind(sku)
+      .first<PublicCatalogRow & { ferrule_hose_tail_dash?: string | null }>();
+    return row ? publicCatalogItemFromRow(normalizeFerrule(row)) : null;
+  }
+
+  function cachedFindItem(sku: string) {
+    if (!options.cacheItems) return loadItem(sku);
+    const existing = cachedItems.get(sku);
+    if (existing) return existing;
+    const pending = loadItem(sku).catch((error) => {
+      cachedItems.delete(sku);
+      throw error;
+    });
+    cachedItems.set(sku, pending);
+    return pending;
   }
 
   return {
@@ -719,7 +762,7 @@ export function createD1PublicCatalogRepository(database: D1Database) {
       category?: CatalogFamilyId | null;
       query?: string | null;
     }) {
-      const items = (await allItems()).filter(
+      const items = (await loadAllItems()).filter(
         (item) =>
           (!input.category || item.category === input.category) &&
           matchesCatalogQuery(item, input.query ?? ""),
@@ -734,7 +777,7 @@ export function createD1PublicCatalogRepository(database: D1Database) {
       family: PublicCatalogFamily;
       selected: PublicCatalogItem;
     } | null> {
-      const family = groupCatalogFamilies(await allItems()).find(
+      const family = groupCatalogFamilies(await loadAllItems()).find(
         (candidate) =>
           candidate.category === input.category &&
           candidate.familyKey === input.familyKey,
@@ -746,7 +789,7 @@ export function createD1PublicCatalogRepository(database: D1Database) {
       return selected ? { family, selected } : null;
     },
     async findItem(sku: string) {
-      return (await allItems()).find((item) => item.sku === sku) ?? null;
+      return cachedFindItem(sku);
     },
     async wasHosePublishedInSupersededRelease(sku: string) {
       const row = await database

@@ -28,7 +28,9 @@ import {
 import { noQuoteReferenceDiscount } from "../domain/quote-reference-discount";
 import { createD1AnonymousQuoteListRepository } from "../infrastructure/d1-anonymous-quote-list-repository";
 import { createD1QuoteReferenceDiscountRepository } from "../infrastructure/d1-quote-reference-discount-repository";
+import { createD1QuoteListDisplayCache } from "../infrastructure/d1-quote-list-display-cache";
 import { prepareConfiguredAssembly } from "./prepare-configured-assembly";
+import { createAssemblyPreparationReads } from "./assembly-preparation-reads";
 import type { ApplicationBindings } from "#workers/environment";
 import {
   customerIdentitySigningKey,
@@ -85,7 +87,9 @@ export function createAnonymousQuoteListService(
     now?: () => Date;
   } = {},
 ) {
-  const catalog = createD1PublicCatalogRepository(env.DB);
+  const catalog = createD1PublicCatalogRepository(env.DB, {
+    cacheItems: true,
+  });
   const quoteList = createD1AnonymousQuoteListRepository(env.DB);
   const discounts = createD1QuoteReferenceDiscountRepository(env.DB);
   const identity = createD1CustomerIdentityRepository(env.DB);
@@ -230,20 +234,37 @@ export function createAnonymousQuoteListService(
   async function refreshLinesForDisplay(
     lines: Awaited<ReturnType<typeof quoteList.listLines>>,
     refreshedAt: string,
+    catalog = createD1PublicCatalogRepository(env.DB, { cacheItems: true }),
   ): Promise<AnonymousQuoteLine[]> {
+    const reads = createAssemblyPreparationReads(env.DB);
+    const discountReads = new Map<
+      string,
+      ReturnType<typeof discounts.findApplicable>
+    >();
+    function findDiscount(
+      input: Parameters<typeof discounts.findApplicable>[0],
+    ) {
+      const key = JSON.stringify(input);
+      let pending = discountReads.get(key);
+      if (!pending) {
+        pending = discounts.findApplicable(input);
+        discountReads.set(key, pending);
+      }
+      return pending;
+    }
     function refreshDiscounts(
       line: AnonymousQuoteLine,
       currentReleaseId: string | null,
     ) {
       return Promise.all([
-        discounts.findApplicable({
+        findDiscount({
           lineKind: line.lineKind,
           quantity: line.quantity,
           releaseId: line.catalogReleaseId,
           sku: line.sku,
         }),
         currentReleaseId
-          ? discounts.findApplicable({
+          ? findDiscount({
               lineKind: line.lineKind,
               quantity: line.quantity,
               releaseId: currentReleaseId,
@@ -291,6 +312,8 @@ export function createAnonymousQuoteListService(
         }
         try {
           const prepared = await prepareConfiguredAssembly({
+            catalog,
+            reads,
             database: env.DB,
             draft: line.configuredAssembly.snapshot.configuration,
             quantity: line.quantity,
@@ -349,6 +372,7 @@ export function createAnonymousQuoteListService(
       quantity: number,
     ) {
       const prepared = await prepareConfiguredAssembly({
+        catalog,
         database: env.DB,
         draft,
         quantity,
@@ -443,6 +467,7 @@ export function createAnonymousQuoteListService(
         );
       }
       const prepared = await prepareConfiguredAssembly({
+        catalog,
         database: env.DB,
         draft,
         quantity,
@@ -563,15 +588,22 @@ export function createAnonymousQuoteListService(
       );
       if (!touched) return { lines: [], setCookie: null };
       return {
-        lines: await refreshLinesForDisplay(
-          await quoteList.listLines(session.id),
-          current.now,
-        ),
+        lines: await createD1QuoteListDisplayCache(env.DB).read({
+          sessionId: session.id,
+          readLines: () => quoteList.listLines(session.id),
+          refresh: (lines) => refreshLinesForDisplay(lines, current.now),
+        }),
         setCookie: await cookie(session, current.date),
       };
     },
 
-    async readForSubmission(request: Request) {
+    async readForSubmission(
+      request: Request,
+      options: {
+        selectedLineIds?: string[];
+        catalog?: ReturnType<typeof createD1PublicCatalogRepository>;
+      } = {},
+    ) {
       const profile = await authenticatedProfile(request);
       if (!profile) return null;
       const session = await quoteList.findAccountSession(profile.id);
@@ -589,8 +621,9 @@ export function createAnonymousQuoteListService(
       if (!currentSession) return { lines: [], profile, session: null };
       return {
         lines: await refreshLinesForDisplay(
-          await quoteList.listLines(currentSession.id),
+          await quoteList.listLines(currentSession.id, options.selectedLineIds),
           current.now,
+          options.catalog,
         ),
         profile,
         session: currentSession,

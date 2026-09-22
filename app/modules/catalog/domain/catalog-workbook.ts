@@ -420,8 +420,8 @@ const statusFields = {
   ),
   technical: textField(
     "technicalDataStatus",
-    "* Technical Data Status / 技术资料状态",
-    true,
+    "Technical Data Status / 技术资料状态",
+    false,
     TECHNICAL_DATA_STATUSES,
   ),
 };
@@ -461,7 +461,7 @@ export const catalogWorksheetContracts: readonly CatalogWorksheetContract[] = [
       textField("mshaMarking", "MSHA Marking / MSHA标识", false, YES_NO_NA),
       textField("fluidCompatibility", "Fluid Compatibility / 介质兼容", false),
       textField("origin", "* Country of Origin / 原产国", true),
-      textField("source", "* Source Document/Page / 来源文件页码", true),
+      textField("source", "Source Document/Page / 来源文件页码", false),
       textField("notes", "Notes / 备注", false),
       statusFields.rfq,
       statusFields.technical,
@@ -539,7 +539,7 @@ export const catalogWorksheetContracts: readonly CatalogWorksheetContract[] = [
       numberField("unitWeightG", "Unit Weight g / 单重", false),
       textField("drawingNumber", "Drawing No. / 图纸号", false),
       textField("drawingRevision", "Drawing Rev / 图纸版本", false),
-      textField("source", "* Source Document/Page / 来源", true),
+      textField("source", "Source Document/Page / 来源", false),
       textField("notes", "Notes / 备注", false),
       statusFields.rfq,
       statusFields.technical,
@@ -573,7 +573,7 @@ export const catalogWorksheetContracts: readonly CatalogWorksheetContract[] = [
       ),
       textField("material", "* Material / 材质", true),
       textField("coating", "* Coating / 表面处理", true, COATINGS),
-      textField("source", "* Source Document/Page / 来源", true),
+      textField("source", "Source Document/Page / 来源", false),
       textField("notes", "Notes / 备注", false),
       statusFields.rfq,
       statusFields.technical,
@@ -692,7 +692,7 @@ export const catalogWorksheetContracts: readonly CatalogWorksheetContract[] = [
       textField("connectionForm3", "Connection Form 3 / 连接形式3", false),
       textField("size3", "Size 3 / 尺寸3", false),
       textField("websiteDisplay", "* Website Display / 网站展示", true),
-      textField("source", "* Source Document/Page / 目录来源", true),
+      textField("source", "Source Document/Page / 目录来源", false),
       textField("notes", "Notes / 备注", false),
       statusFields.rfq,
       statusFields.technical,
@@ -738,7 +738,7 @@ export const catalogWorksheetContracts: readonly CatalogWorksheetContract[] = [
       numberField("overallLengthMm", "Overall Length mm / 总长", false),
       numberField("unitWeightG", "Unit Weight g / 单重", false),
       textField("drawingNumber", "Drawing No. / 图纸号", false),
-      textField("source", "* Source Document/Page / 来源", true),
+      textField("source", "Source Document/Page / 来源", false),
       textField("notes", "Notes / 备注", false),
       statusFields.rfq,
       statusFields.technical,
@@ -949,7 +949,12 @@ function validateWorksheet(
     ) {
       continue;
     }
-    if (header[index] !== field.header) {
+    // Retain compatibility with older templates that marked these fields required.
+    const legacyOptionalHeader =
+      ["technicalDataStatus", "source", "notes"].includes(field.key) &&
+      typeof header[index] === "string" &&
+      fieldLabel(header[index] as string) === fieldLabel(field.header);
+    if (header[index] !== field.header && !legacyOptionalHeader) {
       results.push({
         code: "invalid_header",
         field: fieldLabel(field.header),

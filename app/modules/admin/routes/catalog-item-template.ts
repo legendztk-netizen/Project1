@@ -1,9 +1,17 @@
 import * as XLSX from "@e965/xlsx";
+import { redirect } from "react-router";
+import { importTemplates } from "../../catalog/domain/catalog-import-template";
 import type { Route } from "./+types/catalog-item-template";
 import { requireAdminRequestContext } from "../infrastructure/admin-request-context";
 import { catalogWorksheetContracts } from "../../catalog/domain/catalog-workbook";
-export function loader({ context }: Route.LoaderArgs) {
+export function loader({ context, request }: Route.LoaderArgs) {
   requireAdminRequestContext(context);
+  const prefix = new URL(request.url).searchParams.get("sheet");
+  if (prefix) {
+    if (!importTemplates.some((t) => t.prefix === prefix))
+      throw new Response("Unknown template", { status: 400 });
+    return redirect(`/templates/catalog-import-${prefix}.xlsx`);
+  }
   const workbook = XLSX.utils.book_new();
   for (const contract of catalogWorksheetContracts) {
     const headers = contract.fields

@@ -448,6 +448,7 @@ export default function QuoteRevisions({
               {revision.id === current.id ? " · 当前报价" : " · 历史报价"}
             </summary>
             <CustomerQuoteOffer
+              adminSource={revision.snapshot.source.lines}
               offer={customerRevisionProjection(revision.snapshot)}
             />
           </details>

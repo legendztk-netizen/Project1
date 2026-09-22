@@ -75,7 +75,7 @@ it("derives current and previous offers from one history read during concurrent 
   expect(
     result.record?.offerHistory?.map((offer) => offer.revisionNumber),
   ).toEqual([2, 1]);
-  expect(result.record?.progress.code).toBe("QUOTE_READY");
+  expect(result.record?.progress.code).toBe("RFQ_SUBMITTED");
   expect(mocks.history).toHaveBeenCalledTimes(1);
   expect(mocks.current).not.toHaveBeenCalled();
   expect(mocks.proposed).toHaveBeenCalledWith("owner", "rfq", "revision-2");
@@ -103,7 +103,7 @@ it("projects list acceptance without fetching per-quote revision histories", asy
   );
   expect(result.records.map((record) => record.progress.code)).toEqual([
     "PI_ACCEPTED",
-    "QUOTE_READY",
+    "RFQ_SUBMITTED",
     "RFQ_SUBMITTED",
   ]);
   expect(mocks.list).toHaveBeenCalledTimes(1);
@@ -126,7 +126,7 @@ it("does not show an old acceptance beside a concurrently replaced quote revisio
         "rfq",
       );
       expect(result.record?.progress.code).toBe(
-        revision === "revision-2" ? "PI_ACCEPTED" : "QUOTE_READY",
+        revision === "revision-2" ? "PI_ACCEPTED" : "RFQ_SUBMITTED",
       );
     }
   } finally {

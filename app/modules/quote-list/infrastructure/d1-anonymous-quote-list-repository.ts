@@ -822,7 +822,10 @@ export function createD1AnonymousQuoteListRepository(database: D1Database) {
       return row ? lineFromRow(row) : null;
     },
 
-    async listLines(sessionId: string) {
+    async listLines(sessionId: string, selectedLineIds?: string[]) {
+      const selectionSql = selectedLineIds
+        ? "AND id IN (SELECT value FROM json_each(?))"
+        : "";
       const rows = await database
         .prepare(
           `SELECT id, sku, catalog_release_id, display_name, category, line_kind, quantity,
@@ -836,9 +839,13 @@ export function createD1AnonymousQuoteListRepository(database: D1Database) {
                   updated_at
            FROM anonymous_quote_lines
            WHERE session_id = ?
+           ${selectionSql}
            ORDER BY created_at, id`,
         )
-        .bind(sessionId)
+        .bind(
+          sessionId,
+          ...(selectedLineIds ? [JSON.stringify(selectedLineIds)] : []),
+        )
         .all<QuoteLineRow>();
       return rows.results.map(lineFromRow);
     },

@@ -480,6 +480,8 @@ export default function AssemblyManagement() {
             <details key={s.id}>
               <summary>
                 {s.id} · {sourceStatuses[s.status] ?? s.status}
+                {" · "}
+                {JSON.parse(s.source_json).values?.updateDelete ?? "更新关系"}
               </summary>
               <pre>{JSON.stringify(JSON.parse(s.source_json), null, 2)}</pre>
               <p>{s.issues_json}</p>

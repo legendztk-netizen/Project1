@@ -5,6 +5,7 @@ import {
   Gauge,
   KeyRound,
   ListChecks,
+  LoaderCircle,
   MapPin,
   Save,
 } from "lucide-react";
@@ -75,20 +76,33 @@ export function isAccountDetailView(
 
 export function AccountDetailNavigation({
   activeView,
+  pendingHref,
 }: {
   activeView: AccountNavigationView;
+  pendingHref?: string;
 }) {
   return (
     <nav className="account-detail-navigation" aria-label="Account details">
       {items.map((item) => {
         const Icon = item.icon;
+        const isPending = pendingHref === item.href;
         return (
           <Link
+            aria-busy={isPending || undefined}
             aria-current={activeView === item.view ? "page" : undefined}
+            className={isPending ? "pending" : undefined}
             key={item.view}
             to={item.href}
           >
-            <Icon aria-hidden="true" size={16} />
+            {isPending ? (
+              <LoaderCircle
+                aria-hidden="true"
+                className="account-navigation-spinner"
+                size={16}
+              />
+            ) : (
+              <Icon aria-hidden="true" size={16} />
+            )}
             {item.label}
           </Link>
         );

@@ -44,6 +44,90 @@ const plan = (sheets: CatalogWorkbookSheet[]) =>
     ipAddress: "local",
     batchId: "batch-test",
   });
+it("enforces explicit operations and preserves blank partial fields, including zero prices", async () => {
+  const result = await plan([
+    {
+      sheet: "01_胶管主数据",
+      data: [
+        ["Update Delete", "sku", "notes", "amount", "currency"],
+        ["PartialUpdate", "A_001", null, 0, null],
+      ],
+    },
+  ]);
+  expect(result.requests).toHaveLength(1);
+  expect(result.requests[0].command).toMatchObject({
+    mode: "edit",
+    source: { importOperation: "PartialUpdate" },
+    payload: {
+      variant: { notes: "kept" },
+      price: { amount: 0, currency: "USD" },
+    },
+  });
+  const duplicate = await plan([
+    {
+      sheet: "01_胶管主数据",
+      data: [
+        ["Update Delete", "sku"],
+        ["Update", "A_001"],
+      ],
+    },
+  ]);
+  expect(duplicate.requests.flatMap((r) => r.issues).join()).toContain(
+    "SKU 已存在",
+  );
+  const missing = await plan([
+    {
+      sheet: "01_胶管主数据",
+      data: [
+        ["Update Delete", "sku"],
+        ["PartialUpdate", "MISSING"],
+      ],
+    },
+  ]);
+  expect(missing.requests.flatMap((r) => r.issues).join()).toContain(
+    "要求 SKU 已存在",
+  );
+  const deleted = await plan([
+    {
+      sheet: "01_胶管主数据",
+      data: [
+        ["Update Delete", "sku", "amount"],
+        ["Delete", "A_001", "ignored"],
+      ],
+    },
+  ]);
+  expect(deleted.requests).toHaveLength(1);
+  expect(deleted.requests[0].issues).toEqual([]);
+  expect(deleted.requests[0].command).toMatchObject({
+    targetState: "discontinued",
+    source: { operation: "delete", importOperation: "Delete" },
+    payload: sku,
+  });
+  expect(deleted.requests[0].dependencies).toEqual([]);
+});
+it("rejects missing or conflicting operations instead of silently upserting", async () => {
+  const result = await plan([
+    {
+      sheet: "01_胶管主数据",
+      data: [
+        ["Update Delete", "sku"],
+        [null, "A_001"],
+      ],
+    },
+  ]);
+  expect(result.requests[0].issues.join()).toContain("请选择");
+  const conflict = await plan([
+    {
+      sheet: "01_胶管主数据",
+      data: [
+        ["Update Delete", "sku"],
+        ["PartialUpdate", "A_001"],
+        ["Delete", "A_001"],
+      ],
+    },
+  ]);
+  expect(conflict.requests[0].issues.join()).toContain("操作冲突");
+});
 describe("item workbook snapshots", () => {
   it("inherits absent columns, clears optional blanks and does not create unchanged series or missing-row deletions", async () => {
     const result = await plan([

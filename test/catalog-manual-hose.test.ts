@@ -172,11 +172,26 @@ describe("manual Hose maintenance", () => {
     );
   });
 
+  it("accepts an otherwise complete product without a source document", async () => {
+    const { repository, writes } = repositoryDouble(null);
+    const submission = validSubmission();
+    submission.hoseValues.source = "";
+
+    await expect(
+      maintainManualHose(repository, {
+        actorId: "owner-1",
+        ...submission,
+      }),
+    ).resolves.toMatchObject({ mode: "created", sku: "601R1_TEST_04" });
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.hose.source).toBe("");
+  });
+
   it("rejects incomplete input without writing a partial product", async () => {
     const { repository, writes } = repositoryDouble(null);
     const submission = validSubmission();
     submission.salesValues.referencePriceUsd = null;
-    submission.hoseValues.source = "";
+    submission.hoseValues.primaryStandard = "";
 
     await expect(
       maintainManualHose(repository, {
@@ -187,7 +202,7 @@ describe("manual Hose maintenance", () => {
       findings: expect.arrayContaining([
         expect.objectContaining({
           code: "required",
-          field: "Source Document/Page / 来源文件页码",
+          field: "Primary Standard / 主标准",
         }),
         expect.objectContaining({ code: "reference_price_required" }),
       ]),

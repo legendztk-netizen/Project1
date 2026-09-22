@@ -1,5 +1,15 @@
-import { Form, Link, data, redirect, useNavigation } from "react-router";
-import { ArrowLeft, Save } from "lucide-react";
+import {
+  Form,
+  Link,
+  data,
+  redirect,
+  useNavigation,
+  useBlocker,
+  useBeforeUnload,
+  useSearchParams,
+} from "react-router";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowLeft, ArrowRight, Save } from "lucide-react";
 import type { Route } from "./+types/quote-commercial-terms";
 import { requireAdminRequestContext } from "../infrastructure/admin-request-context";
 import { AdminNavigation } from "../ui/admin-navigation";
@@ -97,13 +107,25 @@ export async function action({ context, params, request }: Route.ActionArgs) {
       text("commandId"),
     );
   } catch (error) {
-    if (error instanceof Response) throw error;
+    if (error instanceof Response && ![400, 409, 422].includes(error.status))
+      throw error;
     return data(
-      { error: error instanceof Error ? error.message : "Invalid terms" },
-      { status: 400 },
+      {
+        error:
+          error instanceof Response
+            ? error.status === 409
+              ? "草稿已被修改，请保留当前输入并核对最新版本后重试。"
+              : await error.text()
+            : error instanceof Error
+              ? error.message
+              : "商业条款保存失败",
+      },
+      { status: error instanceof Response ? error.status : 400 },
     );
   }
-  return redirect(`/admin/quotes/${params.requestId}/terms`);
+  return redirect(
+    `/admin/quotes/${params.requestId}/${text("intent") === "continue" ? "issue" : "terms?saved=1"}`,
+  );
 }
 export default function CommercialTerms({
   loaderData,
@@ -114,6 +136,33 @@ export default function CommercialTerms({
   const terms = draft.terms;
   const address = terms?.destination ?? draft.source.destination;
   const pending = useNavigation().state !== "idle";
+  const [searchParams] = useSearchParams();
+  const [dirty, setDirty] = useState(false);
+  const submitting = useRef(false);
+  useEffect(() => {
+    setDirty(false);
+    submitting.current = false;
+  }, [draft.version]);
+  useEffect(() => {
+    if (actionData?.error) submitting.current = false;
+  }, [actionData]);
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      dirty &&
+      !submitting.current &&
+      currentLocation.pathname !== nextLocation.pathname,
+  );
+  useBeforeUnload(
+    useCallback(
+      (event) => {
+        if (dirty) {
+          event.preventDefault();
+          event.returnValue = "";
+        }
+      },
+      [dirty],
+    ),
+  );
   let total: number | null = null;
   try {
     if (terms)
@@ -137,18 +186,53 @@ export default function CommercialTerms({
           返回定价
         </Link>
         <h1>商业与交付条款</h1>
-        <Link to={`/admin/quotes/${params.requestId}/issue`}>
-          审核并发布正式报价
-        </Link>
+        <button
+          className="button button-primary"
+          type="submit"
+          form="commercial-terms-form"
+          name="intent"
+          value="continue"
+          disabled={pending}
+        >
+          保存并进入发布审核
+          <ArrowRight size={18} aria-hidden="true" />
+        </button>
+        {searchParams.get("saved") === "1" && !dirty && !actionData?.error ? (
+          <p role="status">商业条款已保存。</p>
+        ) : null}
+        {blocker.state === "blocked" ? (
+          <div role="alert">
+            <p>商业条款有未保存的修改，离开会丢失这些输入。</p>
+            <button
+              type="button"
+              className="button button-primary"
+              onClick={() => blocker.reset()}
+            >
+              继续填写
+            </button>
+            <button
+              type="button"
+              className="button button-secondary"
+              onClick={() => blocker.proceed()}
+            >
+              放弃修改并离开
+            </button>
+          </div>
+        ) : null}
         <p>
           草稿版本 {draft.version} ·{" "}
           {total === null ? "条款待完成" : `USD ${(total / 100).toFixed(2)}`}
         </p>
         {actionData?.error ? <p role="alert">{actionData.error}</p> : null}
         <Form
+          id="commercial-terms-form"
           method="post"
           key={draft.version}
           className="commercial-settings-form"
+          onChange={() => setDirty(true)}
+          onSubmit={() => {
+            submitting.current = true;
+          }}
         >
           <input type="hidden" name="version" value={draft.version} />
           <input type="hidden" name="commandId" value={loaderData.commandId} />
@@ -332,9 +416,14 @@ export default function CommercialTerms({
               ))}
             </div>
           </fieldset>
+          {actionData?.error ? (
+            <p role="alert">
+              保存失败：{actionData.error}。当前输入仍保留，请修正后重新保存。
+            </p>
+          ) : null}
           <button className="button button-primary" disabled={pending}>
             <Save size={18} />
-            保存商业条款
+            {pending ? "正在保存…" : "保存商业条款"}
           </button>
         </Form>
       </main>

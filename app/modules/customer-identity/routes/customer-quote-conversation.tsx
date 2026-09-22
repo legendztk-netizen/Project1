@@ -4,6 +4,7 @@ import type { Route } from "./+types/customer-quote-conversation";
 import { cloudflareContext } from "#workers/context";
 import { customerConversationContext } from "../infrastructure/customer-conversation-context";
 import { AccountWorkspace } from "../ui/account-workspace";
+import { CustomerQuoteNavigation } from "../ui/customer-quote-navigation";
 import {
   readPrivateReviewForm,
   requireReviewMutation,
@@ -68,6 +69,7 @@ export default function CustomerQuoteConversation({
           Back to quote
         </Link>
         <h1>Quote conversation</h1>
+        <CustomerQuoteNavigation requestId={params.requestId} />
         <QuoteConversationPanel
           messages={loaderData.conversation.messages}
           commandId={loaderData.commandId}

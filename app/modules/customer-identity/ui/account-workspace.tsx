@@ -1,6 +1,6 @@
 import { LogOut } from "lucide-react";
 import type { ReactNode } from "react";
-import { Form, useRouteLoaderData } from "react-router";
+import { Form, useNavigation, useRouteLoaderData } from "react-router";
 
 import type { RootLoaderData } from "../../../root";
 import { StorefrontHeader } from "../../storefront/ui/storefront-header";
@@ -19,6 +19,7 @@ export function AccountWorkspace({
   children,
 }: AccountWorkspaceProps) {
   const rootData = useRouteLoaderData<RootLoaderData>("root");
+  const navigation = useNavigation();
 
   return (
     <div className="storefront-shell" data-surface="storefront">
@@ -29,7 +30,14 @@ export function AccountWorkspace({
             <span className="eyebrow">Account &amp; Lists</span>
             <strong>{rootData?.customer?.email}</strong>
           </div>
-          <AccountDetailNavigation activeView={activeView} />
+          <AccountDetailNavigation
+            activeView={activeView}
+            pendingHref={
+              navigation.location
+                ? navigation.location.pathname + navigation.location.search
+                : undefined
+            }
+          />
           <Form action="/sign-out" method="post">
             <button type="submit">
               <LogOut aria-hidden="true" size={17} />

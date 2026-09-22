@@ -10,6 +10,7 @@ interface QuoteRequestRow {
   submitted_at: string;
   has_current_offer?: number;
   accepted_current_pi_quote_revision_id?: string | null;
+  current_pi_json?: string | null;
 }
 
 function record(row: QuoteRequestRow): QuoteRequestRecord {
@@ -21,6 +22,7 @@ function record(row: QuoteRequestRow): QuoteRequestRecord {
     hasCurrentOffer: row.has_current_offer === 1,
     acceptedCurrentPiQuoteRevisionId:
       row.accepted_current_pi_quote_revision_id ?? null,
+    currentPi: row.current_pi_json ? JSON.parse(row.current_pi_json) : null,
   };
 }
 
@@ -35,6 +37,16 @@ const acceptedCurrentPiRevisionSql = `(SELECT p.quote_revision_id
   WHERE h.request_id=request.id AND p.quote_revision_id=(
     SELECT revision.id FROM quote_revisions revision WHERE revision.request_id=request.id
     ORDER BY revision.revision_number DESC LIMIT 1))`;
+
+const currentPiSql = `(SELECT json_object(
+  'quoteRevisionId', p.quote_revision_id,
+  'currentQuoteRevisionId', (SELECT id FROM quote_revisions WHERE request_id=request.id ORDER BY revision_number DESC LIMIT 1),
+  'validUntil', p.valid_until,
+  'totalCents', json_extract(p.snapshot_json, '$.totals.totalCents'),
+  'currency', json_extract(p.snapshot_json, '$.totals.currency'))
+  FROM proforma_invoice_heads h
+  JOIN proforma_invoices p ON p.id=h.pi_id AND p.request_id=h.request_id
+  WHERE h.request_id=request.id)`;
 
 export const ownedQuoteRequestWhere = `
   INNER JOIN customer_purchasing_contexts context
@@ -218,9 +230,8 @@ function deleteGuardForInvalidRegistry(input: {
               AND line.line_kind = 'configured_assembly'
               ${input.whenSql ? `AND ${input.whenSql}` : ""}
               AND NOT EXISTS (
-                SELECT 1 FROM catalog_configurator_registry_entries registry
-                WHERE registry.release_id = active.release_id
-                  AND registry.registry_type = '${input.registryType}'
+                SELECT 1 FROM configurator_global_registry_entries registry
+                WHERE registry.registry_type = '${input.registryType}'
                   AND registry.entry_key = ${input.entryKeySql}
                   AND registry.record_version = json_extract(
                     line.configured_snapshot_json,
@@ -287,7 +298,8 @@ export function createD1QuoteRequestRepository(database: D1Database) {
           `SELECT request.id, request.reference_number,
                   request.snapshot_json, request.submitted_at,
                   EXISTS(SELECT 1 FROM quote_revisions revision WHERE revision.request_id=request.id) AS has_current_offer,
-                  ${acceptedCurrentPiRevisionSql} AS accepted_current_pi_quote_revision_id
+                  ${acceptedCurrentPiRevisionSql} AS accepted_current_pi_quote_revision_id,
+                  ${currentPiSql} AS current_pi_json
            FROM customer_quote_requests request
            ${ownedQuoteRequestWhere}
            ORDER BY request.submitted_at DESC, request.id DESC`,
@@ -303,7 +315,8 @@ export function createD1QuoteRequestRepository(database: D1Database) {
           `SELECT request.id, request.reference_number,
                   request.snapshot_json, request.submitted_at,
                   EXISTS(SELECT 1 FROM quote_revisions revision WHERE revision.request_id=request.id) AS has_current_offer,
-                  ${acceptedCurrentPiRevisionSql} AS accepted_current_pi_quote_revision_id
+                  ${acceptedCurrentPiRevisionSql} AS accepted_current_pi_quote_revision_id,
+                  ${currentPiSql} AS current_pi_json
            FROM customer_quote_requests request
            ${ownedQuoteRequestWhere}
            AND request.id = ?`,

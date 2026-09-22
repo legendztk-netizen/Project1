@@ -5,6 +5,7 @@ import { requireAdminRequestContext } from "../infrastructure/admin-request-cont
 import { AdminNavigation } from "../ui/admin-navigation";
 import { createQuotePreparation } from "../../quote-review/infrastructure/d1-quote-preparation";
 import { createQuoteRevisions } from "../../quote-review/infrastructure/d1-quote-revisions";
+import { technicalReviewContext } from "../../quote-review/infrastructure/d1-technical-review";
 import {
   customerRevisionProjection,
   requiresFactoryReview,
@@ -49,6 +50,9 @@ export async function loader({ context, params }: Route.LoaderArgs) {
             })
           : [],
       requiresFactoryReview: requiresFactoryReview(draft.source),
+      technicalCompletion: (
+        await technicalReviewContext(env.DB, params.requestId)
+      ).completion,
       error,
       commandId: crypto.randomUUID(),
     },
@@ -106,6 +110,7 @@ export default function IssueQuote({
               {formatBeijingDateTime(current.snapshot.issuedAt)}
             </p>
             <CustomerQuoteOffer
+              adminSource={current.snapshot.source.lines}
               offer={customerRevisionProjection(current.snapshot)}
             />
           </>
@@ -116,7 +121,43 @@ export default function IssueQuote({
               <QuoteRevisionChanges changes={loaderData.differences} />
             ) : null}
             {(actionData?.error ?? loaderData.error) ? (
-              <p role="alert">{actionData?.error ?? loaderData.error}</p>
+              <div role="alert">
+                <h2>暂时无法发布报价</h2>
+                {!draft.terms ? (
+                  <p>
+                    商业与交付条款尚未保存。请填写完整并点击“保存商业条款”，再返回此页发布。
+                  </p>
+                ) : null}
+                {!draft.source.lines.length ? (
+                  <p>报价缺少商品明细，请返回询价详情检查。</p>
+                ) : null}
+                {draft.prices.some((price) => price.unitPriceCents === null) ? (
+                  <p>部分商品尚未填写最终单价，请完成并保存定价。</p>
+                ) : null}
+                {draft.terms && draft.source.lines.length ? (
+                  <p>{actionData?.error ?? loaderData.error}</p>
+                ) : null}
+                <p>
+                  <Link
+                    className="button button-primary"
+                    to={`/admin/quotes/${params.requestId}/terms`}
+                  >
+                    填写商业与交付条款
+                  </Link>
+                </p>
+                <p>
+                  <Link to={`/admin/quotes/${params.requestId}/pricing`}>
+                    返回定价
+                  </Link>
+                  {" · "}
+                  <Link to={`/admin/quotes/${params.requestId}`}>
+                    返回询价详情
+                  </Link>
+                </p>
+              </div>
+            ) : null}
+            {!loaderData.error && current && !loaderData.differences.length ? (
+              <p role="status">当前草稿与已发布报价没有变化，无需重复发布。</p>
             ) : null}
             <Form method="post">
               <input
@@ -137,7 +178,11 @@ export default function IssueQuote({
                 name="commandId"
                 value={loaderData.commandId}
               />
-              {loaderData.requiresFactoryReview ? (
+              {loaderData.technicalCompletion ? (
+                <p className="admin-technical-state completed">
+                  技术审核已完成，无需重复确认。
+                </p>
+              ) : loaderData.requiresFactoryReview ? (
                 <label className="quote-confirmation">
                   <input
                     type="checkbox"

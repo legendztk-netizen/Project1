@@ -52,7 +52,6 @@ export function createQuoteRequestService(
   } = {},
 ) {
   const quoteLists = createAnonymousQuoteListService(env, dependencies);
-  const catalog = createD1PublicCatalogRepository(env.DB);
   const accounts = createCustomerAccountService(env, dependencies);
   const repository = createD1QuoteRequestRepository(env.DB);
   const generateId = dependencies.generateId ?? (() => crypto.randomUUID());
@@ -75,15 +74,15 @@ export function createQuoteRequestService(
       );
     }
 
-    const prepared = await quoteLists.readForSubmission(input.request);
-    if (!prepared) {
+    const account = await accounts.read(input.request);
+    if (!account) {
       throw new QuoteRequestRejected(
         "Sign in before requesting a quote.",
         "AUTHENTICATION_REQUIRED",
       );
     }
     const existing = await repository.findByIdempotency(
-      prepared.profile.id,
+      account.profile.id,
       input.idempotencyKey,
     );
     if (existing) return existing;
@@ -95,13 +94,6 @@ export function createQuoteRequestService(
       );
     }
 
-    const account = await accounts.read(input.request);
-    if (!account) {
-      throw new QuoteRequestRejected(
-        "Sign in before requesting a quote.",
-        "AUTHENTICATION_REQUIRED",
-      );
-    }
     const purchasingContext = account.purchasingContexts.find(
       (context) => context.isSelected,
     );
@@ -158,15 +150,29 @@ export function createQuoteRequestService(
       );
     }
 
-    if (!prepared.session || prepared.lines.length === 0) {
-      throw new QuoteRequestRejected("Your Quote List is empty.", "LIST_EMPTY");
-    }
     const selectedLineIds = [...new Set(input.selectedLineIds)];
     if (selectedLineIds.length === 0) {
       throw new QuoteRequestRejected(
         "Select at least one product before requesting a quote.",
         "NO_LINES_SELECTED",
       );
+    }
+    // This cache lives for one submission only; display-cache results are never used.
+    const catalog = createD1PublicCatalogRepository(env.DB, {
+      cacheItems: true,
+    });
+    const prepared = await quoteLists.readForSubmission(input.request, {
+      selectedLineIds,
+      catalog,
+    });
+    if (!prepared) {
+      throw new QuoteRequestRejected(
+        "Sign in before requesting a quote.",
+        "AUTHENTICATION_REQUIRED",
+      );
+    }
+    if (!prepared.session) {
+      throw new QuoteRequestRejected("Your Quote List is empty.", "LIST_EMPTY");
     }
     const selectedLineIdSet = new Set(selectedLineIds);
     const selectedLines = prepared.lines.filter((line) =>
@@ -419,15 +425,22 @@ export function createQuoteRequestService(
             );
             const currentOffer = offerHistory[0] ?? null;
             return {
-              ...customerQuoteProjection(
-                record,
-                currentOffer &&
+              ...customerQuoteProjection({
+                ...record,
+                hasCurrentOffer: !!currentOffer,
+                currentPi:
+                  record.currentPi && currentOffer
+                    ? {
+                        ...record.currentPi,
+                        currentQuoteRevisionId: currentOffer.id,
+                      }
+                    : null,
+                acceptedCurrentPiQuoteRevisionId:
+                  currentOffer &&
                   record.acceptedCurrentPiQuoteRevisionId === currentOffer.id
-                  ? "PI_ACCEPTED"
-                  : currentOffer
-                    ? "QUOTE_READY"
-                    : "RFQ_SUBMITTED",
-              ),
+                    ? currentOffer.id
+                    : null,
+              }),
               currentOffer,
               offerHistory,
               proposedChanges: currentOffer

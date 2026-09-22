@@ -81,6 +81,62 @@ const approve = (rows: { id: string; version: number }[]) =>
     actorId: "owner-1",
     ipAddress: "local",
   });
+it("approves a split-template price and packaging atomically without invalidating assemblies, then gates a Dash change", async () => {
+  const before = await db
+    .prepare("SELECT * FROM catalog_item_assembly_state ORDER BY hose_series")
+    .all();
+  const rows = await importRows([
+    { sheet: "00_填写说明", data: [["填写说明"]] },
+    { sheet: "09_字段字典", data: [["字段"]] },
+    { sheet: "10_下拉选项", data: [["USD", "CNY"]] },
+    {
+      sheet: "01_胶管主数据",
+      data: [
+        [
+          "Hose SKU / 胶管SKU [必填]",
+          "Retail Unit Price / 零售单价 [上线必填]",
+          "Currency / 币种 [选填]",
+          "Units per Sales Pack / 每销售包装数量 [选填]",
+        ],
+        ["601R1_001", 38, "CNY", 2],
+      ],
+    },
+  ]);
+  expect(rows).toHaveLength(1);
+  expect(rows[0].issues).toEqual([]);
+  expect((await approve(rows))[0]).toMatchObject({ ok: true });
+  expect(await items.findPayload("sku", "601R1_001")).toMatchObject({
+    price: { amount: 38, currency: "CNY", unitsPerSalesPack: 2 },
+  });
+  expect(
+    (
+      await db
+        .prepare(
+          "SELECT * FROM catalog_item_assembly_state ORDER BY hose_series",
+        )
+        .all()
+    ).results,
+  ).toEqual(before.results);
+  const changed = await importRows([
+    {
+      sheet: "01_胶管主数据",
+      data: [
+        ["Hose SKU / 胶管SKU [必填]", "Hose Dash / 胶管Dash [必填]"],
+        ["601R1_001", "-06"],
+      ],
+    },
+  ]);
+  expect(changed[0].issues).toEqual([]);
+  expect((await approve(changed))[0]).toMatchObject({ ok: true });
+  const state = await db
+    .prepare(
+      "SELECT * FROM catalog_item_assembly_state WHERE hose_series='601R1'",
+    )
+    .first<{ invalidated_sequence: number; generated_sequence: number }>();
+  expect(state!.invalidated_sequence).toBeGreaterThan(
+    state!.generated_sequence,
+  );
+});
 it("imports without changing customers, self approves original currency, preserves history and makes replay harmless", async () => {
   const before = await items.findPayload("sku", "601R1_001");
   const rows = await importRows([
@@ -489,4 +545,100 @@ it("resolves a corrected child's dependency against an existing legacy online se
   });
   const result = await approve([await review.get(child.id)]);
   expect(result, JSON.stringify(result)).toMatchObject([{ ok: true }]);
+});
+
+it("reviews explicit create, partial update and deletion while preserving history and rechecking duplicate creates", async () => {
+  const original = (await items.findPayload("sku", "601R1_001"))!;
+  if (original.kind !== "sku") throw new Error("fixture");
+  const values = {
+    ...original.variant,
+    sku: "OPERATIONS_001",
+    updateDelete: "Update",
+    amount: 31,
+    currency: "EUR",
+  };
+  const sheet: CatalogWorkbookSheet = {
+    sheet: "01_胶管主数据",
+    data: [Object.keys(values), Object.values(values)],
+  };
+  const first = await importRows([sheet]);
+  const second = await importRows([sheet]);
+  expect(first).toHaveLength(1);
+  expect((await approve(first))[0]).toMatchObject({ ok: true });
+  expect((await approve(second))[0]).toMatchObject({ ok: false });
+  const partial = await importRows([
+    {
+      sheet: sheet.sheet,
+      data: [
+        ["Update Delete", "sku", "amount", "notes"],
+        ["PartialUpdate", "OPERATIONS_001", 0, null],
+      ],
+    },
+  ]);
+  expect(partial[0].issues).toEqual([]);
+  expect((await approve(partial))[0]).toMatchObject({ ok: true });
+  expect(await items.findPayload("sku", "OPERATIONS_001")).toMatchObject({
+    price: { amount: 0, currency: "EUR" },
+    variant: { notes: original.variant.notes },
+  });
+  const history = await db
+    .prepare(
+      "SELECT id,payload_json FROM catalog_product_revisions WHERE entity_id=(SELECT id FROM catalog_product_entities WHERE code='OPERATIONS_001') ORDER BY sequence",
+    )
+    .all();
+  const deletion = await importRows([
+    {
+      sheet: sheet.sheet,
+      data: [
+        ["Update Delete", "sku"],
+        ["Delete", "OPERATIONS_001"],
+      ],
+    },
+  ]);
+  expect(deletion[0].issues).toEqual([]);
+  expect((await approve(deletion))[0]).toMatchObject({ ok: true });
+  expect((await review.get(deletion[0].id)).status).toBe("approved");
+  expect((await approve(deletion))[0]).toMatchObject({ ok: true });
+  expect(
+    await db
+      .prepare(
+        "SELECT hidden_at FROM catalog_product_entities WHERE code='OPERATIONS_001'",
+      )
+      .first(),
+  ).toMatchObject({ hidden_at: expect.any(String) });
+  const after = await db
+    .prepare(
+      "SELECT id,payload_json FROM catalog_product_revisions WHERE entity_id=(SELECT id FROM catalog_product_entities WHERE code='OPERATIONS_001') ORDER BY sequence",
+    )
+    .all();
+  expect(after.results.slice(0, history.results.length)).toEqual(
+    history.results,
+  );
+});
+
+it("publishes an imported hose with optional notes, source and technical status left blank", async () => {
+  const original = (await items.findPayload("sku", "601R1_001"))!;
+  if (original.kind !== "sku") throw new Error("fixture");
+  const values = {
+    ...original.variant,
+    sku: "OPTIONAL_FIELDS_001",
+    updateDelete: "Update",
+    notes: null,
+    source: null,
+    technicalDataStatus: null,
+    amount: 19,
+    currency: "USD",
+  };
+  const rows = await importRows([
+    {
+      sheet: "01_胶管主数据",
+      data: [Object.keys(values), Object.values(values)],
+    },
+  ]);
+  expect(rows).toHaveLength(1);
+  expect(rows[0].issues).toEqual([]);
+  expect((await approve(rows))[0]).toMatchObject({ ok: true });
+  expect(await items.findPayload("sku", "OPTIONAL_FIELDS_001")).toMatchObject({
+    variant: { notes: "", source: null },
+  });
 });

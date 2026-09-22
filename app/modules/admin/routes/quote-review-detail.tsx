@@ -1,5 +1,14 @@
-import { ArrowLeft, AlertTriangle } from "lucide-react";
-import { Link } from "react-router";
+import { ArrowLeft, AlertTriangle, CheckCircle } from "lucide-react";
+import { Form, Link, data, useNavigation } from "react-router";
+import { useRef } from "react";
+import {
+  completeTechnicalReview,
+  technicalReviewContext,
+} from "../../quote-review/infrastructure/d1-technical-review";
+import {
+  requireReviewMutation,
+  readPrivateReviewForm,
+} from "../../quote-review/domain/private-review";
 
 import type { Route } from "./+types/quote-review-detail";
 import {
@@ -8,6 +17,7 @@ import {
   jsonObject,
   jsonPath,
   jsonString,
+  adminTechnicalReviewLabels,
 } from "../../quote-review/domain/admin-quote-review";
 import { createD1AdminQuoteReviewRepository } from "../../quote-review/infrastructure/d1-admin-quote-review-repository";
 import {
@@ -28,7 +38,39 @@ export async function loader({ context, params }: Route.LoaderArgs) {
     params.requestId,
   );
   if (!review) throw new Response("Not found", { status: 404 });
-  return { adminIdentity, environment: env.APP_ENV, review };
+  const technical = await technicalReviewContext(env.DB, params.requestId);
+  return data(
+    { adminIdentity, environment: env.APP_ENV, review, technical },
+    { headers: { "Cache-Control": "private, no-store" } },
+  );
+}
+
+export async function action({ context, params, request }: Route.ActionArgs) {
+  const { env, adminIdentity } = requireAdminRequestContext(context);
+  requireReviewMutation(request);
+  const form = await readPrivateReviewForm(request);
+  try {
+    if (form.get("intent") !== "complete-technical-review")
+      throw new Response("Invalid intent", { status: 400 });
+    await completeTechnicalReview(
+      env.DB,
+      adminIdentity,
+      params.requestId,
+      String(form.get("fingerprint") ?? ""),
+      String(form.get("conclusion") ?? ""),
+    );
+    return data({ error: null, saved: true });
+  } catch (error) {
+    if (error instanceof Response) throw error;
+    return data(
+      {
+        error:
+          error instanceof Error ? error.message : "审核保存失败，请重试。",
+        saved: false,
+      },
+      { status: 400 },
+    );
+  }
 }
 
 function text(value: unknown) {
@@ -77,7 +119,10 @@ function address(snapshot: unknown) {
 
 export default function QuoteReviewDetail({
   loaderData,
+  actionData,
 }: Route.ComponentProps) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const pending = useNavigation().state !== "idle";
   const review = loaderData.review;
   const snapshot = review.snapshot;
   const actor = jsonObject(jsonPath(snapshot, "actor"));
@@ -99,12 +144,36 @@ export default function QuoteReviewDetail({
           <div>
             <span className="eyebrow">不可变客户请求快照</span>
             <h1>{review.referenceNumber}</h1>
-            <Link to={`/admin/quotes/${review.id}/pricing`}>报价定价</Link>
-            <Link to={`/admin/quotes/${review.id}/conversation`}>客户会话</Link>
-            <Link to={`/admin/quotes/${review.id}/pi`}>PI 签发与查看</Link>
-            <Link to={`/admin/quotes/${review.id}/private`}>
-              内部备注与私有证明
-            </Link>
+            <nav className="admin-quote-actions" aria-label="询价处理操作">
+              <Form method="post" action={`/admin/quotes/${review.id}/pricing`}>
+                <input type="hidden" name="intent" value="start" />
+                <button
+                  className="button button-primary"
+                  disabled={pending}
+                  type="submit"
+                >
+                  报价定价
+                </button>
+              </Form>
+              <Link
+                className="button button-secondary"
+                to={`/admin/quotes/${review.id}/conversation`}
+              >
+                客户会话
+              </Link>
+              <Link
+                className="button button-secondary"
+                to={`/admin/quotes/${review.id}/pi`}
+              >
+                PI 签发与查看
+              </Link>
+              <Link
+                className="button button-secondary"
+                to={`/admin/quotes/${review.id}/private`}
+              >
+                内部备注与私有证明
+              </Link>
+            </nav>
             <p>提交于 {formatBeijingDateTime(review.submittedAt)}</p>
           </div>
           <span
@@ -113,13 +182,133 @@ export default function QuoteReviewDetail({
             {review.technicalReview.state === "required" ? (
               <AlertTriangle aria-hidden="true" size={15} />
             ) : null}
-            {review.technicalReview.state === "required"
-              ? "需要技术审核"
-              : review.technicalReview.state === "not_flagged"
-                ? "未标记技术问题"
-                : "技术状态快照未记录"}
+            {adminTechnicalReviewLabels[review.technicalReview.state]}
           </span>
         </header>
+
+        <section className="admin-quote-section">
+          <h2>当前配置技术审核</h2>
+          {loaderData.technical.completion ? (
+            <>
+              <p className="admin-technical-state completed">
+                <CheckCircle size={16} />
+                技术审核已完成
+              </p>
+              <p>{loaderData.technical.completion.conclusion}</p>
+              <p>
+                审核人：{loaderData.technical.completion.actor} ·{" "}
+                {formatBeijingDateTime(loaderData.technical.completion.at)} ·{" "}
+                {loaderData.technical.completion.basis}
+              </p>
+            </>
+          ) : review.technicalReview.state === "not_flagged" ? (
+            <p>未触发技术审核</p>
+          ) : (
+            <button
+              className="button button-primary"
+              onClick={() => dialog.current?.showModal()}
+            >
+              <CheckCircle size={18} />
+              完成技术审核
+            </button>
+          )}
+        </section>
+        <dialog
+          ref={dialog}
+          className="technical-review-dialog"
+          aria-labelledby="technical-review-title"
+        >
+          <h2 id="technical-review-title">确认完成技术审核</h2>
+          <p>审核配置版本：{loaderData.technical.basis}</p>
+          <ul>
+            {review.technicalReview.reasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+          {loaderData.technical.completion ? (
+            <>
+              <p role="status">技术审核已保存。</p>
+              <button
+                className="button button-secondary"
+                onClick={() => dialog.current?.close()}
+              >
+                关闭
+              </button>
+            </>
+          ) : (
+            <>
+              <details>
+                <summary>查看本次审核的商品配置</summary>
+                {jsonArray(
+                  jsonPath(loaderData.technical.snapshot, "lines"),
+                )?.map((line, index) => (
+                  <div key={index}>
+                    <AdminQuoteSnapshotLine index={index} line={line} />
+                    {jsonArray(jsonPath(line, "quotedSpecificationOverrides"))
+                      ?.length ? (
+                      <>
+                        <h3>本次报价修订规格</h3>
+                        <dl className="admin-snapshot-fields">
+                          {jsonArray(
+                            jsonPath(line, "quotedSpecificationOverrides"),
+                          )?.map((spec, i) => (
+                            <SnapshotField
+                              key={i}
+                              label={text(jsonPath(spec, "label"))}
+                              value={text(jsonPath(spec, "value"))}
+                            />
+                          ))}
+                        </dl>
+                      </>
+                    ) : null}
+                  </div>
+                ))}
+              </details>
+              <Form method="post" className="commercial-settings-form">
+                <input
+                  type="hidden"
+                  name="intent"
+                  value="complete-technical-review"
+                />
+                <input
+                  type="hidden"
+                  name="fingerprint"
+                  value={loaderData.technical.fingerprint}
+                />
+                <label>
+                  审核结论
+                  <textarea
+                    name="conclusion"
+                    required
+                    maxLength={2000}
+                    rows={4}
+                  />
+                </label>
+                {actionData?.error ? (
+                  <p role="alert">{actionData.error}</p>
+                ) : null}
+                <div className="admin-quote-actions">
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    disabled={pending}
+                    onClick={() => dialog.current?.close()}
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="submit"
+                    className="button button-primary"
+                    disabled={pending}
+                  >
+                    <CheckCircle size={18} />
+                    {pending ? "保存中…" : "确认完成技术审核"}
+                  </button>
+                </div>
+              </Form>
+            </>
+          )}
+        </dialog>
 
         <div className="admin-quote-summary-grid">
           <section className="admin-quote-section">

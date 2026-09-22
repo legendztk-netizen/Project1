@@ -5,6 +5,11 @@ import { join } from "node:path";
 import { getPlatformProxy } from "wrangler";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { createQuotePreparation } from "../app/modules/quote-review/infrastructure/d1-quote-preparation";
+import {
+  completeTechnicalReview,
+  technicalReviewContext,
+} from "../app/modules/quote-review/infrastructure/d1-technical-review";
+import { createD1AdminQuoteReviewRepository } from "../app/modules/quote-review/infrastructure/d1-admin-quote-review-repository";
 import { createQuoteRevisions } from "../app/modules/quote-review/infrastructure/d1-quote-revisions";
 import { saveQuoteLineRevisions } from "../app/modules/quote-review/infrastructure/d1-quote-line-revisions";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -415,7 +420,7 @@ it("issues once under concurrency, freezes exact source and excludes internal re
   const html = renderToStaticMarkup(
     createElement(CustomerQuoteOffer, { offer: offer! }),
   );
-  expect(html).toContain("Quote Ready");
+  expect(html).toContain("Formal quote");
   expect(html).toContain("Pricing quantity 2.5 ft");
   expect(html).toContain("3 pieces");
   expect(html).toContain("2.5 ft total");
@@ -503,6 +508,77 @@ async function prepareOtherQuote(id: string) {
   );
   return (await preparation.find(id))!;
 }
+
+it("records technical approval independently, rejects stale configuration and reuses approval at issuance", async () => {
+  const draft = await prepareOtherQuote("technical-review-test");
+  const id = draft.requestId;
+  const before = await technicalReviewContext(db, id);
+  await expect(
+    completeTechnicalReview(db, actor, id, before.fingerprint, " "),
+  ).rejects.toThrow();
+  await completeTechnicalReview(
+    db,
+    actor,
+    id,
+    before.fingerprint,
+    "Factory verified dimensions and connections",
+  );
+  await completeTechnicalReview(
+    db,
+    actor,
+    id,
+    before.fingerprint,
+    "Factory verified dimensions and connections",
+  );
+  expect(
+    (await createD1AdminQuoteReviewRepository(db).find(id))?.technicalReview
+      .state,
+  ).toBe("completed");
+  const changed = structuredClone(draft.source.lines);
+  changed[0].quantity += 1;
+  await db
+    .prepare(
+      "UPDATE quote_preparation_drafts SET quoted_lines_json=?,version=version+1 WHERE request_id=?",
+    )
+    .bind(JSON.stringify(changed), id)
+    .run();
+  expect((await technicalReviewContext(db, id)).completion).toBeNull();
+  await expect(
+    completeTechnicalReview(
+      db,
+      actor,
+      id,
+      before.fingerprint,
+      "stale approval",
+    ),
+  ).rejects.toThrow(/配置版本/);
+  const after = await technicalReviewContext(db, id);
+  await completeTechnicalReview(
+    db,
+    actor,
+    id,
+    after.fingerprint,
+    "Reviewed revised quantity",
+  );
+  const revision = await createQuoteRevisions(db).issueRevision(actor, {
+    requestId: id,
+    preparationVersion: draft.version + 1,
+    sourceHash: draft.sourceHash,
+    factoryReviewConfirmed: false,
+    commandId: crypto.randomUUID(),
+  });
+  expect(revision.snapshot.factoryReviewConfirmed).toBe(true);
+  expect((await technicalReviewContext(db, id)).completion?.actor).toBe(
+    actor.id,
+  );
+  await createQuoteRevisions(db).startNext(
+    actor,
+    id,
+    revision.id,
+    draft.version + 1,
+  );
+  expect((await technicalReviewContext(db, id)).completion).toBeNull();
+});
 
 it("allows only one of distinct issuance commands and batches customer-list progress reads", async () => {
   const draft = await prepareOtherQuote("competing-issue");

@@ -11,6 +11,7 @@
   display: flex;
   gap: 12px;
   margin-bottom: 24px;
+  flex-wrap: wrap;
 }
 .catalog-request-page h1 {
   font-size: 30px;
@@ -77,7 +78,7 @@
   background: #eff4f4;
   font-size: 13px;
 }
-.catalog-request-page td:nth-child(6) {
+.catalog-request-page td:nth-child(7) {
   max-width: 340px;
   font-size: 13px;
 }

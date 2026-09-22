@@ -231,9 +231,13 @@ export function createQuoteRevisions(db: D1Database) {
         throw new Response("Quote changed; reload before issuing", {
           status: 409,
         });
+      const technical = await technicalReviewContext(db, input.requestId);
+      const factoryReviewConfirmed =
+        input.factoryReviewConfirmed === true ||
+        (technical.version === draft.version && !!technical.completion);
       const { terms, totals } = validateQuoteIssuance(
         draft,
-        input.factoryReviewConfirmed === true,
+        factoryReviewConfirmed,
       );
       if (
         terms.taxEvidenceId &&
@@ -286,7 +290,7 @@ export function createQuoteRevisions(db: D1Database) {
         totals,
         issuedAt: now,
         issuedBy: actor.id,
-        factoryReviewConfirmed: input.factoryReviewConfirmed === true,
+        factoryReviewConfirmed,
       };
       const json = JSON.stringify(snapshot);
       try {
@@ -347,3 +351,4 @@ export function createQuoteRevisions(db: D1Database) {
     },
   };
 }
+import { technicalReviewContext } from "./d1-technical-review";

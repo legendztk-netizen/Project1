@@ -32,6 +32,7 @@ import {
 } from "../../catalog/domain/catalog-product-fields";
 import { importRuleKeys } from "../../catalog/domain/catalog-item-import";
 import { catalogWorksheetContracts } from "../../catalog/domain/catalog-workbook";
+import { importTemplates } from "../../catalog/domain/catalog-import-template";
 
 export function meta() {
   return [{ title: "产品审核与发布 | Admin Backoffice" }];
@@ -286,14 +287,31 @@ export default function CatalogRequests() {
         <p>
           <Link to="/admin/catalog/history">查看历史目录与导入来源</Link>
         </p>
-        <a href="/admin/catalog/item-template" download>
-          下载条目导入模板
-        </a>
+        <nav aria-label="分类导入模板" className="catalog-template-downloads">
+          {importTemplates.map((template) => (
+            <a
+              key={template.prefix}
+              href={`/admin/catalog/item-template?sheet=${template.prefix}`}
+              download
+              className="button button-secondary"
+            >
+              {template.prefix} {template.label}模板
+            </a>
+          ))}
+        </nav>
+        <p>
+          每份模板包含填写说明、字段字典和下拉选项。红色为必填，黄色为条件必填，具体条件见字段字典；必填规则与管理所有产品一致。产品参数、零售价、币种和包装在同一表填写。
+        </p>
+        <p>
+          Update 新增 SKU；PartialUpdate 只修改已填写字段，空白保留原值；Delete
+          删除已有 SKU。所有操作均需审核批准。04 按兼容编号操作关系。
+        </p>
         <p>
           导入只生成待审核请求。批准整条参数、价格和图片后发布；每项独立成功或失败。
         </p>
         <p>
-          未提供的列继承导入时数据；提供的空值会清空可选字段，必填空值会报错。支持
+          新模板 PartialUpdate
+          的空白字段保留原值。旧版未指定操作的模板仍采用缺列继承、空值清空规则。支持
           USD、CNY、EUR、CAD、GBP、JPY；非 USD
           请用通用零售单价列。系列销售规则在「销售、包装和价格」维护。
         </p>
@@ -397,6 +415,7 @@ export default function CatalogRequests() {
                 <th>选择</th>
                 <th>类型</th>
                 <th>产品 / 系列</th>
+                <th>导入操作</th>
                 <th>更新请求状态</th>
                 <th>目标产品状态</th>
                 <th>问题</th>
@@ -428,6 +447,12 @@ export default function CatalogRequests() {
                     {r.command.payload.kind === "series" ? "系列" : "SKU"}
                   </td>
                   <td>{itemCode(r.command.payload)}</td>
+                  <td>
+                    {r.command.source.importOperation ?? "更新"}
+                    {r.command.source.operation === "delete"
+                      ? " · 删除 SKU"
+                      : ""}
+                  </td>
                   <td>{statusLabels[r.status]}</td>
                   <td>{targetLabels[r.command.targetState]}</td>
                   <td>
@@ -459,6 +484,12 @@ export default function CatalogRequests() {
         {detail && (
           <section aria-label="更新请求详情">
             <h2>{itemCode(detail.command.payload)} · 完整更新请求</h2>
+            <p>
+              导入操作：{detail.command.source.importOperation ?? "更新"}
+              {detail.command.source.operation === "delete"
+                ? "。批准后删除 SKU，历史记录保留。"
+                : ""}
+            </p>
             <a href={`?${filters.toString()}`}>关闭详情</a>
             <p>
               导入人：{detail.createdBy}；版本：{detail.version}

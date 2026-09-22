@@ -319,7 +319,7 @@ export async function validateHoseVariantMaintenance(
     dash: input.variant.dash.trim(),
     hoseSeries: normalizedCode(input.variant.hoseSeries),
     mshaMarking: normalizedText(input.variant.mshaMarking),
-    notes: input.variant.notes.trim(),
+    notes: (input.variant.notes ?? "").trim(),
     skiveRequirement: normalizedText(input.variant.skiveRequirement),
     sku: normalizedCode(input.variant.sku),
     source: normalizedText(input.variant.source),
@@ -329,7 +329,6 @@ export async function validateHoseVariantMaintenance(
     [variant.hoseSeries, "Hose Series / 胶管系列"],
     [variant.sku, "Hose SKU / 胶管SKU"],
     [variant.dash, "Hose Dash / 胶管Dash"],
-    [variant.notes, "Notes / 备注"],
   ] as const) {
     requiredText(findings, value, field);
   }
