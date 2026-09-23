@@ -25,6 +25,17 @@ Baseline: `62d0373` on `main`. Work branch: `codex/spec6-work`.
 - `pnpm exec vitest run test/proforma-invoice-d1.integration.test.ts`: 27 passed.
 - `pnpm migrate` against a temporary D1 directory: passed to schema version 93.
 - `git diff --check`: passed.
+- `pnpm lint`: passed. A direct Prettier check found formatting differences,
+  which were corrected and committed.
+- `pnpm migrate:verify` against the temporary D1 directory: passed at version 93.
+
+## Pause note
+
+The latest addition to `test/proforma-invoice-d1.integration.test.ts` covers
+payment-first acceptance of two accepted split shipment groups. It was written
+immediately before the user's pause request and has **not been run yet**.
+Run that test and `pnpm typecheck` first when resuming. The checkpoint commits
+are local only; no Spec 6 code has been pushed.
 
 ## Remaining before #94 acceptance
 

@@ -1067,6 +1067,113 @@ it("freezes the default payment deadline exactly once on website acceptance", as
   ).toBe(0);
 });
 
+it("creates exactly the accepted split shipments after payment and acceptance", async () => {
+  const f = await fixture((revision) => {
+    revision.terms.shipmentMode = "split";
+    revision.terms.splitPlan = "One item in each of two dispatches";
+    revision.terms.shipmentGroups = [
+      {
+        id: "first",
+        label: "First dispatch",
+        allocations: [{ lineId: "line-a", physicalQuantity: 1 }],
+        freightCents: 1200,
+        insuranceCents: 60,
+        dutiesImportCents: 200,
+        transportMethod: "Air freight",
+        incoterm: "DDP",
+        namedPlace: "New York, US",
+      },
+      {
+        id: "second",
+        label: "Second dispatch",
+        allocations: [{ lineId: "line-a", physicalQuantity: 1 }],
+        freightCents: 800,
+        insuranceCents: 40,
+        dutiesImportCents: 100,
+        transportMethod: "Air freight",
+        incoterm: "DDP",
+        namedPlace: "New York, US",
+      },
+    ];
+  });
+  const pi = await service().issue(actor, f.command);
+  const acceptedAt = "2026-09-14T11:00:00.000Z";
+  const payments = createPiPaymentService(db, {
+    now: () => new Date(acceptedAt),
+  });
+  const account = await payments.adminRead(actor, pi.id);
+  const funded = await payments.updateReceived(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: account.version,
+    amount: (pi.snapshot.totals.totalCents / 100).toFixed(2),
+    currency: "USD",
+    actualChannel: "bank_transfer",
+    verificationReference: "Split plan settlement",
+  });
+  await payments.confirmPayment(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: funded.version,
+    externallyVerified: true,
+    externalReference: "Split plan bank statement",
+  });
+  const acceptance = createPiAcceptanceService(db, bucket, {
+    now: () => new Date(acceptedAt),
+  });
+  const target = {
+    piId: pi.id,
+    documentVersion: pi.snapshot.documentVersion,
+    snapshotHash: pi.snapshotHash,
+  };
+  const viewed = await acceptance.customerView(
+    f.profileId,
+    f.command.requestId,
+    target,
+    "view",
+    { requestId: "split-view", ipAddress: null, userAgent: null },
+  );
+  await acceptance.accept(
+    f.profileId,
+    new Request("https://shop.test/account/quotes/accept", {
+      method: "POST",
+      headers: { Origin: "https://shop.test" },
+    }),
+    {
+      ...target,
+      requestId: f.command.requestId,
+      commandId: crypto.randomUUID(),
+      viewId: viewed.view.id,
+      legalName: "Test Buyer",
+      acknowledgements: {
+        general: {
+          version: conditions.generalAcknowledgement.version,
+          confirmed: true,
+        },
+        madeToOrder: [],
+      },
+    },
+    { requestId: "split-accept", ipAddress: null, userAgent: null },
+  );
+  const orderId = `order:${pi.id}`;
+  const plan = await createShipmentPlanService(db).customerRead(
+    f.profileId,
+    orderId,
+  );
+  expect(plan.status).toBe("ready");
+  expect(
+    plan.shipments.map((shipment) => ({
+      key: shipment.groupKey,
+      quantity: shipment.allocations[0].physicalQuantity,
+      freightCents: shipment.freightCents,
+    })),
+  ).toEqual([
+    { key: "first", quantity: 1, freightCents: 1200 },
+    { key: "second", quantity: 1, freightCents: 800 },
+  ]);
+  expect(plan.originalCharges.freight).toBe(2000);
+});
+
 it("holds confirmed funds until website acceptance then creates the same single order", async () => {
   const f = await fixture();
   const pi = await service().issue(actor, f.command);
