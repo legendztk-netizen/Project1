@@ -70,6 +70,7 @@ const source = {
       currency: "USD",
       referenceUnitPrice: 2,
       lengthOrder: {
+        pieceCount: 3,
         totalFootage: 2.5,
         originalLengthValue: 2.5 / 3,
         originalLengthUnit: "ft",
@@ -318,7 +319,8 @@ it("persists terms atomically, rejects missing tax evidence and shares pricing c
     ),
   ).rejects.toMatchObject({ status: 409 });
   const saved = (await service.find("pricing-rfq"))!;
-  expect(saved.terms).toEqual(commercialTerms());
+  expect(saved.terms).toMatchObject(commercialTerms());
+  expect(saved.terms?.shipmentGroups).toHaveLength(1);
   expect(saved.source).toEqual(source);
   const repeatedCommand = crypto.randomUUID();
   const auditCount = await db
@@ -574,7 +576,7 @@ it("records technical approval independently, rejects stale configuration and re
       .state,
   ).toBe("completed");
   const changed = structuredClone(draft.source.lines);
-  changed[0].quantity += 1;
+  changed[0].sku = "601R1_002";
   await db
     .prepare(
       "UPDATE quote_preparation_drafts SET quoted_lines_json=?,version=version+1 WHERE request_id=?",
@@ -813,6 +815,30 @@ it("revises products and terms without replacing history, rejects no-op and stal
       addressReplacementReason: "Buyer confirmed new site",
       shipmentMode: "split",
       splitPlan: "Line1 on day10; line2 on day20",
+      shipmentGroups: [
+        {
+          id: "batch-1",
+          label: "Batch 1",
+          allocations: [{ lineId: "line-standard", physicalQuantity: 5 }],
+          freightCents: 2000,
+          insuranceCents: 100,
+          dutiesImportCents: 0,
+          transportMethod: "Ocean freight",
+          incoterm: "DAP",
+          namedPlace: "Boston, US",
+        },
+        {
+          id: "batch-2",
+          label: "Batch 2",
+          allocations: [{ lineId: "line-length", physicalQuantity: 3 }],
+          freightCents: 2000,
+          insuranceCents: 0,
+          dutiesImportCents: 0,
+          transportMethod: "Ocean freight",
+          incoterm: "DAP",
+          namedPlace: "Boston, US",
+        },
+      ],
       transportMethod: "Ocean freight",
       incoterm: "DAP",
       termReplacementReason: "Buyer confirmed import handling",

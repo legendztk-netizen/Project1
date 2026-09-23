@@ -12,8 +12,20 @@ const source = {
   destination: commercialAddress,
   amounts: { manualCommercialReview: false },
   importResponsibility: { fulfillmentTerm: "DDP" },
-  lines: [{ lineKind: "standard", quantity: 2, currency: "USD" }],
+  lines: [{ id: "line-1", lineKind: "standard", quantity: 2, currency: "USD" }],
 } as QuoteRequestSnapshot;
+const splitGroups = (incoterm: "DDP" | "DAP", namedPlace: string) =>
+  [1, 2].map((index) => ({
+    id: `batch-${index}`,
+    label: `Batch ${index}`,
+    allocations: [{ lineId: "line-1", physicalQuantity: 1 }],
+    freightCents: index === 1 ? 2000 : 0,
+    insuranceCents: index === 1 ? 100 : 0,
+    dutiesImportCents: index === 1 ? 300 : 0,
+    transportMethod: "Air freight",
+    incoterm,
+    namedPlace,
+  }));
 it("requires explicit address, shipment, packing, tax and lead-time review", () => {
   expect(validateCommercialTerms(commercialTerms(), source).shipmentMode).toBe(
     "together",
@@ -38,6 +50,7 @@ it("requires explicit address, shipment, packing, tax and lead-time review", () 
         ...commercialTerms(),
         shipmentMode: "split",
         splitPlan: "One shipment per product line",
+        shipmentGroups: splitGroups("DAP", "New York, US"),
         incoterm: "DAP",
         termReplacementReason: "Customer-approved import responsibility",
       },
@@ -53,6 +66,7 @@ it("preserves reviewed address replacements, DAP, split plans and optional actua
     incoterm: "DAP" as const,
     shipmentMode: "split" as const,
     splitPlan: "10 pieces on day 5; remaining 90 on day 20",
+    shipmentGroups: splitGroups("DAP", "New York, US"),
     leadTime: "100 pieces: 20 days; split dates as quoted",
     actualPacking: "2 cartons; 19.5 kg gross; 50 x 40 x 30 cm each",
   };
@@ -73,7 +87,7 @@ it("preserves reviewed address replacements, DAP, split plans and optional actua
       legalName: "Test Company",
     },
   });
-  expect(result).toEqual(input);
+  expect(result).toMatchObject(input);
   expect(validateCommercialTerms(commercialTerms(), source).actualPacking).toBe(
     "",
   );
@@ -123,7 +137,9 @@ it("requires manual currency confirmation for amended assemblies with captured n
     ...source,
     lines: [
       {
+        id: "assembly-1",
         lineKind: "configured_assembly",
+        quantity: 2,
         currency: "USD",
         configuredAssembly: {
           snapshot: {

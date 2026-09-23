@@ -280,7 +280,11 @@ function quoteBasis(quote: QuoteRevisionSnapshot) {
       };
     }),
     destination,
-    shipment_plan: { mode: t.shipmentMode, plan: t.splitPlan },
+    shipment_plan: {
+      mode: t.shipmentMode,
+      plan: t.splitPlan,
+      groups: t.shipmentGroups ?? null,
+    },
     transport: t.transportMethod,
     customer_data: {
       kind: buyer.kind,

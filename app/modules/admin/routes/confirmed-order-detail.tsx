@@ -12,6 +12,7 @@ import {
   Form,
   Link,
   redirect,
+  useActionData,
   useNavigation,
   type ActionFunctionArgs,
   type LoaderFunctionArgs,
@@ -21,6 +22,7 @@ import {
   followOnQuotes,
   piPrivateHeaders,
   piRouteId,
+  shipmentPlans,
 } from "#workers/proforma-invoice";
 import { requireAdminRequestContext } from "../infrastructure/admin-request-context";
 import { AdminNavigation } from "../ui/admin-navigation";
@@ -37,6 +39,8 @@ import {
   requireReviewMutation,
 } from "../../quote-review/domain/private-review";
 import "../ui/confirmed-orders.css";
+import { AdminShipmentPlan } from "../../shipment/ui/admin-shipment-plan";
+import { parseShipmentGroupsForm } from "../../shipment/application/parse-shipment-groups-form";
 
 export const headers = piPrivateHeaders;
 
@@ -59,15 +63,17 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
     adminIdentity,
     piRouteId(params.orderId),
   );
-  const [drafts, activity] = await Promise.all([
+  const [drafts, activity, shipmentPlan] = await Promise.all([
     followOnQuotes(env).adminListForOrder(adminIdentity, order.id),
     confirmedOrders(env).adminActivity(adminIdentity, order.id),
+    shipmentPlans(env).adminRead(adminIdentity, order.id),
   ]);
   return data(
     {
       order,
       drafts,
       activity,
+      shipmentPlan,
       returnTo: safeReturnTo(new URL(request.url).searchParams.get("returnTo")),
       commandId: crypto.randomUUID(),
     },
@@ -81,13 +87,40 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
   const orderId = piRouteId(params.orderId);
   await confirmedOrders(env).adminRead(adminIdentity, orderId);
   const form = await readPrivateReviewForm(request);
-  if (form.get("intent") !== "follow-on")
-    throw new Response("Invalid operation", { status: 400 });
-  await followOnQuotes(env).adminCreate(
-    adminIdentity,
-    orderId,
-    String(form.get("commandId") ?? ""),
-  );
+  const intent = String(form.get("intent") ?? "");
+  if (intent === "follow-on") {
+    await followOnQuotes(env).adminCreate(
+      adminIdentity,
+      orderId,
+      String(form.get("commandId") ?? ""),
+    );
+  } else if (intent === "shipment-map") {
+    try {
+      const plan = await shipmentPlans(env).adminRead(adminIdentity, orderId);
+      await shipmentPlans(env).mapHistoricalSplit(adminIdentity, {
+        orderId,
+        expectedVersion: Number(form.get("expectedVersion")),
+        commandId: String(form.get("commandId") ?? ""),
+        groups: parseShipmentGroupsForm(form, plan.lines ?? [], plan.originalTerms),
+        reviewNote: String(form.get("reviewNote") ?? ""),
+        matchesAcceptedTerms: form.get("matchesAcceptedTerms") === "on",
+      });
+    } catch (error) {
+      if (error instanceof Response && ![400, 409].includes(error.status))
+        throw error;
+      return data(
+        {
+          error:
+            error instanceof Response
+              ? await error.text()
+              : error instanceof Error
+                ? error.message
+                : "分批计划保存失败",
+        },
+        { status: error instanceof Response ? error.status : 400 },
+      );
+    }
+  } else throw new Response("Invalid operation", { status: 400 });
   const returnTo = safeReturnTo(
     new URL(request.url).searchParams.get("returnTo"),
   );
@@ -245,6 +278,7 @@ function OrderLine({ line }: { line: Line }) {
 
 const tabs = [
   { id: "products", label: "商品与金额" },
+  { id: "shipments", label: "发货批次" },
   { id: "delivery", label: "客户与交付" },
   { id: "payment", label: "付款与协议" },
   { id: "history", label: "操作记录" },
@@ -255,6 +289,7 @@ const eventLabels: Record<string, string> = {
   "order.hold": "付款复核锁定",
   "order.release": "付款复核已放行",
   "order.follow_on_draft_created": "创建追加采购询价草稿",
+  "shipment.plan_mapped": "核对并保存旧订单分批计划",
 };
 
 export default function ConfirmedOrderDetail({
@@ -262,7 +297,8 @@ export default function ConfirmedOrderDetail({
 }: {
   loaderData: Awaited<ReturnType<typeof loader>>["data"];
 }) {
-  const { order, drafts, activity, commandId, returnTo } = loaderData;
+  const { order, drafts, activity, shipmentPlan, commandId, returnTo } = loaderData;
+  const actionData = useActionData<typeof action>();
   const [tab, setTab] = useState<Tab>("products");
   const dialog = useRef<HTMLDialogElement>(null);
   const navigation = useNavigation();
@@ -401,6 +437,22 @@ export default function ConfirmedOrderDetail({
                 <dd>{money(order.totalCents)}</dd>
               </div>
             </dl>
+          </section>
+        )}
+        {tab === "shipments" && (
+          <section
+            id="order-panel-shipments"
+            role="tabpanel"
+            aria-labelledby="order-tab-shipments"
+            className="order-panel"
+          >
+            <h2>发货批次</h2>
+            <AdminShipmentPlan
+              plan={shipmentPlan}
+              commandId={commandId}
+              busy={busy}
+              error={actionData?.error}
+            />
           </section>
         )}
         {tab === "delivery" && (

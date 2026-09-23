@@ -65,6 +65,7 @@ export function customerRevisionProjection(revision: QuoteRevisionSnapshot) {
     differences: revision.differences ?? [],
     lines: revision.source.lines.map((line, index) => ({
       id: line.id,
+      lineKind: line.lineKind,
       sku: line.sku,
       displayName: line.displayName,
       specifications: (line.productSnapshot?.specs ?? []).map(
@@ -94,6 +95,7 @@ export function customerRevisionProjection(revision: QuoteRevisionSnapshot) {
     destination: terms.destination,
     shipmentMode: terms.shipmentMode,
     splitPlan: terms.splitPlan,
+    shipmentGroups: terms.shipmentGroups ?? [],
     transportMethod: terms.transportMethod,
     incoterm: terms.incoterm,
     namedPlace: terms.namedPlace,

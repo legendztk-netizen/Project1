@@ -187,6 +187,7 @@ export default function ConfirmedOrders({
                   <th scope="col">商品</th>
                   <th scope="col">总金额</th>
                   <th scope="col">目的地</th>
+                  <th scope="col">发货计划</th>
                   <th scope="col">状态</th>
                   <th scope="col">确认时间</th>
                   <th scope="col">
@@ -248,6 +249,11 @@ export default function ConfirmedOrders({
                       <strong>{money(order.totalCents)}</strong>
                     </td>
                     <td data-label="目的地">{order.countryCode ?? "未记录"}</td>
+                    <td data-label="发货计划">
+                      {order.shipmentPlanStatus === "review"
+                        ? "待核对"
+                        : `${order.shipmentCount} 个批次`}
+                    </td>
                     <td data-label="状态">
                       <span
                         className={`orders-status ${order.status === "Payment Review Hold" ? "hold" : "confirmed"}`}

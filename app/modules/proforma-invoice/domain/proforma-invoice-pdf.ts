@@ -129,6 +129,18 @@ export function proformaInvoicePdfContent(
       text: `Transport: ${snapshot.terms.transportMethod} | Shipment: ${snapshot.terms.shipmentMode}`,
     },
     { text: snapshot.terms.splitPlan },
+    ...(snapshot.terms.shipmentGroups ?? []).flatMap((group, index) => [
+      { text: `Shipment ${index + 1}: ${group.label}`, heading: true },
+      ...group.allocations.map((allocation) => ({
+        text: `${snapshot.lines.find((line) => line.id === allocation.lineId)?.displayName ?? allocation.lineId}: ${allocation.physicalQuantity} ${snapshot.lines.find((line) => line.id === allocation.lineId)?.lineKind === "length_based_hose" ? "pieces" : "units"}`,
+      })),
+      {
+        text: `Transport: ${group.transportMethod} | ${group.incoterm} ${group.namedPlace}`,
+      },
+      {
+        text: `Freight: ${usd(group.freightCents)} | Insurance: ${usd(group.insuranceCents)} | Duties/import: ${usd(group.dutiesImportCents)}`,
+      },
+    ]),
     { text: `Lead time: ${snapshot.terms.leadTime}` },
     { text: `Sales tax treatment: ${snapshot.terms.taxTreatment}` },
     ...Object.entries(snapshot.terms.charges).map(([key, value]) => ({

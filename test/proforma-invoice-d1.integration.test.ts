@@ -55,6 +55,7 @@ import { createPiAcceptedAgreementService } from "../app/modules/proforma-invoic
 import { createD1ProformaInvoiceRepository } from "../app/modules/proforma-invoice/infrastructure/d1-proforma-invoice-repository";
 import { createPiLifecycleService } from "../app/modules/proforma-invoice/application/pi-lifecycle-service";
 import { createD1AdminQuoteReviewRepository } from "../app/modules/quote-review/infrastructure/d1-admin-quote-review-repository";
+import { createShipmentPlanService } from "../app/modules/shipment/application/shipment-plan-service";
 
 const directory = mkdtempSync(join(tmpdir(), "pi-d1-"));
 let platform: Awaited<
@@ -1018,6 +1019,27 @@ it("freezes the default payment deadline exactly once on website acceptance", as
   expect(await payments.confirmPayment(actor, confirmCommand)).toEqual(
     confirmed,
   );
+  const plan = createShipmentPlanService(db);
+  const customerPlan = await plan.customerRead(f.profileId, confirmed.order!.id);
+  expect(customerPlan).toMatchObject({
+    status: "ready",
+    shipments: [
+      {
+        status: "planned",
+        allocations: [{ lineId: "line-a", physicalQuantity: 2 }],
+      },
+    ],
+  });
+  expect(JSON.stringify(customerPlan)).not.toContain("reviewNote");
+  await expect(
+    plan.customerRead("different-profile", confirmed.order!.id),
+  ).rejects.toMatchObject({ status: 404 });
+  expect(
+    await db
+      .prepare("SELECT count(*) n FROM order_shipments WHERE order_id=?")
+      .bind(confirmed.order!.id)
+      .first("n"),
+  ).toBe(1);
   expect(
     await db
       .prepare("SELECT count(*) n FROM confirmed_order_lines WHERE order_id=?")

@@ -292,6 +292,9 @@ function validatedProformaInvoiceSnapshot(input: CreateProformaInvoiceInput) {
     terms: {
       shipmentMode: terms.shipmentMode,
       splitPlan: terms.splitPlan,
+      ...(validated.terms.shipmentGroups
+        ? { shipmentGroups: validated.terms.shipmentGroups }
+        : {}),
       transportMethod: terms.transportMethod,
       incoterm: terms.incoterm,
       namedPlace: terms.namedPlace,

@@ -14,11 +14,13 @@ import {
   piCustomerProfile,
   piPrivateHeaders,
   piRouteId,
+  shipmentPlans,
 } from "#workers/proforma-invoice";
 import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
 import { ConfirmedOrderLine } from "../../proforma-invoice/ui/confirmed-order-line";
 import { AccountWorkspace } from "../ui/account-workspace";
 import { requireTrustedAuthPost } from "../application/trusted-auth-request";
+import { CustomerShipmentPlan } from "../../shipment/ui/customer-shipment-plan";
 
 export const headers = piPrivateHeaders;
 export async function loader({ context, request, params }: LoaderFunctionArgs) {
@@ -28,12 +30,12 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
     profileId,
     piRouteId(params.orderId),
   );
-  const drafts = await followOnQuotes(env).customerListForOrder(
-    profileId,
-    order.id,
-  );
+  const [drafts, shipmentPlan] = await Promise.all([
+    followOnQuotes(env).customerListForOrder(profileId, order.id),
+    shipmentPlans(env).customerRead(profileId, order.id),
+  ]);
   return data(
-    { order, drafts, commandId: crypto.randomUUID() },
+    { order, drafts, shipmentPlan, commandId: crypto.randomUUID() },
     { headers: headers() },
   );
 }
@@ -65,7 +67,7 @@ export default function ConfirmedOrderDetail({
 }: {
   loaderData: Awaited<ReturnType<typeof loader>>["data"];
 }) {
-  const { order, drafts, commandId } = loaderData;
+  const { order, drafts, shipmentPlan, commandId } = loaderData;
   const snapshot = order.snapshot;
   const address = snapshot.destination;
   return (
@@ -123,6 +125,7 @@ export default function ConfirmedOrderDetail({
             {snapshot.terms.transportMethod}
           </p>
         </section>
+        <CustomerShipmentPlan plan={shipmentPlan} />
         {snapshot.lines.map((line) => (
           <ConfirmedOrderLine key={line.id} line={line} />
         ))}

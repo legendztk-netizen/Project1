@@ -4,6 +4,10 @@ import {
 } from "../../customer-identity/domain/customer-account";
 import type { QuoteRequestSnapshot } from "../../quote-request/domain/quote-request";
 import { quoteLineTotals, type QuotedLinePrice } from "./quote-pricing";
+import {
+  validatedShipmentGroups,
+  type QuotedShipmentGroup,
+} from "../../shipment/domain/shipment-plan";
 
 export const commercialChargeKeys = [
   "freight",
@@ -24,6 +28,7 @@ export interface QuoteCommercialTerms {
   addressReplacementReason: string;
   shipmentMode: "together" | "split";
   splitPlan: string;
+  shipmentGroups?: QuotedShipmentGroup[];
   transportMethod: string;
   incoterm: "DDP" | "DAP";
   termReplacementReason: string;
@@ -90,6 +95,14 @@ export function validateCommercialTerms(
   ) as CommercialCharges;
   if (input.taxTreatment !== "Collected" && charges.salesTax !== 0)
     throw new Error("Tax amount must be zero when not collected");
+  const shipmentGroups = validatedShipmentGroups(source.lines, {
+    shipmentMode: input.shipmentMode,
+    shipmentGroups: input.shipmentGroups,
+    transportMethod: input.transportMethod,
+    incoterm: input.incoterm,
+    namedPlace: input.namedPlace,
+    charges,
+  });
   const requiresCurrencyReview =
     source.amounts.manualCommercialReview ||
     source.lines.some(
@@ -112,6 +125,7 @@ export function validateCommercialTerms(
       : "",
     shipmentMode: input.shipmentMode,
     splitPlan: input.shipmentMode === "split" ? input.splitPlan.trim() : "",
+    shipmentGroups,
     transportMethod: required(input.transportMethod, "Transport method"),
     incoterm: input.incoterm,
     termReplacementReason:

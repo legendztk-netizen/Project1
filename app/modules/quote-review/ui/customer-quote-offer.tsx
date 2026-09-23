@@ -145,6 +145,28 @@ export function CustomerQuoteOffer({
             {offer.shipmentMode === "split" ? offer.splitPlan : "Ship together"}
           </dd>
         </div>
+        {offer.shipmentGroups?.map((group, index) => (
+          <div key={group.id}>
+            <dt>{label(`Shipment ${index + 1}`, `第 ${index + 1} 批发货`)}</dt>
+            <dd>
+              <strong>{group.label}</strong>
+              {group.allocations.map((allocation) => {
+                const line = offer.lines.find((item) => item.id === allocation.lineId);
+                return (
+                  <span key={allocation.lineId} className="shipment-group-line">
+                    {line?.displayName ?? allocation.lineId}: {allocation.physicalQuantity} {line?.lineKind === "length_based_hose" ? "pieces" : "units"}
+                  </span>
+                );
+              })}
+              <span className="shipment-group-line">
+                {group.transportMethod} · {group.incoterm} {group.namedPlace}
+              </span>
+              <span className="shipment-group-line">
+                Freight {usd(group.freightCents)} · Insurance {usd(group.insuranceCents)} · Duties/import {usd(group.dutiesImportCents)}
+              </span>
+            </dd>
+          </div>
+        ))}
         <div>
           <dt>{label("Lead time", "交期")}</dt>
           <dd>{offer.leadTime}</dd>

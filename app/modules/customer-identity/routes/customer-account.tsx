@@ -864,6 +864,11 @@ export default function CustomerAccount({
                   {order.snapshot.lines.length === 1 ? "line" : "lines"} · USD{" "}
                   {(order.totalCents / 100).toFixed(2)}
                 </p>
+                <p>
+                  {order.shipmentPlanStatus === "review"
+                    ? "Shipment plan under review"
+                    : `${order.shipmentCount} shipment${order.shipmentCount === 1 ? "" : "s"} planned`}
+                </p>
               </article>
             ))}
           </div>

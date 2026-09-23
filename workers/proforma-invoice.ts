@@ -16,6 +16,7 @@ import { createPiLatePaymentService } from "../app/modules/proforma-invoice/appl
 import { createPiFundResolutionService } from "../app/modules/proforma-invoice/application/pi-fund-resolution-service";
 import { createPiPaymentCorrectionService } from "../app/modules/proforma-invoice/application/pi-payment-correction-service";
 import { createFollowOnQuoteService } from "../app/modules/proforma-invoice/application/follow-on-quote-service";
+import { createShipmentPlanService } from "../app/modules/shipment/application/shipment-plan-service";
 
 export function piPayments(
   env: ApplicationBindings,
@@ -33,6 +34,10 @@ export function piAcceptedAgreements(
 
 export function confirmedOrders(env: ApplicationBindings) {
   return createConfirmedOrderService(env.DB);
+}
+
+export function shipmentPlans(env: ApplicationBindings) {
+  return createShipmentPlanService(env.DB);
 }
 
 export function piLatePayments(
