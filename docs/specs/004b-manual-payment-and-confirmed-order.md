@@ -44,6 +44,15 @@ the final missing condition is satisfied.
 - The default Payment Due Date is 10 US business days after PI acceptance. An
   Admin may set a fixed ET date before PI issuance under Spec 4A or later extend
   an accepted PI only to a later ET date. Deadline history is append-only.
+- An authorized Admin may explicitly retain the customer's exact accepted PI
+  after an accidental later quote change. The review is append-only and binds
+  the current PI, acceptance, and latest published quote; a subsequent published
+  quote requires another review. It never rewrites a PI, PDF, or acceptance.
+- For a legacy accepted PI with no captured payment terms, an explicit retention
+  review may establish **no payment deadline agreed**, without inventing a date.
+  Full net receipt and external settlement verification remain mandatory. This
+  exception does not remove deadlines from dated PIs or bypass technical/dispute
+  guards. Re-saving identical commercial terms does not create a new draft version.
 - `Update Amount Received` stores one cumulative settled amount in the PI
   currency and derives Remaining Balance. Launch does not model each transfer,
   bank fee, or reconciliation entry as a separate ledger row.

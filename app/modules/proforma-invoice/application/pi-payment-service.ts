@@ -4,6 +4,11 @@ import { piSha256 } from "../domain/proforma-invoice";
 import type { PaymentChannel } from "../../seller-settings/domain/seller-commercial-settings";
 import { quoteNotificationOutboxStatement } from "../../quote-notifications/infrastructure/d1-quote-notifications";
 import { orderCreationStatements } from "../infrastructure/d1-order-creation";
+import {
+  effectiveQuoteAgreementSql,
+  retainedAgreementSql,
+  unspecifiedPaymentDeadlineSql,
+} from "../infrastructure/accepted-agreement-sql";
 
 export interface PiPaymentAccount {
   pi_id: string;
@@ -34,6 +39,9 @@ export interface PiPaymentAccount {
   current_pi_id: string | null;
   confirmation_id: string | null;
   order_id: string | null;
+  agreement_retained: number;
+  deadline_unspecified: number;
+  effective_agreement: number;
 }
 
 export interface UpdateReceivedAmount {
@@ -128,6 +136,9 @@ function projection(row: PiPaymentAccount) {
     dueDateEt: row.due_date_et,
     dueAt: row.due_at,
     termKind: row.term_kind,
+    acceptedAgreementRetained: row.agreement_retained === 1,
+    paymentDeadlineUnspecified: row.deadline_unspecified === 1,
+    quoteReviewRequired: row.effective_agreement !== 1,
     acceptedAt: row.accepted_at,
     current: row.current_pi_id === row.pi_id,
     actualChannel: row.actual_channel,
@@ -149,6 +160,9 @@ export function createPiPaymentService(
 ) {
   const now = () => (options.now?.() ?? new Date()).toISOString();
   const accountSql = `SELECT a.*,p.document_number,
+    ${retainedAgreementSql("p")} AS agreement_retained,
+    ${unspecifiedPaymentDeadlineSql("p")} AS deadline_unspecified,
+    ${effectiveQuoteAgreementSql("p")} AS effective_agreement,
     COALESCE(NULLIF(json_extract(p.snapshot_json,'$.buyer.legalName'),''),
       NULLIF(json_extract(p.snapshot_json,'$.buyer.contactName'),''),
       (SELECT profile.email_display FROM customer_profiles profile
@@ -235,6 +249,8 @@ export function createPiPaymentService(
       ).results;
       return {
         ...projection(row),
+        hasEverReceived:
+          row.ever_received === 1 || originalCurrencyReceipts.length > 0,
         buyerName: row.buyer_name,
         originalCurrencyReceipts,
         receiptInstructionHistory,
@@ -464,6 +480,7 @@ export function createPiPaymentService(
             `UPDATE pi_payment_accounts SET instruction_channel=?,instruction_id=?,instruction_version=?,
            version=version+1,updated_at=? WHERE pi_id=? AND version=? AND receipt_history_known=1 AND ever_received=0
            AND amount_received_cents=0 AND EXISTS(SELECT 1 FROM proforma_invoice_heads WHERE pi_id=?)
+           AND NOT EXISTS(SELECT 1 FROM pi_original_currency_receipts WHERE pi_id=pi_payment_accounts.pi_id)
            AND EXISTS(SELECT 1 FROM seller_payment_instruction_versions WHERE id=? AND version=?
              AND channel=? AND status='current')`,
           )
@@ -760,7 +777,9 @@ export function createPiPaymentService(
         before.version !== input.expectedVersion ||
         before.current_pi_id !== piId ||
         !before.receipt_history_known ||
-        before.term_kind === "legacy_review" ||
+        (before.term_kind === "legacy_review" &&
+          !before.deadline_unspecified) ||
+        !before.effective_agreement ||
         before.late_review_required === 1 ||
         before.amount_received_cents +
           before.allocated_in_cents -
@@ -805,8 +824,10 @@ export function createPiPaymentService(
             WHERE pi_id=? AND version=? AND confirmation_valid=0
               AND NOT EXISTS(SELECT 1 FROM pi_payment_disputes WHERE pi_id=? AND active=1)
               AND EXISTS(SELECT 1 FROM proforma_invoice_heads WHERE pi_id=?)
+              AND EXISTS(SELECT 1 FROM proforma_invoices p WHERE p.id=pi_payment_accounts.pi_id AND ${effectiveQuoteAgreementSql("p")})
               AND amount_received_cents+allocated_in_cents-allocated_out_cents-refunded_cents>=total_due_cents
-              AND ((EXISTS(SELECT 1 FROM pi_acceptances WHERE pi_id=?) AND due_at>=?)
+              AND ((EXISTS(SELECT 1 FROM pi_acceptances WHERE pi_id=?) AND (due_at>=?
+                OR EXISTS(SELECT 1 FROM retained_pi_agreements retained WHERE retained.pi_id=pi_payment_accounts.pi_id AND retained.no_payment_deadline=1)))
                 OR (NOT EXISTS(SELECT 1 FROM pi_acceptances WHERE pi_id=?)
                   AND EXISTS(SELECT 1 FROM proforma_invoices p WHERE p.id=? AND p.valid_until>?)))`,
             )
@@ -875,17 +896,18 @@ export function createPiPaymentService(
            FROM pi_payment_accounts a JOIN proforma_invoices p ON p.id=a.pi_id
            JOIN proforma_invoice_heads h ON h.pi_id=p.id AND h.request_id=p.request_id
            JOIN quote_revisions q ON q.id=p.quote_revision_id AND q.request_id=p.request_id
-           WHERE p.id=? AND a.version=? AND a.receipt_history_known=1 AND a.term_kind!='legacy_review'
+           WHERE p.id=? AND a.version=? AND a.receipt_history_known=1
+             AND (a.term_kind!='legacy_review' OR ${unspecifiedPaymentDeadlineSql("p")})
              AND a.total_due_cents>0 AND a.amount_received_cents+a.allocated_in_cents-a.allocated_out_cents-a.refunded_cents>=a.total_due_cents
              AND a.actual_channel IS NOT NULL
              AND a.confirmation_valid=1
              AND NOT EXISTS(SELECT 1 FROM pi_payment_disputes WHERE pi_id=p.id AND active=1)
-             AND p.quote_revision_id=(SELECT id FROM quote_revisions WHERE request_id=p.request_id ORDER BY revision_number DESC LIMIT 1)
+             AND ${effectiveQuoteAgreementSql("p")}
              AND (NOT EXISTS(SELECT 1 FROM json_each(p.snapshot_json,'$.lines') line
                WHERE json_extract(line.value,'$.madeToOrder')=1)
                OR json_extract(q.snapshot_json,'$.factoryReviewConfirmed')=1)
              AND ((EXISTS(SELECT 1 FROM pi_acceptances WHERE pi_id=p.id)
-               AND a.due_at IS NOT NULL AND a.due_at>=?)
+               AND (a.due_at>=? OR ${unspecifiedPaymentDeadlineSql("p")}))
                OR (NOT EXISTS(SELECT 1 FROM pi_acceptances WHERE pi_id=p.id)
                  AND p.valid_until>? AND p.issued_at<=?))
            ON CONFLICT(pi_id) DO NOTHING`,

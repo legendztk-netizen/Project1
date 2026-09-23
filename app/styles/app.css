@@ -898,6 +898,14 @@ a {
   margin-block: 1rem;
 }
 
+.admin-quote-actions .admin-quote-action-unavailable:disabled {
+  color: #66727e;
+  background: #e5e9ed;
+  border-color: #cdd5dc;
+  opacity: 1;
+  pointer-events: none;
+}
+
 .admin-quote-review-page .admin-topbar p,
 .admin-quote-detail-header p {
   margin: 8px 0 0;

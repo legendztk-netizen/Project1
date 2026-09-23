@@ -51,6 +51,10 @@ import { createCustomerAccountService } from "../app/modules/customer-identity/a
 import { createAnonymousQuoteListService } from "../app/modules/quote-list/application/anonymous-quote-list-service";
 import { createQuoteRequestService } from "../app/modules/quote-request/application/quote-request-service";
 import { orderCreationStatements } from "../app/modules/proforma-invoice/infrastructure/d1-order-creation";
+import { createPiAcceptedAgreementService } from "../app/modules/proforma-invoice/application/pi-accepted-agreement-service";
+import { createD1ProformaInvoiceRepository } from "../app/modules/proforma-invoice/infrastructure/d1-proforma-invoice-repository";
+import { createPiLifecycleService } from "../app/modules/proforma-invoice/application/pi-lifecycle-service";
+import { createD1AdminQuoteReviewRepository } from "../app/modules/quote-review/infrastructure/d1-admin-quote-review-repository";
 
 const directory = mkdtempSync(join(tmpdir(), "pi-d1-"));
 let platform: Awaited<
@@ -342,6 +346,247 @@ async function acceptFixturePi(
   );
 }
 
+async function legacyFixturePi(f: Awaited<ReturnType<typeof fixture>>) {
+  await service().reserve(actor, f.command);
+  const repository = createD1ProformaInvoiceRepository(db);
+  const original = (await repository.intent(f.command.commandId))!;
+  const snapshot = JSON.parse(original.snapshot_json);
+  delete snapshot.paymentTerms;
+  const json = JSON.stringify(snapshot);
+  const intent = {
+    ...original,
+    id: crypto.randomUUID(),
+    command_id: crypto.randomUUID(),
+    snapshot_json: json,
+    snapshot_hash: await piSha256(new TextEncoder().encode(json)),
+  };
+  // Seed a genuine old-format immutable document, without modifying any published PI.
+  await repository.reserve(intent);
+  return service().renderReserved(intent.command_id);
+}
+
+async function retainCommand(piId: string) {
+  const ready = await createPiAcceptedAgreementService(db).readiness(
+    actor,
+    piId,
+  );
+  return {
+    piId,
+    commandId: crypto.randomUUID(),
+    expectedVersion: ready.paymentVersion,
+    expectedHeadVersion: ready.headVersion,
+    acceptanceId: ready.acceptanceId!,
+    documentVersion: ready.documentVersion,
+    snapshotHash: ready.snapshotHash,
+    latestQuoteRevisionId: ready.latestQuoteRevisionId,
+    reviewed: true,
+    noPaymentDeadline: ready.noPaymentDeadline,
+    reason: "Accidental terms save; retain accepted agreement",
+  };
+}
+
+async function nextQuote(
+  f: Awaited<ReturnType<typeof fixture>>,
+  number: number,
+) {
+  const json = JSON.stringify({
+    ...f.revision,
+    revisionNumber: number,
+    preparationVersion: number + 2,
+  });
+  await db
+    .prepare(
+      `INSERT INTO quote_revisions(id,request_id,revision_number,preparation_version,
+    snapshot_json,snapshot_hash,command_id,command_hash,issued_by,issued_at) VALUES(?,?,?,?,?,?,?,'hash',?,?)`,
+    )
+    .bind(
+      crypto.randomUUID(),
+      f.command.requestId,
+      number,
+      number + 2,
+      json,
+      await piSha256(new TextEncoder().encode(json)),
+      crypto.randomUUID(),
+      actor.id,
+      issuedAt,
+    )
+    .run();
+}
+
+it("retains an accepted legacy PI without inventing a deadline or clearing funds", async () => {
+  const f = await fixture();
+  const pi = await legacyFixturePi(f);
+  await acceptFixturePi(f.profileId, f.command.requestId, pi);
+  const agreements = createPiAcceptedAgreementService(db);
+  const payments = createPiPaymentService(db, {
+    now: () => new Date("2026-11-01T10:00:00.000Z"),
+  });
+  const before = await payments.adminRead(actor, pi.id);
+  const original = await db
+    .prepare("SELECT * FROM proforma_invoices WHERE id=?")
+    .bind(pi.id)
+    .first();
+  const accepted = await db
+    .prepare("SELECT * FROM pi_acceptances WHERE pi_id=?")
+    .bind(pi.id)
+    .first();
+  const command = await retainCommand(pi.id);
+  for (const invalid of [
+    { reviewed: false },
+    { noPaymentDeadline: false },
+    { acceptanceId: "wrong" },
+    { expectedVersion: 999 },
+  ]) {
+    await expect(
+      agreements.retain(actor, { ...command, ...invalid }),
+    ).rejects.toBeInstanceOf(Response);
+  }
+  await agreements.retain(actor, command);
+  await agreements.retain(actor, command);
+  await expect(
+    agreements.retain(actor, { ...command, reason: "different" }),
+  ).rejects.toMatchObject({ status: 409 });
+  const retained = await payments.adminRead(actor, pi.id);
+  expect(retained).toMatchObject({
+    dueAt: null,
+    paymentDeadlineUnspecified: true,
+    acceptedAgreementRetained: true,
+    paymentConfirmed: false,
+    orderId: null,
+    amountReceivedCents: before.amountReceivedCents,
+    version: before.version + 1,
+  });
+  expect(
+    await db
+      .prepare("SELECT * FROM proforma_invoices WHERE id=?")
+      .bind(pi.id)
+      .first(),
+  ).toEqual(original);
+  expect(
+    await db
+      .prepare("SELECT * FROM pi_acceptances WHERE pi_id=?")
+      .bind(pi.id)
+      .first(),
+  ).toEqual(accepted);
+  await expect(
+    payments.confirmPayment(actor, {
+      piId: pi.id,
+      commandId: crypto.randomUUID(),
+      expectedVersion: retained.version,
+      externallyVerified: true,
+      externalReference: "Not fully paid",
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  const funded = await payments.updateReceived(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: retained.version,
+    amount: (retained.totalDueCents / 100).toFixed(2),
+    currency: "USD",
+    actualChannel: "bank_transfer",
+    verificationReference: "Verified bank funds",
+  });
+  await expect(
+    payments.confirmPayment(actor, {
+      piId: pi.id,
+      commandId: crypto.randomUUID(),
+      expectedVersion: funded.version,
+      externallyVerified: false,
+      externalReference: "Unverified",
+    }),
+  ).rejects.toMatchObject({ status: 400 });
+  await payments.confirmPayment(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: funded.version,
+    externallyVerified: true,
+    externalReference: "Verified bank funds",
+  });
+  const order = await db
+    .prepare("SELECT snapshot_hash FROM confirmed_orders WHERE pi_id=?")
+    .bind(pi.id)
+    .first();
+  expect(order).toEqual({ snapshot_hash: pi.snapshotHash });
+  expect((await payments.adminRead(actor, pi.id)).dueAt).toBeNull();
+  await expect(
+    db
+      .prepare("DELETE FROM pi_accepted_agreement_reviews WHERE pi_id=?")
+      .bind(pi.id)
+      .run(),
+  ).rejects.toThrow("immutable");
+});
+
+it("binds retention to the reviewed quote head and preserves dated payment deadlines", async () => {
+  const f = await fixture();
+  const pi = await service().issue(actor, f.command);
+  const agreements = createPiAcceptedAgreementService(db);
+  expect((await agreements.readiness(actor, pi.id)).blockedReason).toContain(
+    "尚未接受",
+  );
+  await expect(
+    agreements.retain(actor, await retainCommand(pi.id)),
+  ).rejects.toMatchObject({ status: 409 });
+  await acceptFixturePi(f.profileId, f.command.requestId, pi);
+  const payments = createPiPaymentService(db, {
+    now: () => new Date("2026-09-15T12:00:00.000Z"),
+  });
+  const original = await payments.adminRead(actor, pi.id);
+  const stale = await retainCommand(pi.id);
+  await nextQuote(f, 2);
+  await expect(agreements.retain(actor, stale)).rejects.toMatchObject({
+    status: 409,
+  });
+  expect((await payments.adminRead(actor, pi.id)).quoteReviewRequired).toBe(
+    true,
+  );
+  await agreements.retain(actor, await retainCommand(pi.id));
+  expect(await payments.adminRead(actor, pi.id)).toMatchObject({
+    dueAt: original.dueAt,
+    paymentDeadlineUnspecified: false,
+    quoteReviewRequired: false,
+  });
+  const lifecycle = createPiLifecycleService(db, bucket, { conditions });
+  expect(
+    (await lifecycle.replacementReadiness(actor, f.command.requestId)).lifecycle
+      .awaitingReplacement,
+  ).toBe(false);
+  await nextQuote(f, 3);
+  expect(await payments.adminRead(actor, pi.id)).toMatchObject({
+    acceptedAgreementRetained: false,
+    quoteReviewRequired: true,
+  });
+  await agreements.retain(actor, await retainCommand(pi.id));
+  const retained = await payments.adminRead(actor, pi.id);
+  const funded = await payments.updateReceived(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: retained.version,
+    amount: (retained.totalDueCents / 100).toFixed(2),
+    currency: "USD",
+    actualChannel: "bank_transfer",
+    verificationReference: "Bank",
+  });
+  await expect(
+    createPiPaymentService(db, {
+      now: () => new Date("2026-11-01T10:00:00.000Z"),
+    }).confirmPayment(actor, {
+      piId: pi.id,
+      commandId: crypto.randomUUID(),
+      expectedVersion: funded.version,
+      externallyVerified: true,
+      externalReference: "Late funds",
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  await payments.confirmPayment(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: funded.version,
+    externallyVerified: true,
+    externalReference: "Bank",
+  });
+  expect((await payments.adminRead(actor, pi.id)).orderId).toBeTruthy();
+});
+
 it("reserves without rendering and completes the same immutable intent on repeated delivery", async () => {
   const f = await fixture();
   const reservationService = service({
@@ -632,6 +877,7 @@ it("records exact cumulative USD receipts with guarded versions and no payment c
     now: () => new Date(issuedAt),
   });
   const foreignRefund = {
+    piId: pi.id,
     receiptId: foreign.id,
     commandId: crypto.randomUUID(),
     amount: "200",
@@ -641,6 +887,12 @@ it("records exact cumulative USD receipts with guarded versions and no payment c
   expect(await refunds.refundOriginalCurrency(actor, foreignRefund)).toEqual({
     recorded: true,
   });
+  await expect(
+    refunds.refundOriginalCurrency(actor, {
+      ...foreignRefund,
+      piId: crypto.randomUUID(),
+    }),
+  ).rejects.toMatchObject({ status: 409 });
   expect(await refunds.refundOriginalCurrency(actor, foreignRefund)).toEqual({
     recorded: true,
   });
@@ -746,6 +998,10 @@ it("freezes the default payment deadline exactly once on website acceptance", as
       .bind(pi.id)
       .first(),
   ).toBeNull();
+  const reviews = createD1AdminQuoteReviewRepository(db);
+  expect((await reviews.find(f.command.requestId))?.reviewState).toBe(
+    "pi_accepted",
+  );
   const confirmCommand = {
     piId: pi.id,
     commandId: crypto.randomUUID(),
@@ -755,6 +1011,10 @@ it("freezes the default payment deadline exactly once on website acceptance", as
   };
   const confirmed = await payments.confirmPayment(actor, confirmCommand);
   expect(confirmed.order?.id).toBe(`order:${pi.id}`);
+  expect(await reviews.find(f.command.requestId)).toMatchObject({
+    reviewState: "order_created",
+    orderId: confirmed.order?.id,
+  });
   expect(await payments.confirmPayment(actor, confirmCommand)).toEqual(
     confirmed,
   );
@@ -900,6 +1160,31 @@ it("changes a current PI's selected instructions only before any receipt", async
   );
   expect(customerPi.paymentInstructions?.channel).toBe("paypal");
   expect(customerPi.snapshot.paymentSelection.channel).toBe("bank_transfer");
+  await payments.recordOriginalCurrencyReceipt(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    currency: "EUR",
+    amount: "25.00",
+    actualChannel: "paypal",
+    verificationReference: "Original-currency receipt before USD settlement",
+  });
+  const afterOriginal = await payments.adminRead(actor, pi.id);
+  expect(afterOriginal.amountReceivedCents).toBe(0);
+  expect(afterOriginal.hasEverReceived).toBe(true);
+  await expect(
+    payments.changeInstructions(actor, {
+      piId: pi.id,
+      commandId: crypto.randomUUID(),
+      expectedVersion: afterOriginal.version,
+      instructionId: initial.instructionId!,
+      instructionVersion: initial.instructionVersion!,
+      channel: "bank_transfer",
+      reason: "Should remain locked after an original-currency receipt",
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  expect((await payments.adminRead(actor, pi.id)).instructionId).toBe(
+    choice.id,
+  );
 });
 
 it("extends accepted deadlines without clearing funds or creating an order, then approves late funds atomically", async () => {

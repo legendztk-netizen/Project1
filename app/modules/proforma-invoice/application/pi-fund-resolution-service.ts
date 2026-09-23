@@ -1,4 +1,8 @@
 import type { AdminIdentity } from "#workers/admin-access";
+import {
+  effectiveQuoteAgreementSql,
+  unspecifiedPaymentDeadlineSql,
+} from "../infrastructure/accepted-agreement-sql";
 import { piSha256 } from "../domain/proforma-invoice";
 import { parseUsdCents } from "./pi-payment-service";
 import { orderCreationStatements } from "../infrastructure/d1-order-creation";
@@ -305,12 +309,11 @@ export function createPiFundResolutionService(
             JOIN quote_revisions q ON q.id=p.quote_revision_id
             WHERE pay.pi_id=? AND pay.total_due_cents>0 AND pay.late_review_required=0
               AND pay.amount_received_cents+pay.allocated_in_cents-pay.allocated_out_cents-pay.refunded_cents>=pay.total_due_cents
-              AND pay.actual_channel IS NOT NULL AND pay.due_at>=?
+              AND pay.actual_channel IS NOT NULL AND (pay.due_at>=? OR ${unspecifiedPaymentDeadlineSql("p")})
               AND EXISTS(SELECT 1 FROM pi_acceptances a WHERE a.pi_id=p.id
                 AND a.document_version=p.document_version AND a.snapshot_hash=p.snapshot_hash
                 AND a.quote_revision_id=p.quote_revision_id)
-              AND p.quote_revision_id=(SELECT id FROM quote_revisions WHERE request_id=p.request_id
-                ORDER BY revision_number DESC LIMIT 1)
+              AND ${effectiveQuoteAgreementSql("p")}
               AND (NOT EXISTS(SELECT 1 FROM json_each(p.snapshot_json,'$.lines') line
                 WHERE json_extract(line.value,'$.madeToOrder')=1)
                 OR json_extract(q.snapshot_json,'$.factoryReviewConfirmed')=1)
@@ -471,6 +474,7 @@ export function createPiFundResolutionService(
     async refundOriginalCurrency(
       actor: AdminIdentity,
       input: {
+        piId: string;
         receiptId: string;
         commandId: string;
         amount: string;
@@ -495,9 +499,9 @@ export function createPiFundResolutionService(
         p.request_id,p.document_number
         FROM pi_original_currency_receipts r JOIN pi_original_currency_receipt_balances b ON b.receipt_id=r.id
         JOIN proforma_invoices p ON p.id=r.pi_id
-        WHERE r.id=?`,
+        WHERE r.id=? AND r.pi_id=?`,
         )
-        .bind(receiptId)
+        .bind(receiptId, required(input.piId, "Source PI"))
         .first<{
           pi_id: string;
           currency: string;

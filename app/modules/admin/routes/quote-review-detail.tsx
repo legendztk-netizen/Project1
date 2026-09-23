@@ -38,9 +38,25 @@ export async function loader({ context, params }: Route.LoaderArgs) {
     params.requestId,
   );
   if (!review) throw new Response("Not found", { status: 404 });
-  const technical = await technicalReviewContext(env.DB, params.requestId);
+  const [technical, availability] = await Promise.all([
+    technicalReviewContext(env.DB, params.requestId),
+    env.DB.prepare(
+      `SELECT
+        EXISTS(SELECT 1 FROM quote_preparation_drafts WHERE request_id=?) AS hasDraft,
+        EXISTS(SELECT 1 FROM proforma_invoice_heads WHERE request_id=?) AS hasCurrentPi`,
+    )
+      .bind(params.requestId, params.requestId)
+      .first<{ hasDraft: number; hasCurrentPi: number }>(),
+  ]);
   return data(
-    { adminIdentity, environment: env.APP_ENV, review, technical },
+    {
+      adminIdentity,
+      environment: env.APP_ENV,
+      review,
+      technical,
+      hasDraft: Boolean(availability?.hasDraft),
+      hasCurrentPi: Boolean(availability?.hasCurrentPi),
+    },
     { headers: { "Cache-Control": "private, no-store" } },
   );
 }
@@ -155,6 +171,44 @@ export default function QuoteReviewDetail({
                   报价定价
                 </button>
               </Form>
+              {loaderData.hasDraft ? (
+                <Link
+                  className="button button-primary"
+                  to={`/admin/quotes/${review.id}/terms`}
+                >
+                  商业与交付条款
+                </Link>
+              ) : (
+                <span title="请先开始报价定价">
+                  <button
+                    className="button admin-quote-action-unavailable"
+                    type="button"
+                    disabled
+                    aria-label="商业与交付条款：请先开始报价定价"
+                  >
+                    商业与交付条款
+                  </button>
+                </span>
+              )}
+              {loaderData.hasCurrentPi ? (
+                <Link
+                  className="button button-primary"
+                  to={`/admin/quotes/${review.id}/pi/payments`}
+                >
+                  付款与到账
+                </Link>
+              ) : (
+                <span title="请先签发 PI">
+                  <button
+                    className="button admin-quote-action-unavailable"
+                    type="button"
+                    disabled
+                    aria-label="付款与到账：请先签发 PI"
+                  >
+                    付款与到账
+                  </button>
+                </span>
+              )}
               <Link
                 className="button button-secondary"
                 to={`/admin/quotes/${review.id}/conversation`}

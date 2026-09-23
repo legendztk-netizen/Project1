@@ -40,6 +40,7 @@ import {
   createPiLifecycleService,
   type ReplaceProformaInvoiceCommand,
 } from "../app/modules/proforma-invoice/application/pi-lifecycle-service";
+import { createPiAcceptedAgreementService } from "../app/modules/proforma-invoice/application/pi-accepted-agreement-service";
 
 const directory = mkdtempSync(join(tmpdir(), "pi-d1-"));
 let platform: Awaited<
@@ -402,6 +403,39 @@ async function replacementFixture(
   };
   return { ...f, first, next, command };
 }
+
+it("retaining an accepted agreement invalidates queued replacements but cannot restore a superseded PI", async () => {
+  const f = await replacementFixture(true);
+  const lifecycle = lifecycleService();
+  const queued = await lifecycle.reserveReplacement(actor, f.command);
+  const agreements = createPiAcceptedAgreementService(db);
+  const ready = await agreements.readiness(actor, f.first.id);
+  await agreements.retain(actor, {
+    piId: f.first.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: ready.paymentVersion,
+    expectedHeadVersion: ready.headVersion,
+    acceptanceId: ready.acceptanceId!,
+    documentVersion: ready.documentVersion,
+    snapshotHash: ready.snapshotHash,
+    latestQuoteRevisionId: ready.latestQuoteRevisionId,
+    reviewed: true,
+    noPaymentDeadline: false,
+    reason: "Keep the customer accepted agreement",
+  });
+  await expect(
+    lifecycle.renderReserved(queued.commandId),
+  ).rejects.toMatchObject({ status: 409 });
+  expect((await service().adminCurrent(actor, f.first.requestId))?.id).toBe(
+    f.first.id,
+  );
+  const g = await replacementFixture(true);
+  const replacement = await lifecycle.reserveReplacement(actor, g.command);
+  await lifecycle.renderReserved(replacement.commandId);
+  expect(
+    (await agreements.readiness(actor, g.first.id)).blockedReason,
+  ).toContain("已被替换");
+});
 
 it("reserves without rendering and publishes through the existing durable PDF job consumer", async () => {
   const f = await replacementFixture();

@@ -146,6 +146,13 @@ export default function CommercialTerms({
   useEffect(() => {
     if (actionData?.error) submitting.current = false;
   }, [actionData]);
+  useEffect(() => {
+    // An identical save succeeds without increasing the draft version.
+    if (!pending && submitting.current && !actionData?.error) {
+      setDirty(false);
+      submitting.current = false;
+    }
+  }, [pending, actionData]);
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       dirty &&
@@ -180,10 +187,10 @@ export default function CommercialTerms({
       <main className="admin-main private-review-page">
         <Link
           className="admin-back-link"
-          to={`/admin/quotes/${params.requestId}/pricing`}
+          to={`/admin/quotes/${params.requestId}`}
         >
           <ArrowLeft size={17} />
-          返回定价
+          返回询价详情
         </Link>
         <h1>商业与交付条款</h1>
         <button

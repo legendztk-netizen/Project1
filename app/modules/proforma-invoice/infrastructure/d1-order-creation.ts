@@ -1,5 +1,9 @@
 import { quoteNotificationOutboxStatement } from "../../quote-notifications/infrastructure/d1-quote-notifications";
 import { piSha256 } from "../domain/proforma-invoice";
+import {
+  effectiveQuoteAgreementSql,
+  unspecifiedPaymentDeadlineSql,
+} from "./accepted-agreement-sql";
 
 // Used by both payment confirmation and PI acceptance batches. D1 executes the
 // whole batch atomically; the unique RFQ/PI constraints settle racing final events.
@@ -35,18 +39,18 @@ export async function orderCreationStatements(
        JOIN pi_payment_confirmations c ON c.pi_id=p.id
        JOIN proforma_invoice_heads h ON h.request_id=p.request_id AND h.pi_id=p.id
        JOIN quote_revisions q ON q.id=p.quote_revision_id AND q.request_id=p.request_id
-       WHERE p.id=? AND pay.term_kind!='legacy_review' AND pay.receipt_history_known=1
+       WHERE p.id=? AND (pay.term_kind!='legacy_review' OR ${unspecifiedPaymentDeadlineSql("p")}) AND pay.receipt_history_known=1
          AND pay.confirmation_valid=1
          AND NOT EXISTS(SELECT 1 FROM pi_payment_disputes d WHERE d.pi_id=p.id AND d.active=1)
          AND pay.currency='USD' AND pay.total_due_cents>0
          AND pay.amount_received_cents+pay.allocated_in_cents-pay.allocated_out_cents-pay.refunded_cents>=pay.total_due_cents
          AND c.confirmed_cents=pay.total_due_cents AND c.currency='USD'
-         AND pay.due_at IS NOT NULL AND (pay.due_at>=? OR EXISTS(
+         AND (${unspecifiedPaymentDeadlineSql("p")} OR pay.due_at>=? OR EXISTS(
            SELECT 1 FROM pi_late_payment_reviews review WHERE review.pi_id=p.id
              AND review.decision='same_terms_approved' AND review.reviewed_at>=pay.due_at))
          AND a.document_version=p.document_version AND a.snapshot_hash=p.snapshot_hash
          AND a.quote_revision_id=p.quote_revision_id
-         AND p.quote_revision_id=(SELECT id FROM quote_revisions WHERE request_id=p.request_id ORDER BY revision_number DESC LIMIT 1)
+         AND ${effectiveQuoteAgreementSql("p")}
          AND (NOT EXISTS(SELECT 1 FROM json_each(p.snapshot_json,'$.lines') line
            WHERE json_extract(line.value,'$.madeToOrder')=1)
            OR json_extract(q.snapshot_json,'$.factoryReviewConfirmed')=1)

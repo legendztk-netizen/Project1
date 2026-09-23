@@ -237,6 +237,16 @@ export default function QuoteReviews({ loaderData }: Route.ComponentProps) {
                       >
                         查看快照
                       </Link>
+                      {review.orderId ? (
+                        <span>
+                          <Link
+                            className="button button-secondary"
+                            to={`/admin/orders/${encodeURIComponent(review.orderId)}`}
+                          >
+                            查看订单
+                          </Link>
+                        </span>
+                      ) : null}
                     </td>
                   </tr>
                 ))}

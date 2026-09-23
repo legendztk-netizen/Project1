@@ -268,9 +268,6 @@ export default function ProformaInvoice({
               合计 USD {(current.snapshot.totals.totalCents / 100).toFixed(2)}
             </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-              <Link className="button button-primary" to={`${base}/payments`}>
-                付款与到账
-              </Link>
               {paymentHistory
                 .filter((item) => item.id !== current.id)
                 .map((item) => (

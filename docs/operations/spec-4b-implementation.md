@@ -4,7 +4,7 @@ Status: local implementation acceptance completed. This runbook does not authori
 
 ## Legacy inventory before migration
 
-Take a D1 backup and run these read-only queries against the deployment target before applying migrations 0081-0090. Save the counts and affected PI IDs in the deployment record. Do not infer a payment deadline, receipt amount, or product evidence from a current catalog record.
+Take a D1 backup and run these read-only queries against the deployment target before applying migrations 0081-0091. Save the counts and affected PI IDs in the deployment record. Do not infer a payment deadline, receipt amount, or product evidence from a current catalog record.
 
 ```sql
 SELECT p.id, p.document_number, p.request_id,
@@ -29,12 +29,20 @@ WHERE a.term_kind='legacy_review' OR a.receipt_history_known=0
 ORDER BY p.issued_at,p.id;
 ```
 
-Legacy PIs without immutable payment terms stay under manual review. A zero in the new account is **unknown historical receipt evidence**, not proof that nothing was paid. Reconcile against seller-controlled bank/PayPal records and reissue a PI with explicit terms and fresh acceptance where the old agreement cannot be established. No migration confirms Cleared Funds or creates Orders for old records.
+Legacy PIs without immutable payment terms initially stay under manual review. A zero in the new account is **unknown historical receipt evidence**, not proof that nothing was paid. Reconcile against seller-controlled bank/PayPal records and reissue a PI with explicit terms and fresh acceptance where the old agreement cannot be established. No migration confirms Cleared Funds or creates Orders for old records.
+
+### Retain an accepted agreement
+
+The Admin payments workspace provides **Use the customer's accepted PI**. An administrator must review the exact accepted document and record a reason. The append-only review binds the PI version/hash, acceptance, payment version, and latest published quote. It does not modify the PI, PDF, acceptance, receipt balance, or order status.
+
+For a verified legacy PI whose immutable snapshot has no payment terms, the approved rule is **no payment deadline agreed**. No date is inferred or inserted. Full net funds, external settlement verification, technical approval, and dispute guards still apply before payment confirmation and order creation. A PI with a known deadline retains that deadline and the existing late-payment review requirements.
+
+A later published quote invalidates the retention review until reviewed again. A superseded PI cannot be restored using this action. Pending replacement work based on the previous head version becomes stale. Identical commercial-term saves preserve the draft version; changed draft terms do not rewrite issued documents.
 
 ## Deployment and recovery
 
 1. Pause Admin payment mutations and preserve a backup. Record PI/acceptance counts, latest migration, and the legacy-review inventory above.
-2. Apply migrations in order through `0090_pi_payment_review_and_provenance.sql`; verify `application_schema_state.version = 91`, account count matches issued PI count, and legacy review cases remain blocked from confirmation. Confirm the late-review guard trigger and transferred-fund guard exist.
+2. Apply migrations in order through `0091_retain_accepted_pi_agreement.sql`; verify `application_schema_state.version = 92`, account count matches issued PI count, and unreviewed legacy cases remain blocked from confirmation. Confirm the late-review, transferred-fund, and accepted-agreement review guard triggers exist.
 3. Deploy the Worker and perform an authorized test with a newly issued test PI: acceptance-first and payment-first each produce one Order and one initialization per frozen line. Verify customer ownership and notification outbox rows.
 4. Re-enable payment mutations only after Admin/customer read paths and the release-gate query are healthy. Monitor failed notification deliveries separately from committed business events.
 5. On mismatch, stop new payment mutations and retain the database/backup for investigation. Reconcile by immutable event and command IDs; do not delete a confirmation, Order, allocation, refund, audit record, or acceptance to retry. A correction requires the Review Hold and Owner resolution workflow.

@@ -1,4 +1,5 @@
 import type { AdminIdentity } from "#workers/admin-access";
+import { effectiveQuoteAgreementSql } from "../infrastructure/accepted-agreement-sql";
 import { dueDateInstant } from "../domain/pi-payment-terms";
 import { piSha256 } from "../domain/proforma-invoice";
 import { orderCreationStatements } from "../infrastructure/d1-order-creation";
@@ -341,8 +342,7 @@ export function createPiLatePaymentService(
             AND pay.actual_channel IS NOT NULL AND pay.currency='USD'
             AND a.document_version=p.document_version AND a.snapshot_hash=p.snapshot_hash
             AND a.quote_revision_id=p.quote_revision_id
-            AND p.quote_revision_id=(SELECT id FROM quote_revisions WHERE request_id=p.request_id
-              ORDER BY revision_number DESC LIMIT 1)
+            AND ${effectiveQuoteAgreementSql("p")}
             AND NOT EXISTS(SELECT 1 FROM confirmed_orders WHERE request_id=p.request_id)
             AND (NOT EXISTS(SELECT 1 FROM json_each(p.snapshot_json,'$.lines') line
               WHERE json_extract(line.value,'$.madeToOrder')=1)
@@ -398,8 +398,7 @@ export function createPiLatePaymentService(
             WHERE pay.pi_id=? AND pay.version=? AND pay.receipt_history_known=1
               AND pay.amount_received_cents+pay.allocated_in_cents-pay.allocated_out_cents-pay.refunded_cents>=pay.total_due_cents AND pay.total_due_cents>0
               AND pay.actual_channel IS NOT NULL AND (pay.due_at<? OR pay.late_review_required=1)
-              AND p.quote_revision_id=(SELECT id FROM quote_revisions WHERE request_id=p.request_id
-                ORDER BY revision_number DESC LIMIT 1)
+              AND ${effectiveQuoteAgreementSql("p")}
               AND (NOT EXISTS(SELECT 1 FROM json_each(p.snapshot_json,'$.lines') line
                  WHERE json_extract(line.value,'$.madeToOrder')=1)
                  OR json_extract(q.snapshot_json,'$.factoryReviewConfirmed')=1)

@@ -16,10 +16,13 @@ interface AdminQuoteReviewRow {
   snapshot_json: string;
   submitted_at: string;
   review_state: AdminQuoteReviewState;
+  order_id: string | null;
 }
 
 const reviewSelect = `SELECT request.id, request.reference_number, request.snapshot_json, request.submitted_at,
+  o.id AS order_id,
   CASE
+    WHEN o.id IS NOT NULL THEN 'order_created'
     WHEN a.id IS NOT NULL THEN 'pi_accepted'
     WHEN p.id IS NOT NULL AND julianday(p.valid_until) <= julianday('now') THEN 'pi_expired'
     WHEN p.id IS NOT NULL THEN 'pi_ready'
@@ -33,7 +36,8 @@ const reviewSelect = `SELECT request.id, request.reference_number, request.snaps
   LEFT JOIN proforma_invoices p ON p.id=h.pi_id AND p.request_id=request.id AND p.quote_revision_id=q.id
   LEFT JOIN pi_acceptances a ON a.pi_id=p.id AND a.request_id=request.id
     AND a.quote_revision_id=q.id AND a.document_version=p.document_version
-    AND a.snapshot_hash=p.snapshot_hash AND a.purchasing_context_id=request.purchasing_context_id`;
+    AND a.snapshot_hash=p.snapshot_hash AND a.purchasing_context_id=request.purchasing_context_id
+  LEFT JOIN confirmed_orders o ON o.pi_id=p.id AND o.request_id=request.id`;
 
 function source(row: AdminQuoteReviewRow): AdminQuoteReviewSource {
   let snapshot: unknown = null;
@@ -48,6 +52,7 @@ function source(row: AdminQuoteReviewRow): AdminQuoteReviewSource {
     snapshot,
     submittedAt: row.submitted_at,
     reviewState: row.review_state,
+    orderId: row.order_id,
   };
 }
 

@@ -107,6 +107,23 @@ export function createQuotePreparation(db: D1Database, actor: AdminIdentity) {
           status: 400,
         });
       const now = new Date().toISOString();
+      // An unchanged save records command replay without creating a new draft revision.
+      if (JSON.stringify(draft.terms) === JSON.stringify(terms)) {
+        await db
+          .prepare(
+            `INSERT INTO quote_pricing_commands(id,request_id,actor_id,payload_hash,resulting_version)
+          SELECT ?,?,?,?,version FROM quote_preparation_drafts WHERE request_id=? AND version=?
+          ON CONFLICT(id) DO NOTHING`,
+          )
+          .bind(commandId, requestId, actor.id, payloadHash, requestId, version)
+          .run();
+        const completed = await replay();
+        if (!completed)
+          throw new Response("Draft changed; reload before saving", {
+            status: 409,
+          });
+        return completed;
+      }
       try {
         await db.batch([
           db

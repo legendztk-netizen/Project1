@@ -320,6 +320,36 @@ it("persists terms atomically, rejects missing tax evidence and shares pricing c
   const saved = (await service.find("pricing-rfq"))!;
   expect(saved.terms).toEqual(commercialTerms());
   expect(saved.source).toEqual(source);
+  const repeatedCommand = crypto.randomUUID();
+  const auditCount = await db
+    .prepare(
+      "SELECT count(*) n FROM admin_audit_events WHERE event_type='quote_commercial.changed' AND entity_id='pricing-rfq'",
+    )
+    .first();
+  expect(
+    await service.saveTerms(
+      "pricing-rfq",
+      version,
+      equivalent,
+      repeatedCommand,
+    ),
+  ).toBe(version);
+  expect(
+    await service.saveTerms(
+      "pricing-rfq",
+      version,
+      equivalent,
+      repeatedCommand,
+    ),
+  ).toBe(version);
+  expect((await service.find("pricing-rfq"))?.version).toBe(version);
+  expect(
+    await db
+      .prepare(
+        "SELECT count(*) n FROM admin_audit_events WHERE event_type='quote_commercial.changed' AND entity_id='pricing-rfq'",
+      )
+      .first(),
+  ).toEqual(auditCount);
 });
 
 it("requires an associated private exemption record, not another RFQ's evidence", async () => {
@@ -400,6 +430,15 @@ it("issues once under concurrency, freezes exact source and excludes internal re
   expect(first.snapshot.prices).toEqual(draft.prices);
   expect(first.snapshot.terms).toEqual(draft.terms);
   expect(first.snapshot.revisionNumber).toBe(1);
+  expect(
+    await preparation.saveTerms(
+      "pricing-rfq",
+      draft.version,
+      draft.terms!,
+      crypto.randomUUID(),
+    ),
+  ).toBe(draft.version);
+  expect(await revisions.current("pricing-rfq")).toEqual(first);
   await expect(
     revisions.issueRevision(actor, {
       ...input,

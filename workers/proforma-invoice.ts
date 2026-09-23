@@ -1,4 +1,5 @@
 import { redirect } from "react-router";
+import { createPiAcceptedAgreementService } from "../app/modules/proforma-invoice/application/pi-accepted-agreement-service";
 import type { ApplicationBindings } from "./environment";
 import { createCustomerIdentityService } from "../app/modules/customer-identity/application/customer-identity-service";
 import {
@@ -21,6 +22,13 @@ export function piPayments(
   options?: { auditIp?: string },
 ) {
   return createPiPaymentService(env.DB, options);
+}
+
+export function piAcceptedAgreements(
+  env: ApplicationBindings,
+  options?: { auditIp?: string },
+) {
+  return createPiAcceptedAgreementService(env.DB, options);
 }
 
 export function confirmedOrders(env: ApplicationBindings) {

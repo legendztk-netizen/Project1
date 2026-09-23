@@ -77,6 +77,40 @@ it("keeps accepted PIs out of the awaiting-review queue", () => {
   ]);
 });
 
+it("filters generated orders separately from accepted PIs without changing technical review", () => {
+  const accepted = projectAdminQuoteReview({
+    ...source({ lines: [{ lineKind: "standard" }] }),
+    reviewState: "pi_accepted",
+  });
+  const generated = projectAdminQuoteReview({
+    ...source({ lines: [{ lineKind: "standard" }] }, { id: "ordered" }),
+    reviewState: "order_created",
+    orderId: "order:pi-1",
+  });
+  expect(accepted.orderId).toBeNull();
+  expect(generated).toMatchObject({
+    reviewState: "order_created",
+    orderId: "order:pi-1",
+    technicalReview: { state: "not_flagged" },
+  });
+  expect(
+    filterAdminQuoteReviews(
+      [accepted, generated],
+      parseAdminQuoteReviewFilters(
+        new URL("https://test.invalid/?review=order_created"),
+      ),
+    ),
+  ).toEqual([generated]);
+  expect(
+    filterAdminQuoteReviews(
+      [accepted, generated],
+      parseAdminQuoteReviewFilters(
+        new URL("https://test.invalid/?review=pi_accepted"),
+      ),
+    ),
+  ).toEqual([accepted]);
+});
+
 function source(
   snapshot: unknown,
   overrides: Partial<{

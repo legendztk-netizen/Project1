@@ -1,5 +1,5 @@
 import { Form, Link, data, redirect, useNavigation } from "react-router";
-import { ArrowLeft, ArrowRight, Save } from "lucide-react";
+import { ArrowLeft, Save } from "lucide-react";
 import { useState } from "react";
 import type { Route } from "./+types/quote-pricing";
 import { requireAdminRequestContext } from "../infrastructure/admin-request-context";
@@ -103,15 +103,6 @@ export default function QuotePricing({
           返回询价详情
         </Link>
         <h1>报价定价 · USD</h1>
-        {draft ? (
-          <Link
-            className="button button-primary"
-            to={`/admin/quotes/${params.requestId}/terms`}
-          >
-            商业与交付条款
-            <ArrowRight size={18} aria-hidden="true" />
-          </Link>
-        ) : null}
         {actionData?.error ? <p role="alert">{actionData.error}</p> : null}
         {!draft ? (
           <Form method="post">

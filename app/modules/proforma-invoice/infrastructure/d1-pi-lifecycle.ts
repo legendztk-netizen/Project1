@@ -17,6 +17,7 @@ export interface PiLifecycleRow extends PiRow {
   head_version: number;
   current_pi_id: string;
   current_quote_revision_id: string;
+  accepted_agreement_retained: number;
   source_revision_json: string;
   source_revision_hash: string;
   acceptance_id: string | null;
@@ -50,6 +51,7 @@ export const replacementCurrentGuard = `EXISTS(
 
 const stateSelect = `SELECT p.*,h.version AS head_version,h.pi_id AS current_pi_id,
   (SELECT id FROM quote_revisions WHERE request_id=p.request_id ORDER BY revision_number DESC LIMIT 1) AS current_quote_revision_id,
+  EXISTS(SELECT 1 FROM retained_pi_agreements WHERE pi_id=p.id) AS accepted_agreement_retained,
   i.source_revision_json,i.quote_revision_hash AS source_revision_hash,
   a.id AS acceptance_id,a.document_version AS acceptance_document_version,a.snapshot_hash AS acceptance_snapshot_hash,a.accepted_at,
   s.superseded_at,s.replacement_pi_id AS superseded_by_pi_id

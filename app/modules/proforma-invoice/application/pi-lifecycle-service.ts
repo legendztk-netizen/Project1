@@ -105,7 +105,9 @@ export function createPiLifecycleService(
       throw new Response("PI snapshot integrity failure", { status: 409 });
     return publicPiLifecycle(lifecycleRecord(row), {
       currentPiId: row.current_pi_id,
-      currentQuoteRevisionId: row.current_quote_revision_id,
+      currentQuoteRevisionId: row.accepted_agreement_retained
+        ? row.quote_revision_id
+        : row.current_quote_revision_id,
       now: now(),
     });
   }

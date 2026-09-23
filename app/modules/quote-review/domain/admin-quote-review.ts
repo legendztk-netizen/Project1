@@ -5,6 +5,7 @@ export const adminQuoteReviewLabels = {
   pi_ready: "PI 待接受",
   pi_expired: "PI 已过期",
   pi_accepted: "PI 已接受",
+  order_created: "订单已生成",
 } as const;
 export type AdminQuoteReviewState = keyof typeof adminQuoteReviewLabels;
 export type AdminTechnicalReviewState =
@@ -26,6 +27,7 @@ export interface AdminQuoteReviewSource {
   snapshot: unknown;
   submittedAt: string;
   reviewState?: AdminQuoteReviewState;
+  orderId?: string | null;
   technicalSnapshot?: unknown;
   technicalReviewInvalidated?: boolean;
   technicalCompletion?: {
@@ -37,6 +39,7 @@ export interface AdminQuoteReviewSource {
 }
 
 export interface AdminQuoteReviewSummary extends AdminQuoteReviewSource {
+  orderId: string | null;
   customerDisplayName: string | null;
   customerEmail: string | null;
   destinationSummary: string | null;
@@ -209,6 +212,7 @@ export function projectAdminQuoteReview(
           ? "个人采购"
           : null,
     reviewState: source.reviewState ?? "awaiting_review",
+    orderId: source.orderId ?? null,
     technicalReview: {
       ...technicalReview(source.technicalSnapshot ?? source.snapshot),
       ...(source.technicalReviewInvalidated

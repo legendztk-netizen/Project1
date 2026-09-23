@@ -169,9 +169,11 @@ export default function ProformaInvoice({
                     <dd>
                       {payment.dueAt
                         ? formatPiDate(payment.dueAt, "customer")
-                        : payment.termKind === "legacy_review"
-                          ? "Please contact Support to confirm historical payment terms"
-                          : "10 US bank business days after acceptance"}
+                        : payment.paymentDeadlineUnspecified
+                          ? "Not specified in the accepted PI"
+                          : payment.termKind === "legacy_review"
+                            ? "Please contact Support to confirm historical payment terms"
+                            : "10 US bank business days after acceptance"}
                     </dd>
                   </div>
                 </dl>
