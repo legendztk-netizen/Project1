@@ -151,10 +151,16 @@ export function CustomerQuoteOffer({
             <dd>
               <strong>{group.label}</strong>
               {group.allocations.map((allocation) => {
-                const line = offer.lines.find((item) => item.id === allocation.lineId);
+                const line = offer.lines.find(
+                  (item) => item.id === allocation.lineId,
+                );
                 return (
                   <span key={allocation.lineId} className="shipment-group-line">
-                    {line?.displayName ?? allocation.lineId}: {allocation.physicalQuantity} {line?.lineKind === "length_based_hose" ? "pieces" : "units"}
+                    {line?.displayName ?? allocation.lineId}:{" "}
+                    {allocation.physicalQuantity}{" "}
+                    {line?.lineKind === "length_based_hose"
+                      ? "pieces"
+                      : "units"}
                   </span>
                 );
               })}
@@ -162,7 +168,9 @@ export function CustomerQuoteOffer({
                 {group.transportMethod} · {group.incoterm} {group.namedPlace}
               </span>
               <span className="shipment-group-line">
-                Freight {usd(group.freightCents)} · Insurance {usd(group.insuranceCents)} · Duties/import {usd(group.dutiesImportCents)}
+                Freight {usd(group.freightCents)} · Insurance{" "}
+                {usd(group.insuranceCents)} · Duties/import{" "}
+                {usd(group.dutiesImportCents)}
               </span>
             </dd>
           </div>

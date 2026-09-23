@@ -26,7 +26,9 @@ export function ShipmentGroupFields({
   transportMethod: string;
   onDirty?: () => void;
 }) {
-  const [groupCount, setGroupCount] = useState(Math.max(2, groups?.length ?? 2));
+  const [groupCount, setGroupCount] = useState(
+    Math.max(2, groups?.length ?? 2),
+  );
   const changeCount = (increment: number) => {
     setGroupCount((count) => count + increment);
     onDirty?.();
@@ -106,8 +108,18 @@ export function ShipmentGroupFields({
               {(
                 [
                   ["groupFreight", "freightCents", "freight", "本批运费 USD"],
-                  ["groupInsurance", "insuranceCents", "insurance", "本批保险 USD"],
-                  ["groupDuties", "dutiesImportCents", "dutiesImport", "本批进口费用 USD"],
+                  [
+                    "groupInsurance",
+                    "insuranceCents",
+                    "insurance",
+                    "本批保险 USD",
+                  ],
+                  [
+                    "groupDuties",
+                    "dutiesImportCents",
+                    "dutiesImport",
+                    "本批进口费用 USD",
+                  ],
                 ] as const
               ).map(([field, groupKey, chargeKey, label]) => (
                 <label key={field}>

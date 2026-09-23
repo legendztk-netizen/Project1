@@ -154,7 +154,9 @@ export function validatedShipmentGroups(
       ([lineId, quantity]) => allocated.get(lineId) !== quantity,
     )
   )
-    throw new Error("Shipment allocations must exactly cover physical quantities");
+    throw new Error(
+      "Shipment allocations must exactly cover physical quantities",
+    );
   for (const [field, expected] of [
     ["freightCents", terms.charges.freight],
     ["insuranceCents", terms.charges.insurance],

@@ -302,7 +302,9 @@ export default function CommercialTerms({
               <select
                 name="shipmentMode"
                 defaultValue={terms?.shipmentMode ?? "together"}
-                onChange={(event) => setShipmentMode(event.target.value as "together" | "split")}
+                onChange={(event) =>
+                  setShipmentMode(event.target.value as "together" | "split")
+                }
               >
                 <option value="together">合并发货</option>
                 <option value="split">约定分批发货</option>
@@ -318,11 +320,24 @@ export default function CommercialTerms({
                 lines={draft.source.lines.map((line) => ({
                   id: line.id,
                   sku: line.sku,
-                  unit: line.lineKind === "length_based_hose" ? "件" : line.salesUnit,
+                  unit:
+                    line.lineKind === "length_based_hose"
+                      ? "件"
+                      : line.salesUnit,
                   physicalQuantity: physicalLineQuantity(line),
                 }))}
-                groups={terms?.shipmentMode === "split" ? terms.shipmentGroups : undefined}
-                charges={terms?.charges ?? { freight: 0, insurance: 0, dutiesImport: 0 }}
+                groups={
+                  terms?.shipmentMode === "split"
+                    ? terms.shipmentGroups
+                    : undefined
+                }
+                charges={
+                  terms?.charges ?? {
+                    freight: 0,
+                    insurance: 0,
+                    dutiesImport: 0,
+                  }
+                }
                 transportMethod={terms?.transportMethod ?? ""}
                 onDirty={() => setDirty(true)}
               />

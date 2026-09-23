@@ -101,7 +101,11 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
         orderId,
         expectedVersion: Number(form.get("expectedVersion")),
         commandId: String(form.get("commandId") ?? ""),
-        groups: parseShipmentGroupsForm(form, plan.lines ?? [], plan.originalTerms),
+        groups: parseShipmentGroupsForm(
+          form,
+          plan.lines ?? [],
+          plan.originalTerms,
+        ),
         reviewNote: String(form.get("reviewNote") ?? ""),
         matchesAcceptedTerms: form.get("matchesAcceptedTerms") === "on",
       });
@@ -297,7 +301,8 @@ export default function ConfirmedOrderDetail({
 }: {
   loaderData: Awaited<ReturnType<typeof loader>>["data"];
 }) {
-  const { order, drafts, activity, shipmentPlan, commandId, returnTo } = loaderData;
+  const { order, drafts, activity, shipmentPlan, commandId, returnTo } =
+    loaderData;
   const actionData = useActionData<typeof action>();
   const [tab, setTab] = useState<Tab>("products");
   const dialog = useRef<HTMLDialogElement>(null);

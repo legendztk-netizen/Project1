@@ -40,15 +40,20 @@ export function CustomerShipmentPlan({ plan }: { plan: Plan }) {
               <strong>{statusLabels[shipment.status]}</strong>
             </div>
             {shipment.held && (
-              <p role="status">Release is currently on hold. Contact Support for details.</p>
+              <p role="status">
+                Release is currently on hold. Contact Support for details.
+              </p>
             )}
             <p>
-              {shipment.incoterm} · {shipment.namedPlace} · {shipment.transportMethod}
+              {shipment.incoterm} · {shipment.namedPlace} ·{" "}
+              {shipment.transportMethod}
             </p>
             <ul>
               {shipment.allocations.map((allocation) => (
                 <li key={allocation.lineId}>
-                  <span>{allocation.displayName} · {allocation.sku}</span>
+                  <span>
+                    {allocation.displayName} · {allocation.sku}
+                  </span>
                   <strong>
                     {allocation.physicalQuantity} {allocation.unit}
                     {allocation.lengthPerPiece &&

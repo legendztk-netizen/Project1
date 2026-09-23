@@ -42,7 +42,9 @@ export function AdminShipmentPlan({
     <div className="order-shipment-workspace">
       <div className="order-shipment-summary">
         <strong>
-          {plan.status === "review" ? "计划待核对" : `${plan.shipments.length} 批发货计划`}
+          {plan.status === "review"
+            ? "计划待核对"
+            : `${plan.shipments.length} 批发货计划`}
         </strong>
         <span>计划版本 {plan.version}</span>
       </div>
@@ -53,7 +55,8 @@ export function AdminShipmentPlan({
       )}
       {plan.status === "review" && (
         <p role="status">
-          原 PI 的分批描述尚未形成可核对的逐行数量计划，不会自动推断批次或发货时间。
+          原 PI
+          的分批描述尚未形成可核对的逐行数量计划，不会自动推断批次或发货时间。
         </p>
       )}
       {plan.sourceText && (
@@ -63,7 +66,9 @@ export function AdminShipmentPlan({
         </div>
       )}
       {plan.reviewNote && (
-        <p className="order-shipment-review-note">上次核对依据：{plan.reviewNote}</p>
+        <p className="order-shipment-review-note">
+          上次核对依据：{plan.reviewNote}
+        </p>
       )}
       {plan.shipments.length > 0 && (
         <div className="order-shipment-list">
@@ -78,12 +83,15 @@ export function AdminShipmentPlan({
                 </span>
               </div>
               <p>
-                {shipment.incoterm} · {shipment.namedPlace} · {shipment.transportMethod}
+                {shipment.incoterm} · {shipment.namedPlace} ·{" "}
+                {shipment.transportMethod}
               </p>
               <ul>
                 {shipment.allocations.map((allocation) => (
                   <li key={allocation.lineId}>
-                    <span>{allocation.displayName} · {allocation.sku}</span>
+                    <span>
+                      {allocation.displayName} · {allocation.sku}
+                    </span>
                     <strong>
                       {allocation.physicalQuantity} {allocation.unit}
                       {allocation.lengthPerPiece &&
@@ -102,7 +110,10 @@ export function AdminShipmentPlan({
         </div>
       )}
       {canMap && (
-        <Form method="post" className="commercial-settings-form order-shipment-map-form">
+        <Form
+          method="post"
+          className="commercial-settings-form order-shipment-map-form"
+        >
           <input type="hidden" name="intent" value="shipment-map" />
           <input type="hidden" name="expectedVersion" value={plan.version} />
           <input type="hidden" name="commandId" value={commandId} />
@@ -130,13 +141,16 @@ export function AdminShipmentPlan({
           </label>
           <label className="quote-confirmation">
             <input type="checkbox" name="matchesAcceptedTerms" required />
-            我已逐项核对批次数量、运费和交付条款与客户接受的 PI 一致；实质变更须另走订单变更确认。
+            我已逐项核对批次数量、运费和交付条款与客户接受的 PI
+            一致；实质变更须另走订单变更确认。
           </label>
           {error && <p role="alert">{error}</p>}
           <button
             type="submit"
             className="button button-primary"
-            disabled={busy || plan.paymentHeld || lines.some((line) => !line.quantity)}
+            disabled={
+              busy || plan.paymentHeld || lines.some((line) => !line.quantity)
+            }
           >
             保存分批映射
           </button>

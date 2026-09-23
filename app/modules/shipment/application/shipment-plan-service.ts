@@ -126,7 +126,8 @@ async function readPlan(db: D1Database, row: PlanRow, admin: boolean) {
               line.lineKind === "length_based_hose"
                 ? line.lengthOrder?.pieceCount
                 : line.quantity,
-            unit: line.lineKind === "length_based_hose" ? "pieces" : line.salesUnit,
+            unit:
+              line.lineKind === "length_based_hose" ? "pieces" : line.salesUnit,
           })),
         }
       : {}),
@@ -197,7 +198,8 @@ export function createShipmentPlanService(db: D1Database) {
       )
       .bind(orderId)
       .first<PlanRow>();
-    if (!row) throw new Response("Order shipment plan not found", { status: 404 });
+    if (!row)
+      throw new Response("Order shipment plan not found", { status: 404 });
     return row;
   }
 
@@ -218,7 +220,8 @@ export function createShipmentPlanService(db: D1Database) {
         )
         .bind(profileId, profileId, profileId, orderId)
         .first<PlanRow>();
-      if (!row) throw new Response("Order shipment plan not found", { status: 404 });
+      if (!row)
+        throw new Response("Order shipment plan not found", { status: 404 });
       return readPlan(db, row, false);
     },
     async mapHistoricalSplit(
@@ -279,7 +282,10 @@ export function createShipmentPlanService(db: D1Database) {
             resulting_version: number;
           }>();
         if (!receipt) return null;
-        if (receipt.actor_id !== actor.id || receipt.payload_hash !== payloadHash)
+        if (
+          receipt.actor_id !== actor.id ||
+          receipt.payload_hash !== payloadHash
+        )
           throw new Response("Command identity conflict", { status: 409 });
         return receipt.resulting_version;
       };

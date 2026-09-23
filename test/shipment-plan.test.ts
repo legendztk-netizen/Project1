@@ -70,7 +70,10 @@ describe("shipment plan", () => {
         ...split,
         shipmentGroups: [
           split.shipmentGroups[0],
-          { ...second, allocations: [{ lineId: "adapter", physicalQuantity: 3 }] },
+          {
+            ...second,
+            allocations: [{ lineId: "adapter", physicalQuantity: 3 }],
+          },
         ],
       }),
     ).toThrow(/exactly cover/);

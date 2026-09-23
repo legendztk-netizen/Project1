@@ -1020,7 +1020,10 @@ it("freezes the default payment deadline exactly once on website acceptance", as
     confirmed,
   );
   const plan = createShipmentPlanService(db);
-  const customerPlan = await plan.customerRead(f.profileId, confirmed.order!.id);
+  const customerPlan = await plan.customerRead(
+    f.profileId,
+    confirmed.order!.id,
+  );
   expect(customerPlan).toMatchObject({
     status: "ready",
     shipments: [
