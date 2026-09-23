@@ -16,6 +16,8 @@ interface OrderRow {
   total_cents: number;
   confirmed_at: string;
   held: number;
+  shipment_count?: number;
+  plan_status?: "ready" | "review" | null;
 }
 
 export interface AdminOrderFilters {
@@ -43,6 +45,8 @@ interface AdminOrderSummaryRow {
   country_code: string | null;
   held: number;
   line_count: number;
+  shipment_count: number;
+  plan_status: "ready" | "review" | null;
   first_line_json: string | null;
   second_line_json: string | null;
 }
@@ -84,6 +88,8 @@ async function projection(row: OrderRow) {
       row.held === 1
         ? ("Payment Review Hold" as const)
         : ("Order Confirmed" as const),
+    shipmentCount: row.shipment_count ?? 0,
+    shipmentPlanStatus: row.plan_status ?? null,
     snapshot,
   };
 }
@@ -196,6 +202,8 @@ export function createConfirmedOrderService(db: D1Database) {
           json_extract(o.snapshot_json,'$.destination.countryCode') AS country_code,
           coalesce(guard.held,0) AS held,
           (SELECT count(*) FROM confirmed_order_lines line WHERE line.order_id=o.id) AS line_count,
+          (SELECT count(*) FROM order_shipments shipment WHERE shipment.order_id=o.id) AS shipment_count,
+          (SELECT status FROM order_fulfillment_plans plan WHERE plan.order_id=o.id) AS plan_status,
           (SELECT snapshot_json FROM confirmed_order_lines line WHERE line.order_id=o.id
             ORDER BY line.line_number LIMIT 1) AS first_line_json,
           (SELECT snapshot_json FROM confirmed_order_lines line WHERE line.order_id=o.id
@@ -230,6 +238,8 @@ export function createConfirmedOrderService(db: D1Database) {
           countryCode: row.country_code,
           status: row.held ? "Payment Review Hold" : "Order Confirmed",
           lineCount: row.line_count,
+          shipmentCount: row.shipment_count,
+          shipmentPlanStatus: row.plan_status,
           lines: [
             summaryLine(row.first_line_json),
             summaryLine(row.second_line_json),
@@ -316,7 +326,10 @@ export function createConfirmedOrderService(db: D1Database) {
       const rows = (
         await db
           .prepare(
-            `SELECT o.*,guard.held ${owned} AND (? IS NULL OR
+            `SELECT o.*,guard.held,
+              (SELECT count(*) FROM order_shipments shipment WHERE shipment.order_id=o.id) AS shipment_count,
+              (SELECT status FROM order_fulfillment_plans plan WHERE plan.order_id=o.id) AS plan_status
+              ${owned} AND (? IS NULL OR
           (o.confirmed_at < (SELECT confirmed_at FROM confirmed_orders WHERE id=?) OR
            (o.confirmed_at=(SELECT confirmed_at FROM confirmed_orders WHERE id=?) AND o.id<?)))
          ORDER BY o.confirmed_at DESC,o.id DESC LIMIT 11`,
