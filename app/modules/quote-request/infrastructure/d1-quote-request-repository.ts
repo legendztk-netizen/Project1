@@ -347,6 +347,7 @@ export function createD1QuoteRequestRepository(database: D1Database) {
       snapshot: QuoteRequestSnapshot;
       sourceAddressId: string;
       selectedLineIds: string[];
+      followOnDraftId?: string;
     }) {
       const snapshotJson = JSON.stringify(input.snapshot);
       const selectedLineIdsJson = JSON.stringify(input.selectedLineIds);
@@ -553,13 +554,22 @@ export function createD1QuoteRequestRepository(database: D1Database) {
                 source_session_id, source_session_version, source_address_id,
                 purchasing_context_kind, fulfillment_term, currency,
                 merchandise_subtotal, service_fee_total, idempotency_key,
-                snapshot_json, submitted_at)
+                snapshot_json, submitted_at${input.followOnDraftId ? ",follow_on_draft_id,source_order_id" : ""})
              SELECT ?, ?, ?, ?, s.id, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?${input.followOnDraftId ? ",?,(SELECT source_order_id FROM follow_on_quote_drafts WHERE id=?)" : ""}
              FROM customer_quote_request_submission_guards guard
              INNER JOIN anonymous_quote_sessions s ON s.id = guard.session_id
-             WHERE guard.id = ?
-             ON CONFLICT(profile_id, idempotency_key) DO NOTHING
+             WHERE guard.id = ?${
+               input.followOnDraftId
+                 ? `
+               AND EXISTS(SELECT 1 FROM follow_on_quote_drafts draft
+                 JOIN confirmed_orders source ON source.id=draft.source_order_id
+                 WHERE draft.id=? AND draft.profile_id=? AND draft.purchasing_context_id=?
+                   AND source.purchasing_context_id=draft.purchasing_context_id
+                   AND NOT EXISTS(SELECT 1 FROM customer_quote_requests q WHERE q.follow_on_draft_id=draft.id))`
+                 : ""
+             }
+             ${input.followOnDraftId ? "ON CONFLICT DO NOTHING" : "ON CONFLICT(profile_id, idempotency_key) DO NOTHING"}
              RETURNING id, reference_number, snapshot_json, submitted_at`,
           )
           .bind(
@@ -577,7 +587,17 @@ export function createD1QuoteRequestRepository(database: D1Database) {
             input.idempotencyKey,
             snapshotJson,
             input.snapshot.submittedAt,
+            ...(input.followOnDraftId
+              ? [input.followOnDraftId, input.followOnDraftId]
+              : []),
             input.id,
+            ...(input.followOnDraftId
+              ? [
+                  input.followOnDraftId,
+                  input.profileId,
+                  input.purchasingContextId,
+                ]
+              : []),
           ),
         database
           .prepare(

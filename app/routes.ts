@@ -42,6 +42,10 @@ export default [
   route("sign-out", "modules/customer-identity/routes/sign-out.ts"),
   route("account", "modules/customer-identity/routes/customer-account.tsx"),
   route(
+    "account/orders/:orderId",
+    "modules/customer-identity/routes/confirmed-order-detail.tsx",
+  ),
+  route(
     "account/quotes/:requestId",
     "modules/customer-identity/routes/customer-quote-detail.tsx",
   ),
@@ -62,10 +66,19 @@ export default [
     "modules/storefront/routes/assembly-measurement-guide.tsx",
   ),
   route("admin", "modules/admin/routes/admin-home.tsx"),
+  route("admin/orders", "modules/admin/routes/confirmed-orders.tsx"),
+  route(
+    "admin/orders/:orderId",
+    "modules/admin/routes/confirmed-order-detail.tsx",
+  ),
   route("admin/quotes", "modules/admin/routes/quote-reviews.tsx"),
   route(
     "admin/quotes/:requestId/pi",
     "modules/admin/routes/proforma-invoice.tsx",
+  ),
+  route(
+    "admin/quotes/:requestId/pi/payments",
+    "modules/admin/routes/pi-payments.tsx",
   ),
   route(
     "admin/quotes/:requestId/pi/:piId/pdf",

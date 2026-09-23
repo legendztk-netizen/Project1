@@ -3553,6 +3553,11 @@ a.customer-auth-switch {
   margin: 0 auto;
 }
 
+.confirmed-order-number {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
 .customer-quote-navigation {
   display: flex;
   gap: 12px;

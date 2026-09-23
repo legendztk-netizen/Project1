@@ -31,6 +31,7 @@ export interface IssueProformaInvoiceCommand {
   paymentInstructionId: string;
   paymentInstructionVersion: number;
   validUntil?: string;
+  fixedPaymentDueDateEt?: string;
 }
 
 export interface ProformaInvoiceServiceOptions {
@@ -76,8 +77,27 @@ export function createProformaInvoiceService(
     if ((await sha(row.snapshot_json)) !== row.snapshot_hash)
       throw new Response("PI snapshot integrity failure", { status: 409 });
     const snapshot = JSON.parse(row.snapshot_json) as ProformaInvoiceSnapshot;
+    const selection = await db
+      .prepare(
+        `SELECT instruction_id,instruction_version,instruction_channel,ever_received,
+        EXISTS(SELECT 1 FROM pi_payment_events e WHERE e.pi_id=pi_payment_accounts.pi_id AND e.kind='instruction_changed') AS overridden
+        FROM pi_payment_accounts WHERE pi_id=?`,
+      )
+      .bind(row.id)
+      .first<{
+        instruction_id: string;
+        instruction_version: number;
+        instruction_channel: PaymentChannel;
+        ever_received: number;
+        overridden: number;
+      }>();
     const currentPayment = includePaymentInstructions
-      ? await repository.currentPayment(row.payment_channel)
+      ? selection && (selection.overridden || selection.ever_received)
+        ? await repository.paymentById(
+            selection.instruction_id,
+            selection.instruction_version,
+          )
+        : await repository.currentPayment(row.payment_channel)
       : null;
     let paymentInstructions: ReturnType<
       typeof publicPiPaymentInstructions
@@ -85,7 +105,7 @@ export function createProformaInvoiceService(
     try {
       paymentInstructions = publicPiPaymentInstructions(
         currentPayment,
-        row.payment_channel,
+        selection?.instruction_channel ?? row.payment_channel,
       );
     } catch {
       /* Never fall back to superseded banking details. */
@@ -280,6 +300,7 @@ export function createProformaInvoiceService(
             input.validUntil === undefined
               ? null
               : piUtcInstant(input.validUntil),
+          fixedPaymentDueDateEt: input.fixedPaymentDueDateEt ?? null,
         }),
       ),
     );
@@ -338,6 +359,7 @@ export function createProformaInvoiceService(
         documentVersion: 1,
         issuedAt: now(),
         validUntil: input.validUntil,
+        fixedPaymentDueDateEt: input.fixedPaymentDueDateEt,
         quoteRevisionId: quote.id,
         currentQuoteRevisionId: quote.id,
         revision,

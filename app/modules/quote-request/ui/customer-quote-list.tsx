@@ -132,6 +132,14 @@ export function CustomerQuoteList({
                   >
                     View details
                   </Link>
+                  {quoteRequest.orderId ? (
+                    <Link
+                      className="button button-secondary"
+                      to={`/account/orders/${encodeURIComponent(quoteRequest.orderId)}`}
+                    >
+                      View order
+                    </Link>
+                  ) : null}
                 </div>
                 <dl>
                   <div>

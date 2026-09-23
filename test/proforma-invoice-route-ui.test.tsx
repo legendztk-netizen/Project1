@@ -98,7 +98,12 @@ it("shows Chinese Admin readiness with no default payment selection and exact qu
   } satisfies PiReadiness;
   const html = render(
     <AdminPi
-      loaderData={{ requestId: "request", readiness, commandId: "command" }}
+      loaderData={{
+        requestId: "request",
+        readiness,
+        paymentHistory: [],
+        commandId: "command",
+      }}
     />,
   );
   expect(html).toContain("形式发票 PI");
@@ -119,7 +124,12 @@ it("shows issued Admin PDF and Beijing time without another issuance form", () =
   } satisfies PiReadiness;
   const html = render(
     <AdminPi
-      loaderData={{ requestId: "request", readiness, commandId: "command" }}
+      loaderData={{
+        requestId: "request",
+        readiness,
+        paymentHistory: [],
+        commandId: "command",
+      }}
     />,
   );
   expect(html).toContain("/admin/quotes/request/pi/fixed-pi/pdf");
@@ -139,6 +149,7 @@ it("keeps the retry command after loader revalidation but uses the new ID after 
   const loaderData = {
     requestId: "request",
     readiness,
+    paymentHistory: [],
     commandId: "fresh-loader-command",
   };
   const retry = render(
@@ -160,6 +171,7 @@ it("shows a durable failed PDF job with an explicit retry command", () => {
       loaderData={{
         requestId: "request",
         commandId: "new-command",
+        paymentHistory: [],
         readiness: {
           pdfJobs: [
             { commandId: "saved-command", state: "failed", attempts: 5 },

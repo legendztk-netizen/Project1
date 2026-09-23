@@ -807,7 +807,7 @@ it("rolls back successor, head and supersession when audit fails; recovers uncer
       if (key === "batch")
         return async (statements: D1PreparedStatement[]) => {
           const result = await target.batch(statements);
-          if (!threw && statements.length === 4) {
+          if (!threw && statements.length === 5) {
             threw = true;
             throw new Error("response lost after commit");
           }

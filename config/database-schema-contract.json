@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 81,
+  "schemaVersion": 91,
   "migrations": [
     "0000_initial_catalog_release.sql",
     "0001_add_admin_identities.sql",
@@ -81,6 +81,16 @@
     "0077_pi_email_acceptance_copies.sql",
     "0078_pi_lifecycle.sql",
     "0079_scope_unavailable_hose_reads.sql",
-    "0080_quote_list_display_cache.sql"
+    "0080_quote_list_display_cache.sql",
+    "0081_pi_payment_accounts.sql",
+    "0082_pi_original_currency_review.sql",
+    "0083_pi_legacy_receipt_completeness.sql",
+    "0084_confirmed_orders.sql",
+    "0085_pi_deadline_and_late_review.sql",
+    "0086_pi_fund_resolutions.sql",
+    "0087_pi_confirmation_corrections.sql",
+    "0088_follow_on_quote_drafts.sql",
+    "0089_pi_order_finalization_assertions.sql",
+    "0090_pi_payment_review_and_provenance.sql"
   ]
 }

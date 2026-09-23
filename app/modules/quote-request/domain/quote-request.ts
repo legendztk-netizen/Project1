@@ -157,6 +157,8 @@ export const customerQuoteProgressStages = [
   { code: "PI_REPLACEMENT_REQUIRED", label: "PI Awaiting Replacement" },
   { code: "PAYMENT_PENDING", label: "Payment Pending" },
   { code: "PAYMENT_CONFIRMED", label: "Payment Confirmed" },
+  { code: "PAYMENT_REVIEW_REQUIRED", label: "Payment Review Required" },
+  { code: "PAYMENT_REVIEW_HOLD", label: "Payment Review Hold" },
   { code: "ORDER_CREATED", label: "Order Created" },
 ] as const;
 
@@ -164,6 +166,7 @@ export type CustomerQuoteProgressCode =
   (typeof customerQuoteProgressStages)[number]["code"];
 
 export interface CustomerQuoteProjection extends QuoteRequestRecord {
+  orderId?: string | null;
   proposedChanges?: import("../../quote-review/domain/quote-revision-differences").QuoteRevisionDifference[];
   offerHistory?: Array<
     import("../../quote-review/domain/quote-revision").CustomerQuoteRevision & {

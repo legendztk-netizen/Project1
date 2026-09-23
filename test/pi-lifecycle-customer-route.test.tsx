@@ -20,12 +20,14 @@ const mocks = vi.hoisted(() => ({
   customerHistory: vi.fn(),
   customerStatus: vi.fn(),
   profile: vi.fn(),
+  paymentRead: vi.fn(),
 }));
 vi.mock("../workers/proforma-invoice", async (original) => ({
   ...(await original<typeof import("../workers/proforma-invoice")>()),
   proformaInvoices: () => mocks,
   piLifecycle: () => mocks,
   piCustomerProfile: mocks.profile,
+  piPayments: () => ({ customerRead: mocks.paymentRead }),
 }));
 vi.mock("../workers/pi-acceptance", () => ({ piAcceptance: () => mocks }));
 vi.mock("../app/modules/customer-identity/ui/account-workspace", () => ({
@@ -145,6 +147,7 @@ beforeEach(() => {
   mocks.customerRead.mockResolvedValue(invoice);
   mocks.customerStatus.mockResolvedValue(status);
   mocks.customerHistory.mockResolvedValue(history("current"));
+  mocks.paymentRead.mockResolvedValue(null);
 });
 it("loads owned historical versions while retaining the acceptance service status", async () => {
   const result = await loader(args());

@@ -31,6 +31,26 @@ import {
   createPiPdfJobs,
   type PiPdfJob,
 } from "../app/modules/proforma-invoice/application/pi-pdf-jobs";
+import { createPiPaymentService } from "../app/modules/proforma-invoice/application/pi-payment-service";
+import { createPiAcceptanceService } from "../app/modules/proforma-invoice/application/pi-acceptance-service";
+import { createPiLatePaymentService } from "../app/modules/proforma-invoice/application/pi-late-payment-service";
+import { createConfirmedOrderService } from "../app/modules/proforma-invoice/application/confirmed-order-service";
+import { createPiFundResolutionService } from "../app/modules/proforma-invoice/application/pi-fund-resolution-service";
+import { createPiPaymentCorrectionService } from "../app/modules/proforma-invoice/application/pi-payment-correction-service";
+import { createFollowOnQuoteService } from "../app/modules/proforma-invoice/application/follow-on-quote-service";
+import { seedManagedAssemblyBaseline } from "./fixtures/managed-assembly-baseline";
+import { createD1CustomerIdentityRepository } from "../app/modules/customer-identity/infrastructure/d1-customer-identity-repository";
+import {
+  createCustomerSessionCookie,
+  digestCustomerSessionToken,
+  generateCustomerSessionToken,
+} from "../app/modules/customer-identity/domain/customer-session";
+import { customerIdentitySigningKey } from "#workers/session-secrets";
+import type { ApplicationBindings } from "#workers/environment";
+import { createCustomerAccountService } from "../app/modules/customer-identity/application/customer-account-service";
+import { createAnonymousQuoteListService } from "../app/modules/quote-list/application/anonymous-quote-list-service";
+import { createQuoteRequestService } from "../app/modules/quote-request/application/quote-request-service";
+import { orderCreationStatements } from "../app/modules/proforma-invoice/infrastructure/d1-order-creation";
 
 const directory = mkdtempSync(join(tmpdir(), "pi-d1-"));
 let platform: Awaited<
@@ -125,8 +145,10 @@ afterAll(async () => {
 async function fixture(
   mutate?: (revision: QuoteRevisionSnapshot) => void,
   organization = false,
+  existingProfileId?: string,
 ) {
   const id = crypto.randomUUID();
+  const profileId = existingProfileId ?? id;
   const product = publicHoseFixture({
     catalogBasis: {
       generation: 4,
@@ -192,38 +214,44 @@ async function fixture(
   const hash = await piSha256(new TextEncoder().encode(json));
   const quoteId = crypto.randomUUID();
   await db.batch([
-    db
-      .prepare(
-        "INSERT INTO customer_profiles(id,email_normalized,email_display,email_verified_at,created_at,updated_at) VALUES(?,?,?,?,?,?)",
-      )
-      .bind(
-        id,
-        `${id}@example.test`,
-        `${id}@example.test`,
-        issuedAt,
-        issuedAt,
-        issuedAt,
-      ),
-    ...(organization
+    ...(!existingProfileId
       ? [
           db
             .prepare(
-              "INSERT INTO customer_organizations(id,legal_name,country_code,created_at,updated_at) VALUES(?,'PI Test Organization','US',?,?)",
+              "INSERT INTO customer_profiles(id,email_normalized,email_display,email_verified_at,created_at,updated_at) VALUES(?,?,?,?,?,?)",
             )
-            .bind(id, issuedAt, issuedAt),
-          db
-            .prepare(
-              "INSERT INTO customer_purchasing_contexts(id,kind,organization_id,created_at,updated_at) VALUES(?,'organization',?,?,?)",
-            )
-            .bind(id, id, issuedAt, issuedAt),
+            .bind(
+              profileId,
+              `${profileId}@example.test`,
+              `${profileId}@example.test`,
+              issuedAt,
+              issuedAt,
+              issuedAt,
+            ),
         ]
-      : [
-          db
-            .prepare(
-              "INSERT INTO customer_purchasing_contexts(id,kind,individual_profile_id,created_at,updated_at) VALUES(?,'individual',?,?,?)",
-            )
-            .bind(id, id, issuedAt, issuedAt),
-        ]),
+      : []),
+    ...(existingProfileId
+      ? []
+      : organization
+        ? [
+            db
+              .prepare(
+                "INSERT INTO customer_organizations(id,legal_name,country_code,created_at,updated_at) VALUES(?,'PI Test Organization','US',?,?)",
+              )
+              .bind(id, issuedAt, issuedAt),
+            db
+              .prepare(
+                "INSERT INTO customer_purchasing_contexts(id,kind,organization_id,created_at,updated_at) VALUES(?,'organization',?,?,?)",
+              )
+              .bind(id, id, issuedAt, issuedAt),
+          ]
+        : [
+            db
+              .prepare(
+                "INSERT INTO customer_purchasing_contexts(id,kind,individual_profile_id,created_at,updated_at) VALUES(?,'individual',?,?,?)",
+              )
+              .bind(id, id, issuedAt, issuedAt),
+          ]),
     db
       .prepare(
         "INSERT INTO customer_quote_requests(id,reference_number,profile_id,purchasing_context_id,source_session_id,source_session_version,source_address_id,purchasing_context_kind,fulfillment_term,currency,merchandise_subtotal,service_fee_total,idempotency_key,snapshot_json,submitted_at) VALUES(?,?,?,?,?,'1','address',?,'DDP','USD',0,0,?,?,?)",
@@ -231,8 +259,8 @@ async function fixture(
       .bind(
         id,
         `QR-${id}`,
-        id,
-        id,
+        profileId,
+        profileId,
         `session-${id}`,
         organization ? "organization" : "individual",
         id,
@@ -266,7 +294,52 @@ async function fixture(
     paymentInstructionId: payment.id,
     paymentInstructionVersion: payment.version,
   };
-  return { command, revision, json, profileId: id };
+  return { command, revision, json, profileId };
+}
+
+async function acceptFixturePi(
+  profileId: string,
+  requestId: string,
+  pi: Awaited<ReturnType<ReturnType<typeof service>["issue"]>>,
+) {
+  const acceptedAt = "2026-09-14T11:00:00.000Z";
+  const acceptance = createPiAcceptanceService(db, bucket, {
+    now: () => new Date(acceptedAt),
+  });
+  const target = {
+    piId: pi.id,
+    documentVersion: pi.snapshot.documentVersion,
+    snapshotHash: pi.snapshotHash,
+  };
+  const viewed = await acceptance.customerView(
+    profileId,
+    requestId,
+    target,
+    "view",
+    { requestId: "test-view", ipAddress: null, userAgent: null },
+  );
+  await acceptance.accept(
+    profileId,
+    new Request("https://shop.test/account/quotes/accept", {
+      method: "POST",
+      headers: { Origin: "https://shop.test" },
+    }),
+    {
+      ...target,
+      requestId,
+      commandId: crypto.randomUUID(),
+      viewId: viewed.view.id,
+      legalName: "Test Buyer",
+      acknowledgements: {
+        general: {
+          version: conditions.generalAcknowledgement.version,
+          confirmed: true,
+        },
+        madeToOrder: [],
+      },
+    },
+    { requestId: "test-accept", ipAddress: null, userAgent: null },
+  );
 }
 
 it("reserves without rendering and completes the same immutable intent on repeated delivery", async () => {
@@ -418,6 +491,952 @@ it("resolves trusted conditions from captured lines once and preserves them on r
       },
     }).issue(actor, f.command),
   ).toEqual(pi);
+});
+
+it("records exact cumulative USD receipts with guarded versions and no payment confirmation", async () => {
+  const f = await fixture();
+  const pi = await service().issue(actor, f.command);
+  const payments = createPiPaymentService(db, {
+    now: () => new Date(issuedAt),
+    auditIp: "203.0.113.10",
+  });
+  const initial = await payments.adminRead(actor, pi.id);
+  expect(initial.amountReceivedCents).toBe(0);
+  expect(initial.termKind).toBe("ten_us_business_days");
+  expect(initial.dueAt).toBeNull();
+  await expect(
+    payments.customerRead("other", f.command.requestId, pi.id),
+  ).rejects.toMatchObject({ status: 404 });
+  const commandId = crypto.randomUUID();
+  const received = await payments.updateReceived(actor, {
+    piId: pi.id,
+    commandId,
+    expectedVersion: initial.version,
+    amount: "7.01",
+    currency: "USD",
+    actualChannel: "bank_transfer",
+    verificationReference: "Bank settlement test 42",
+  });
+  expect(received.amountReceivedCents).toBe(701);
+  expect(received.balanceCents).toBe(pi.snapshot.totals.totalCents - 701);
+  expect(received.paymentConfirmed).toBe(false);
+  const audit = await db
+    .prepare(
+      "SELECT payload_json FROM admin_audit_events WHERE event_type='pi.amount_received_updated' AND entity_id=?",
+    )
+    .bind(pi.id)
+    .first<{ payload_json: string }>();
+  expect(JSON.parse(audit!.payload_json)).toMatchObject({
+    requestId: f.command.requestId,
+    commandId,
+    ipAddress: "203.0.113.10",
+  });
+  expect(
+    await payments.updateReceived(actor, {
+      piId: pi.id,
+      commandId,
+      expectedVersion: initial.version,
+      amount: "7.01",
+      currency: "USD",
+      actualChannel: "bank_transfer",
+      verificationReference: "Bank settlement test 42",
+    }),
+  ).toEqual(received);
+  await expect(
+    payments.updateReceived(actor, {
+      piId: pi.id,
+      commandId: crypto.randomUUID(),
+      expectedVersion: initial.version,
+      amount: "8.00",
+      currency: "USD",
+      actualChannel: "bank_transfer",
+      verificationReference: "Bank settlement test 43",
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  await expect(
+    payments.updateReceived(actor, {
+      piId: pi.id,
+      commandId: crypto.randomUUID(),
+      expectedVersion: received.version,
+      amount: "7.001",
+      currency: "USD",
+      actualChannel: "bank_transfer",
+      verificationReference: "Invalid precision",
+    }),
+  ).rejects.toMatchObject({ status: 400 });
+  await expect(
+    payments.updateReceived(actor, {
+      piId: pi.id,
+      commandId: crypto.randomUUID(),
+      expectedVersion: received.version,
+      amount: "0.00",
+      currency: "USD",
+      actualChannel: "bank_transfer",
+      verificationReference: "Corrected settlement",
+    }),
+  ).rejects.toMatchObject({ status: 400 });
+  const corrected = await payments.updateReceived(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: received.version,
+    amount: "0.00",
+    currency: "USD",
+    actualChannel: "bank_transfer",
+    verificationReference: "Corrected settlement",
+    reason: "Bank reversal verified",
+  });
+  expect(corrected.amountReceivedCents).toBe(0);
+  await expect(
+    payments.changeInstructions(actor, {
+      piId: pi.id,
+      commandId: crypto.randomUUID(),
+      expectedVersion: corrected.version,
+      instructionId: "pi-test-paypal",
+      instructionVersion: 1,
+      channel: "paypal",
+      reason: "Customer request",
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  expect(
+    await db
+      .prepare(
+        "SELECT count(*) n FROM pi_payment_events WHERE pi_id=? AND kind='amount_received'",
+      )
+      .bind(pi.id)
+      .first("n"),
+  ).toBe(2);
+  await payments.recordOriginalCurrencyReceipt(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    currency: "JPY",
+    amount: "500",
+    actualChannel: "bank_transfer",
+    verificationReference: "Unexpected JPY settlement",
+  });
+  await expect(
+    payments.recordOriginalCurrencyReceipt(actor, {
+      piId: pi.id,
+      commandId: crypto.randomUUID(),
+      currency: "JPY",
+      amount: "500.10",
+      actualChannel: "bank_transfer",
+      verificationReference: "Invalid JPY precision",
+    }),
+  ).rejects.toMatchObject({ status: 400 });
+  expect(
+    (await payments.adminRead(actor, pi.id)).originalCurrencyReceipts,
+  ).toMatchObject([{ currency: "JPY", amount: "500" }]);
+  const foreign = (await payments.adminRead(actor, pi.id))
+    .originalCurrencyReceipts[0];
+  const refunds = createPiFundResolutionService(db, {
+    now: () => new Date(issuedAt),
+  });
+  const foreignRefund = {
+    receiptId: foreign.id,
+    commandId: crypto.randomUUID(),
+    amount: "200",
+    customerAuthorization: "Customer email authorization 4",
+    externalReference: "Completed JPY return 4",
+  };
+  expect(await refunds.refundOriginalCurrency(actor, foreignRefund)).toEqual({
+    recorded: true,
+  });
+  expect(await refunds.refundOriginalCurrency(actor, foreignRefund)).toEqual({
+    recorded: true,
+  });
+  expect(
+    await db
+      .prepare(
+        "SELECT count(*) n FROM quote_conversation_messages WHERE request_id=? AND id LIKE 'original-currency-refund:%'",
+      )
+      .bind(f.command.requestId)
+      .first("n"),
+  ).toBe(1);
+  expect(
+    await db
+      .prepare(
+        "SELECT count(*) n FROM quote_notification_outbox WHERE message_id LIKE 'original-currency-refund:%'",
+      )
+      .first("n"),
+  ).toBeGreaterThanOrEqual(1);
+  await expect(
+    refunds.refundOriginalCurrency(actor, {
+      ...foreignRefund,
+      commandId: crypto.randomUUID(),
+      amount: "301",
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  expect(
+    (await payments.customerRead(f.profileId, f.command.requestId, pi.id))
+      .amountReceivedCents,
+  ).toBe(0);
+});
+
+it("freezes the default payment deadline exactly once on website acceptance", async () => {
+  const f = await fixture();
+  const pi = await service().issue(actor, f.command);
+  const acceptedAt = "2026-09-14T11:00:00.000Z";
+  const acceptance = createPiAcceptanceService(db, bucket, {
+    now: () => new Date(acceptedAt),
+  });
+  const target = {
+    piId: pi.id,
+    documentVersion: pi.snapshot.documentVersion,
+    snapshotHash: pi.snapshotHash,
+  };
+  const viewed = await acceptance.customerView(
+    f.profileId,
+    f.command.requestId,
+    target,
+    "view",
+    { requestId: "test-view", ipAddress: null, userAgent: null },
+  );
+  const viewId = viewed.view.id;
+  const commandId = crypto.randomUUID();
+  const accepted = await acceptance.accept(
+    f.profileId,
+    new Request("https://shop.test/account/quotes/accept", {
+      method: "POST",
+      headers: { Origin: "https://shop.test" },
+    }),
+    {
+      ...target,
+      requestId: f.command.requestId,
+      commandId,
+      viewId,
+      legalName: "Test Buyer",
+      acknowledgements: {
+        general: {
+          version: conditions.generalAcknowledgement.version,
+          confirmed: true,
+        },
+        madeToOrder: [],
+      },
+    },
+    { requestId: "test-accept", ipAddress: null, userAgent: null },
+  );
+  expect(accepted.status).toBe("PI Accepted");
+  const payment = await createPiPaymentService(db).adminRead(actor, pi.id);
+  expect(payment.dueDateEt).toBe("2026-09-28");
+  expect(payment.dueAt).toBe("2026-09-29T03:59:00.000Z");
+  expect(
+    await db
+      .prepare(
+        "SELECT count(*) n FROM pi_payment_events WHERE pi_id=? AND kind='deadline_frozen'",
+      )
+      .bind(pi.id)
+      .first("n"),
+  ).toBe(1);
+  const payments = createPiPaymentService(db, {
+    now: () => new Date(acceptedAt),
+  });
+  const account = await payments.adminRead(actor, pi.id);
+  const funded = await payments.updateReceived(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: account.version,
+    amount: (pi.snapshot.totals.totalCents / 100).toFixed(2),
+    currency: "USD",
+    actualChannel: "bank_transfer",
+    verificationReference: "Bank net settlement",
+  });
+  expect(
+    await db
+      .prepare("SELECT id FROM confirmed_orders WHERE pi_id=?")
+      .bind(pi.id)
+      .first(),
+  ).toBeNull();
+  const confirmCommand = {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: funded.version,
+    externallyVerified: true,
+    externalReference: "Seller account statement 17",
+  };
+  const confirmed = await payments.confirmPayment(actor, confirmCommand);
+  expect(confirmed.order?.id).toBe(`order:${pi.id}`);
+  expect(await payments.confirmPayment(actor, confirmCommand)).toEqual(
+    confirmed,
+  );
+  expect(
+    await db
+      .prepare("SELECT count(*) n FROM confirmed_order_lines WHERE order_id=?")
+      .bind(confirmed.order!.id)
+      .first("n"),
+  ).toBe(1);
+  expect(
+    await db
+      .prepare(
+        "SELECT count(*) n FROM order_fulfillment_initializations WHERE order_id=?",
+      )
+      .bind(confirmed.order!.id)
+      .first("n"),
+  ).toBe(1);
+  expect(
+    await db
+      .prepare(
+        "SELECT count(*) n FROM order_assembly_production_initializations WHERE order_id=?",
+      )
+      .bind(confirmed.order!.id)
+      .first("n"),
+  ).toBe(0);
+});
+
+it("holds confirmed funds until website acceptance then creates the same single order", async () => {
+  const f = await fixture();
+  const pi = await service().issue(actor, f.command);
+  const eventTime = "2026-09-14T11:00:00.000Z";
+  const payments = createPiPaymentService(db, {
+    now: () => new Date(eventTime),
+  });
+  const initial = await payments.adminRead(actor, pi.id);
+  const funded = await payments.updateReceived(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: initial.version,
+    amount: (pi.snapshot.totals.totalCents / 100).toFixed(2),
+    currency: "USD",
+    actualChannel: "bank_transfer",
+    verificationReference: "Bank net settlement",
+  });
+  const confirmed = await payments.confirmPayment(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: funded.version,
+    externallyVerified: true,
+    externalReference: "Bank statement payment-first",
+  });
+  expect(confirmed.order).toBeNull();
+  expect(
+    await db
+      .prepare(
+        "SELECT count(*) n FROM quote_conversation_messages WHERE request_id=? AND body LIKE '%review and accept%'",
+      )
+      .bind(f.command.requestId)
+      .first("n"),
+  ).toBe(1);
+  const acceptance = createPiAcceptanceService(db, bucket, {
+    now: () => new Date(eventTime),
+  });
+  const target = {
+    piId: pi.id,
+    documentVersion: pi.snapshot.documentVersion,
+    snapshotHash: pi.snapshotHash,
+  };
+  const viewed = await acceptance.customerView(
+    f.profileId,
+    f.command.requestId,
+    target,
+    "view",
+    { requestId: "test-view", ipAddress: null, userAgent: null },
+  );
+  await acceptance.accept(
+    f.profileId,
+    new Request("https://shop.test/account/quotes/accept", {
+      method: "POST",
+      headers: { Origin: "https://shop.test" },
+    }),
+    {
+      ...target,
+      requestId: f.command.requestId,
+      commandId: crypto.randomUUID(),
+      viewId: viewed.view.id,
+      legalName: "Test Buyer",
+      acknowledgements: {
+        general: {
+          version: conditions.generalAcknowledgement.version,
+          confirmed: true,
+        },
+        madeToOrder: [],
+      },
+    },
+    { requestId: "test-accept", ipAddress: null, userAgent: null },
+  );
+  const order = await db
+    .prepare(
+      "SELECT id,acceptance_id,confirmation_id FROM confirmed_orders WHERE pi_id=?",
+    )
+    .bind(pi.id)
+    .first<{ id: string; acceptance_id: string; confirmation_id: string }>();
+  expect(order?.id).toBe(`order:${pi.id}`);
+  expect(
+    await db
+      .prepare("SELECT count(*) n FROM confirmed_orders WHERE request_id=?")
+      .bind(f.command.requestId)
+      .first("n"),
+  ).toBe(1);
+  expect(
+    await db
+      .prepare("SELECT count(*) n FROM confirmed_order_lines WHERE order_id=?")
+      .bind(order!.id)
+      .first("n"),
+  ).toBe(1);
+});
+
+it("changes a current PI's selected instructions only before any receipt", async () => {
+  const f = await fixture();
+  const pi = await service().issue(actor, f.command);
+  const payments = createPiPaymentService(db, {
+    now: () => new Date(issuedAt),
+  });
+  const initial = await payments.adminRead(actor, pi.id);
+  const choice = (
+    await service().readiness(actor, f.command.requestId)
+  ).payments.find((p) => p.channel === "paypal")!;
+  const changed = await payments.changeInstructions(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: initial.version,
+    instructionId: choice.id,
+    instructionVersion: choice.version,
+    channel: "paypal",
+    reason: "Customer approved PayPal",
+  });
+  expect(changed.instructionChannel).toBe("paypal");
+  const customerPi = await service().customerRead(
+    f.profileId,
+    f.command.requestId,
+    pi.id,
+  );
+  expect(customerPi.paymentInstructions?.channel).toBe("paypal");
+  expect(customerPi.snapshot.paymentSelection.channel).toBe("bank_transfer");
+});
+
+it("extends accepted deadlines without clearing funds or creating an order, then approves late funds atomically", async () => {
+  const f = await fixture();
+  const pi = await service().issue(actor, f.command);
+  await acceptFixturePi(f.profileId, f.command.requestId, pi);
+  const payments = createPiPaymentService(db, {
+    now: () => new Date("2026-10-01T10:00:00.000Z"),
+  });
+  const before = await payments.adminRead(actor, pi.id);
+  const extension = createPiLatePaymentService(db, {
+    now: () => new Date("2026-09-30T10:00:00.000Z"),
+  });
+  const commandId = crypto.randomUUID();
+  const extended = await extension.extend(actor, {
+    piId: pi.id,
+    commandId,
+    expectedVersion: before.version,
+    newDateEt: "2026-10-05",
+    reason: "Customer shipping review",
+  });
+  expect(extended.dueDateEt).toBe("2026-10-05");
+  expect(extended.overdue).toBe(true);
+  expect(
+    await extension.extend(actor, {
+      piId: pi.id,
+      commandId,
+      expectedVersion: before.version,
+      newDateEt: "2026-10-05",
+      reason: "Customer shipping review",
+    }),
+  ).toEqual(extended);
+  await expect(
+    extension.extend(actor, {
+      piId: pi.id,
+      commandId: crypto.randomUUID(),
+      expectedVersion: before.version + 1,
+      newDateEt: "2026-10-04",
+      reason: "Too early",
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  expect(
+    await db
+      .prepare("SELECT id FROM confirmed_orders WHERE pi_id=?")
+      .bind(pi.id)
+      .first(),
+  ).toBeNull();
+  const funded = await payments.updateReceived(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: before.version + 1,
+    amount: (pi.snapshot.totals.totalCents / 100).toFixed(2),
+    currency: "USD",
+    actualChannel: "bank_transfer",
+    verificationReference: "Bank late funds",
+  });
+  await expect(
+    createPiPaymentService(db, {
+      now: () => new Date("2026-10-01T10:00:00.000Z"),
+    }).confirmPayment(actor, {
+      piId: pi.id,
+      commandId: crypto.randomUUID(),
+      expectedVersion: funded.version,
+      externallyVerified: true,
+      externalReference: "Late bank funds",
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  const late = createPiLatePaymentService(db, {
+    now: () => new Date("2026-10-01T10:00:00.000Z"),
+  });
+  const review = {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: funded.version,
+    decision: "same_terms_approved" as const,
+    reason: "All terms still fulfillable",
+    pricingChecked: true,
+    availabilityChecked: true,
+    freightChecked: true,
+    tradeTermsChecked: true,
+    leadTimeChecked: true,
+    externalReference: "Seller bank statement 99",
+  };
+  const result = await late.review(actor, review);
+  expect(result.overdue).toBe(false);
+  expect(result.reviews).toHaveLength(1);
+  expect(await late.review(actor, review)).toEqual(result);
+  const order = await createConfirmedOrderService(db).customerRead(
+    f.profileId,
+    `order:${pi.id}`,
+  );
+  expect(order.totalCents).toBe(pi.snapshot.totals.totalCents);
+  expect(order.snapshot.lines[0].product.catalogBasis?.skuRevisionId).toBe(
+    "captured-sku",
+  );
+  await expect(
+    createConfirmedOrderService(db).customerRead("wrong-profile", order.id),
+  ).rejects.toMatchObject({ status: 404 });
+});
+
+it("lets authorized unconsumed transferred funds move again without creating money", async () => {
+  const first = await fixture();
+  const second = await fixture(undefined, false, first.profileId);
+  const third = await fixture(undefined, false, first.profileId);
+  const [a, b, c] = await Promise.all([
+    service().issue(actor, first.command),
+    service().issue(actor, second.command),
+    service().issue(actor, third.command),
+  ]);
+  const payments = createPiPaymentService(db, {
+    now: () => new Date("2026-09-15T10:00:00.000Z"),
+  });
+  const initial = await payments.adminRead(actor, a.id);
+  const paid = await payments.updateReceived(actor, {
+    piId: a.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: initial.version,
+    amount: (b.snapshot.totals.totalCents / 100).toFixed(2),
+    currency: "USD",
+    actualChannel: "bank_transfer",
+    verificationReference: "Verified bank receipt",
+  });
+  const funds = createPiFundResolutionService(db, {
+    now: () => new Date("2026-09-15T10:00:00.000Z"),
+  });
+  const targetB = await payments.adminRead(actor, b.id);
+  await funds.allocate(actor, {
+    sourcePiId: a.id,
+    targetPiId: b.id,
+    commandId: crypto.randomUUID(),
+    sourceVersion: paid.version,
+    targetVersion: targetB.version,
+    amount: (b.snapshot.totals.totalCents / 100).toFixed(2),
+    customerAuthorization: "Verified transfer A to B",
+    externalReference: "A to B",
+  });
+  const sourceB = await funds.read(actor, b.id);
+  expect(sourceB.availableCents).toBe(b.snapshot.totals.totalCents);
+  const targetC = await payments.adminRead(actor, c.id);
+  await funds.allocate(actor, {
+    sourcePiId: b.id,
+    targetPiId: c.id,
+    commandId: crypto.randomUUID(),
+    sourceVersion: sourceB.version,
+    targetVersion: targetC.version,
+    amount: (c.snapshot.totals.totalCents / 100).toFixed(2),
+    customerAuthorization: "Verified transfer B to C",
+    externalReference: "B to C",
+  });
+  expect((await funds.read(actor, b.id)).availableCents).toBe(0);
+  expect((await funds.read(actor, c.id)).allocatedInCents).toBe(
+    c.snapshot.totals.totalCents,
+  );
+  await expect(
+    funds.recordRefund(actor, {
+      piId: b.id,
+      commandId: crypto.randomUUID(),
+      expectedVersion: sourceB.version + 1,
+      amount: "0.01",
+      customerAuthorization: "No remaining funds",
+      externalReference: "No refund",
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+});
+
+it("allocates only authorized available USD to another current PI and creates its order once", async () => {
+  const sourceFixture = await fixture();
+  const targetFixture = await fixture(
+    undefined,
+    false,
+    sourceFixture.profileId,
+  );
+  const sourcePi = await service().issue(actor, sourceFixture.command);
+  const targetPi = await service().issue(actor, targetFixture.command);
+  await acceptFixturePi(
+    sourceFixture.profileId,
+    targetFixture.command.requestId,
+    targetPi,
+  );
+  const payments = createPiPaymentService(db, {
+    now: () => new Date("2026-09-15T10:00:00.000Z"),
+  });
+  const source = await payments.adminRead(actor, sourcePi.id);
+  const received = await payments.updateReceived(actor, {
+    piId: sourcePi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: source.version,
+    amount: (targetPi.snapshot.totals.totalCents / 100 + 5).toFixed(2),
+    currency: "USD",
+    actualChannel: "bank_transfer",
+    verificationReference: "Source bank settlement",
+  });
+  const target = await payments.adminRead(actor, targetPi.id);
+  const resolutions = createPiFundResolutionService(db, {
+    now: () => new Date("2026-09-15T10:00:00.000Z"),
+  });
+  const command = {
+    sourcePiId: sourcePi.id,
+    targetPiId: targetPi.id,
+    commandId: crypto.randomUUID(),
+    sourceVersion: received.version,
+    targetVersion: target.version,
+    amount: (targetPi.snapshot.totals.totalCents / 100).toFixed(2),
+    customerAuthorization: "Signed customer instruction #7",
+    externalReference: "Verified authorization #7",
+  };
+  const allocated = await resolutions.allocate(actor, command);
+  expect(allocated.availableCents).toBe(500);
+  expect(await resolutions.allocate(actor, command)).toEqual(allocated);
+  const order = await createConfirmedOrderService(db).customerRead(
+    sourceFixture.profileId,
+    `order:${targetPi.id}`,
+  );
+  expect(order.totalCents).toBe(targetPi.snapshot.totals.totalCents);
+  await expect(
+    resolutions.allocate(actor, {
+      ...command,
+      commandId: crypto.randomUUID(),
+      amount: "0.01",
+      sourceVersion: allocated.version,
+      targetVersion: target.version + 1,
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  const refunded = await resolutions.recordRefund(actor, {
+    piId: sourcePi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: allocated.version,
+    amount: "5.00",
+    customerAuthorization: "Signed refund #8",
+    externalReference: "Completed bank return #8",
+  });
+  expect(refunded.availableCents).toBe(0);
+  await expect(
+    resolutions.recordRefund(actor, {
+      piId: sourcePi.id,
+      commandId: crypto.randomUUID(),
+      expectedVersion: refunded.version,
+      amount: "0.01",
+      customerAuthorization: "Signed refund #9",
+      externalReference: "Completed bank return #9",
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+});
+
+it("keeps an order frozen on correction, enforces its release gate, and requires Owner review", async () => {
+  const f = await fixture();
+  const pi = await service().issue(actor, f.command);
+  await acceptFixturePi(f.profileId, f.command.requestId, pi);
+  const timestamp = "2026-09-15T10:00:00.000Z";
+  const payments = createPiPaymentService(db, {
+    now: () => new Date(timestamp),
+  });
+  const initial = await payments.adminRead(actor, pi.id);
+  const funded = await payments.updateReceived(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: initial.version,
+    amount: (pi.snapshot.totals.totalCents / 100).toFixed(2),
+    currency: "USD",
+    actualChannel: "bank_transfer",
+    verificationReference: "Bank settlement",
+  });
+  await payments.confirmPayment(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: funded.version,
+    externallyVerified: true,
+    externalReference: "Bank cleared",
+  });
+  const corrections = createPiPaymentCorrectionService(db, {
+    now: () => new Date(timestamp),
+  });
+  const before = await corrections.read(actor, pi.id);
+  const command = {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: before.version,
+    correctedAmount: "0.00",
+    reason: "Bank reversal after mistaken clearing",
+  };
+  const held = await corrections.correct(actor, command);
+  expect(held.confirmationValid).toBe(false);
+  expect(held.disputes).toMatchObject([{ active: 1, held: 1 }]);
+  expect(await corrections.correct(actor, command)).toEqual(held);
+  expect(
+    await db
+      .prepare(
+        "SELECT count(*) n FROM releasable_confirmed_orders WHERE order_id=?",
+      )
+      .bind(`order:${pi.id}`)
+      .first("n"),
+  ).toBe(0);
+  const correctionId = String(held.disputes[0].correction_id);
+  const resolve = {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    correctionId,
+    expectedVersion: held.version,
+    reason: "Reviewed bank correction",
+    verificationReference: "Bank statement recheck",
+  };
+  await expect(
+    corrections.resolve({ ...actor, accountType: "subaccount" }, resolve),
+  ).rejects.toMatchObject({ status: 403 });
+  await expect(corrections.resolve(actor, resolve)).rejects.toMatchObject({
+    status: 409,
+  });
+  const restored = await payments.updateReceived(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: held.version,
+    amount: (pi.snapshot.totals.totalCents / 100).toFixed(2),
+    currency: "USD",
+    actualChannel: "bank_transfer",
+    verificationReference: "Replacement cleared funds",
+  });
+  const released = await corrections.resolve(actor, {
+    ...resolve,
+    expectedVersion: restored.version,
+  });
+  expect(released.disputes).toMatchObject([{ active: 0, held: 0 }]);
+  expect(
+    await db
+      .prepare(
+        "SELECT count(*) n FROM releasable_confirmed_orders WHERE order_id=?",
+      )
+      .bind(`order:${pi.id}`)
+      .first("n"),
+  ).toBe(1);
+  expect(
+    await db
+      .prepare("SELECT count(*) n FROM confirmed_orders WHERE pi_id=?")
+      .bind(pi.id)
+      .first("n"),
+  ).toBe(1);
+});
+
+it("rolls back payment confirmation when accepted evidence cannot produce an order", async () => {
+  const f = await fixture();
+  const pi = await service().issue(actor, f.command);
+  await acceptFixturePi(f.profileId, f.command.requestId, pi);
+  const timestamp = "2026-09-16T10:00:00.000Z";
+  const payments = createPiPaymentService(db, {
+    now: () => new Date(timestamp),
+  });
+  const initial = await payments.adminRead(actor, pi.id);
+  await payments.updateReceived(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: initial.version,
+    amount: (pi.snapshot.totals.totalCents / 100).toFixed(2),
+    currency: "USD",
+    actualChannel: "bank_transfer",
+    verificationReference: "Bank settlement",
+  });
+  await db
+    .prepare(
+      "UPDATE pi_payment_accounts SET due_at='2026-09-15T03:59:59.000Z' WHERE pi_id=?",
+    )
+    .bind(pi.id)
+    .run();
+  const confirmationId = crypto.randomUUID();
+  await expect(
+    db.batch([
+      db
+        .prepare(
+          `INSERT INTO pi_payment_confirmations(id,command_id,command_hash,pi_id,
+      confirmed_cents,currency,actual_channel,external_reference,actor_id,confirmed_at)
+      VALUES(?,?,?,?,?,'USD','bank_transfer','Bank cleared',?,?)`,
+        )
+        .bind(
+          confirmationId,
+          crypto.randomUUID(),
+          "a".repeat(64),
+          pi.id,
+          pi.snapshot.totals.totalCents,
+          actor.id,
+          timestamp,
+        ),
+      ...(await orderCreationStatements(db, {
+        piId: pi.id,
+        requestId: f.command.requestId,
+        now: timestamp,
+        finalEvent: "payment",
+      })),
+    ]),
+  ).rejects.toThrow();
+  expect(
+    await db
+      .prepare("SELECT count(*) n FROM pi_payment_confirmations WHERE pi_id=?")
+      .bind(pi.id)
+      .first("n"),
+  ).toBe(0);
+  expect(
+    await db
+      .prepare("SELECT count(*) n FROM confirmed_orders WHERE pi_id=?")
+      .bind(pi.id)
+      .first("n"),
+  ).toBe(0);
+});
+
+it("creates independent customer and Admin follow-on drafts without changing the source order", async () => {
+  const f = await fixture();
+  const pi = await service().issue(actor, f.command);
+  await acceptFixturePi(f.profileId, f.command.requestId, pi);
+  const payments = createPiPaymentService(db, {
+    now: () => new Date("2026-09-15T10:00:00.000Z"),
+  });
+  const initial = await payments.adminRead(actor, pi.id);
+  const funded = await payments.updateReceived(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: initial.version,
+    amount: (pi.snapshot.totals.totalCents / 100).toFixed(2),
+    currency: "USD",
+    actualChannel: "bank_transfer",
+    verificationReference: "Bank 102",
+  });
+  await payments.confirmPayment(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: funded.version,
+    externallyVerified: true,
+    externalReference: "Bank 102",
+  });
+  const orderId = `order:${pi.id}`;
+  const followOn = createFollowOnQuoteService(db, {
+    now: () => new Date("2026-09-16T10:00:00.000Z"),
+  });
+  const customerCommand = crypto.randomUUID();
+  const first = await followOn.customerCreate(
+    f.profileId,
+    orderId,
+    customerCommand,
+  );
+  expect(first.submittedRequestId).toBeNull();
+  expect(
+    await followOn.customerCreate(f.profileId, orderId, customerCommand),
+  ).toEqual(first);
+  await expect(
+    followOn.customerRead("wrong-profile", first.id),
+  ).rejects.toMatchObject({ status: 404 });
+  const adminDraft = await followOn.adminCreate(
+    actor,
+    orderId,
+    crypto.randomUUID(),
+  );
+  expect(adminDraft.id).not.toBe(first.id);
+  expect(
+    await followOn.customerListForOrder(f.profileId, orderId),
+  ).toHaveLength(2);
+  expect(
+    (await createConfirmedOrderService(db).customerRead(f.profileId, orderId))
+      .totalCents,
+  ).toBe(pi.snapshot.totals.totalCents);
+  expect(
+    await db
+      .prepare(
+        "SELECT count(*) n FROM customer_quote_requests WHERE source_order_id=?",
+      )
+      .bind(orderId)
+      .first("n"),
+  ).toBe(0);
+  await seedManagedAssemblyBaseline(db);
+  const env = { APP_ENV: "local", DB: db } as ApplicationBindings;
+  const sessionNow = new Date();
+  const token = generateCustomerSessionToken();
+  await createD1CustomerIdentityRepository(db).createSessionForProfile({
+    profileId: f.profileId,
+    sessionId: crypto.randomUUID(),
+    tokenDigest: await digestCustomerSessionToken(
+      token,
+      customerIdentitySigningKey(env),
+    ),
+    previousTokenDigest: null,
+    now: sessionNow.toISOString(),
+    expiresAt: new Date(sessionNow.getTime() + 86400000).toISOString(),
+  });
+  const request = new Request("http://localhost/quote-list", {
+    headers: {
+      cookie: createCustomerSessionCookie({
+        now: sessionNow,
+        secure: false,
+        token,
+      }).split(";")[0],
+    },
+  });
+  await createCustomerAccountService(env).createAddress({
+    request,
+    addressLine1: "1 Test Street",
+    addressLine2: "",
+    city: "Portland",
+    countryCode: "US",
+    label: "Follow-on delivery",
+    postalCode: "97201",
+    recipientEmail: `${f.profileId}@example.test`,
+    recipientName: "Test Buyer",
+    recipientPhone: "5550100",
+    stateProvince: "OR",
+  });
+  const lists = createAnonymousQuoteListService(env);
+  for (const feet of [2, 3])
+    await lists.addLengthBasedHose(request, "601R1_001", {
+      normalizedLengthFt: feet,
+      originalLengthUnit: "ft",
+      originalLengthValue: feet,
+      pieceCount: 100,
+      totalFootage: feet * 100,
+    });
+  const lines = (await lists.read(request)).lines;
+  const submit = {
+    request,
+    accuracyConfirmed: true,
+    commercialReviewConfirmed: true,
+    idempotencyKey: crypto.randomUUID(),
+    selectedLineIds: [lines[0].id],
+    followOnDraftId: first.id,
+  };
+  const newRfq = await createQuoteRequestService(env).submitIndividual(submit);
+  expect(newRfq.id).not.toBe(f.command.requestId);
+  expect(
+    (await createQuoteRequestService(env).submitIndividual(submit)).id,
+  ).toBe(newRfq.id);
+  expect(
+    await db
+      .prepare("SELECT source_order_id FROM customer_quote_requests WHERE id=?")
+      .bind(newRfq.id)
+      .first("source_order_id"),
+  ).toBe(orderId);
+  expect(
+    (await followOn.customerRead(f.profileId, first.id)).submittedRequestId,
+  ).toBe(newRfq.id);
+  expect((await lists.read(request)).lines).toHaveLength(1);
+  expect(
+    (await createConfirmedOrderService(db).customerRead(f.profileId, orderId))
+      .totalCents,
+  ).toBe(pi.snapshot.totals.totalCents);
 });
 
 it("issues immutable exact snapshots and private PDF once; keeps current selected instructions separate", async () => {
@@ -922,4 +1941,46 @@ it("rejects changed domain readiness and missing or invalid current seller/payme
     commandId: crypto.randomUUID(),
     now: issuedAt,
   });
+});
+
+it("records which superseded instruction version received verified funds", async () => {
+  const f = await fixture();
+  const pi = await service().issue(actor, f.command);
+  const oldInstructionId = pi.snapshot.paymentSelection.instructionId;
+  await createD1SellerCommercialSettingsRepository(db).savePaymentInstructions({
+    id: crypto.randomUUID(),
+    actorId: actor.id,
+    channel: "bank_transfer",
+    instructions: "TEST NEXT BANK VERSION",
+    commandId: crypto.randomUUID(),
+    now: "2026-09-15T09:00:00.000Z",
+  });
+  const payments = createPiPaymentService(db, {
+    now: () => new Date("2026-09-15T10:00:00.000Z"),
+  });
+  const initial = await payments.adminRead(actor, pi.id);
+  const received = await payments.updateReceived(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: initial.version,
+    amount: "5.00",
+    currency: "USD",
+    actualChannel: "bank_transfer",
+    receivedInstructionId: oldInstructionId,
+    verificationReference: "Bank receipt under old instructions",
+  });
+  expect(received.paymentConfirmed).toBe(false);
+  const history = (await payments.adminRead(actor, pi.id))
+    .receiptInstructionHistory;
+  expect(history).toMatchObject([
+    { version: expect.any(Number), status: "superseded" },
+  ]);
+  expect(
+    await db
+      .prepare(
+        "SELECT received_instruction_id FROM pi_payment_events WHERE pi_id=? AND kind='amount_received'",
+      )
+      .bind(pi.id)
+      .first("received_instruction_id"),
+  ).toBe(oldInstructionId);
 });

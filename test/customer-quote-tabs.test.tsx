@@ -97,7 +97,7 @@ it("keeps status tabs visible for an empty account", () => {
       <CustomerQuoteList quoteRequests={[]} />
     </MemoryRouter>,
   );
-  expect(screen.getAllByRole("tab")).toHaveLength(6);
+  expect(screen.getAllByRole("tab")).toHaveLength(8);
   expect(screen.getByText("No submitted quote requests yet.")).toBeTruthy();
 });
 

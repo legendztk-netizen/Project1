@@ -1,6 +1,9 @@
 import { ownedQuoteRequestWhere } from "../../quote-request/infrastructure/d1-quote-request-repository";
 import type { PiRow } from "./d1-proforma-invoice-repository";
 import type { PiAcceptance } from "../domain/pi-acceptance";
+import type { ProformaInvoiceSnapshot } from "../domain/proforma-invoice";
+import { paymentDeadlineOnAcceptance } from "./d1-pi-payment-deadline";
+import { orderCreationStatements } from "./d1-order-creation";
 
 export interface AcceptancePiRow extends PiRow {
   purchasing_context_id: string;
@@ -211,6 +214,7 @@ export function createD1PiAcceptance(db: D1Database) {
       },
     ) {
       const { evidence, view } = input;
+      const fixed = JSON.parse(row.snapshot_json) as ProformaInvoiceSnapshot;
       await db.batch([
         db
           .prepare(
@@ -268,6 +272,20 @@ export function createD1PiAcceptance(db: D1Database) {
             evidence.acceptedAt,
           ),
         receiptStatement({ ...input, piId: row.id }),
+        ...paymentDeadlineOnAcceptance(db, fixed, {
+          piId: row.id,
+          acceptanceId: input.id,
+          acceptedAt: evidence.acceptedAt,
+          actorId: input.profileId,
+        }),
+        ...(fixed.paymentTerms
+          ? await orderCreationStatements(db, {
+              piId: row.id,
+              requestId: row.request_id,
+              now: evidence.acceptedAt,
+              finalEvent: "acceptance",
+            })
+          : []),
       ]);
     },
   };

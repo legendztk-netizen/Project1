@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => ({
   accept: vi.fn(),
   customerView: vi.fn(),
   customerDownload: vi.fn(),
+  paymentRead: vi.fn(),
 }));
 vi.mock("../workers/pi-acceptance", async (original) => ({
   ...(await original<typeof import("../workers/pi-acceptance")>()),
@@ -42,6 +43,7 @@ vi.mock("../workers/proforma-invoice", async (original) => ({
   ...(await original<typeof import("../workers/proforma-invoice")>()),
   proformaInvoices: () => mocks,
   piLifecycle: () => ({ customerHistory: async () => [] }),
+  piPayments: () => ({ customerRead: mocks.paymentRead }),
 }));
 vi.mock(
   "../app/modules/customer-identity/application/customer-identity-service",
@@ -175,6 +177,7 @@ beforeEach(() => {
   mocks.readSession.mockResolvedValue({ id: "verified-profile" });
   mocks.customerRead.mockResolvedValue(page.invoice);
   mocks.customerStatus.mockResolvedValue(page.status);
+  mocks.paymentRead.mockResolvedValue(null);
 });
 afterEach(cleanup);
 

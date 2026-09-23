@@ -42,6 +42,8 @@ import {
 } from "../domain/saved-configuration";
 import { createQuoteRequestService } from "../../quote-request/application/quote-request-service";
 import { CustomerQuoteList } from "../../quote-request/ui/customer-quote-list";
+import { confirmedOrders } from "#workers/proforma-invoice";
+import { customerPaymentProgress } from "../../proforma-invoice/application/customer-payment-progress";
 
 function selectedView(request: Request): AccountDetailView {
   const requested = new URL(request.url).searchParams.get("view");
@@ -129,12 +131,24 @@ export async function loader({ context, request }: Route.LoaderArgs) {
   const savedConfigurations =
     (await createSavedConfigurationService(env).list(request)) ?? [];
   const quoteRequests = await createQuoteRequestService(env).listOwned(request);
+  const orders =
+    view === "orders"
+      ? await confirmedOrders(env).customerList(
+          account.profile.id,
+          new URL(request.url).searchParams.get("before"),
+        )
+      : { records: [], nextCursor: null };
   return {
     ...account,
     editingAddress,
     saved: new URL(request.url).searchParams.get("saved") === "1",
     savedConfigurations,
-    quoteRequests: quoteRequests.records,
+    quoteRequests: await customerPaymentProgress(
+      env.DB,
+      account.profile.id,
+      quoteRequests.records,
+    ),
+    orders,
     view,
   };
 }
@@ -310,24 +324,6 @@ function SavedConfigurationsDetail({
           ))}
         </div>
       )}
-    </section>
-  );
-}
-
-function EmptyDetail(input: {
-  description: string;
-  title: string;
-  to?: string;
-}) {
-  return (
-    <section className="account-empty-detail">
-      <h1>{input.title}</h1>
-      <p>{input.description}</p>
-      {input.to ? (
-        <Link className="button button-secondary" to={input.to}>
-          Browse products
-        </Link>
-      ) : null}
     </section>
   );
 }
@@ -801,7 +797,7 @@ export default function CustomerAccount({
           <article>
             <ClipboardList aria-hidden="true" size={22} />
             <h2>Orders</h2>
-            <p>No paid and confirmed orders yet.</p>
+            <p>View paid and confirmed orders.</p>
             <Link to="/account?view=orders">View Orders</Link>
           </article>
           <article>
@@ -839,10 +835,48 @@ export default function CustomerAccount({
     detail = <CustomerQuoteList quoteRequests={loaderData.quoteRequests} />;
   } else if (view === "orders") {
     detail = (
-      <EmptyDetail
-        description="No paid and confirmed orders yet. Quote requests and unpaid PIs do not appear here."
-        title="Orders"
-      />
+      <section className="account-record-detail">
+        <span className="eyebrow">Purchases</span>
+        <h1>Orders</h1>
+        {loaderData.orders.records.length === 0 ? (
+          <p>No confirmed orders yet.</p>
+        ) : (
+          <div className="customer-quote-list">
+            {loaderData.orders.records.map((order) => (
+              <article key={order.id}>
+                <div className="customer-quote-detail-header">
+                  <div>
+                    <strong>{order.status}</strong>
+                    <h2>{order.orderNumber}</h2>
+                    <p>
+                      {customerDateTime.format(new Date(order.confirmedAt))}
+                    </p>
+                  </div>
+                  <Link
+                    className="button button-secondary"
+                    to={`/account/orders/${encodeURIComponent(order.id)}`}
+                  >
+                    View order
+                  </Link>
+                </div>
+                <p>
+                  {order.snapshot.lines.length} product{" "}
+                  {order.snapshot.lines.length === 1 ? "line" : "lines"} · USD{" "}
+                  {(order.totalCents / 100).toFixed(2)}
+                </p>
+              </article>
+            ))}
+          </div>
+        )}
+        {loaderData.orders.nextCursor && (
+          <Link
+            className="button button-secondary"
+            to={`/account?view=orders&before=${encodeURIComponent(loaderData.orders.nextCursor)}`}
+          >
+            Older orders
+          </Link>
+        )}
+      </section>
     );
   } else if (view === "addresses") {
     detail = (

@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   customerRead: vi.fn(),
   customerHistory: vi.fn(),
   customerDownload: vi.fn(),
+  paymentRead: vi.fn(),
 }));
 vi.mock("../workers/pi-acceptance", () => ({
   piAcceptance: () => ({ customerStatus: async () => null }),
@@ -31,6 +32,7 @@ vi.mock("../workers/proforma-invoice", async (importOriginal) => ({
   proformaInvoices: () => ({ ...mocks, reserve: mocks.issue }),
   piPdfJobs: () => ({ dispatch: async () => {} }),
   piLifecycle: () => ({ customerHistory: mocks.customerHistory }),
+  piPayments: () => ({ customerRead: mocks.paymentRead }),
 }));
 vi.mock(
   "../app/modules/customer-identity/application/customer-identity-service",
@@ -104,7 +106,15 @@ function args(
 ): LoaderFunctionArgs {
   const context = new RouterContextProvider();
   context.set(cloudflareContext, {
-    env: { APP_ENV: "local", DB: {}, PRIVATE_FILES: {} } as CloudflareBindings,
+    env: {
+      APP_ENV: "local",
+      DB: {
+        prepare: () => ({
+          bind: () => ({ all: async () => ({ results: [] }) }),
+        }),
+      },
+      PRIVATE_FILES: {},
+    } as unknown as CloudflareBindings,
     runtime: { environment: "local" },
     ctx: {} as ExecutionContext,
     ...(options.admin
@@ -144,6 +154,7 @@ function args(
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.customerHistory.mockResolvedValue([]);
+  mocks.paymentRead.mockResolvedValue(null);
   mocks.readSession.mockResolvedValue({ id: "authenticated-profile" });
   mocks.readiness.mockResolvedValue({
     quoteRevision: { id: "quote-revision", hash: "exact-captured-hash" },

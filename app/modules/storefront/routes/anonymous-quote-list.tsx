@@ -49,6 +49,14 @@ import {
 } from "../../quote-request/ui/customer-quote-product-preview";
 import "../styles/quote-list.css";
 import { cloudflareContext } from "#workers/context";
+import { createFollowOnQuoteService } from "../../proforma-invoice/application/follow-on-quote-service";
+
+function quoteListReturn(request: Request) {
+  const draftId = new URL(request.url).searchParams.get("followOnDraftId");
+  return draftId
+    ? `/quote-list?followOnDraftId=${encodeURIComponent(draftId)}`
+    : "/quote-list";
+}
 
 function textValue(form: FormData, key: string) {
   const value = form.get(key);
@@ -71,12 +79,21 @@ export async function loader({ context, request }: Route.LoaderArgs) {
     createAnonymousQuoteListService(env).read(request),
     createCustomerAccountService(env).read(request),
   ]);
+  const draftId = new URL(request.url).searchParams.get("followOnDraftId");
+  const followOnDraft =
+    draftId && account
+      ? await createFollowOnQuoteService(env.DB).customerRead(
+          account.profile.id,
+          draftId,
+        )
+      : null;
   return data(
     {
       addresses: account?.addresses ?? [],
       idempotencyKey: crypto.randomUUID(),
       lines: result.lines,
       purchasingContexts: account?.purchasingContexts ?? [],
+      followOnDraft,
     },
     { headers: responseHeaders(result.setCookie) },
   );
@@ -111,6 +128,7 @@ export async function action({ context, request }: Route.ActionArgs) {
         selectedLineIds: form
           .getAll("selectedLineId")
           .filter((value): value is string => typeof value === "string"),
+        followOnDraftId: textValue(form, "followOnDraftId") || undefined,
       };
       const result =
         intent === "submit_organization_quote_request"
@@ -138,7 +156,7 @@ export async function action({ context, request }: Route.ActionArgs) {
           `/sign-in?returnTo=${encodeURIComponent("/quote-list")}`,
         );
       }
-      return redirect("/quote-list");
+      return redirect(quoteListReturn(request));
     }
 
     if (intent === "add") {
@@ -154,7 +172,7 @@ export async function action({ context, request }: Route.ActionArgs) {
         textValue(form, "sku"),
         quantity,
       );
-      return redirect("/quote-list", {
+      return redirect(quoteListReturn(request), {
         headers: responseHeaders(result.setCookie),
       });
     }
@@ -212,7 +230,7 @@ export async function action({ context, request }: Route.ActionArgs) {
         textValue(form, "lineId"),
         quantity,
       );
-      return redirect("/quote-list", {
+      return redirect(quoteListReturn(request), {
         headers: responseHeaders(result.setCookie),
       });
     }
@@ -234,7 +252,7 @@ export async function action({ context, request }: Route.ActionArgs) {
         lineId,
         pieceCount,
       );
-      return redirect("/quote-list", {
+      return redirect(quoteListReturn(request), {
         headers: responseHeaders(result.setCookie),
       });
     }
@@ -252,14 +270,14 @@ export async function action({ context, request }: Route.ActionArgs) {
         textValue(form, "lineId"),
         quantity,
       );
-      return redirect("/quote-list", {
+      return redirect(quoteListReturn(request), {
         headers: responseHeaders(result.setCookie),
       });
     }
 
     if (intent === "remove") {
       const result = await service.remove(request, textValue(form, "lineId"));
-      return redirect("/quote-list", {
+      return redirect(quoteListReturn(request), {
         headers: responseHeaders(result.setCookie),
       });
     }
@@ -297,6 +315,7 @@ function RfqPreparation({
   busy,
   hasBlockedLine,
   idempotencyKey,
+  followOnDraftId,
   merchandiseSubtotal,
   manualReview,
   purchasingContexts,
@@ -307,6 +326,7 @@ function RfqPreparation({
   busy: boolean;
   hasBlockedLine: boolean;
   idempotencyKey: string;
+  followOnDraftId?: string;
   merchandiseSubtotal: number;
   manualReview: boolean;
   purchasingContexts: PurchasingContext[];
@@ -520,6 +540,13 @@ function RfqPreparation({
               }
             />
             <input name="idempotencyKey" type="hidden" value={idempotencyKey} />
+            {followOnDraftId && (
+              <input
+                name="followOnDraftId"
+                type="hidden"
+                value={followOnDraftId}
+              />
+            )}
             {selectedLineIds.map((lineId) => (
               <input
                 key={lineId}
@@ -986,6 +1013,14 @@ export function QuoteListContent({
           {loaderData.lines.length === 1 ? "" : "s"}
         </span>
       </header>
+      {loaderData.followOnDraft && (
+        <div className="quote-list-follow-on" role="status">
+          Follow-on request for order{" "}
+          <strong>{loaderData.followOnDraft.orderNumber}</strong>. Select only
+          the products for this new request; existing Quote List items remain
+          available until submitted.
+        </div>
+      )}
 
       {actionData && "formError" in actionData ? (
         <p className="quote-list-error" role="alert">
@@ -1318,6 +1353,7 @@ export function QuoteListContent({
               busy={busy}
               hasBlockedLine={hasBlockedLine}
               idempotencyKey={loaderData.idempotencyKey}
+              followOnDraftId={loaderData.followOnDraft?.id}
               merchandiseSubtotal={referenceTotal}
               manualReview={currencyTotals.manualReview}
               purchasingContexts={loaderData.purchasingContexts}

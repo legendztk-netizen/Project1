@@ -70,6 +70,14 @@ export function proformaInvoicePdfContent(
     {
       text: `Valid until: ${formatPiDate(snapshot.validUntil, "customer")} | UTC ${snapshot.validUntil}`,
     },
+    {
+      text:
+        snapshot.paymentTerms?.kind === "fixed_et_date"
+          ? `Payment due: ${snapshot.paymentTerms.dueDateEt} at 23:59 ET`
+          : snapshot.paymentTerms?.kind === "ten_us_business_days"
+            ? "Payment due: within 10 US bank business days after PI acceptance (23:59 ET on the tenth day)."
+            : "Payment terms: consult the separately verified historical agreement.",
+    },
     { text: "Seller", heading: true },
     { text: snapshot.seller.legalName },
     { text: snapshot.seller.registeredAddressEn },

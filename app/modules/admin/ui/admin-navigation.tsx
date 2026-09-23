@@ -1,5 +1,6 @@
 import {
   Boxes,
+  ClipboardList,
   ChevronDown,
   FileText,
   FileUp,
@@ -13,7 +14,13 @@ import { Link } from "react-router";
 import { BrandMark } from "../../shared/ui/brand-mark";
 
 export type AdminNavigationKey =
-  "catalog" | "configurator" | "imports" | "overview" | "quotes" | "system";
+  | "catalog"
+  | "configurator"
+  | "imports"
+  | "overview"
+  | "orders"
+  | "quotes"
+  | "system";
 
 export type CatalogMaintenanceMode =
   "commercial" | "excel" | "manual" | "items" | "assemblies";
@@ -35,6 +42,7 @@ const catalogMaintenanceNavigation = [
 const adminNavigation = [
   { key: "overview", label: "总览", icon: LayoutDashboard, to: "/admin" },
   { key: "quotes", label: "询价审核", icon: FileText, to: "/admin/quotes" },
+  { key: "orders", label: "订单", icon: ClipboardList, to: "/admin/orders" },
   {
     key: "catalog",
     label: "产品审核与发布",

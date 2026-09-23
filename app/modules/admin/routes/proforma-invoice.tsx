@@ -43,8 +43,16 @@ export async function loader({ context, params }: LoaderFunctionArgs) {
     adminIdentity,
     requestId,
   );
+  const paymentHistory = (
+    await env.DB.prepare(
+      `SELECT id,document_number AS documentNumber,
+    issued_at AS issuedAt FROM proforma_invoices WHERE request_id=? ORDER BY issued_at DESC,id DESC`,
+    )
+      .bind(requestId)
+      .all<{ id: string; documentNumber: string; issuedAt: string }>()
+  ).results;
   return data(
-    { requestId, readiness, commandId: crypto.randomUUID() },
+    { requestId, readiness, paymentHistory, commandId: crypto.randomUUID() },
     { headers: headers() },
   );
 }
@@ -109,6 +117,9 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
       paymentInstructionId: selection.id,
       paymentInstructionVersion: selection.version,
       ...(validUntil ? { validUntil: beijingDeadline(validUntil) } : {}),
+      ...(field("fixedPaymentDueDateEt")
+        ? { fixedPaymentDueDateEt: field("fixedPaymentDueDateEt") }
+        : {}),
     };
   } catch (error) {
     if (error instanceof Response && error.status !== 400) throw error;
@@ -160,10 +171,15 @@ export default function ProformaInvoice({
   loaderData,
   actionData,
 }: {
-  loaderData: { requestId: string; readiness: PiReadiness; commandId: string };
+  loaderData: {
+    requestId: string;
+    readiness: PiReadiness;
+    commandId: string;
+    paymentHistory: { id: string; documentNumber: string; issuedAt: string }[];
+  };
   actionData?: { error: string; commandId?: string };
 }) {
-  const { readiness, requestId, commandId } = loaderData;
+  const { readiness, requestId, commandId, paymentHistory } = loaderData;
   const { seller, quoteRevision, current, payments } = readiness;
   const [selected, setSelected] = useState("");
   const pending = useNavigation().state !== "idle";
@@ -252,6 +268,20 @@ export default function ProformaInvoice({
               合计 USD {(current.snapshot.totals.totalCents / 100).toFixed(2)}
             </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+              <Link className="button button-primary" to={`${base}/payments`}>
+                付款与到账
+              </Link>
+              {paymentHistory
+                .filter((item) => item.id !== current.id)
+                .map((item) => (
+                  <Link
+                    key={item.id}
+                    className="button button-secondary"
+                    to={`${base}/payments?piId=${encodeURIComponent(item.id)}`}
+                  >
+                    历史 PI {item.documentNumber} 付款记录
+                  </Link>
+                ))}
               <Link
                 className="button button-secondary"
                 to={`${base}/lifecycle`}
@@ -381,6 +411,10 @@ export default function ProformaInvoice({
                 name="validUntilBeijing"
                 style={{ maxWidth: "100%" }}
               />
+            </label>
+            <label>
+              固定付款截止日（美国东部日期；留空为接受后 10 个美国银行工作日）
+              <input type="date" name="fixedPaymentDueDateEt" />
             </label>
             <button
               className="button button-primary"

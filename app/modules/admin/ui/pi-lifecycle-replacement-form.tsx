@@ -39,6 +39,7 @@ export function PiReplacementForm({ basis }: { basis: PiLifecyclePageData }) {
   const [customerDataAccurate, setCustomerDataAccurate] = useState(false);
   const [evidenceIds, setEvidenceIds] = useState<string[]>([]);
   const [deadline, setDeadline] = useState("");
+  const [fixedPaymentDueDateEt, setFixedPaymentDueDateEt] = useState("");
   const [reviewed, setReviewed] = useState(false);
   const pending = useNavigation().state !== "idle";
   const payment = issuance.payments.find((item) => item.id === paymentId);
@@ -96,6 +97,7 @@ export function PiReplacementForm({ basis }: { basis: PiLifecyclePageData }) {
           paymentInstructionId: payment.id,
           paymentInstructionVersion: payment.version,
           ...(validUntil ? { validUntil } : {}),
+          ...(fixedPaymentDueDateEt ? { fixedPaymentDueDateEt } : {}),
           replacement: {
             expectedPi: replacement.expectedPi,
             expectedHeadVersion: replacement.expectedHeadVersion,
@@ -213,6 +215,17 @@ export function PiReplacementForm({ basis }: { basis: PiLifecyclePageData }) {
             setReviewed(false);
           }}
           style={{ maxWidth: "100%" }}
+        />
+      </label>
+      <label>
+        固定付款截止日（美国东部日期；留空为接受后 10 个美国银行工作日）
+        <input
+          type="date"
+          value={fixedPaymentDueDateEt}
+          onChange={(event) => {
+            setFixedPaymentDueDateEt(event.target.value);
+            setReviewed(false);
+          }}
         />
       </label>
       <label>

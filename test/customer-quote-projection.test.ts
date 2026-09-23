@@ -51,6 +51,8 @@ describe("customer quote projection", () => {
       "PI_REPLACEMENT_REQUIRED",
       "PAYMENT_PENDING",
       "PAYMENT_CONFIRMED",
+      "PAYMENT_REVIEW_REQUIRED",
+      "PAYMENT_REVIEW_HOLD",
       "ORDER_CREATED",
     ]);
     expect(

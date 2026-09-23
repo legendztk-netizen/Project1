@@ -9,6 +9,7 @@ import {
   piRouteId,
   type PiRecord,
   piLifecycle,
+  piPayments,
 } from "#workers/proforma-invoice";
 import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
 import { AccountWorkspace } from "../ui/account-workspace";
@@ -33,6 +34,9 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
   const status = invoice
     ? await piAcceptance(env).customerStatus(profileId, requestId, invoice.id)
     : null;
+  const payment = invoice
+    ? await piPayments(env).customerRead(profileId, requestId, invoice.id)
+    : null;
   const history = invoice
     ? await piLifecycle(env).customerHistory(profileId, requestId)
     : [];
@@ -47,7 +51,7 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
       ? { ...invoice, paymentInstructions: null }
       : invoice;
   return data(
-    { requestId, invoice: safeInvoice, status, history },
+    { requestId, invoice: safeInvoice, status, history, payment },
     { headers: headers() },
   );
 }
@@ -60,9 +64,12 @@ export default function ProformaInvoice({
     invoice: PiRecord | null;
     status?: PiAcceptanceStatus | null;
     history?: PiLifecycleHistoryItem[];
+    payment?: Awaited<
+      ReturnType<ReturnType<typeof piPayments>["customerRead"]>
+    > | null;
   };
 }) {
-  const { requestId, invoice, status, history = [] } = loaderData;
+  const { requestId, invoice, status, history = [], payment } = loaderData;
   const lifecycle = history.find(
     (record) => record.id === invoice?.id,
   )?.lifecycle;
@@ -123,6 +130,61 @@ export default function ProformaInvoice({
                 <dd>USD {(snapshot.totals.totalCents / 100).toFixed(2)}</dd>
               </div>
             </dl>
+            {payment && (
+              <section className="customer-quote-section">
+                <h2>Payment progress</h2>
+                <dl className="customer-quote-summary">
+                  <div>
+                    <dt>Total due</dt>
+                    <dd>USD {(payment.totalDueCents / 100).toFixed(2)}</dd>
+                  </div>
+                  <div>
+                    <dt>
+                      {payment.paymentConfirmed
+                        ? "Payment confirmed"
+                        : "Received, pending confirmation"}
+                    </dt>
+                    <dd>
+                      {payment.receiptHistoryKnown
+                        ? `USD ${(Math.min(payment.amountReceivedCents, payment.totalDueCents) / 100).toFixed(2)}`
+                        : "Historical balance under review"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Remaining balance</dt>
+                    <dd>
+                      {payment.receiptHistoryKnown
+                        ? `USD ${(payment.balanceCents / 100).toFixed(2)}`
+                        : "Contact Support"}
+                    </dd>
+                  </div>
+                  {payment.excessCents > 0 && (
+                    <div>
+                      <dt>Excess under review</dt>
+                      <dd>USD {(payment.excessCents / 100).toFixed(2)}</dd>
+                    </div>
+                  )}
+                  <div>
+                    <dt>Payment due (ET)</dt>
+                    <dd>
+                      {payment.dueAt
+                        ? formatPiDate(payment.dueAt, "customer")
+                        : payment.termKind === "legacy_review"
+                          ? "Please contact Support to confirm historical payment terms"
+                          : "10 US bank business days after acceptance"}
+                    </dd>
+                  </div>
+                </dl>
+                {payment.orderId && (
+                  <Link
+                    className="button button-primary"
+                    to={`/account/orders/${encodeURIComponent(payment.orderId)}`}
+                  >
+                    View confirmed order
+                  </Link>
+                )}
+              </section>
+            )}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
               <a
                 className="button button-secondary"

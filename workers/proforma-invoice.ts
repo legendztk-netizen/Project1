@@ -9,6 +9,48 @@ import { conditionsForQuote } from "../app/modules/proforma-invoice/domain/pi-po
 import { createPiPdfRenderer } from "./pi-fonts";
 import { createPiPdfJobs } from "../app/modules/proforma-invoice/application/pi-pdf-jobs";
 import { createPiLifecycleService } from "../app/modules/proforma-invoice/application/pi-lifecycle-service";
+import { createPiPaymentService } from "../app/modules/proforma-invoice/application/pi-payment-service";
+import { createConfirmedOrderService } from "../app/modules/proforma-invoice/application/confirmed-order-service";
+import { createPiLatePaymentService } from "../app/modules/proforma-invoice/application/pi-late-payment-service";
+import { createPiFundResolutionService } from "../app/modules/proforma-invoice/application/pi-fund-resolution-service";
+import { createPiPaymentCorrectionService } from "../app/modules/proforma-invoice/application/pi-payment-correction-service";
+import { createFollowOnQuoteService } from "../app/modules/proforma-invoice/application/follow-on-quote-service";
+
+export function piPayments(
+  env: ApplicationBindings,
+  options?: { auditIp?: string },
+) {
+  return createPiPaymentService(env.DB, options);
+}
+
+export function confirmedOrders(env: ApplicationBindings) {
+  return createConfirmedOrderService(env.DB);
+}
+
+export function piLatePayments(
+  env: ApplicationBindings,
+  options?: { auditIp?: string },
+) {
+  return createPiLatePaymentService(env.DB, options);
+}
+
+export function piFundResolutions(
+  env: ApplicationBindings,
+  options?: { auditIp?: string },
+) {
+  return createPiFundResolutionService(env.DB, options);
+}
+
+export function piPaymentCorrections(
+  env: ApplicationBindings,
+  options?: { auditIp?: string },
+) {
+  return createPiPaymentCorrectionService(env.DB, options);
+}
+
+export function followOnQuotes(env: ApplicationBindings) {
+  return createFollowOnQuoteService(env.DB);
+}
 
 export function piPdfJobs(env: ApplicationBindings) {
   return createPiPdfJobs(env.DB, env.ASYNC_JOBS, async (commandId) => {

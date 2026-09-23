@@ -11,6 +11,7 @@ import {
   type SellerIdentityVersion,
 } from "../../seller-settings/domain/seller-commercial-settings";
 import { publicPiLine } from "./public-product-snapshot";
+import { paymentTerms, type PiPaymentTerms } from "./pi-payment-terms";
 
 export interface PiVersionedText {
   version: string;
@@ -27,6 +28,7 @@ export interface CreateProformaInvoiceInput {
   documentVersion: number;
   issuedAt: string;
   validUntil?: string;
+  fixedPaymentDueDateEt?: string;
   quoteRevisionId: string;
   currentQuoteRevisionId: string;
   revision: QuoteRevisionSnapshot | null;
@@ -228,6 +230,10 @@ function validatedProformaInvoiceSnapshot(input: CreateProformaInvoiceInput) {
     documentVersion: positiveVersion(input.documentVersion, "PI document"),
     issuedAt,
     validUntil: piValidityDeadline(issuedAt, input.validUntil),
+    paymentTerms: paymentTerms(
+      input.fixedPaymentDueDateEt,
+      piValidityDeadline(issuedAt, input.validUntil),
+    ) as PiPaymentTerms,
     currency: "USD" as const,
     quoteRevision: {
       id: input.quoteRevisionId,
@@ -328,9 +334,10 @@ function validatedProformaInvoiceSnapshot(input: CreateProformaInvoiceInput) {
   return freeze(snapshot);
 }
 
-export type ProformaInvoiceSnapshot = ReturnType<
-  typeof createProformaInvoiceSnapshot
->;
+export type ProformaInvoiceSnapshot = Omit<
+  ReturnType<typeof createProformaInvoiceSnapshot>,
+  "paymentTerms"
+> & { readonly paymentTerms?: PiPaymentTerms };
 
 export function formatPiDate(instant: string, audience: "customer" | "admin") {
   const date = new Date(piUtcInstant(instant));

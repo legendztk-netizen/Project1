@@ -30,6 +30,7 @@ import {
 } from "../domain/quote-request";
 import { createD1QuoteRequestRepository } from "../infrastructure/d1-quote-request-repository";
 import type { ApplicationBindings } from "#workers/environment";
+import { createFollowOnQuoteService } from "../../proforma-invoice/application/follow-on-quote-service";
 
 function validIdempotencyKey(value: string) {
   return /^[A-Za-z0-9_-]{16,120}$/u.test(value);
@@ -41,6 +42,7 @@ interface SubmitQuoteRequestInput {
   idempotencyKey: string;
   request: Request;
   selectedLineIds: string[];
+  followOnDraftId?: string;
 }
 
 export function createQuoteRequestService(
@@ -106,6 +108,20 @@ export function createQuoteRequestService(
           ? "INDIVIDUAL_CONTEXT_REQUIRED"
           : "ORGANIZATION_CONTEXT_REQUIRED",
       );
+    }
+    if (input.followOnDraftId) {
+      const draft = await createFollowOnQuoteService(env.DB).customerRead(
+        account.profile.id,
+        input.followOnDraftId,
+      );
+      if (
+        draft.submittedRequestId ||
+        draft.purchasingContextId !== purchasingContext.id
+      )
+        throw new QuoteRequestRejected(
+          "Select the purchasing context of this follow-on order before submitting.",
+          "ORGANIZATION_CONTEXT_REQUIRED",
+        );
     }
     let validatedOrganizationContext: ReturnType<
       typeof validatedOrganization
@@ -388,6 +404,7 @@ export function createQuoteRequestService(
       snapshot,
       sourceAddressId: destination.id,
       selectedLineIds,
+      followOnDraftId: input.followOnDraftId,
     });
     if (!result.record) {
       throw new QuoteRequestRejected(
@@ -411,9 +428,11 @@ export function createQuoteRequestService(
 
     async readOwned(request: Request, requestId: string) {
       const account = await accounts.read(request);
-      if (!account) return { authenticated: false as const, record: null };
+      if (!account)
+        return { authenticated: false as const, record: null, profileId: null };
       return {
         authenticated: true as const,
+        profileId: account.profile.id,
         record: await repository
           .findOwned(account.profile.id, requestId)
           .then(async (record) => {

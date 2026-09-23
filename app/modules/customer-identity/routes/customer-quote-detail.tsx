@@ -16,6 +16,7 @@ import {
 } from "../../quote-request/ui/customer-quote-presentation";
 import { CustomerQuoteProductPreview } from "../../quote-request/ui/customer-quote-product-preview";
 import { cloudflareContext } from "#workers/context";
+import { customerPaymentProgress } from "../../proforma-invoice/application/customer-payment-progress";
 
 export function meta() {
   return [{ title: "Quote Request | Account & Lists" }];
@@ -35,7 +36,12 @@ export async function loader({ context, params, request }: Route.LoaderArgs) {
     return redirect(`/sign-in?returnTo=${encodeURIComponent(returnTo)}`);
   }
   if (!result.record) throw new Response("Not found", { status: 404 });
-  return data({ quoteRequest: result.record }, { headers: headers() });
+  const [quoteRequest] = await customerPaymentProgress(
+    env.DB,
+    result.profileId,
+    [result.record],
+  );
+  return data({ quoteRequest }, { headers: headers() });
 }
 
 function lineDetails(line: AnonymousQuoteLine) {
@@ -155,6 +161,14 @@ export default function CustomerQuoteDetail({
           </span>
         </header>
         <CustomerQuoteNavigation requestId={quoteRequest.id} />
+        {quoteRequest.orderId ? (
+          <Link
+            className="button button-secondary"
+            to={`/account/orders/${encodeURIComponent(quoteRequest.orderId)}`}
+          >
+            View confirmed order
+          </Link>
+        ) : null}
 
         <section
           className="customer-quote-progress"

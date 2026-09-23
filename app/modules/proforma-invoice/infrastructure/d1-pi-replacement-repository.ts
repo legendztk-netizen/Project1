@@ -1,5 +1,6 @@
 import type { QuoteRevisionSnapshot } from "../../quote-review/domain/quote-revision";
 import type { ProformaInvoiceSnapshot } from "../domain/proforma-invoice";
+import { dueDateInstant } from "../domain/pi-payment-terms";
 import {
   createD1PiLifecycle,
   replacementCurrentGuard,
@@ -135,6 +136,32 @@ export function createD1PiReplacementRepository(db: D1Database) {
               pdfSha256: pdf.sha256,
             }),
             publishedAt,
+            intent.id,
+          ),
+        db
+          .prepare(
+            `INSERT INTO pi_payment_accounts(pi_id,request_id,purchasing_context_id,currency,total_due_cents,
+          term_kind,calendar_version,fixed_due_date_et,due_date_et,due_at,instruction_channel,instruction_id,
+          instruction_version,created_at,updated_at)
+          SELECT p.id,p.request_id,q.purchasing_context_id,'USD',?,?,?,?,?,?,?,?,?,p.issued_at,p.issued_at
+          FROM proforma_invoices p JOIN customer_quote_requests q ON q.id=p.request_id WHERE p.id=?`,
+          )
+          .bind(
+            snapshot.totals.totalCents,
+            snapshot.paymentTerms?.kind ?? "legacy_review",
+            snapshot.paymentTerms?.calendarVersion ?? null,
+            snapshot.paymentTerms?.kind === "fixed_et_date"
+              ? snapshot.paymentTerms.dueDateEt
+              : null,
+            snapshot.paymentTerms?.kind === "fixed_et_date"
+              ? snapshot.paymentTerms.dueDateEt
+              : null,
+            snapshot.paymentTerms?.kind === "fixed_et_date"
+              ? dueDateInstant(snapshot.paymentTerms.dueDateEt)
+              : null,
+            snapshot.paymentSelection.channel,
+            snapshot.paymentSelection.instructionId,
+            snapshot.paymentSelection.instructionVersion,
             intent.id,
           ),
       ]);

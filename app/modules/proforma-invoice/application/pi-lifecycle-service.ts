@@ -234,6 +234,7 @@ export function createPiLifecycleService(
               input.validUntil === undefined
                 ? null
                 : piUtcInstant(input.validUntil),
+            fixedPaymentDueDateEt: input.fixedPaymentDueDateEt ?? null,
             ...(input.replacement ? { replacement: input.replacement } : {}),
           }),
         ),
@@ -345,6 +346,7 @@ export function createPiLifecycleService(
           documentVersion,
           issuedAt: now(),
           validUntil: input.validUntil,
+          fixedPaymentDueDateEt: input.fixedPaymentDueDateEt,
           quoteRevisionId: quote.id,
           currentQuoteRevisionId: quote.id,
           revision,

@@ -1,4 +1,7 @@
 import type { PiAcceptance } from "../domain/pi-acceptance";
+import type { ProformaInvoiceSnapshot } from "../domain/proforma-invoice";
+import { paymentDeadlineOnAcceptance } from "./d1-pi-payment-deadline";
+import { orderCreationStatements } from "./d1-order-creation";
 import {
   piAcceptanceLiveSql,
   piAcceptanceLiveBindings,
@@ -93,6 +96,7 @@ export function createD1PiEmailAcceptance(db: D1Database) {
       },
     ) {
       const { source, evidence } = input;
+      const fixed = JSON.parse(row.snapshot_json) as ProformaInvoiceSnapshot;
       // The first INSERT is the live authorization/version/deadline decision.
       // D1 batch is atomic: rechecking wall time in a later statement could
       // otherwise commit orphan evidence if the deadline passes mid-batch.
@@ -194,6 +198,20 @@ export function createD1PiEmailAcceptance(db: D1Database) {
             source.profile_id,
             input.businessHash,
           ),
+        ...paymentDeadlineOnAcceptance(db, fixed, {
+          piId: row.id,
+          acceptanceId: input.id,
+          acceptedAt: evidence.acceptedAt,
+          actorId: input.adminId,
+        }),
+        ...(fixed.paymentTerms
+          ? await orderCreationStatements(db, {
+              piId: row.id,
+              requestId: row.request_id,
+              now: evidence.acceptedAt,
+              finalEvent: "acceptance",
+            })
+          : []),
       ]);
     },
   };
