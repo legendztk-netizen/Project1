@@ -1,6 +1,16 @@
 # Spec 6: Shipment and Customer Order Progress
 
-> Status: Blocked. Prerequisites: Spec 4B / Issue #6 and Spec 5 / Issue #7.
+> Status: Ready for ticket review. Prerequisite: Spec 4B / Issue #6 is completed.
+> Spec 5 / Issue #7 is deferred and is not a first-release prerequisite.
+
+## First-release Boundary
+
+[ADR-0051](../adr/0051-defer-factory-workflow-from-first-release.md) establishes
+offline factory coordination with explicit Admin shipment readiness. This Spec
+starts from Confirmed Orders and immutable Order lines; it neither waits for
+production initialization nor requires an Assembly Production Package, Assembly
+Number, QR label, factory scan or online Proof Test record. Manufacturing and
+required inspection still take place offline.
 
 ## Problem Statement
 
@@ -39,6 +49,17 @@ customer timeline of Order Confirmed, Ready to Ship, Shipped, and Delivered.
 - `Ship Together` is the default RFQ preference. `Request Split Shipment` is
   non-binding until represented in the accepted PI. One Confirmed Order may own
   multiple Shipments with explicit line/quantity allocations.
+- Allocate by immutable Order line and physical quantity. Preserve cut-hose
+  piece counts and per-piece lengths separately from pricing footage. Concurrent
+  allocation, cancellation and dispatch cannot over-allocate or reuse quantities.
+  Payment Review Hold and quantity-scoped change/cancellation holds remain
+  independent enforced restrictions; resolving one never clears the others.
+- Existing Orders may contain only free-text lead time or split-plan evidence.
+  Preserve that evidence and require explicit review where the accepted plan is
+  ambiguous. Do not infer a binding allocation or promised date from today's
+  catalog, parse uncertain prose as an agreement, or rewrite an accepted PI.
+  First-release ticket review must distinguish pre-Order accepted schedule terms
+  from dates that can be calculated only after Confirmed Order creation.
 - Standard Products use a default 10-business-day Processing Lead Time.
   Made-to-order Hose Assemblies show a starting estimate but Sales confirms the
   actual quantity-dependent Processing Lead Time before PI issuance.
@@ -54,6 +75,11 @@ Ready-to-Ship Date` records prior/current values, affects only the selected
 - Owner/Admin explicitly marks a Shipment `Ready to Ship`; customer-visible
   status never derives from Factory Mobile. The notification says no customer
   action is required and tracking follows after dispatch.
+- Readiness confirmation records the actor, UTC time and reviewed Shipment
+  version after checking accepted specifications, quantities, offline preparation
+  and required inspection. Notes and protected supporting documents are optional.
+  Missing Spec 5 records never prevent readiness, and this action does not claim
+  to be a per-piece inspection record or automatically mark goods Shipped.
 - Marking `Shipped` requires actual ship date and carrier name. Tracking number,
   tracking URL, and estimated delivery date are optional and may be added later
   without another status transition or notification.
@@ -63,6 +89,12 @@ Ready-to-Ship Date` records prior/current values, affects only the selected
 - `Delivered` may be recorded from carrier information or Manual Delivery
   Confirmation with actual delivery date. Customers have no launch `Confirm
 Delivery` button.
+- Payment or change holds prevent new release, not truthful recording of an
+  already-completed handoff or delivery. Late handoff reconciliation records the
+  actual and recorded times, source, reason, actor and exact quantities; it does
+  not clear holds or approve a new dispatch. Surface conflicts with pending
+  requests/reviews and retain holds on remaining goods. Preserve those facts for
+  quantity-level Spec 7 cancellation and return eligibility.
 - Customer Order Progress consists only of Order Confirmed, Ready to Ship,
   Shipped, and Delivered. There is no Customs Review state or customs-entry/
   release notification. Multi-shipment summary reports completed count.
@@ -81,6 +113,12 @@ Delivery` button.
   immutable Order Change Confirmation; it becomes effective only after explicit
   customer acceptance and any required additional Cleared Funds. Silence never
   applies the change.
+- Accepted financial adjustments form an append-only effective Order obligation
+  alongside the unchanged original PI/Order totals. Reserve an approved refund
+  until its separately recorded initiation; it is not freely allocatable excess.
+  Payment review and Spec 7 refunds must use the same adjusted obligation and
+  funding facts so a legitimate refund does not create a false payment shortfall
+  or permit the same entitlement to be refunded twice.
 - After carrier handoff, website change actions are disabled and the customer is
   directed to Support. Accepted quantity, destination, split, or service changes
   that alter commercial terms use the established replacement/confirmation
@@ -104,6 +142,11 @@ Delivery` button.
   explicitly shared.
 - Queue tests prove repeated milestone messages do not send duplicate customer
   notifications.
+- Run the complete workflow without a Spec 5 consumer, production package,
+  physical Assembly Number or factory evidence. Verify legacy pending production
+  placeholders do not block shipping or cause retrospective production jobs.
+- Verify allocation/hold/dispatch races, cut-hose physical units, independently
+  delivered split quantities and the downstream Spec 7 eligibility contract.
 
 ## Out of Scope
 
@@ -113,6 +156,8 @@ Delivery` button.
 - Automatic customs Commercial Invoice generation or automatic HS verification.
 - Mandatory actual carton measurements or website-created Packing Lists.
 - Customer control over Importer of Record or direct factory dispatch actions.
+- Spec 5 production packages, per-piece identifiers/QR labels, Factory Mobile,
+  Public Assembly Verification and retrospective factory-history generation.
 
 ## Further Notes
 
@@ -128,9 +173,11 @@ Delivery` button.
 
 Shipment acceptance: allocate quantities from immutable Order lines and use accepted delivery terms. Current series lead-time or packaging edits are reference context only; actual shipment measurements and approved Order Change Confirmations remain separate. Test split shipment quantities and catalog changes without historical mutation.
 
-This Spec depends on Spec 4B and consumes production readiness from Spec 5
-through an explicit Admin decision rather than a shared customer status.
+This Spec depends on completed Spec 4B and consumes Confirmed Orders directly.
+First-release readiness is an explicit Admin decision based on offline factory
+or stock-preparation facts. Spec 5 is a later optional integration.
 
 - Project PRD: https://github.com/legendztk-netizen/Project1/issues/1
 - Published Spec: https://github.com/legendztk-netizen/Project1/issues/8
-- Blocked by: https://github.com/legendztk-netizen/Project1/issues/6 and https://github.com/legendztk-netizen/Project1/issues/7
+- Completed prerequisite: https://github.com/legendztk-netizen/Project1/issues/6
+- Ticket review: [Spec 6 English review draft](../tickets/spec-006-ticket-review.md)

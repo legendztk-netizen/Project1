@@ -1,6 +1,22 @@
 # Spec 7: After-sales, Return Inspection, and Refund
 
-> Status: Blocked. Prerequisites: Spec 4B / Issue #6 and Spec 6 / Issue #8.
+> Status: Blocked by Spec 6 / Issue #8. Spec 4B / Issue #6 is completed.
+> Spec 5 / Issue #7 is deferred and is not a first-release prerequisite.
+
+## First-release Boundary
+
+Under [ADR-0051](../adr/0051-defer-factory-workflow-from-first-release.md),
+after-sales records identify immutable Order lines, the applicable Shipments and
+physical quantities. Website-generated Assembly Numbers, QR labels and Factory
+Mobile records are not required. Admin records actual factory information and
+its source when reviewing an exceptional assembly cancellation or pre-cut hose
+cancellation; private photos, documents or external identifiers may support the
+decision. Missing website production evidence is not proof that work has not
+started, and no production history is fabricated.
+
+Production Approval remains the customer's recorded approval of fixed
+specifications, not a factory-start milestone. Existing cancellation, return,
+inspection and refund policies remain in force.
 
 ## Problem Statement
 
@@ -41,6 +57,11 @@ initiated refunds with immutable decisions and evidence.
 - Eligible unshipped Standard Product quantities expose `Request Cancellation`.
   Submission creates a Cancellation Request and immediately holds only those
   quantities. Already handed-off or Shipped quantities are ineligible.
+- Reuse Spec 6's quantity allocation and hold contract. Cancellation approval
+  removes the approved quantities from the remaining fulfillment obligation;
+  declining or withdrawing a request releases only its own hold. Split-shipment
+  delivery and return eligibility use the actual applicable Shipment dates.
+  Cut-hose piece counts and per-piece lengths are not pricing-footage quantities.
 - Operations approves or declines after checking fulfilment and documented,
   non-refundable third-party costs. No administrative cancellation fee or
   markup is permitted.
@@ -100,6 +121,12 @@ Problem`. The customer selects lines/quantities, reason, description, and
   costs, displayed gross-to-net for confirmation, without markup.
 - A later increased approval creates a Supplemental Refund rather than editing a
   refund already initiated.
+- Consume effective Order Change Confirmations and their refund-due records from
+  Spec 6. Reconcile the original paid purchase, accepted charges/credits, other
+  authorized resolutions, reserved refunds and recorded refund initiation without
+  double-counting the same entitlement. Authorized refunds do not invalidate an
+  otherwise fully funded adjusted Order; payment-review recovery evaluates the
+  same effective obligation while preserving the original PI and Order totals.
 
 ## Testing Decisions
 
@@ -112,6 +139,10 @@ Problem`. The customer selects lines/quantities, reason, description, and
   boundary, 30-day RA arrival deadline, and 5-business-day inspection deadline.
 - Guard tests prove no physical-return refund approval before receipt and
   inspection and no convenience return for made-to-order assembly or cut hose.
+- Cover manual factory review without Spec 5 data, concurrent cancellation and
+  dispatch, independently delivered split quantities, and duplicate claims that
+  cannot over-refund the same entitlement. Decision revisions and supplemental
+  refunds remain append-only and require their own authorization.
 - Calculation tests cover restocking fee, recoverable logistics, tax adjustment,
   seller-funded remedies, permitted third-party costs, and supplemental refunds.
 - Authorization tests prove the Return Location and private evidence are hidden

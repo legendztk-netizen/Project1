@@ -1,7 +1,23 @@
 # Spec 5: Production Package, Assembly QR, and Factory Mobile
 
-> Status: Blocked. Prerequisites: Spec 2 / Issue #3, Spec 4A / Issue #5, and
-> Spec 4B / Issue #6.
+> Status: Deferred from the first release (decision accepted 2026-09-23).
+> Future prerequisites: Spec 2 / Issue #3, Spec 4A / Issue #5, and Spec 4B /
+> Issue #6 are completed. Deferral is a release-scope decision, not an unresolved
+> prerequisite or a claim that this Spec is implemented.
+
+## First-release Boundary
+
+[ADR-0051](../adr/0051-defer-factory-workflow-from-first-release.md) defers the
+website production package, per-piece Assembly Numbers/QR labels, Factory
+Mobile and Public Assembly Verification. Factory coordination, manufacturing,
+cutting and required inspection remain offline. Spec 6 starts directly from
+Confirmed Orders and uses explicit Admin readiness confirmation; Spec 7 uses
+Order/Shipment quantities and documented manual factory review.
+
+Existing production initialization placeholders do not block first-release
+shipping. Future activation must not bulk-consume old pending records or invent
+production evidence for previously fulfilled Orders. The requirements below
+remain the future Spec 5 design, not first-release acceptance requirements.
 
 ## Problem Statement
 
@@ -132,9 +148,10 @@ recording simple results.
 
 Production acceptance: create the package from the accepted Order snapshot, including ordered End A/B and ferrules, finished length, customer measurement choice, Clocking and protection. A catalog combination identifier is not a physical Assembly Number. Later catalog disablement does not rewrite or automatically cancel an accepted Order; manufacturing feasibility remains the established manual process. Test historical image/parameter retention and one identifier per physical assembly.
 
-This Spec depends on Specs 2, 4A, and 4B. Shipment readiness remains an explicit
-Admin action in Spec 6.
+Future implementation depends on Specs 2, 4A, and 4B. Spec 6 does not depend on
+this deferred Spec for the first release. Shipment readiness remains an explicit
+Admin action.
 
 - Project PRD: https://github.com/legendztk-netizen/Project1/issues/1
 - Published Spec: https://github.com/legendztk-netizen/Project1/issues/7
-- Blocked by: https://github.com/legendztk-netizen/Project1/issues/3, https://github.com/legendztk-netizen/Project1/issues/5, and https://github.com/legendztk-netizen/Project1/issues/6
+- Completed prerequisites for future activation: https://github.com/legendztk-netizen/Project1/issues/3, https://github.com/legendztk-netizen/Project1/issues/5, and https://github.com/legendztk-netizen/Project1/issues/6
