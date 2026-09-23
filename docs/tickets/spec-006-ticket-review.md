@@ -1,8 +1,8 @@
 # Spec 6 Ticket Review: Shipment and Customer Order Progress
 
-Date: 2026-09-23. Revision: 1.
+Date: 2026-09-23. Revision: 2.
 
-Status: **Draft awaiting review. No Spec 6 child issues have been published.**
+Status: **Approved and published. Implementation pending.**
 
 ## Scope and Sources
 
@@ -43,8 +43,8 @@ work and cannot create retrospective labels or inspection evidence.
 
 ## Interpretations Included in This Review
 
-These interpretations make existing requirements implementable. They are part
-of the proposed breakdown to approve before ticket publication.
+These approved interpretations make existing requirements implementable and
+are included in the published tickets where applicable.
 
 1. **Schedule timing.** The older wording calculates a date from Confirmed Order
    creation while also requiring that date in an earlier accepted PI. A new PI
@@ -119,16 +119,16 @@ of the proposed breakdown to approve before ticket publication.
   invoice, carrier API, customer delivery-confirmation button or money-moving
   payment/refund API is introduced.
 
-## Proposed Breakdown and Direct Dependencies
+## Published Breakdown and Direct Dependencies
 
-| Ticket | Title                                                      | Blocked by                | Demonstrable result                                                                                            |
-| ------ | ---------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| 01     | Plan Shipments from Confirmed Orders                       | None; Spec 4B is complete | Admin allocates an accepted Order into owned, quantity-safe Shipments that customers can view.                 |
-| 02     | Commit and Revise Ready-to-Ship Dates                      | 01                        | Reviewed schedule terms become reproducible Shipment dates, with calendar maintenance and notified revisions.  |
-| 03     | Confirm Readiness, Dispatch and Delivery                   | 01                        | Admin completes offline readiness through delivery, and customers see accurate milestones and tracking.        |
-| 04     | Manage Packing Records and Private Shipment Documents      | 01                        | Admin retains optional packing/evidence and deliberately shares selected logistics files.                      |
-| 05     | Review and Apply Pre-dispatch Shipping Changes             | 02, 03                    | A held Shipment changes only after reviewed customer acceptance and required additional funding.               |
-| 06     | Verify Launch Migration and the Order-to-Delivery Workflow | 04, 05                    | Legacy/new Orders complete the workflow without Spec 5, with repeatable acceptance and a Spec 7 data contract. |
+| Ticket | GitHub issue                                                   | Title                                                      | Blocked by                | Demonstrable result                                                                                            |
+| ------ | -------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| 01     | [#94](https://github.com/legendztk-netizen/Project1/issues/94) | Plan Shipments from Confirmed Orders                       | None; Spec 4B is complete | Admin allocates an accepted Order into owned, quantity-safe Shipments that customers can view.                 |
+| 02     | [#95](https://github.com/legendztk-netizen/Project1/issues/95) | Commit and Revise Ready-to-Ship Dates                      | #94                       | Reviewed schedule terms become reproducible Shipment dates, with calendar maintenance and notified revisions.  |
+| 03     | [#96](https://github.com/legendztk-netizen/Project1/issues/96) | Confirm Readiness, Dispatch and Delivery                   | #94                       | Admin completes offline readiness through delivery, and customers see accurate milestones and tracking.        |
+| 04     | [#97](https://github.com/legendztk-netizen/Project1/issues/97) | Manage Packing Records and Private Shipment Documents      | #94                       | Admin retains optional packing/evidence and deliberately shares selected logistics files.                      |
+| 05     | [#98](https://github.com/legendztk-netizen/Project1/issues/98) | Review and Apply Pre-dispatch Shipping Changes             | #95, #96                  | A held Shipment changes only after reviewed customer acceptance and required additional funding.               |
+| 06     | [#99](https://github.com/legendztk-netizen/Project1/issues/99) | Verify Launch Migration and the Order-to-Delivery Workflow | #97, #98                  | Legacy/new Orders complete the workflow without Spec 5, with repeatable acceptance and a Spec 7 data contract. |
 
 After 01, tickets 02, 03 and 04 can proceed independently against its stable
 Shipment contract. Ticket 05 requires the date-revision and dispatch/handoff
@@ -452,15 +452,17 @@ can reliably use the resulting quantities, holds and delivery evidence.
 | 12-13: pre-dispatch changes and affected-quantity holds                         | 05             |
 | Cross-workflow migration, concurrency and Spec 7 handoff                        | 06             |
 
-## Publication Plan
+## Publication Record
 
-After the user approves this concrete breakdown, publish one English GitHub
-child issue per ticket with Parent, What to build, Acceptance criteria, applicable
-shared requirements/interpretations and direct Blocked by references. Use native
-sub-issue and blocking relationships. Ticket 01 starts ready-for-agent; the
-others start blocked, and labels advance with the dependency frontier.
+The user approved the six-ticket breakdown on 2026-09-23. All six English
+GitHub issues above are native sub-issues of [Spec 6 #8](https://github.com/legendztk-netizen/Project1/issues/8),
+and their direct blockers are linked through native issue dependencies. Each
+contains Parent, What to build, Acceptance criteria, applicable shared
+requirements/interpretations and Blocked by references. [Ticket 01 #94](https://github.com/legendztk-netizen/Project1/issues/94)
+starts `ready-for-agent`; #95-#99 start `blocked`. Triage labels should advance
+with the dependency frontier as implementation tickets close.
 
 Scope/dependency updates to the PRD and Specs 5/6/7 were explicitly authorized
-separately from publication of this new breakdown. Those parent issues remain
-open. Publishing implementation tickets does not authorize production deployment
-or claim implementation is complete.
+separately from publication. Parent issues remain open. Publishing implementation
+tickets does not authorize production deployment or claim implementation is
+complete.

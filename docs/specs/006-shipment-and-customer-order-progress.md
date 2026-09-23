@@ -1,6 +1,6 @@
 # Spec 6: Shipment and Customer Order Progress
 
-> Status: Ready for ticket review. Prerequisite: Spec 4B / Issue #6 is completed.
+> Status: Tickets published (#94-#99); implementation pending. Prerequisite: Spec 4B / Issue #6 is completed.
 > Spec 5 / Issue #7 is deferred and is not a first-release prerequisite.
 
 ## First-release Boundary
