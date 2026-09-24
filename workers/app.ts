@@ -14,6 +14,7 @@ import {
 import { createHealthResponse } from "./health";
 import { createRegistrationConfigurationService } from "../app/modules/customer-identity/application/registration-configuration-service";
 import { recoverStaleShipmentUploads } from "../app/modules/shipment/application/shipment-documents-service";
+import { recordOverdueReadyScheduleReminders } from "../app/modules/shipment/application/shipment-overdue-reminders";
 import {
   consumeQuoteNotifications,
   dispatchQuoteNotifications,
@@ -104,6 +105,12 @@ export default {
     ctx.waitUntil(piPdfJobs(env).dispatch());
     ctx.waitUntil(dispatchPiAcceptanceCopies(env));
     if (controller.cron === "17 * * * *") {
+      ctx.waitUntil(
+        recordOverdueReadyScheduleReminders(
+          env.DB,
+          new Date(controller.scheduledTime),
+        ),
+      );
       ctx.waitUntil(
         createRegistrationConfigurationService(env, {
           now: () => new Date(controller.scheduledTime),

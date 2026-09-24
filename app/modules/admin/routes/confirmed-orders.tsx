@@ -258,6 +258,12 @@ export default function ConfirmedOrders({
                         : order.shipmentPlanStatus === "ready"
                           ? `${order.shipmentCount} 个批次`
                           : "计划待核查"}
+                      {order.overdueReadyCount > 0 && (
+                        <small role="status">
+                          {order.overdueReadyCount}{" "}
+                          个预计可发货日期已逾期，需内部核对
+                        </small>
+                      )}
                     </td>
                     <td data-label="状态">
                       <span

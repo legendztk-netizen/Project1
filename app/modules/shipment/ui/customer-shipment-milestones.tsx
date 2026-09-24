@@ -1,4 +1,5 @@
 import type { createShipmentMilestoneService } from "../application/shipment-milestone-service";
+import { customerCalendarDate } from "../domain/ready-schedule";
 import "./shipment-documents.css";
 
 type Milestone = Awaited<
@@ -81,7 +82,7 @@ export function CustomerShipmentMilestones({
                     {record.packageLabel} · {record.carrierName}
                     {record.trackingNumber ? ` · ${record.trackingNumber}` : ""}
                     {record.estimatedArrivalDate
-                      ? ` · Estimated arrival ${record.estimatedArrivalDate}`
+                      ? ` · Estimated arrival ${customerCalendarDate(record.estimatedArrivalDate)}`
                       : ""}
                     {record.trackingUrl && (
                       <a
@@ -107,7 +108,9 @@ export function CustomerShipmentMilestones({
                         : event.kind === "shipped"
                           ? "Shipped"
                           : "Delivered"}
-                      {event.actualDate ? ` · ${event.actualDate}` : ""}
+                      {event.actualDate
+                        ? ` · ${customerCalendarDate(event.actualDate)}`
+                        : ""}
                     </li>
                   ))}
                 </ol>

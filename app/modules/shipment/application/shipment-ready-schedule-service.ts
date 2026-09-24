@@ -4,6 +4,7 @@ import { quoteNotificationOutboxStatement } from "../../quote-notifications/infr
 import { piSha256 } from "../../proforma-invoice/domain/proforma-invoice";
 import { createChinaCalendarService } from "./china-calendar-service";
 import {
+  customerCalendarDate,
   committedReadyDate,
   validatedReadySchedule,
   type ReadyScheduleBasis,
@@ -42,7 +43,10 @@ function assertAdmin(actor: AdminIdentity) {
     throw new Response("Forbidden", { status: 403 });
 }
 
-export function createShipmentReadyScheduleService(db: D1Database) {
+export function createShipmentReadyScheduleService(
+  db: D1Database,
+  options: { auditIp?: string | null } = {},
+) {
   async function ensureRows(orderId: string) {
     const now = new Date().toISOString();
     await db
@@ -290,6 +294,8 @@ export function createShipmentReadyScheduleService(db: D1Database) {
               input.shipmentId,
               actor.id,
               JSON.stringify({
+                requestId: input.commandId,
+                ipAddress: options.auditIp ?? null,
                 orderId: input.orderId,
                 previousVersion: input.expectedVersion,
                 previousShipmentVersion: input.expectedShipmentVersion,
@@ -448,10 +454,10 @@ export function createShipmentReadyScheduleService(db: D1Database) {
       const messageId = `shipment-date:${input.commandId}`;
       const body =
         !row.current_estimate_date && acceptedBasis?.kind === "fixed_date"
-          ? `The accepted ready-to-ship date of ${row.accepted_ready_date} for ${row.display_name} had passed at Order confirmation. The reviewed current estimate is ${date}. Reason: ${reason}`
+          ? `The accepted ready-to-ship date of ${customerCalendarDate(row.accepted_ready_date!)} for ${row.display_name} had passed at Order confirmation. The reviewed current estimate is ${customerCalendarDate(date)}. Reason: ${reason}`
           : source === "operational"
-            ? `A current estimated ready-to-ship date of ${date} has been provided for ${row.display_name}. This is an operational estimate, not an original PI commitment. Reason: ${reason}`
-            : `The estimated ready-to-ship date for ${row.display_name} changed from ${row.current_estimate_date} to ${date}. Reason: ${reason}`;
+            ? `A current estimated ready-to-ship date of ${customerCalendarDate(date)} has been provided for ${row.display_name}. This is an operational estimate, not an original PI commitment. Reason: ${reason}`
+            : `The estimated ready-to-ship date for ${row.display_name} changed from ${customerCalendarDate(row.current_estimate_date!)} to ${customerCalendarDate(date)}. Reason: ${reason}`;
       const messageHash = await piSha256(new TextEncoder().encode(body));
       try {
         await db.batch([
@@ -508,6 +514,8 @@ export function createShipmentReadyScheduleService(db: D1Database) {
               input.shipmentId,
               actor.id,
               JSON.stringify({
+                requestId: input.commandId,
+                ipAddress: options.auditIp ?? null,
                 previousDate:
                   row.current_estimate_date ?? row.accepted_ready_date,
                 newDate: date,

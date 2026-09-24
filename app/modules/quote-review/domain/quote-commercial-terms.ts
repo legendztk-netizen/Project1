@@ -147,7 +147,7 @@ export function validateCommercialTerms(
             if (
               !Number.isSafeInteger(days) ||
               days === null ||
-              days < (line.lineKind === "standard" ? 10 : 1) ||
+              days < 1 ||
               days > 365
             )
               throw new Error(

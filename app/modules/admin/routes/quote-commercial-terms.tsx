@@ -381,7 +381,7 @@ export default function CommercialTerms({
                   {line.sku} · 所需中国履约工作日
                   <input
                     type="number"
-                    min={line.lineKind === "standard" ? 10 : 1}
+                    min={1}
                     max="365"
                     step="1"
                     name={`preparationDays-${index}`}

@@ -166,6 +166,17 @@ it("requires manual currency confirmation for amended assemblies with captured n
 });
 
 it("keeps new shipment commitments at least as long as the longest reviewed line", () => {
+  expect(
+    validateCommercialTerms(
+      {
+        ...commercialTerms(),
+        preparationDaysByLine: { "line-1": 5 },
+        readySchedule: { kind: "china_business_days", days: 5 },
+      },
+      source,
+      { requireReadySchedule: true },
+    ).preparationDaysByLine,
+  ).toEqual({ "line-1": 5 });
   expect(() =>
     validateCommercialTerms(
       {

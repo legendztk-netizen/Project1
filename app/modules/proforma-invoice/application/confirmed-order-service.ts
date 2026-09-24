@@ -48,6 +48,7 @@ interface AdminOrderSummaryRow {
   line_count: number;
   shipment_count: number;
   plan_status: "ready" | "review" | null;
+  overdue_ready_count: number;
   first_line_json: string | null;
   second_line_json: string | null;
 }
@@ -250,6 +251,10 @@ export function createConfirmedOrderService(db: D1Database) {
           (SELECT count(*) FROM confirmed_order_lines line WHERE line.order_id=o.id) AS line_count,
           (SELECT count(*) FROM order_shipments shipment WHERE shipment.order_id=o.id) AS shipment_count,
           (SELECT status FROM order_fulfillment_plans plan WHERE plan.order_id=o.id) AS plan_status,
+          (SELECT count(*) FROM order_shipment_ready_schedules ready
+            JOIN order_shipments shipment ON shipment.id=ready.shipment_id
+            WHERE ready.order_id=o.id AND ready.current_estimate_date<date('now','+8 hours')
+              AND shipment.status IN ('planned','ready_to_ship')) AS overdue_ready_count,
           (SELECT snapshot_json FROM confirmed_order_lines line WHERE line.order_id=o.id
             ORDER BY line.line_number LIMIT 1) AS first_line_json,
           (SELECT snapshot_json FROM confirmed_order_lines line WHERE line.order_id=o.id
@@ -287,6 +292,7 @@ export function createConfirmedOrderService(db: D1Database) {
           lineCount: row.line_count,
           shipmentCount: row.shipment_count,
           shipmentPlanStatus: row.plan_status,
+          overdueReadyCount: row.overdue_ready_count,
           lines: [
             summaryLine(row.first_line_json),
             summaryLine(row.second_line_json),

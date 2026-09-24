@@ -24,7 +24,10 @@ function assertAdmin(actor: AdminIdentity) {
     throw new Response("Forbidden", { status: 403 });
 }
 
-export function createChinaCalendarService(db: D1Database) {
+export function createChinaCalendarService(
+  db: D1Database,
+  options: { auditIp?: string | null } = {},
+) {
   const read = async (
     version?: number,
   ): Promise<ChinaFulfillmentCalendar | null> => {
@@ -201,6 +204,8 @@ export function createChinaCalendarService(db: D1Database) {
               String(version),
               actor.id,
               JSON.stringify({
+                requestId: input.commandId,
+                ipAddress: options.auditIp ?? null,
                 previousVersion: input.expectedCurrentVersion,
                 before,
                 after: draft,

@@ -167,7 +167,9 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
     }
   } else if (intent === "schedule-resolve" || intent === "schedule-revise") {
     try {
-      const service = createShipmentReadyScheduleService(env.DB);
+      const service = createShipmentReadyScheduleService(env.DB, {
+        auditIp: request.headers.get("cf-connecting-ip") ?? "local",
+      });
       const command = {
         orderId,
         shipmentId: piRouteId(String(form.get("shipmentId") ?? "")),
@@ -189,11 +191,9 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
       return data(
         {
           error:
-            error instanceof Response
-              ? await error.text()
-              : error instanceof Error
-                ? error.message
-                : "批次日期保存失败",
+            error instanceof Response && error.status === 409
+              ? "批次日期或审核状态已变化，请刷新后重新核对。"
+              : "批次日期保存失败，请检查日期与审核依据。",
         },
         { status: error instanceof Response ? error.status : 400 },
       );
@@ -209,7 +209,9 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
     ].includes(intent)
   ) {
     try {
-      const service = createShipmentMilestoneService(env.DB);
+      const service = createShipmentMilestoneService(env.DB, {
+        auditIp: request.headers.get("cf-connecting-ip") ?? "local",
+      });
       const input = {
         orderId,
         shipmentId: piRouteId(String(form.get("shipmentId") ?? "")),
@@ -288,11 +290,9 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
       return data(
         {
           error:
-            error instanceof Response
-              ? await error.text()
-              : error instanceof Error
-                ? error.message
-                : "批次状态保存失败",
+            error instanceof Response && error.status === 409
+              ? "批次状态或放行条件已变化，请刷新后核查限制与数量。"
+              : "批次状态保存失败，请检查日期、数量和必填凭据。",
         },
         { status: error instanceof Response ? error.status : 400 },
       );

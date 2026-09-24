@@ -1,5 +1,8 @@
 import type { createShipmentReadyScheduleService } from "../application/shipment-ready-schedule-service";
-import { readyScheduleText } from "../domain/ready-schedule";
+import {
+  customerCalendarDate,
+  readyScheduleText,
+} from "../domain/ready-schedule";
 import "./shipment-documents.css";
 
 type Schedule = Awaited<
@@ -21,13 +24,12 @@ export function CustomerShipmentReadySchedules({
         {schedules.map((schedule) => (
           <article key={schedule.shipmentId}>
             <h3>{schedule.displayName}</h3>
-            {schedule.acceptedBasis ? (
+            {!schedule.acceptedBasis ? (
+              <p>No structured date was recorded in the accepted PI.</p>
+            ) : schedule.acceptedBasis.kind === "china_business_days" ? (
               <p>Accepted basis: {readyScheduleText(schedule.acceptedBasis)}</p>
             ) : (
-              <p>No structured date was recorded in the accepted PI.</p>
-            )}
-            {schedule.acceptedReadyDate && (
-              <p>Original calculated date: {schedule.acceptedReadyDate}</p>
+              <p>Accepted basis: fixed date in the PI</p>
             )}
             {schedule.acceptedBasis?.kind === "fixed_date" &&
               schedule.acceptedReadyDate &&
@@ -38,20 +40,34 @@ export function CustomerShipmentReadySchedules({
                 </p>
               )}
             <p>
-              Current estimated ready date:{" "}
-              {schedule.currentEstimateDate ?? "Under review"}
+              {schedule.currentEstimateSource === "revised"
+                ? "Updated Estimated Ready-to-Ship Date"
+                : "Estimated Ready-to-Ship Date"}
+              :{" "}
+              {schedule.currentEstimateDate
+                ? customerCalendarDate(schedule.currentEstimateDate)
+                : "Under review"}
               {schedule.currentEstimateSource === "operational" &&
                 " (new operational estimate, not an original PI commitment)"}
               {schedule.currentEstimateSource === "revised" && " (revised)"}
             </p>
-            {schedule.history.length > 0 && (
+            {(schedule.acceptedReadyDate || schedule.history.length > 0) && (
               <details>
                 <summary>View date history</summary>
                 <ol>
+                  {schedule.acceptedReadyDate && (
+                    <li>
+                      Accepted date:{" "}
+                      {customerCalendarDate(schedule.acceptedReadyDate)}
+                    </li>
+                  )}
                   {schedule.history.map((revision) => (
                     <li key={revision.id}>
-                      {revision.previousDate ?? "Not recorded"} →{" "}
-                      {revision.newDate}: {revision.reason}
+                      {revision.previousDate
+                        ? customerCalendarDate(revision.previousDate)
+                        : "Not recorded"}{" "}
+                      → {customerCalendarDate(revision.newDate)}:{" "}
+                      {revision.reason}
                     </li>
                   ))}
                 </ol>

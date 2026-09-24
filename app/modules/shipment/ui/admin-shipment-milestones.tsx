@@ -1,5 +1,6 @@
 import { Form } from "react-router";
 import type { createShipmentMilestoneService } from "../application/shipment-milestone-service";
+import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
 import "./shipment-documents.css";
 
 type Milestone = Awaited<
@@ -176,7 +177,7 @@ export function AdminShipmentMilestones({
                         className="button button-secondary"
                         disabled={busy}
                       >
-                        只记录事实，待解除限制后归档
+                        保存实际交接凭据
                       </button>
                     </Form>
                   </details>
@@ -185,7 +186,7 @@ export function AdminShipmentMilestones({
                 <div className="order-hold-notice">
                   <p>
                     迟录交接待核查：{lateReport.carrierName} ·{" "}
-                    {lateReport.actualAt}
+                    {formatPiDate(lateReport.actualAt, "admin")}
                   </p>
                   <p>
                     {lateReport.reason} ·{" "}
@@ -210,11 +211,8 @@ export function AdminShipmentMilestones({
                       name="commandId"
                       value={commands[item.shipmentId]?.lateApply}
                     />
-                    <button
-                      className="button button-primary"
-                      disabled={busy || held || !planReady}
-                    >
-                      冲突已解除，归档实际交接并通知客户
+                    <button className="button button-primary" disabled={busy}>
+                      归档实际交接并通知客户（不解除限制）
                     </button>
                   </Form>
                 </div>
@@ -389,7 +387,7 @@ export function AdminShipmentMilestones({
                           ? "发货"
                           : "送达"}
                       {event.actualDate ? ` · ${event.actualDate}` : ""} ·
-                      记录于 {event.recordedAt}
+                      记录于 {formatPiDate(event.recordedAt, "admin")}
                     </li>
                   ))}
                 </ol>

@@ -93,7 +93,7 @@ function trackingProjection(row: TrackingRow) {
 
 export function createShipmentMilestoneService(
   db: D1Database,
-  options: { now?: () => Date } = {},
+  options: { now?: () => Date; auditIp?: string | null } = {},
 ) {
   const now = () => options.now?.() ?? new Date();
 
@@ -244,6 +244,7 @@ export function createShipmentMilestoneService(
       commandId: string;
       kind: ShipmentMilestone;
       previousStatus?: "planned" | "ready_to_ship";
+      lateReportId?: string;
       details: Record<string, unknown>;
       actualDate: string | null;
       actualAt: string | null;
@@ -293,6 +294,7 @@ export function createShipmentMilestoneService(
       current.version !== input.expectedVersion ||
       current.status !== requiredStatus ||
       (input.kind !== "delivered" &&
+        !input.lateReportId &&
         (current.plan_status !== "ready" || current.payment_held === 1))
     )
       throw new Response("Shipment changed or release is held; reload", {
@@ -333,7 +335,7 @@ export function createShipmentMilestoneService(
           : `${current.display_name} (${productText}) was delivered on ${input.actualDate}.`;
     const messageHash = await piSha256(new TextEncoder().encode(body));
     const allowed =
-      input.kind === "delivered"
+      input.kind === "delivered" || input.lateReportId
         ? "1=1"
         : `NOT EXISTS(SELECT 1 FROM order_release_guards g WHERE g.order_id=s.order_id AND g.held=1)
            AND NOT EXISTS(SELECT 1 FROM pi_payment_disputes d JOIN confirmed_orders o ON o.pi_id=d.pi_id
@@ -365,8 +367,17 @@ export function createShipmentMilestoneService(
             `UPDATE order_shipments AS s SET status=?,version=version+1,updated_at=?
              WHERE s.id=? AND s.order_id=? AND s.version=? AND s.status=?
                AND ${allowed}
+               AND (${
+                 input.lateReportId
+                   ? `EXISTS(SELECT 1 FROM shipment_late_handoff_reports r
+                 WHERE r.id=? AND r.order_id=s.order_id
+                   AND r.shipment_id=s.id AND r.reported_status=s.status
+                   AND r.expected_shipment_version=s.version
+                   AND r.actual_at=?)`
+                   : "1=1"
+               })
                AND (${input.kind === "delivered" ? "1=1" : allocated})
-               AND (${input.kind === "delivered" ? "1=1" : "EXISTS(SELECT 1 FROM order_fulfillment_plans p WHERE p.order_id=s.order_id AND p.status='ready')"})`,
+               AND (${input.kind === "delivered" || input.lateReportId ? "1=1" : "EXISTS(SELECT 1 FROM order_fulfillment_plans p WHERE p.order_id=s.order_id AND p.status='ready')"})`,
           )
           .bind(
             input.kind,
@@ -375,6 +386,7 @@ export function createShipmentMilestoneService(
             input.orderId,
             input.expectedVersion,
             requiredStatus,
+            ...(input.lateReportId ? [input.lateReportId, input.actualAt] : []),
           ),
         db
           .prepare(
@@ -424,6 +436,8 @@ export function createShipmentMilestoneService(
             input.shipmentId,
             actor.id,
             JSON.stringify({
+              requestId: input.commandId,
+              ipAddress: options.auditIp ?? null,
               orderId: input.orderId,
               previousVersion: input.expectedVersion,
               resultingVersion: input.expectedVersion + 1,
@@ -750,6 +764,8 @@ export function createShipmentMilestoneService(
               input.shipmentId,
               actor.id,
               JSON.stringify({
+                requestId: input.commandId,
+                ipAddress: options.auditIp ?? null,
                 handoff,
                 carrierName,
                 source,
@@ -815,6 +831,7 @@ export function createShipmentMilestoneService(
         commandId: input.commandId,
         kind: "shipped",
         previousStatus: report.reported_status,
+        lateReportId: report.id,
         details: {
           carrierName: report.carrier_name,
           source: report.source,

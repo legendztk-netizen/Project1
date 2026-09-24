@@ -46,7 +46,9 @@ export async function action({ context, request }: ActionFunctionArgs) {
   if (dates.length !== states.length || dates.length !== reasons.length)
     throw new Response("Invalid calendar exceptions", { status: 400 });
   try {
-    await createChinaCalendarService(env.DB).publish(adminIdentity, {
+    await createChinaCalendarService(env.DB, {
+      auditIp: request.headers.get("cf-connecting-ip") ?? "local",
+    }).publish(adminIdentity, {
       expectedCurrentVersion: form.get("expectedCurrentVersion")
         ? Number(form.get("expectedCurrentVersion"))
         : null,
@@ -68,11 +70,9 @@ export async function action({ context, request }: ActionFunctionArgs) {
     return data(
       {
         error:
-          error instanceof Response
-            ? await error.text()
-            : error instanceof Error
-              ? error.message
-              : "日历发布失败",
+          error instanceof Response && error.status === 409
+            ? "日历版本已变化，请刷新后重新核对。"
+            : "日历发布失败，请检查覆盖日期、工作日、例外日期和审核依据。",
       },
       { status: error instanceof Response ? error.status : 400 },
     );

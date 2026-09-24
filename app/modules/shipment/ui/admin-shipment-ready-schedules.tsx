@@ -1,6 +1,7 @@
 import { Temporal } from "@js-temporal/polyfill";
 import { Form, Link } from "react-router";
 import type { createShipmentReadyScheduleService } from "../application/shipment-ready-schedule-service";
+import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
 import "./shipment-documents.css";
 
 type Schedule = Awaited<
@@ -156,7 +157,7 @@ export function AdminShipmentReadySchedules({
                   <ol>
                     {schedule.history.map((revision) => (
                       <li key={revision.id}>
-                        {revision.occurredAt} ·{" "}
+                        {formatPiDate(revision.occurredAt, "admin")} ·{" "}
                         {revision.previousDate ?? "未记录"} → {revision.newDate}{" "}
                         · {revision.reason} · {revision.actorId}
                       </li>

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { getPlatformProxy } from "wrangler";
 import { createShipmentMilestoneService } from "../app/modules/shipment/application/shipment-milestone-service";
+import { recordOverdueReadyScheduleReminders } from "../app/modules/shipment/application/shipment-overdue-reminders";
 import type { AdminIdentity } from "../workers/admin-access";
 
 const directory = mkdtempSync(join(tmpdir(), "shipment-milestone-d1-"));
@@ -154,6 +155,32 @@ beforeAll(async () => {
 afterAll(async () => {
   await platform?.dispose();
   rmSync(directory, { recursive: true, force: true });
+});
+
+it("records a private overdue reminder once per shipment estimate", async () => {
+  await db
+    .prepare(
+      `INSERT INTO order_shipment_ready_schedules
+       (shipment_id,order_id,current_estimate_date,current_estimate_source,
+        created_at,updated_at)
+       VALUES ('milestone-shipment','milestone-order','2026-09-23','operational',?,?)`,
+    )
+    .bind(clock, clock)
+    .run();
+  const scheduledAt = new Date(clock);
+  expect(await recordOverdueReadyScheduleReminders(db, scheduledAt)).toBe(1);
+  expect(await recordOverdueReadyScheduleReminders(db, scheduledAt)).toBe(0);
+  const reminder = await db
+    .prepare(
+      `SELECT entity_id,payload_json FROM admin_audit_events
+       WHERE event_type='shipment.ready_date_overdue'`,
+    )
+    .first<{ entity_id: string; payload_json: string }>();
+  expect(reminder?.entity_id).toBe("milestone-order");
+  expect(JSON.parse(reminder!.payload_json)).toMatchObject({
+    shipmentId: "milestone-shipment",
+    estimateDate: "2026-09-23",
+  });
 });
 
 it("blocks new release under holds but records actual delivery after a later hold", async () => {
@@ -366,7 +393,7 @@ it("records readiness, exact dispatch and delivery once with customer-safe histo
   });
 });
 
-it("retains a late carrier handoff fact during a hold and applies it only after review", async () => {
+it("records a late carrier handoff during a hold without releasing remaining work", async () => {
   const service = createShipmentMilestoneService(db, {
     now: () => new Date(clock),
   });
@@ -400,20 +427,16 @@ it("retains a late carrier handoff fact during a hold and applies it only after 
     expectedVersion: 1,
     commandId: crypto.randomUUID(),
   };
-  await expect(service.applyLateHandoff(actor, apply)).rejects.toMatchObject({
-    status: 409,
-  });
-  await db
-    .prepare(
-      "UPDATE order_quantity_holds SET active=0,resolved_at=? WHERE id='late-hold'",
-    )
-    .bind(clock)
-    .run();
   expect(await service.applyLateHandoff(actor, apply)).toBe(2);
   expect(await service.applyLateHandoff(actor, apply)).toBe(2);
   const after = (await service.customerRead("buyer", base.orderId))[2];
   expect(after.status).toBe("shipped");
   expect(after.events.map((event) => event.kind)).toEqual(["shipped"]);
+  expect(
+    await db
+      .prepare("SELECT active FROM order_quantity_holds WHERE id='late-hold'")
+      .first("active"),
+  ).toBe(1);
   expect(
     await db
       .prepare(

@@ -113,8 +113,18 @@ export function validatedReadySchedule(value: unknown): ReadyScheduleBasis {
 export function readyScheduleText(value: ReadyScheduleBasis): string {
   const schedule = validatedReadySchedule(value);
   return schedule.kind === "fixed_date"
-    ? `Estimated ready to ship: ${schedule.readyDate}`
+    ? `Estimated ready to ship: ${customerCalendarDate(schedule.readyDate)}`
     : `Estimated ready to ship: ${schedule.days} China fulfillment business days after Order confirmation`;
+}
+
+export function customerCalendarDate(value: string): string {
+  const date = plainDate(value);
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(`${date.toString()}T12:00:00Z`));
 }
 
 export function chinaDateOfInstant(value: string): string {

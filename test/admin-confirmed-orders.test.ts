@@ -57,6 +57,7 @@ function fixtureDb(counts = { total: 2, confirmed: 1, held: 1 }) {
                 country_code: "US",
                 held: 1,
                 line_count: 2,
+                overdue_ready_count: 1,
                 first_line_json: JSON.stringify({
                   displayName: "Adapter",
                   sku: "ADP-1",
@@ -90,12 +91,16 @@ describe("admin confirmed order listing", () => {
       totalCents: 9400,
       status: "Payment Review Hold",
       lineCount: 2,
+      overdueReadyCount: 1,
       lines: [{ displayName: "Adapter", imageUrl: "/adapter.png" }],
     });
     expect(
       calls.find(({ sql }) => sql.includes("LIMIT 25 OFFSET"))?.values,
     ).toEqual([0]);
     expect(calls.every(({ sql }) => !sql.includes("SELECT o.*"))).toBe(true);
+    expect(
+      calls.find(({ sql }) => sql.includes("LIMIT 25 OFFSET"))?.sql,
+    ).toContain("ready.current_estimate_date<date('now','+8 hours')");
   });
 
   it("applies status, identity, destination, product, Beijing date and sort filters", async () => {
