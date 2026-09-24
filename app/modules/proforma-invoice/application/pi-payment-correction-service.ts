@@ -293,10 +293,13 @@ export function createPiPaymentCorrectionService(
           `${impacted}
         SELECT pay.pi_id FROM impacted i JOIN pi_payment_accounts pay ON pay.pi_id=i.pi_id
         LEFT JOIN confirmed_orders o ON o.pi_id=pay.pi_id
+        LEFT JOIN order_change_financial_contract contract ON contract.order_id=o.id
         WHERE (i.pi_id=? AND pay.amount_received_cents<
-          pay.allocated_out_cents+pay.refunded_cents+CASE WHEN o.id IS NULL THEN 0 ELSE pay.total_due_cents END)
+          pay.allocated_out_cents+pay.refunded_cents+CASE WHEN o.id IS NULL THEN 0 ELSE
+            pay.total_due_cents-coalesce(contract.authorized_credit_cents,0) END)
           OR (o.id IS NOT NULL AND
-            pay.amount_received_cents+pay.allocated_in_cents-pay.allocated_out_cents-pay.refunded_cents<pay.total_due_cents)
+            pay.amount_received_cents+pay.allocated_in_cents-pay.allocated_out_cents-pay.refunded_cents<
+              pay.total_due_cents-coalesce(contract.authorized_credit_cents,0))
         LIMIT 1`,
         )
         .bind(correctionId, piId)
@@ -321,11 +324,14 @@ export function createPiPaymentCorrectionService(
           AND NOT EXISTS(${impacted}
             SELECT 1 FROM impacted i JOIN pi_payment_accounts pay ON pay.pi_id=i.pi_id
             LEFT JOIN confirmed_orders o ON o.pi_id=pay.pi_id
+            LEFT JOIN order_change_financial_contract contract ON contract.order_id=o.id
             WHERE (i.pi_id=? AND pay.amount_received_cents<
               pay.allocated_out_cents+pay.refunded_cents+
-              CASE WHEN o.id IS NULL THEN 0 ELSE pay.total_due_cents END)
+              CASE WHEN o.id IS NULL THEN 0 ELSE
+                pay.total_due_cents-coalesce(contract.authorized_credit_cents,0) END)
               OR (o.id IS NOT NULL AND
-                pay.amount_received_cents+pay.allocated_in_cents-pay.allocated_out_cents-pay.refunded_cents<pay.total_due_cents))`,
+                pay.amount_received_cents+pay.allocated_in_cents-pay.allocated_out_cents-pay.refunded_cents<
+                  pay.total_due_cents-coalesce(contract.authorized_credit_cents,0)))`,
           )
           .bind(
             id,

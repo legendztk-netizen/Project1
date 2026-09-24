@@ -90,6 +90,43 @@ async function readPlan(db: D1Database, row: PlanRow, admin: boolean) {
       .bind(row.order_id)
       .all<AllocationRow>()
   ).results;
+  const effectiveChanges = (
+    await db
+      .prepare(
+        `SELECT after_json FROM order_shipping_change_effective
+         WHERE order_id=? ORDER BY effective_at,id`,
+      )
+      .bind(row.order_id)
+      .all<{ after_json: string }>()
+  ).results;
+  const effectiveShipments = new Map<
+    string,
+    {
+      destination: ProformaInvoiceSnapshot["destination"];
+      transportMethod: string;
+      incoterm: "DDP" | "DAP";
+      namedPlace: string;
+      carrierName: string;
+      serviceName: string;
+      destinationTaxTreatment: string;
+    }
+  >();
+  for (const change of effectiveChanges) {
+    const after = JSON.parse(change.after_json) as {
+      shipments: Array<{
+        shipmentId: string;
+        destination: ProformaInvoiceSnapshot["destination"];
+        transportMethod: string;
+        incoterm: "DDP" | "DAP";
+        namedPlace: string;
+        carrierName: string;
+        serviceName: string;
+        destinationTaxTreatment: string;
+      }>;
+    };
+    for (const shipment of after.shipments)
+      effectiveShipments.set(shipment.shipmentId, shipment);
+  }
   const holds = (
     await db
       .prepare(
@@ -157,6 +194,7 @@ async function readPlan(db: D1Database, row: PlanRow, admin: boolean) {
         }
       : {}),
     shipments: shipments.map((shipment) => {
+      const effective = effectiveShipments.get(shipment.id);
       const group = JSON.parse(shipment.accepted_terms_json) as Omit<
         QuotedShipmentGroup,
         "allocations"
@@ -189,9 +227,13 @@ async function readPlan(db: D1Database, row: PlanRow, admin: boolean) {
         freightCents: group.freightCents,
         insuranceCents: group.insuranceCents,
         dutiesImportCents: group.dutiesImportCents,
-        transportMethod: group.transportMethod,
-        incoterm: group.incoterm,
-        namedPlace: group.namedPlace,
+        transportMethod: effective?.transportMethod ?? group.transportMethod,
+        incoterm: effective?.incoterm ?? group.incoterm,
+        namedPlace: effective?.namedPlace ?? group.namedPlace,
+        destination: effective?.destination ?? snapshot.destination,
+        carrierName: effective?.carrierName ?? null,
+        serviceName: effective?.serviceName ?? null,
+        destinationTaxTreatment: effective?.destinationTaxTreatment ?? null,
         held:
           row.held === 1 ||
           unscopedHeldShipments.has(shipment.id) ||
@@ -557,6 +599,20 @@ export function createShipmentPlanService(db: D1Database) {
         throw new Response("Only a reviewed historical plan can be corrected", {
           status: 409,
         });
+      if (
+        await db
+          .prepare(
+            "SELECT 1 FROM order_shipping_change_effective WHERE order_id=? LIMIT 1",
+          )
+          .bind(input.orderId)
+          .first()
+      )
+        throw new Response(
+          "Use a new Order Change Confirmation to revise this plan",
+          {
+            status: 409,
+          },
+        );
       const snapshot = await verifiedSnapshot(row);
       const groups = validatedShipmentGroups(snapshot.lines, {
         shipmentMode: "split",
@@ -622,6 +678,8 @@ export function createShipmentPlanService(db: D1Database) {
                    WHERE guard.order_id=? AND guard.held=1)
                  AND NOT EXISTS(SELECT 1 FROM order_quantity_holds hold
                    WHERE hold.order_id=? AND hold.active=1)
+                 AND NOT EXISTS(SELECT 1 FROM order_shipping_change_effective change
+                   WHERE change.order_id=?)
                  AND NOT EXISTS(SELECT 1 FROM order_shipments shipment
                    WHERE shipment.order_id=? AND shipment.status!='planned')`,
             )
@@ -631,6 +689,7 @@ export function createShipmentPlanService(db: D1Database) {
               now,
               input.orderId,
               input.expectedVersion,
+              input.orderId,
               input.orderId,
               input.orderId,
               input.orderId,

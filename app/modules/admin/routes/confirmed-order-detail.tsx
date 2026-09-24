@@ -47,6 +47,8 @@ import { createShipmentReadyScheduleService } from "../../shipment/application/s
 import { AdminShipmentReadySchedules } from "../../shipment/ui/admin-shipment-ready-schedules";
 import { createShipmentMilestoneService } from "../../shipment/application/shipment-milestone-service";
 import { AdminShipmentMilestones } from "../../shipment/ui/admin-shipment-milestones";
+import { createOrderShippingChangeService } from "../../shipment/application/order-shipping-change-service";
+import { AdminOrderShippingChanges } from "../../shipment/ui/admin-order-shipping-changes";
 
 export const headers = piPrivateHeaders;
 
@@ -69,17 +71,24 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
     adminIdentity,
     piRouteId(params.orderId),
   );
-  const [drafts, activity, shipmentPlan, readySchedules, milestones] =
-    await Promise.all([
-      followOnQuotes(env).adminListForOrder(adminIdentity, order.id),
-      confirmedOrders(env).adminActivity(adminIdentity, order.id),
-      shipmentPlans(env).adminRead(adminIdentity, order.id),
-      createShipmentReadyScheduleService(env.DB).adminRead(
-        adminIdentity,
-        order.id,
-      ),
-      createShipmentMilestoneService(env.DB).adminRead(adminIdentity, order.id),
-    ]);
+  const [
+    drafts,
+    activity,
+    shipmentPlan,
+    readySchedules,
+    milestones,
+    shippingChanges,
+  ] = await Promise.all([
+    followOnQuotes(env).adminListForOrder(adminIdentity, order.id),
+    confirmedOrders(env).adminActivity(adminIdentity, order.id),
+    shipmentPlans(env).adminRead(adminIdentity, order.id),
+    createShipmentReadyScheduleService(env.DB).adminRead(
+      adminIdentity,
+      order.id,
+    ),
+    createShipmentMilestoneService(env.DB).adminRead(adminIdentity, order.id),
+    createOrderShippingChangeService(env.DB).adminRead(adminIdentity, order.id),
+  ]);
   return data(
     {
       order,
@@ -88,6 +97,7 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
       shipmentPlan,
       readySchedules,
       milestones,
+      shippingChanges,
       milestoneCommands: Object.fromEntries(
         milestones.map((item) => [
           item.shipmentId,
@@ -297,12 +307,142 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
         { status: error instanceof Response ? error.status : 400 },
       );
     }
+  } else if (intent.startsWith("shipping-change-")) {
+    try {
+      const service = createOrderShippingChangeService(env.DB, {
+        auditIp: request.headers.get("cf-connecting-ip") ?? "local",
+      });
+      const requestId = String(form.get("requestId") ?? "");
+      const expectedVersion = Number(form.get("expectedVersion"));
+      const commandId = String(form.get("commandId") ?? "");
+      if (intent === "shipping-change-propose") {
+        const change = (await service.adminRead(adminIdentity, orderId)).find(
+          (item) => item.id === requestId,
+        );
+        if (!change) throw new Response("变更申请不存在", { status: 404 });
+        const plan = await shipmentPlans(env).adminRead(adminIdentity, orderId);
+        const affected = change.shipments.map((item) => {
+          const shipment = plan.shipments.find(
+            (row) => row.id === item.shipmentId,
+          );
+          if (!shipment) throw new Response("批次已变化", { status: 409 });
+          const key = (name: string) =>
+            String(form.get(`shipment:${shipment.id}:${name}`) ?? "");
+          const lineIds = [
+            ...new Set(
+              change.shipments.flatMap((row) =>
+                row.quantities.map((allocation) => allocation.lineId),
+              ),
+            ),
+          ];
+          return {
+            shipmentId: shipment.id,
+            destination: {
+              recipientName: key("recipientName"),
+              addressLine1: key("addressLine1"),
+              addressLine2: key("addressLine2"),
+              city: key("city"),
+              stateProvince: key("stateProvince"),
+              postalCode: key("postalCode"),
+              countryCode: key("countryCode"),
+              recipientPhone: key("recipientPhone"),
+              recipientEmail: key("recipientEmail"),
+            },
+            carrierName: key("carrierName"),
+            serviceName: key("serviceName"),
+            transportMethod: key("transportMethod"),
+            incoterm: key("incoterm"),
+            namedPlace: key("namedPlace"),
+            destinationTaxTreatment: key("destinationTaxTreatment"),
+            readyDate: key("readyDate") || null,
+            allocations: lineIds
+              .map((lineId) => ({
+                lineId,
+                physicalQuantity: Number(key(`allocation:${lineId}`)),
+              }))
+              .filter((allocation) => allocation.physicalQuantity > 0),
+          };
+        });
+        const amount = String(form.get("adjustmentUsd") ?? "");
+        if (!/^-?\d+(\.\d{1,2})?$/.test(amount))
+          throw new Response("请输入有效 USD 金额", { status: 400 });
+        const negative = amount.startsWith("-");
+        const [whole, decimal = ""] = (
+          negative ? amount.slice(1) : amount
+        ).split(".");
+        const cents =
+          (Number(whole) * 100 + Number(decimal.padEnd(2, "0"))) *
+          (negative ? -1 : 1);
+        if (!Number.isSafeInteger(cents))
+          throw new Response("金额超出范围", { status: 400 });
+        const expiresAt = Temporal.PlainDateTime.from(
+          String(form.get("expiresLocal") ?? ""),
+        )
+          .toZonedDateTime("Asia/Shanghai")
+          .toInstant()
+          .toString();
+        await service.adminPropose(adminIdentity, {
+          orderId,
+          requestId,
+          expectedVersion,
+          shipments: affected,
+          adjustmentCents: cents,
+          reason: String(form.get("reason") ?? ""),
+          expiresAt,
+          commandId,
+        });
+      } else if (intent === "shipping-change-apply")
+        await service.adminApply(adminIdentity, {
+          orderId,
+          requestId,
+          proposalId: String(form.get("proposalId") ?? ""),
+          expectedVersion,
+          commandId,
+        });
+      else if (intent === "shipping-change-decline")
+        await service.adminDecline(adminIdentity, {
+          orderId,
+          requestId,
+          expectedVersion,
+          commandId,
+          reason: String(form.get("reason") ?? ""),
+        });
+      else if (intent === "shipping-change-reverify")
+        await service.adminVerifyRevisedReady(adminIdentity, {
+          orderId,
+          shipmentId: String(form.get("shipmentId") ?? ""),
+          effectiveChangeId: String(form.get("effectiveChangeId") ?? ""),
+          expectedShipmentVersion: Number(form.get("expectedShipmentVersion")),
+          commandId,
+          verification: {
+            specificationsVerified: form.get("specificationsVerified") === "on",
+            quantitiesVerified: form.get("quantitiesVerified") === "on",
+            offlinePreparationVerified:
+              form.get("offlinePreparationVerified") === "on",
+            requiredInspectionVerified:
+              form.get("requiredInspectionVerified") === "on",
+          },
+        });
+      else throw new Response("Invalid operation", { status: 400 });
+    } catch (error) {
+      if (error instanceof Response && ![400, 409].includes(error.status))
+        throw error;
+      return data(
+        {
+          error:
+            error instanceof Response && error.status === 409
+              ? "变更提案、客户接受或批次状态已变化，请刷新并重新核对。"
+              : "请检查变更条款、金额、数量及必填审核信息。",
+        },
+        { status: error instanceof Response ? error.status : 400 },
+      );
+    }
   } else throw new Response("Invalid operation", { status: 400 });
   const returnTo = safeReturnTo(
     new URL(request.url).searchParams.get("returnTo"),
   );
   return redirect(
-    `/admin/orders/${encodeURIComponent(orderId)}?returnTo=${encodeURIComponent(returnTo)}${intent.startsWith("shipment-") || intent.startsWith("schedule-") || intent.startsWith("milestone-") || intent === "tracking-save" ? "&tab=shipments" : ""}`,
+    `/admin/orders/${encodeURIComponent(orderId)}?returnTo=${encodeURIComponent(returnTo)}${intent.startsWith("shipping-change-") ? "&tab=changes" : intent.startsWith("shipment-") || intent.startsWith("schedule-") || intent.startsWith("milestone-") || intent === "tracking-save" ? "&tab=shipments" : ""}`,
   );
 }
 
@@ -456,6 +596,7 @@ function OrderLine({ line }: { line: Line }) {
 const tabs = [
   { id: "products", label: "商品与金额" },
   { id: "shipments", label: "发货批次" },
+  { id: "changes", label: "变更申请" },
   { id: "delivery", label: "客户与交付" },
   { id: "payment", label: "付款与协议" },
   { id: "history", label: "操作记录" },
@@ -467,6 +608,10 @@ const eventLabels: Record<string, string> = {
   "order.release": "付款复核已放行",
   "order.follow_on_draft_created": "创建追加采购询价草稿",
   "shipment.plan_mapped": "核对并保存旧订单分批计划",
+  "shipment.ready_date_overdue": "预计可发货日期逾期，待内部核对",
+  "order.shipping_change_requested": "客户申请发货变更",
+  "order.shipping_change_proposed": "已发布发货变更提案",
+  "order.shipping_change_effective": "客户接受的发货变更已生效",
 };
 
 export default function ConfirmedOrderDetail({
@@ -481,6 +626,7 @@ export default function ConfirmedOrderDetail({
     shipmentPlan,
     readySchedules,
     milestones,
+    shippingChanges,
     milestoneCommands,
     trackingCommands,
     scheduleCommandIds,
@@ -490,7 +636,9 @@ export default function ConfirmedOrderDetail({
   const actionData = useActionData<typeof action>();
   const [searchParams] = useSearchParams();
   const [tab, setTab] = useState<Tab>(
-    searchParams.get("tab") === "shipments" ? "shipments" : "products",
+    tabs.some((item) => item.id === searchParams.get("tab"))
+      ? (searchParams.get("tab") as Tab)
+      : "products",
   );
   const dialog = useRef<HTMLDialogElement>(null);
   const navigation = useNavigation();
@@ -749,6 +897,45 @@ export default function ConfirmedOrderDetail({
                 <dd>{snapshot.terms.leadTime}</dd>
               </div>
             </dl>
+          </section>
+        )}
+        {tab === "changes" && (
+          <section
+            id="order-panel-changes"
+            role="tabpanel"
+            aria-labelledby="order-tab-changes"
+            className="order-panel"
+          >
+            <h2>订单发货变更</h2>
+            <AdminOrderShippingChanges
+              changes={shippingChanges}
+              shipments={shipmentPlan.shipments.map((shipment) => ({
+                id: shipment.id,
+                displayName: shipment.displayName,
+                status: shipment.status,
+                version: shipment.version,
+                destination: shipment.destination,
+                transportMethod: shipment.transportMethod,
+                incoterm: shipment.incoterm,
+                namedPlace: shipment.namedPlace,
+                carrierName: shipment.carrierName,
+                serviceName: shipment.serviceName,
+                destinationTaxTreatment: shipment.destinationTaxTreatment,
+                allocations: shipment.allocations.map((allocation) => ({
+                  lineId: allocation.lineId,
+                  displayName: allocation.displayName,
+                  physicalQuantity: allocation.physicalQuantity,
+                })),
+                readyDate:
+                  readySchedules.find(
+                    (schedule) => schedule.shipmentId === shipment.id,
+                  )?.currentEstimateDate ?? null,
+              }))}
+              milestones={milestones}
+              commandId={commandId}
+              busy={busy}
+              error={actionData?.error}
+            />
           </section>
         )}
         {tab === "payment" && (

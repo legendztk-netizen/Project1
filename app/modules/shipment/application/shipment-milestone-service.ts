@@ -167,11 +167,50 @@ export function createShipmentMilestoneService(
             .all<LateReportRow>()
         ).results
       : [];
+    const revisedReady = (
+      await db
+        .prepare(
+          `SELECT revision.shipment_id,revision.effective_change_id,
+             revision.required_at,revision.verified_at,revision.verified_by
+           FROM order_shipping_change_reverification revision
+           JOIN order_shipments shipment ON shipment.id=revision.shipment_id
+           WHERE shipment.order_id=?`,
+        )
+        .bind(orderId)
+        .all<{
+          shipment_id: string;
+          effective_change_id: string;
+          required_at: string;
+          verified_at: string | null;
+          verified_by: string | null;
+        }>()
+    ).results;
     return shipments.map((item) => ({
       shipmentId: item.id,
       displayName: item.display_name,
       status: item.status,
       ...(isAdmin ? { version: item.version } : {}),
+      ...(isAdmin
+        ? {
+            revisedReadyReview: (() => {
+              const review = revisedReady.find(
+                (row) => row.shipment_id === item.id,
+              );
+              return review
+                ? {
+                    effectiveChangeId: review.effective_change_id,
+                    requiredAt: review.required_at,
+                    verifiedAt: review.verified_at,
+                    verifiedBy: review.verified_by,
+                  }
+                : null;
+            })(),
+          }
+        : {
+            releaseReviewPending: revisedReady.some(
+              (row) => row.shipment_id === item.id && !row.verified_at,
+            ),
+          }),
       ...(isAdmin
         ? {
             lateReport: (() => {
@@ -343,16 +382,26 @@ export function createShipmentMilestoneService(
            AND NOT EXISTS(SELECT 1 FROM order_quantity_holds h
              JOIN order_shipment_allocations a ON a.order_id=h.order_id AND a.line_id=h.line_id
              WHERE a.shipment_id=s.id AND h.active=1
-               AND (h.shipment_id=s.id OR h.shipment_id IS NULL))`;
+               AND (h.shipment_id=s.id OR h.shipment_id IS NULL))
+           AND NOT EXISTS(SELECT 1 FROM order_shipping_change_reverification revision
+             WHERE revision.shipment_id=s.id AND revision.verified_at IS NULL)`;
+    const effectiveTerms = `(SELECT revised.value
+      FROM order_shipping_change_effective effective,
+        json_each(effective.after_json,'$.shipments') revised
+      WHERE effective.order_id=s.order_id
+        AND json_extract(revised.value,'$.shipmentId')=s.id
+      ORDER BY effective.effective_at DESC,effective.id DESC LIMIT 1)`;
+    const quotedAllocations = `coalesce(json_extract(${effectiveTerms},'$.allocations'),
+      json_extract(s.accepted_terms_json,'$.allocations'))`;
     const allocated = `EXISTS(SELECT 1 FROM order_shipment_allocations a WHERE a.shipment_id=s.id)
-         AND NOT EXISTS(SELECT 1 FROM json_each(json_extract(s.accepted_terms_json,'$.allocations')) quoted
+         AND NOT EXISTS(SELECT 1 FROM json_each(${quotedAllocations}) quoted
            WHERE coalesce((SELECT sum(a.physical_quantity) FROM order_shipment_allocations a
              WHERE a.shipment_id=s.id AND a.line_id=json_extract(quoted.value,'$.lineId')),0)
              != json_extract(quoted.value,'$.physicalQuantity'))
-         AND (json_type(s.accepted_terms_json,'$.allocations') IS NULL OR
-           (SELECT count(*) FROM json_each(json_extract(s.accepted_terms_json,'$.allocations')))=
+         AND (${quotedAllocations} IS NULL OR
+           (SELECT count(*) FROM json_each(${quotedAllocations}))=
            (SELECT count(*) FROM order_shipment_allocations a WHERE a.shipment_id=s.id))
-         AND (json_type(s.accepted_terms_json,'$.allocations') IS NOT NULL OR
+         AND (${quotedAllocations} IS NOT NULL OR
            (s.group_key='together' AND NOT EXISTS(
              SELECT 1 FROM confirmed_order_lines l WHERE l.order_id=s.order_id
                AND coalesce((SELECT a.physical_quantity FROM order_shipment_allocations a
@@ -683,11 +732,24 @@ export function createShipmentMilestoneService(
       }));
       const accepted = await db
         .prepare(
-          "SELECT accepted_terms_json,group_key FROM order_shipments WHERE id=?",
+          `SELECT accepted_terms_json,group_key,
+             (SELECT revised.value FROM order_shipping_change_effective effective,
+               json_each(effective.after_json,'$.shipments') revised
+               WHERE effective.order_id=shipment.order_id
+                 AND json_extract(revised.value,'$.shipmentId')=shipment.id
+               ORDER BY effective.effective_at DESC,effective.id DESC LIMIT 1)
+               AS effective_terms_json
+           FROM order_shipments shipment WHERE shipment.id=?`,
         )
         .bind(input.shipmentId)
-        .first<{ accepted_terms_json: string; group_key: string }>();
-      const quoted = JSON.parse(accepted!.accepted_terms_json) as {
+        .first<{
+          accepted_terms_json: string;
+          group_key: string;
+          effective_terms_json: string | null;
+        }>();
+      const quoted = JSON.parse(
+        accepted!.effective_terms_json ?? accepted!.accepted_terms_json,
+      ) as {
         allocations?: Array<{ lineId: string; physicalQuantity: number }>;
       };
       let expected = quoted.allocations;

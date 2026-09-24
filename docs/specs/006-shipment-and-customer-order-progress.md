@@ -110,15 +110,19 @@ Delivery` button.
   or Shipping Change Request for an eligible Shipment. Submission holds only
   affected quantities.
 - Admin rechecks carrier, tax, trade term, and price effects. Approval creates an
-  immutable Order Change Confirmation; it becomes effective only after explicit
-  customer acceptance and any required additional Cleared Funds. Silence never
-  applies the change.
+  immutable Order Change Confirmation. After the customer explicitly accepts
+  the current version, Admin may manually apply it. Additional payment for a
+  positive adjustment is handled offline; the website does not require a
+  receipt attestation or claim Cleared Funds for that adjustment. Silence and
+  an Admin proposal alone never apply the change.
 - Accepted financial adjustments form an append-only effective Order obligation
   alongside the unchanged original PI/Order totals. Reserve an approved refund
   until its separately recorded initiation; it is not freely allocatable excess.
-  Payment review and Spec 7 refunds must use the same adjusted obligation and
-  funding facts so a legitimate refund does not create a false payment shortfall
-  or permit the same entitlement to be refunded twice.
+  Payment review and Spec 7 refunds must reconcile authorized credits against
+  the original system-tracked PI funding without treating offline positive
+  adjustments as system-verified funds. A legitimate recorded refund must not
+  create a false payment shortfall or permit the same entitlement to be
+  refunded twice.
 - After carrier handoff, website change actions are disabled and the customer is
   directed to Support. Accepted quantity, destination, split, or service changes
   that alter commercial terms use the established replacement/confirmation

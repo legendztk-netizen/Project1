@@ -49,8 +49,14 @@ export function CustomerShipmentPlan({ plan }: { plan: Plan }) {
               {shipment.incoterm} · {shipment.namedPlace} ·{" "}
               {shipment.transportMethod}
             </p>
+            <p>
+              Deliver to {shipment.destination.recipientName} ·{" "}
+              {shipment.destination.addressLine1}, {shipment.destination.city},{" "}
+              {shipment.destination.stateProvince}{" "}
+              {shipment.destination.postalCode}
+            </p>
             <ul>
-              {shipment.quotedAllocations.map((allocation) => (
+              {shipment.allocations.map((allocation) => (
                 <li key={allocation.lineId}>
                   <span>
                     {allocation.displayName} · {allocation.sku}
@@ -59,13 +65,13 @@ export function CustomerShipmentPlan({ plan }: { plan: Plan }) {
                     {allocation.physicalQuantity} {allocation.unit}
                     {allocation.lengthPerPiece &&
                       ` · ${allocation.lengthPerPiece.value} ${allocation.lengthPerPiece.unit} each`}
-                    {!shipment.allocations.some(
-                      (current) => current.lineId === allocation.lineId,
-                    ) && " · planning on hold"}
                   </strong>
                 </li>
               ))}
             </ul>
+            {shipment.allocations.length === 0 && (
+              <p>Allocation is pending review.</p>
+            )}
             <Link
               to={`/account/orders/${encodeURIComponent(plan.orderId)}/shipments/${encodeURIComponent(shipment.id)}/documents`}
             >
