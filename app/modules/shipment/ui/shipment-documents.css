@@ -1,0 +1,369 @@
+.shipment-documents-page {
+  width: 100%;
+  min-width: 0;
+}
+
+.shipment-documents-page h1 {
+  margin: 8px 0 20px;
+  font-size: 2rem;
+  overflow-wrap: anywhere;
+}
+
+.shipment-documents-eyebrow {
+  margin: 28px 0 0;
+  color: #5d6973;
+  font-weight: 700;
+}
+
+.shipment-documents-tabs {
+  display: flex;
+  gap: 24px;
+  width: 100%;
+  border-bottom: 1px solid #cbd4dc;
+}
+
+.shipment-documents-tabs button {
+  min-width: 115px;
+  min-height: 46px;
+  padding: 9px 12px;
+  color: #50606b;
+  background: transparent;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.shipment-documents-tabs button:hover,
+.shipment-documents-tabs button:focus-visible {
+  color: #202932;
+  font-size: 1.06em;
+}
+
+.shipment-documents-tabs button[aria-selected="true"] {
+  color: #202932;
+  border-bottom-color: #d92c20;
+  font-weight: 800;
+}
+
+.shipment-documents-panel {
+  padding: 24px 0 48px;
+}
+
+.shipment-documents-panel h2 {
+  margin: 0 0 18px;
+  font-size: 1.2rem;
+}
+
+.shipment-file-upload + h2 {
+  margin-top: 32px;
+}
+
+.shipment-documents-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.shipment-packing-form,
+.shipment-file-upload {
+  display: grid;
+  gap: 20px;
+  max-width: 950px;
+}
+
+.shipment-carton-group {
+  position: relative;
+  margin: 0;
+  padding: 20px;
+  border: 1px solid #ccd6dd;
+  border-radius: 4px;
+}
+
+.shipment-carton-group legend {
+  padding: 0 8px;
+  font-weight: 700;
+}
+
+.shipment-carton-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.shipment-divisor-section {
+  padding-top: 18px;
+  border-top: 1px solid #d9e0e5;
+}
+
+.shipment-divisor-section h3 {
+  margin: 0 0 14px;
+  font-size: 1rem;
+}
+
+.shipment-divisor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.shipment-carton-grid label,
+.shipment-divisor-grid label,
+.shipment-packing-notes,
+.shipment-file-upload label {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  color: #42515d;
+  font-weight: 650;
+}
+
+.shipment-carton-grid input,
+.shipment-carton-grid select,
+.shipment-divisor-grid input,
+.shipment-divisor-grid select,
+.shipment-packing-notes textarea,
+.shipment-file-upload input,
+.shipment-file-upload select {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 8px 10px;
+  color: #202932;
+  background: white;
+  border: 1px solid #aab7c2;
+  border-radius: 4px;
+  font: inherit;
+}
+
+.shipment-packing-notes textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.shipment-carton-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 16px 0 0 auto;
+  width: 34px;
+  height: 34px;
+  color: #b2241b;
+  background: white;
+  border: 1px solid #d6b8b4;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.shipment-packing-totals {
+  margin: 0;
+  padding-top: 16px;
+  border-top: 1px solid #d9e0e5;
+  font-weight: 700;
+}
+
+.shipment-documents-error,
+.shipment-documents-saved {
+  max-width: 950px;
+  padding: 12px 16px;
+  border-left: 3px solid #c82b20;
+  background: #fff6f4;
+}
+
+.shipment-documents-saved {
+  border-left-color: #318469;
+  background: #f0faf6;
+}
+
+.shipment-document-list {
+  display: grid;
+  gap: 0;
+  max-width: 1150px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shipment-document-list li {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) auto auto;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+  padding: 16px 0;
+  border-bottom: 1px solid #d9e0e5;
+}
+
+.shipment-document-list li > div:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.shipment-document-list li > div:first-child span {
+  color: #67747e;
+}
+
+.shipment-document-list .shared {
+  color: #21664f;
+  font-weight: 700;
+}
+
+.shipment-document-list .internal {
+  color: #67747e;
+}
+
+.shipment-document-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.shipment-document-actions .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.shipment-document-pagination {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.shipment-document-pagination a {
+  color: #23617b;
+  font-weight: 700;
+}
+
+.shipment-calendar-form {
+  display: grid;
+  gap: 20px;
+  max-width: 1100px;
+}
+
+.shipment-calendar-form label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  font-weight: 700;
+}
+
+.shipment-calendar-form input:not([type="checkbox"]),
+.shipment-calendar-form select,
+.shipment-calendar-form textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #b7c5cf;
+  border-radius: 4px;
+  font: inherit;
+}
+
+.shipment-calendar-grid,
+.shipment-calendar-exception {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.shipment-calendar-form fieldset {
+  min-width: 0;
+  border: 1px solid #d6e0e6;
+  border-radius: 4px;
+  padding: 16px;
+}
+
+.shipment-calendar-exceptions {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.shipment-calendar-exception {
+  grid-template-columns:
+    minmax(140px, 1fr) minmax(145px, 1fr) minmax(190px, 2fr)
+    auto;
+}
+
+.shipment-calendar-weekdays {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+}
+
+.shipment-calendar-weekdays label,
+.shipment-calendar-confirm {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 8px;
+}
+
+.shipment-schedule-list {
+  display: grid;
+  gap: 16px;
+  margin: 16px 0;
+}
+
+.shipment-schedule-list article {
+  border-top: 1px solid #d6e0e6;
+  padding-top: 16px;
+}
+
+.shipment-schedule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+  margin-top: 12px;
+}
+
+.shipment-schedule-actions label {
+  display: grid;
+  gap: 6px;
+}
+
+@media (max-width: 850px) {
+  .shipment-carton-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .shipment-document-list li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .shipment-document-actions {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 700px) {
+  .shipment-calendar-grid,
+  .shipment-calendar-exception {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .shipment-carton-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .shipment-divisor-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .shipment-document-list li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .shipment-document-actions {
+    grid-column: auto;
+  }
+  .shipment-documents-tabs {
+    gap: 8px;
+  }
+  .shipment-documents-tabs button {
+    min-width: 0;
+    flex: 1;
+  }
+}

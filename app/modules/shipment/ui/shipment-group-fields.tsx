@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Minus, Plus } from "lucide-react";
 import type { QuotedShipmentGroup } from "../domain/shipment-plan";
+import { ReadyScheduleFields } from "./ready-schedule-fields";
 
 interface PhysicalLine {
   id: string;
@@ -14,6 +15,8 @@ export function ShipmentGroupFields({
   groups,
   charges,
   transportMethod,
+  showReadySchedule = false,
+  standardOnly = false,
   onDirty,
 }: {
   lines: readonly PhysicalLine[];
@@ -24,6 +27,8 @@ export function ShipmentGroupFields({
     dutiesImport: number;
   };
   transportMethod: string;
+  showReadySchedule?: boolean;
+  standardOnly?: boolean;
   onDirty?: () => void;
 }) {
   const [groupCount, setGroupCount] = useState(
@@ -138,6 +143,13 @@ export function ShipmentGroupFields({
                 </label>
               ))}
             </div>
+            {showReadySchedule && (
+              <ReadyScheduleFields
+                prefix={`groupReady-${groupIndex}`}
+                value={group?.readySchedule}
+                standardOnly={standardOnly}
+              />
+            )}
           </section>
         );
       })}

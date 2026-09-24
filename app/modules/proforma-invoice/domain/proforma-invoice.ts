@@ -145,7 +145,7 @@ function validatedProformaInvoiceSnapshot(input: CreateProformaInvoiceInput) {
     input.quoteRevisionId !== input.currentQuoteRevisionId
   )
     throw new Error("Current Quote Revision required");
-  if (revision.version !== 1)
+  if (revision.version !== 1 && revision.version !== 2)
     throw new Error("Unsupported Quote Revision schema version");
   const seller = input.seller;
   const addressText = seller?.registeredAddressEn?.trim() ?? "";
@@ -179,7 +179,10 @@ function validatedProformaInvoiceSnapshot(input: CreateProformaInvoiceInput) {
   const validated = validateQuoteIssuance(
     revision,
     revision.factoryReviewConfirmed === true,
-    { allowHistoricalUnstructuredSplit: true },
+    {
+      allowHistoricalUnstructuredSplit: revision.version === 1,
+      requireReadySchedule: revision.version === 2,
+    },
   );
   for (const key of [
     "currency",
@@ -301,6 +304,9 @@ function validatedProformaInvoiceSnapshot(input: CreateProformaInvoiceInput) {
       namedPlace: terms.namedPlace,
       taxTreatment: terms.taxTreatment,
       leadTime: terms.leadTime,
+      ...(validated.terms.readySchedule
+        ? { readySchedule: validated.terms.readySchedule }
+        : {}),
       charges: {
         freight: terms.charges.freight,
         insurance: terms.charges.insurance,

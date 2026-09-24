@@ -8,7 +8,7 @@ import { quoteLineTotals, type QuotedLinePrice } from "./quote-pricing";
 import type { ReviewedQuoteLine } from "./quote-line-revision";
 
 export interface QuoteRevisionSnapshot {
-  version: 1;
+  version: 1 | 2;
   requestId: string;
   revisionNumber: number;
   sourceHash: string;
@@ -42,7 +42,10 @@ export function validateQuoteIssuance(
     terms: QuoteCommercialTerms | null;
   },
   factoryReviewConfirmed: boolean,
-  options: { allowHistoricalUnstructuredSplit?: boolean } = {},
+  options: {
+    allowHistoricalUnstructuredSplit?: boolean;
+    requireReadySchedule?: boolean;
+  } = {},
 ) {
   if (!draft.terms || !draft.source.lines.length)
     throw new Error("Complete commercial terms and product lines");
@@ -101,6 +104,7 @@ export function customerRevisionProjection(revision: QuoteRevisionSnapshot) {
     incoterm: terms.incoterm,
     namedPlace: terms.namedPlace,
     leadTime: terms.leadTime,
+    readySchedule: terms.readySchedule ?? null,
     taxTreatment: terms.taxTreatment,
     charges: terms.charges,
     totals: revision.totals,

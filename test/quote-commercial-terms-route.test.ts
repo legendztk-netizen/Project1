@@ -37,6 +37,10 @@ async function submit(intent: string) {
   }
   for (const [key, value] of Object.entries(terms.charges))
     form.set(key, (value / 100).toFixed(2));
+  if (terms.readySchedule?.kind === "china_business_days") {
+    form.set("readyKind", terms.readySchedule.kind);
+    form.set("readyDays", String(terms.readySchedule.days));
+  }
   form.set("version", "3");
   form.set("commandId", "test-command");
   form.set("intent", intent);

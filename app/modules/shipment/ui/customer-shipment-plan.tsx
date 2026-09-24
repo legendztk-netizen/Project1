@@ -1,3 +1,4 @@
+import { Link } from "react-router";
 import type { createShipmentPlanService } from "../application/shipment-plan-service";
 
 type Plan = Awaited<
@@ -65,6 +66,11 @@ export function CustomerShipmentPlan({ plan }: { plan: Plan }) {
                 </li>
               ))}
             </ul>
+            <Link
+              to={`/account/orders/${encodeURIComponent(plan.orderId)}/shipments/${encodeURIComponent(shipment.id)}/documents`}
+            >
+              Shared documents
+            </Link>
           </article>
         ))}
       </div>

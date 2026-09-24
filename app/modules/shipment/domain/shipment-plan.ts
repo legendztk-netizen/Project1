@@ -1,4 +1,8 @@
 import type { AnonymousQuoteLine } from "../../quote-list/domain/anonymous-quote-list";
+import {
+  validatedReadySchedule,
+  type ReadyScheduleBasis,
+} from "./ready-schedule";
 
 export interface ShipmentPlanLine {
   id: string;
@@ -22,6 +26,7 @@ export interface QuotedShipmentGroup {
   transportMethod: string;
   incoterm: "DDP" | "DAP";
   namedPlace: string;
+  readySchedule?: ReadyScheduleBasis;
 }
 
 export interface ShipmentPlanCommercialBasis {
@@ -30,6 +35,7 @@ export interface ShipmentPlanCommercialBasis {
   transportMethod: string;
   incoterm: "DDP" | "DAP";
   namedPlace: string;
+  readySchedule?: ReadyScheduleBasis;
   charges: {
     freight: number;
     insurance: number;
@@ -64,12 +70,17 @@ export function togetherShipmentGroup(
     transportMethod: terms.transportMethod,
     incoterm: terms.incoterm,
     namedPlace: terms.namedPlace,
+    ...(terms.readySchedule ? { readySchedule: terms.readySchedule } : {}),
   };
 }
 
 export function validatedShipmentGroups(
   lines: readonly ShipmentPlanLine[],
   terms: ShipmentPlanCommercialBasis,
+  options: {
+    allowPerDispatchTransport?: boolean;
+    requireReadySchedule?: boolean;
+  } = {},
 ): QuotedShipmentGroup[] {
   const groups =
     terms.shipmentGroups ??
@@ -108,7 +119,8 @@ export function validatedShipmentGroups(
       !group.namedPlace?.trim() ||
       group.transportMethod.length > 200 ||
       group.namedPlace.length > 200 ||
-      group.transportMethod.trim() !== terms.transportMethod.trim() ||
+      (!options.allowPerDispatchTransport &&
+        group.transportMethod.trim() !== terms.transportMethod.trim()) ||
       group.incoterm !== terms.incoterm ||
       group.namedPlace.trim() !== terms.namedPlace.trim()
     )
@@ -140,6 +152,13 @@ export function validatedShipmentGroups(
     ];
     if (charges.some((value) => !Number.isSafeInteger(value) || value < 0))
       throw new Error("Invalid shipment charge allocation");
+    if (options.requireReadySchedule && !group.readySchedule)
+      throw new Error(
+        "Reviewed ready-date schedule required for each shipment",
+      );
+    const readySchedule = group.readySchedule
+      ? validatedReadySchedule(group.readySchedule)
+      : undefined;
     return {
       id: group.id,
       label: group.label.trim(),
@@ -150,6 +169,7 @@ export function validatedShipmentGroups(
       transportMethod: group.transportMethod.trim(),
       incoterm: group.incoterm,
       namedPlace: group.namedPlace.trim(),
+      ...(readySchedule ? { readySchedule } : {}),
     };
   });
   if (

@@ -29,6 +29,8 @@ import type { DeliveryAddressDraft } from "../../customer-identity/domain/custom
 import { physicalLineQuantity } from "../../shipment/domain/shipment-plan";
 import { parseShipmentGroupsForm } from "../../shipment/application/parse-shipment-groups-form";
 import { ShipmentGroupFields } from "../../shipment/ui/shipment-group-fields";
+import { ReadyScheduleFields } from "../../shipment/ui/ready-schedule-fields";
+import { parseReadyScheduleForm } from "../../shipment/application/parse-ready-schedule-form";
 
 const addressLabels: Record<keyof DeliveryAddressDraft, string> = {
   label: "地址标签",
@@ -84,10 +86,15 @@ export async function action({ context, params, request }: Route.ActionArgs) {
     ) as QuoteCommercialTerms["shipmentMode"];
     const shipmentGroups =
       shipmentMode === "split"
-        ? parseShipmentGroupsForm(form, draft.source.lines, {
-            incoterm: text("incoterm") as QuoteCommercialTerms["incoterm"],
-            namedPlace: text("namedPlace"),
-          })
+        ? parseShipmentGroupsForm(
+            form,
+            draft.source.lines,
+            {
+              incoterm: text("incoterm") as QuoteCommercialTerms["incoterm"],
+              namedPlace: text("namedPlace"),
+            },
+            { requireReadySchedule: true },
+          )
         : undefined;
     const terms: QuoteCommercialTerms = {
       destination: Object.fromEntries(
@@ -108,6 +115,10 @@ export async function action({ context, params, request }: Route.ActionArgs) {
       ) as QuoteCommercialTerms["taxTreatment"],
       taxEvidenceId: text("taxEvidenceId") || null,
       leadTime: text("leadTime"),
+      readySchedule:
+        shipmentMode === "together"
+          ? parseReadyScheduleForm(form, "ready")
+          : undefined,
       charges: Object.fromEntries(
         commercialChargeKeys.map((key) => [key, parseUsdCents(text(key))]),
       ) as CommercialCharges,
@@ -153,6 +164,9 @@ export default function CommercialTerms({
     terms?.shipmentMode ?? "together",
   );
   const address = terms?.destination ?? draft.source.destination;
+  const standardOnly = draft.source.lines.every(
+    (line) => line.lineKind !== "configured_assembly",
+  );
   const pending = useNavigation().state !== "idle";
   const [searchParams] = useSearchParams();
   const [dirty, setDirty] = useState(false);
@@ -339,7 +353,16 @@ export default function CommercialTerms({
                   }
                 }
                 transportMethod={terms?.transportMethod ?? ""}
+                showReadySchedule
+                standardOnly={standardOnly}
                 onDirty={() => setDirty(true)}
+              />
+            )}
+            {shipmentMode === "together" && (
+              <ReadyScheduleFields
+                prefix="ready"
+                value={terms?.readySchedule}
+                standardOnly={standardOnly}
               />
             )}
             <label>
@@ -375,7 +398,7 @@ export default function CommercialTerms({
               />
             </label>
             <label>
-              按本次数量审核的交期（英文）
+              交期补充说明（英文）
               <textarea
                 name="leadTime"
                 defaultValue={terms?.leadTime}

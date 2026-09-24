@@ -9,7 +9,10 @@ import {
   validatedShipmentGroups,
   type QuotedShipmentGroup,
 } from "../domain/shipment-plan";
-import { shipmentInitializationStatements } from "../infrastructure/d1-shipment-initialization";
+import {
+  pendingShipmentAllocationStatement,
+  shipmentInitializationStatements,
+} from "../infrastructure/d1-shipment-initialization";
 
 interface PlanRow {
   order_id: string;
@@ -467,45 +470,12 @@ export function createShipmentPlanService(db: D1Database) {
               groupsJson,
               input.commandId,
             ),
-          db
-            .prepare(
-              `INSERT INTO order_shipment_allocations(shipment_id,order_id,line_id,physical_quantity)
-               WITH candidate AS (
-                 SELECT s.id AS shipment_id,s.order_id,
-                   json_extract(a.value,'$.lineId') AS line_id,
-                   json_extract(a.value,'$.physicalQuantity') AS quantity,
-                   sum(json_extract(a.value,'$.physicalQuantity')) OVER (
-                     PARTITION BY s.order_id,json_extract(a.value,'$.lineId')
-                     ORDER BY s.sequence_number) AS cumulative
-                 FROM order_shipments s,json_each(s.accepted_terms_json,'$.allocations') a
-                 WHERE s.order_id=?
-                   AND NOT EXISTS(SELECT 1 FROM order_shipment_allocations current
-                     WHERE current.shipment_id=s.id
-                       AND current.line_id=json_extract(a.value,'$.lineId'))
-               )
-               SELECT candidate.shipment_id,candidate.order_id,candidate.line_id,candidate.quantity
-               FROM candidate JOIN confirmed_order_lines l
-                 ON l.order_id=candidate.order_id AND l.line_id=candidate.line_id
-               WHERE EXISTS(SELECT 1 FROM order_shipment_plan_commands WHERE id=?)
-                 AND NOT EXISTS(SELECT 1 FROM order_release_guards guard
-                   WHERE guard.order_id=candidate.order_id AND guard.held=1)
-                 AND NOT EXISTS(SELECT 1 FROM order_quantity_holds hold
-                   WHERE hold.order_id=candidate.order_id AND hold.line_id=candidate.line_id
-                     AND hold.shipment_id=candidate.shipment_id AND hold.active=1)
-                 AND candidate.cumulative
-                   + coalesce((SELECT sum(current.physical_quantity)
-                     FROM order_shipment_allocations current
-                     WHERE current.order_id=candidate.order_id AND current.line_id=candidate.line_id),0)
-                   + coalesce((SELECT sum(hold.physical_quantity)
-                     FROM order_quantity_holds hold
-                     WHERE hold.order_id=candidate.order_id AND hold.line_id=candidate.line_id
-                       AND hold.active=1 AND hold.shipment_id IS NULL),0)
-                   <= CASE WHEN l.line_kind='length_based_hose'
-                     THEN json_extract(l.snapshot_json,'$.lengthOrder.pieceCount')
-                     ELSE json_extract(l.snapshot_json,'$.quantity') END
-               ON CONFLICT(shipment_id,line_id) DO NOTHING`,
-            )
-            .bind(input.orderId, input.commandId),
+          pendingShipmentAllocationStatement(
+            db,
+            input.orderId,
+            "reviewed_mapping",
+            input.commandId,
+          ),
           db
             .prepare(
               `UPDATE order_fulfillment_plans SET status='ready' WHERE order_id=?

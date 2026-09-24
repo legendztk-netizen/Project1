@@ -8,6 +8,10 @@ import {
   validatedShipmentGroups,
   type QuotedShipmentGroup,
 } from "../../shipment/domain/shipment-plan";
+import {
+  validatedReadySchedule,
+  type ReadyScheduleBasis,
+} from "../../shipment/domain/ready-schedule";
 
 export const commercialChargeKeys = [
   "freight",
@@ -39,6 +43,7 @@ export interface QuoteCommercialTerms {
   taxTreatment: "Collected" | "Exempt" | "Not Collected";
   taxEvidenceId: string | null;
   leadTime: string;
+  readySchedule?: ReadyScheduleBasis;
   charges: CommercialCharges;
   manualCurrencyConfirmed: boolean;
 }
@@ -52,7 +57,10 @@ function required(value: string, field: string) {
 export function validateCommercialTerms(
   input: QuoteCommercialTerms,
   source: QuoteRequestSnapshot,
-  options: { allowHistoricalUnstructuredSplit?: boolean } = {},
+  options: {
+    allowHistoricalUnstructuredSplit?: boolean;
+    requireReadySchedule?: boolean;
+  } = {},
 ): QuoteCommercialTerms {
   const destination = validatedDeliveryAddress(input.destination);
   if (input.freightReviewConfirmed !== true)
@@ -98,19 +106,30 @@ export function validateCommercialTerms(
     throw new Error("Tax amount must be zero when not collected");
   const transportMethod = required(input.transportMethod, "Transport method");
   const namedPlace = required(input.namedPlace, "Named place");
+  const readySchedule = input.readySchedule
+    ? validatedReadySchedule(input.readySchedule)
+    : undefined;
   const shipmentGroups =
     options.allowHistoricalUnstructuredSplit &&
     input.shipmentMode === "split" &&
     !input.shipmentGroups
       ? undefined
-      : validatedShipmentGroups(source.lines, {
-          shipmentMode: input.shipmentMode,
-          shipmentGroups: input.shipmentGroups,
-          transportMethod,
-          incoterm: input.incoterm,
-          namedPlace,
-          charges,
-        });
+      : validatedShipmentGroups(
+          source.lines,
+          {
+            shipmentMode: input.shipmentMode,
+            shipmentGroups: input.shipmentGroups,
+            transportMethod,
+            incoterm: input.incoterm,
+            namedPlace,
+            charges,
+            readySchedule,
+          },
+          {
+            allowPerDispatchTransport: input.shipmentMode === "split",
+            requireReadySchedule: options.requireReadySchedule,
+          },
+        );
   const requiresCurrencyReview =
     source.amounts.manualCommercialReview ||
     source.lines.some(
@@ -147,6 +166,7 @@ export function validateCommercialTerms(
     taxTreatment: input.taxTreatment,
     taxEvidenceId: input.taxTreatment === "Exempt" ? input.taxEvidenceId : null,
     leadTime: required(input.leadTime, "Reviewed lead time"),
+    readySchedule,
     charges,
     manualCurrencyConfirmed: input.manualCurrencyConfirmed === true,
   };

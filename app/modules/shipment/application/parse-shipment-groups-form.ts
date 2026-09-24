@@ -1,5 +1,6 @@
 import { parseUsdCents } from "../../quote-review/domain/quote-pricing";
 import type { QuotedShipmentGroup } from "../domain/shipment-plan";
+import { parseReadyScheduleForm } from "./parse-ready-schedule-form";
 
 export function parseShipmentGroupsForm(
   form: FormData,
@@ -8,6 +9,7 @@ export function parseShipmentGroupsForm(
     incoterm: "DDP" | "DAP";
     namedPlace: string;
   },
+  options: { requireReadySchedule?: boolean } = {},
 ): QuotedShipmentGroup[] {
   const text = (key: string) => String(form.get(key) ?? "");
   const count = Number(text("shipmentGroupCount"));
@@ -30,5 +32,13 @@ export function parseShipmentGroupsForm(
     transportMethod: text(`groupTransport-${groupIndex}`),
     incoterm: terms.incoterm,
     namedPlace: terms.namedPlace,
+    ...(options.requireReadySchedule
+      ? {
+          readySchedule: parseReadyScheduleForm(
+            form,
+            `groupReady-${groupIndex}`,
+          ),
+        }
+      : {}),
   }));
 }

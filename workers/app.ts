@@ -13,6 +13,7 @@ import {
 } from "./environment";
 import { createHealthResponse } from "./health";
 import { createRegistrationConfigurationService } from "../app/modules/customer-identity/application/registration-configuration-service";
+import { recoverStaleShipmentUploads } from "../app/modules/shipment/application/shipment-documents-service";
 import {
   consumeQuoteNotifications,
   dispatchQuoteNotifications,
@@ -102,12 +103,23 @@ export default {
     ctx.waitUntil(dispatchInboundEmail(env));
     ctx.waitUntil(piPdfJobs(env).dispatch());
     ctx.waitUntil(dispatchPiAcceptanceCopies(env));
-    if (controller.cron === "17 * * * *")
+    if (controller.cron === "17 * * * *") {
       ctx.waitUntil(
         createRegistrationConfigurationService(env, {
           now: () => new Date(controller.scheduledTime),
         }).cleanupExpired(),
       );
+      ctx.waitUntil(
+        recoverStaleShipmentUploads(
+          env.DB,
+          env.PRIVATE_FILES,
+          new Date(controller.scheduledTime - 60 * 60 * 1000).toISOString(),
+          new Date(
+            controller.scheduledTime - 24 * 60 * 60 * 1000,
+          ).toISOString(),
+        ),
+      );
+    }
   },
   async queue(batch, env) {
     validateRuntimeEnvironment(env);

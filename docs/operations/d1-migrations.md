@@ -45,6 +45,16 @@ Worker after the migration but before deployment is initialized idempotently on
 its first authorized Order read. This catch-up does not bypass payment or
 quantity holds.
 
+Shipment documents require migrations `0097` through `0100` before the Worker
+serves packing or file routes. Migration `0097` stores versioned packing records
+and private R2 file metadata; `0098` records orphan-object cleanup; `0099`
+stores one Shipment-level dimensional divisor and prevents packing edits after
+dispatch; `0100` permits periodic orphan rechecks. The hourly Worker schedule
+retires upload reservations older than one hour and rechecks cleaned failed
+uploads for 24 hours, so a late R2 write remains discoverable without starving
+newer reservations. Failed R2 deletions remain retryable. No private file
+becomes customer-visible without an explicit audited sharing command.
+
 ## Fail-Closed Health
 
 `/health` queries the bound D1 database on every request. HTTP 200 requires:

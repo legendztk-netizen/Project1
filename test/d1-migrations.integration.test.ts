@@ -18,6 +18,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { getPlatformProxy } from "wrangler";
 
 import { createD1CustomerIdentityRepository } from "../app/modules/customer-identity/infrastructure/d1-customer-identity-repository";
+import { createConfirmedOrderService } from "../app/modules/proforma-invoice/application/confirmed-order-service";
 import { staleLengthBasedHoseFeeGuardSql } from "../app/modules/quote-request/infrastructure/d1-quote-request-repository";
 import { createShipmentPlanService } from "../app/modules/shipment/application/shipment-plan-service";
 import type { AdminIdentity } from "../workers/admin-access";
@@ -462,6 +463,45 @@ describe("real local D1 migration lifecycle", () => {
       ),
     ).toEqual([{ count: 2 }]);
 
+    const originalLateSnapshot = queryD1<{ snapshot_json: string }>(
+      fixture,
+      "SELECT snapshot_json FROM confirmed_orders WHERE id='order-together'",
+    )[0];
+    const lateSnapshot = JSON.parse(originalLateSnapshot.snapshot_json) as {
+      terms: Record<string, unknown>;
+      lines: unknown[];
+    };
+    lateSnapshot.terms.shipmentMode = "split";
+    lateSnapshot.terms.splitPlan = "First and second dispatch";
+    lateSnapshot.terms.shipmentGroups = [
+      {
+        id: "first",
+        label: "First dispatch",
+        allocations: [{ lineId: "line-together", physicalQuantity: 1 }],
+        freightCents: 0,
+        insuranceCents: 0,
+        dutiesImportCents: 0,
+        transportMethod: "sea",
+        incoterm: "DDP",
+        namedPlace: "US",
+      },
+      {
+        id: "second",
+        label: "Second dispatch",
+        allocations: [{ lineId: "line-together", physicalQuantity: 1 }],
+        freightCents: 0,
+        insuranceCents: 0,
+        dutiesImportCents: 0,
+        transportMethod: "sea",
+        incoterm: "DDP",
+        namedPlace: "US",
+      },
+    ];
+    const lateSnapshotJson = JSON.stringify(lateSnapshot);
+    const lateSnapshotHash = createHash("sha256")
+      .update(lateSnapshotJson)
+      .digest("hex");
+
     queryD1(
       fixture,
       `INSERT INTO customer_quote_requests
@@ -526,12 +566,17 @@ describe("real local D1 migration lifecycle", () => {
           currency,total_cents,confirmed_at)
          SELECT 'order-late','ORDER-LEGACY-late','request-late','pi-late',
            purchasing_context_id,'acceptance-late','confirmation-late',
-           snapshot_json,snapshot_hash,currency,total_cents,confirmed_at
+           '${lateSnapshotJson.replaceAll("'", "''")}','${lateSnapshotHash}',
+           currency,total_cents,confirmed_at
          FROM confirmed_orders WHERE id='order-together';
        INSERT INTO confirmed_order_lines
          (order_id,line_id,line_number,line_kind,snapshot_json)
          SELECT 'order-late',line_id,line_number,line_kind,snapshot_json
-         FROM confirmed_order_lines WHERE order_id='order-together';`,
+         FROM confirmed_order_lines WHERE order_id='order-together';
+       INSERT INTO order_quantity_holds
+         (id,order_id,line_id,physical_quantity,kind,reason,created_at)
+       VALUES ('late-hold','order-late','line-together',1,'after_sales',
+         'Review one piece','${now}');`,
     );
     expect(
       queryD1<{ count: number }>(
@@ -546,6 +591,7 @@ describe("real local D1 migration lifecycle", () => {
     });
     try {
       const plans = createShipmentPlanService(platform.env.DB);
+      const ordersService = createConfirmedOrderService(platform.env.DB);
       await expect(
         plans.customerRead("other-profile", "order-late"),
       ).rejects.toMatchObject({ status: 404 });
@@ -556,21 +602,69 @@ describe("real local D1 migration lifecycle", () => {
         canManageSubaccounts: true,
         source: "local-development",
       };
+      await platform.env.DB.prepare(
+        `CREATE TRIGGER fail_late_shipment BEFORE INSERT ON order_shipments
+         WHEN NEW.order_id='order-late'
+         BEGIN SELECT RAISE(ABORT,'injected shipment failure'); END`,
+      ).run();
+      await expect(plans.adminRead(actor, "order-late")).rejects.toThrow(
+        "injected shipment failure",
+      );
+      expect(
+        await platform.env.DB.prepare(
+          "SELECT count(*) AS count FROM order_fulfillment_plans WHERE order_id='order-late'",
+        ).first("count"),
+      ).toBe(0);
+      expect(
+        (await ordersService.customerList("legacy-profile")).records.find(
+          (order) => order.id === "order-late",
+        ),
+      ).toMatchObject({ shipmentPlanStatus: null, shipmentCount: 0 });
+      await platform.env.DB.prepare("DROP TRIGGER fail_late_shipment").run();
+      expect(
+        (await ordersService.customerList("legacy-profile")).records.find(
+          (order) => order.id === "order-late",
+        ),
+      ).toMatchObject({ shipmentPlanStatus: "review", shipmentCount: 2 });
       expect(await plans.adminRead(actor, "order-late")).toMatchObject({
-        status: "ready",
-        shipments: [{ allocations: [{ physicalQuantity: 2 }] }],
+        status: "review",
+        shipments: [
+          { allocations: [{ physicalQuantity: 1 }], held: false },
+          { allocations: [], held: true },
+        ],
       });
       expect(
         await plans.customerRead("legacy-profile", "order-late"),
       ).toMatchObject({
-        status: "ready",
-        shipments: [{ allocations: [{ physicalQuantity: 2 }] }],
+        status: "review",
+        shipments: [
+          { allocations: [{ physicalQuantity: 1 }] },
+          { allocations: [] },
+        ],
       });
+      await platform.env.DB.prepare(
+        "UPDATE order_quantity_holds SET active=0,resolved_at=? WHERE id='late-hold'",
+      )
+        .bind(now)
+        .run();
+      expect(await plans.adminRead(actor, "order-late")).toMatchObject({
+        status: "ready",
+        shipments: [
+          { allocations: [{ physicalQuantity: 1 }] },
+          { allocations: [{ physicalQuantity: 1 }] },
+        ],
+      });
+      await plans.adminRead(actor, "order-late");
       expect(
         await platform.env.DB.prepare(
           "SELECT count(*) AS count FROM order_shipments WHERE order_id='order-late'",
         ).first("count"),
-      ).toBe(1);
+      ).toBe(2);
+      expect(
+        await platform.env.DB.prepare(
+          "SELECT count(*) AS count FROM order_shipment_allocations WHERE order_id='order-late'",
+        ).first("count"),
+      ).toBe(2);
     } finally {
       await platform.dispose();
     }

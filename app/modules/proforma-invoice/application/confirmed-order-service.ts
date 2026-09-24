@@ -4,6 +4,7 @@ import {
   piSha256,
   type ProformaInvoiceSnapshot,
 } from "../domain/proforma-invoice";
+import { shipmentInitializationStatements } from "../../shipment/infrastructure/d1-shipment-initialization";
 
 interface OrderRow {
   id: string;
@@ -95,6 +96,51 @@ async function projection(row: OrderRow) {
 }
 
 export function createConfirmedOrderService(db: D1Database) {
+  async function catchUpListedPlans<
+    T extends {
+      id: string;
+      plan_status?: "ready" | "review" | null;
+      shipment_count?: number;
+    },
+  >(rows: T[]) {
+    const missing = rows.filter((row) => row.plan_status == null);
+    if (!missing.length) return;
+    for (const row of missing) {
+      try {
+        await db.batch(
+          shipmentInitializationStatements(
+            db,
+            row.id,
+            new Date().toISOString(),
+          ),
+        );
+      } catch {
+        // One malformed historical order must not hide the other page results.
+      }
+    }
+    const summaries = (
+      await db
+        .prepare(
+          `SELECT plan.order_id,plan.status,
+            (SELECT count(*) FROM order_shipments shipment WHERE shipment.order_id=plan.order_id) AS shipment_count
+           FROM order_fulfillment_plans plan
+           WHERE plan.order_id IN (${missing.map(() => "?").join(",")})`,
+        )
+        .bind(...missing.map((row) => row.id))
+        .all<{
+          order_id: string;
+          status: "ready" | "review";
+          shipment_count: number;
+        }>()
+    ).results;
+    const byOrder = new Map(summaries.map((row) => [row.order_id, row]));
+    for (const row of missing) {
+      const summary = byOrder.get(row.id);
+      if (!summary) continue;
+      row.plan_status = summary.status;
+      row.shipment_count = summary.shipment_count;
+    }
+  }
   const owned = `FROM confirmed_orders o
     LEFT JOIN order_release_guards guard ON guard.order_id=o.id
     JOIN customer_quote_requests request ON request.id=o.request_id
@@ -214,6 +260,7 @@ export function createConfirmedOrderService(db: D1Database) {
           .bind(...values, (effectiveStatusPage - 1) * 25)
           .all<AdminOrderSummaryRow>()
       ).results;
+      await catchUpListedPlans(rows);
       const countries = (
         await db
           .prepare(
@@ -338,6 +385,7 @@ export function createConfirmedOrderService(db: D1Database) {
           .all<OrderRow>()
       ).results;
       const page = rows.slice(0, 10);
+      await catchUpListedPlans(page);
       return {
         records: await Promise.all(page.map(projection)),
         nextCursor: rows.length > 10 ? page[9].id : null,

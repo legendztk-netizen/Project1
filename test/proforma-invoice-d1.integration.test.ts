@@ -56,6 +56,8 @@ import { createD1ProformaInvoiceRepository } from "../app/modules/proforma-invoi
 import { createPiLifecycleService } from "../app/modules/proforma-invoice/application/pi-lifecycle-service";
 import { createD1AdminQuoteReviewRepository } from "../app/modules/quote-review/infrastructure/d1-admin-quote-review-repository";
 import { createShipmentPlanService } from "../app/modules/shipment/application/shipment-plan-service";
+import { createChinaCalendarService } from "../app/modules/shipment/application/china-calendar-service";
+import { createShipmentReadyScheduleService } from "../app/modules/shipment/application/shipment-ready-schedule-service";
 
 const directory = mkdtempSync(join(tmpdir(), "pi-d1-"));
 let platform: Awaited<
@@ -1197,7 +1199,9 @@ it("freezes the default payment deadline exactly once on website acceptance", as
 
 it("creates exactly the accepted split shipments after payment and acceptance", async () => {
   const f = await fixture((revision) => {
+    revision.version = 2;
     revision.terms.shipmentMode = "split";
+    revision.terms.readySchedule = undefined;
     revision.terms.splitPlan = "One item in each of two dispatches";
     revision.terms.shipmentGroups = [
       {
@@ -1210,6 +1214,7 @@ it("creates exactly the accepted split shipments after payment and acceptance", 
         transportMethod: "Air freight",
         incoterm: "DDP",
         namedPlace: "New York, US",
+        readySchedule: { kind: "china_business_days", days: 5 },
       },
       {
         id: "second",
@@ -1221,10 +1226,25 @@ it("creates exactly the accepted split shipments after payment and acceptance", 
         transportMethod: "Air freight",
         incoterm: "DDP",
         namedPlace: "New York, US",
+        readySchedule: { kind: "china_business_days", days: 10 },
       },
     ];
   });
   const pi = await service().issue(actor, f.command);
+  const calendars = createChinaCalendarService(db);
+  const calendarVersion = await calendars.publish(actor, {
+    expectedCurrentVersion: null,
+    commandId: crypto.randomUUID(),
+    coverageFrom: "2026-09-01",
+    coverageThrough: "2026-10-31",
+    workingWeekdays: [1, 2, 3, 4, 5],
+    exceptions: [
+      { date: "2026-09-16", isWorking: false, reason: "Test closure" },
+      { date: "2026-09-20", isWorking: true, reason: "Test make-up day" },
+    ],
+    revisionReason: "Reviewed complete test-only China calendar coverage",
+    confirmedComplete: true,
+  });
   const acceptedAt = "2026-09-14T11:00:00.000Z";
   const payments = createPiPaymentService(db, {
     now: () => new Date(acceptedAt),
@@ -1300,6 +1320,34 @@ it("creates exactly the accepted split shipments after payment and acceptance", 
     { key: "second", quantity: 1, freightCents: 800 },
   ]);
   expect(plan.originalCharges.freight).toBe(2000);
+  expect(
+    (
+      await db
+        .prepare(
+          `SELECT s.group_key,ready.accepted_ready_date,ready.accepted_calendar_version
+           FROM order_shipment_ready_schedules ready
+           JOIN order_shipments s ON s.id=ready.shipment_id
+           WHERE ready.order_id=? ORDER BY s.sequence_number`,
+        )
+        .bind(orderId)
+        .all<{
+          group_key: string;
+          accepted_ready_date: string;
+          accepted_calendar_version: number;
+        }>()
+    ).results,
+  ).toEqual([
+    {
+      group_key: "first",
+      accepted_ready_date: "2026-09-21",
+      accepted_calendar_version: calendarVersion,
+    },
+    {
+      group_key: "second",
+      accepted_ready_date: "2026-09-28",
+      accepted_calendar_version: calendarVersion,
+    },
+  ]);
 });
 
 it("maps an immutable legacy split PI without allocating held quantities", async () => {
@@ -2743,4 +2791,122 @@ it("records which superseded instruction version received verified funds", async
       .bind(pi.id)
       .first("received_instruction_id"),
   ).toBe(oldInstructionId);
+});
+
+it("resolves an accepted business-day commitment after calendar coverage is published", async () => {
+  const calendars = createChinaCalendarService(db);
+  const current = await calendars.adminRead(actor);
+  await calendars.publish(actor, {
+    expectedCurrentVersion: current?.version ?? null,
+    commandId: crypto.randomUUID(),
+    coverageFrom: "2026-10-01",
+    coverageThrough: "2026-12-31",
+    workingWeekdays: [1, 2, 3, 4, 5],
+    exceptions: [],
+    revisionReason: "Reviewed coverage intentionally excludes the order date",
+    confirmedComplete: true,
+  });
+  const f = await fixture((revision) => {
+    revision.terms.readySchedule = { kind: "china_business_days", days: 5 };
+  });
+  const pi = await service().issue(actor, f.command);
+  await acceptFixturePi(f.profileId, f.command.requestId, pi);
+  const payments = createPiPaymentService(db, {
+    now: () => new Date("2026-09-14T11:00:00.000Z"),
+  });
+  const account = await payments.adminRead(actor, pi.id);
+  const funded = await payments.updateReceived(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: account.version,
+    amount: (pi.snapshot.totals.totalCents / 100).toFixed(2),
+    currency: "USD",
+    actualChannel: "bank_transfer",
+    verificationReference: "Calendar coverage settlement",
+  });
+  const confirmed = await payments.confirmPayment(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: funded.version,
+    externallyVerified: true,
+    externalReference: "Calendar coverage bank statement",
+  });
+  const orderId = confirmed.order!.id;
+  const schedules = createShipmentReadyScheduleService(db);
+  const [pending] = await schedules.adminRead(actor, orderId);
+  expect(pending.acceptedBasis).toEqual({
+    kind: "china_business_days",
+    days: 5,
+  });
+  expect(pending.acceptedReadyDate).toBeNull();
+  expect(pending.currentEstimateDate).toBeNull();
+  const command = {
+    orderId,
+    shipmentId: pending.shipmentId,
+    expectedVersion: pending.version,
+    expectedShipmentVersion: pending.shipmentVersion,
+    commandId: crypto.randomUUID(),
+  };
+  await expect(schedules.resolveAccepted(actor, command)).rejects.toMatchObject(
+    {
+      status: 409,
+    },
+  );
+  const version = await calendars.publish(actor, {
+    expectedCurrentVersion: (await calendars.adminRead(actor))!.version,
+    commandId: crypto.randomUUID(),
+    coverageFrom: "2026-09-01",
+    coverageThrough: "2026-12-31",
+    workingWeekdays: [1, 2, 3, 4, 5],
+    exceptions: [],
+    revisionReason: "Reviewed complete calendar for the accepted order",
+    confirmedComplete: true,
+  });
+  const resultingVersion = await schedules.resolveAccepted(actor, command);
+  expect(await schedules.resolveAccepted(actor, command)).toBe(
+    resultingVersion,
+  );
+  const [resolved] = await schedules.customerRead(f.profileId, orderId);
+  expect(resolved).toMatchObject({
+    acceptedReadyDate: "2026-09-21",
+    acceptedCalendarVersion: version,
+    currentEstimateDate: "2026-09-21",
+    currentEstimateSource: "accepted",
+    version: resultingVersion,
+  });
+  expect(
+    await db
+      .prepare(
+        "SELECT count(*) AS n FROM quote_notification_outbox WHERE message_id=?",
+      )
+      .bind(`shipment-ready-commitment:${command.commandId}`)
+      .first("n"),
+  ).toBe(1);
+  expect(
+    await db
+      .prepare("SELECT count(*) AS n FROM admin_audit_events WHERE id=?")
+      .bind(`shipment-ready-resolve:${command.commandId}`)
+      .first("n"),
+  ).toBe(1);
+  await expect(
+    schedules.resolveAccepted(actor, {
+      ...command,
+      commandId: crypto.randomUUID(),
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  const revised = await schedules.revise(actor, {
+    ...command,
+    commandId: crypto.randomUUID(),
+    expectedVersion: resultingVersion,
+    newDate: "2026-09-22",
+    reason: "Customer-visible revised preparation estimate",
+  });
+  expect(revised).toBe(resultingVersion + 1);
+  expect((await schedules.customerRead(f.profileId, orderId))[0]).toMatchObject(
+    {
+      acceptedReadyDate: "2026-09-21",
+      currentEstimateDate: "2026-09-22",
+      history: [{ previousDate: "2026-09-21", newDate: "2026-09-22" }],
+    },
+  );
 });

@@ -1,4 +1,4 @@
-import { Form } from "react-router";
+import { Form, Link } from "react-router";
 import type { createShipmentPlanService } from "../application/shipment-plan-service";
 import type { QuotedShipmentGroup } from "../domain/shipment-plan";
 import { ShipmentGroupFields } from "./shipment-group-fields";
@@ -111,6 +111,12 @@ export function AdminShipmentPlan({
                 USD {(shipment.insuranceCents / 100).toFixed(2)} · 进口费用 USD
                 {(shipment.dutiesImportCents / 100).toFixed(2)}
               </p>
+              <Link
+                className="button button-secondary"
+                to={`/admin/orders/${encodeURIComponent(plan.orderId)}/shipments/${encodeURIComponent(shipment.id)}`}
+              >
+                装箱与文件
+              </Link>
             </article>
           ))}
         </div>

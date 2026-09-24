@@ -1,6 +1,7 @@
 import { quoteNotificationOutboxStatement } from "../../quote-notifications/infrastructure/d1-quote-notifications";
 import { piSha256 } from "../domain/proforma-invoice";
 import { shipmentInitializationStatements } from "../../shipment/infrastructure/d1-shipment-initialization";
+import { shipmentReadyScheduleInitializationStatement } from "../../shipment/infrastructure/d1-ready-schedule-initialization";
 import {
   effectiveQuoteAgreementSql,
   unspecifiedPaymentDeadlineSql,
@@ -25,6 +26,13 @@ export async function orderCreationStatements(
       ? "Payment has been confirmed. Your order is now available in My Orders."
       : "Your PI acceptance completed the order. View the confirmed order in My Orders.";
   const messageHash = await piSha256(new TextEncoder().encode(body));
+  const readyScheduleStatement =
+    await shipmentReadyScheduleInitializationStatement(db, {
+      piId: input.piId,
+      orderId,
+      confirmedAt: input.now,
+      now: input.now,
+    });
   return [
     db
       .prepare(
@@ -85,6 +93,7 @@ export async function orderCreationStatements(
       )
       .bind(orderId, auditId),
     ...shipmentInitializationStatements(db, orderId, input.now),
+    readyScheduleStatement,
     db
       .prepare(
         `INSERT INTO order_fulfillment_initializations(order_id,line_id,initialized_at)

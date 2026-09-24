@@ -83,6 +83,9 @@ export default function ConfirmedOrders({
         <header className="orders-page-heading">
           <h1>订单</h1>
           <p>浏览已确认订单，按付款复核状态处理待办。</p>
+          <Link className="button button-secondary" to="/admin/china-calendar">
+            中国履约日历
+          </Link>
         </header>
         <nav className="orders-status-tabs" aria-label="订单状态">
           {statusTabs.map((tab) => (
@@ -252,7 +255,9 @@ export default function ConfirmedOrders({
                     <td data-label="发货计划">
                       {order.shipmentPlanStatus === "review"
                         ? "待核对"
-                        : `${order.shipmentCount} 个批次`}
+                        : order.shipmentPlanStatus === "ready"
+                          ? `${order.shipmentCount} 个批次`
+                          : "计划待核查"}
                     </td>
                     <td data-label="状态">
                       <span

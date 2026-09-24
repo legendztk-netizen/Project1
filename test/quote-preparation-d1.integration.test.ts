@@ -826,6 +826,7 @@ it("revises products and terms without replacing history, rejects no-op and stal
           transportMethod: "Ocean freight",
           incoterm: "DAP",
           namedPlace: "Boston, US",
+          readySchedule: { kind: "china_business_days", days: 10 },
         },
         {
           id: "batch-2",
@@ -837,6 +838,7 @@ it("revises products and terms without replacing history, rejects no-op and stal
           transportMethod: "Ocean freight",
           incoterm: "DAP",
           namedPlace: "Boston, US",
+          readySchedule: { kind: "china_business_days", days: 20 },
         },
       ],
       transportMethod: "Ocean freight",

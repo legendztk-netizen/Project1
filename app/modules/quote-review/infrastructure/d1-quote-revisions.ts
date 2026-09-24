@@ -238,6 +238,7 @@ export function createQuoteRevisions(db: D1Database) {
       const { terms, totals } = validateQuoteIssuance(
         draft,
         factoryReviewConfirmed,
+        { requireReadySchedule: true },
       );
       if (
         terms.taxEvidenceId &&
@@ -275,7 +276,7 @@ export function createQuoteRevisions(db: D1Database) {
         throw new Error("No material changes to issue");
       const revisionNumber = (previous?.snapshot.revisionNumber ?? 0) + 1;
       const snapshot: QuoteRevisionSnapshot = {
-        version: 1,
+        version: 2,
         requestId: input.requestId,
         revisionNumber,
         sourceHash: input.sourceHash,

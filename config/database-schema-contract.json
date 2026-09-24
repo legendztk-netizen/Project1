@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 94,
+  "schemaVersion": 101,
   "migrations": [
     "0000_initial_catalog_release.sql",
     "0001_add_admin_identities.sql",
@@ -94,6 +94,13 @@
     "0090_pi_payment_review_and_provenance.sql",
     "0091_retain_accepted_pi_agreement.sql",
     "0092_shipment_plans.sql",
-    "0093_shipment_allocation_revision.sql"
+    "0093_shipment_allocation_revision.sql",
+    "0094_shipment_ready_schedule.sql",
+    "0095_china_calendar_commands.sql",
+    "0096_shipment_schedule_calendar_guard.sql",
+    "0097_shipment_packing_documents.sql",
+    "0098_shipment_document_cleanup.sql",
+    "0099_shipment_packing_divisor_and_finality.sql",
+    "0100_shipment_document_recheck.sql"
   ]
 }

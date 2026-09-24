@@ -1069,6 +1069,7 @@ it("issues a real new Quote Revision, delivers exact replacement PDF and require
         transportMethod: "Sea freight",
         incoterm: "DDP" as const,
         namedPlace: "New York, US",
+        readySchedule: { kind: "fixed_date" as const, readyDate: "2026-10-20" },
       },
       {
         id: "second",
@@ -1080,6 +1081,7 @@ it("issues a real new Quote Revision, delivers exact replacement PDF and require
         transportMethod: "Sea freight",
         incoterm: "DDP" as const,
         namedPlace: "New York, US",
+        readySchedule: { kind: "fixed_date" as const, readyDate: "2026-10-27" },
       },
     ],
   };

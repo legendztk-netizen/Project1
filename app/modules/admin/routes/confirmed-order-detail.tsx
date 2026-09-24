@@ -41,6 +41,8 @@ import {
 import "../ui/confirmed-orders.css";
 import { AdminShipmentPlan } from "../../shipment/ui/admin-shipment-plan";
 import { parseShipmentGroupsForm } from "../../shipment/application/parse-shipment-groups-form";
+import { createShipmentReadyScheduleService } from "../../shipment/application/shipment-ready-schedule-service";
+import { AdminShipmentReadySchedules } from "../../shipment/ui/admin-shipment-ready-schedules";
 
 export const headers = piPrivateHeaders;
 
@@ -63,10 +65,14 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
     adminIdentity,
     piRouteId(params.orderId),
   );
-  const [drafts, activity, shipmentPlan] = await Promise.all([
+  const [drafts, activity, shipmentPlan, readySchedules] = await Promise.all([
     followOnQuotes(env).adminListForOrder(adminIdentity, order.id),
     confirmedOrders(env).adminActivity(adminIdentity, order.id),
     shipmentPlans(env).adminRead(adminIdentity, order.id),
+    createShipmentReadyScheduleService(env.DB).adminRead(
+      adminIdentity,
+      order.id,
+    ),
   ]);
   return data(
     {
@@ -74,6 +80,13 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
       drafts,
       activity,
       shipmentPlan,
+      readySchedules,
+      scheduleCommandIds: Object.fromEntries(
+        readySchedules.map((schedule) => [
+          schedule.shipmentId,
+          crypto.randomUUID(),
+        ]),
+      ),
       returnTo: safeReturnTo(new URL(request.url).searchParams.get("returnTo")),
       commandId: crypto.randomUUID(),
     },
@@ -123,6 +136,39 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
               : error instanceof Error
                 ? error.message
                 : "分批计划保存失败",
+        },
+        { status: error instanceof Response ? error.status : 400 },
+      );
+    }
+  } else if (intent === "schedule-resolve" || intent === "schedule-revise") {
+    try {
+      const service = createShipmentReadyScheduleService(env.DB);
+      const command = {
+        orderId,
+        shipmentId: piRouteId(String(form.get("shipmentId") ?? "")),
+        expectedVersion: Number(form.get("expectedVersion")),
+        expectedShipmentVersion: Number(form.get("expectedShipmentVersion")),
+        commandId: String(form.get("commandId") ?? ""),
+      };
+      if (intent === "schedule-resolve")
+        await service.resolveAccepted(adminIdentity, command);
+      else
+        await service.revise(adminIdentity, {
+          ...command,
+          newDate: String(form.get("newDate") ?? ""),
+          reason: String(form.get("reason") ?? ""),
+        });
+    } catch (error) {
+      if (error instanceof Response && ![400, 409].includes(error.status))
+        throw error;
+      return data(
+        {
+          error:
+            error instanceof Response
+              ? await error.text()
+              : error instanceof Error
+                ? error.message
+                : "批次日期保存失败",
         },
         { status: error instanceof Response ? error.status : 400 },
       );
@@ -304,8 +350,16 @@ export default function ConfirmedOrderDetail({
 }: {
   loaderData: Awaited<ReturnType<typeof loader>>["data"];
 }) {
-  const { order, drafts, activity, shipmentPlan, commandId, returnTo } =
-    loaderData;
+  const {
+    order,
+    drafts,
+    activity,
+    shipmentPlan,
+    readySchedules,
+    scheduleCommandIds,
+    commandId,
+    returnTo,
+  } = loaderData;
   const actionData = useActionData<typeof action>();
   const [tab, setTab] = useState<Tab>("products");
   const dialog = useRef<HTMLDialogElement>(null);
@@ -458,6 +512,12 @@ export default function ConfirmedOrderDetail({
             <AdminShipmentPlan
               plan={shipmentPlan}
               commandId={commandId}
+              busy={busy}
+              error={actionData?.error}
+            />
+            <AdminShipmentReadySchedules
+              schedules={readySchedules}
+              commandIds={scheduleCommandIds}
               busy={busy}
               error={actionData?.error}
             />

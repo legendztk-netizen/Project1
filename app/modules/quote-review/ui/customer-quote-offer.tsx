@@ -2,6 +2,7 @@ import type { CustomerQuoteRevision } from "../domain/quote-revision";
 import { QuoteRevisionChanges } from "./quote-revision-changes";
 import type { QuoteRequestLine } from "../../quote-request/domain/quote-request";
 import { referencePriceAdjustment } from "../domain/quote-pricing";
+import { readyScheduleText } from "../../shipment/domain/ready-schedule";
 
 const usd = (cents: number | null) =>
   cents === null ? "Pending" : `USD ${(cents / 100).toFixed(2)}`;
@@ -171,6 +172,11 @@ export function CustomerQuoteOffer({
               <span className="shipment-group-line">
                 {group.transportMethod} · {group.incoterm} {group.namedPlace}
               </span>
+              {group.readySchedule && (
+                <span className="shipment-group-line">
+                  {readyScheduleText(group.readySchedule)}
+                </span>
+              )}
               <span className="shipment-group-line">
                 Freight {usd(group.freightCents)} · Insurance{" "}
                 {usd(group.insuranceCents)} · Duties/import{" "}

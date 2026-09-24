@@ -21,6 +21,8 @@ import { ConfirmedOrderLine } from "../../proforma-invoice/ui/confirmed-order-li
 import { AccountWorkspace } from "../ui/account-workspace";
 import { requireTrustedAuthPost } from "../application/trusted-auth-request";
 import { CustomerShipmentPlan } from "../../shipment/ui/customer-shipment-plan";
+import { createShipmentReadyScheduleService } from "../../shipment/application/shipment-ready-schedule-service";
+import { CustomerShipmentReadySchedules } from "../../shipment/ui/customer-shipment-ready-schedules";
 
 export const headers = piPrivateHeaders;
 export async function loader({ context, request, params }: LoaderFunctionArgs) {
@@ -30,12 +32,22 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
     profileId,
     piRouteId(params.orderId),
   );
-  const [drafts, shipmentPlan] = await Promise.all([
+  const [drafts, shipmentPlan, readySchedules] = await Promise.all([
     followOnQuotes(env).customerListForOrder(profileId, order.id),
     shipmentPlans(env).customerRead(profileId, order.id),
+    createShipmentReadyScheduleService(env.DB).customerRead(
+      profileId,
+      order.id,
+    ),
   ]);
   return data(
-    { order, drafts, shipmentPlan, commandId: crypto.randomUUID() },
+    {
+      order,
+      drafts,
+      shipmentPlan,
+      readySchedules,
+      commandId: crypto.randomUUID(),
+    },
     { headers: headers() },
   );
 }
@@ -67,7 +79,7 @@ export default function ConfirmedOrderDetail({
 }: {
   loaderData: Awaited<ReturnType<typeof loader>>["data"];
 }) {
-  const { order, drafts, shipmentPlan, commandId } = loaderData;
+  const { order, drafts, shipmentPlan, readySchedules, commandId } = loaderData;
   const snapshot = order.snapshot;
   const address = snapshot.destination;
   return (
@@ -126,6 +138,7 @@ export default function ConfirmedOrderDetail({
           </p>
         </section>
         <CustomerShipmentPlan plan={shipmentPlan} />
+        <CustomerShipmentReadySchedules schedules={readySchedules} />
         {snapshot.lines.map((line) => (
           <ConfirmedOrderLine key={line.id} line={line} />
         ))}

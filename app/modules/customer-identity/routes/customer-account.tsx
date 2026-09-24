@@ -867,7 +867,9 @@ export default function CustomerAccount({
                 <p>
                   {order.shipmentPlanStatus === "review"
                     ? "Shipment plan under review"
-                    : `${order.shipmentCount} shipment${order.shipmentCount === 1 ? "" : "s"} planned`}
+                    : order.shipmentPlanStatus === "ready"
+                      ? `${order.shipmentCount} shipment${order.shipmentCount === 1 ? "" : "s"} planned`
+                      : "Shipment plan pending review"}
                 </p>
               </article>
             ))}

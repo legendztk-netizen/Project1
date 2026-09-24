@@ -1,3 +1,53 @@
+export function pendingShipmentAllocationStatement(
+  db: D1Database,
+  orderId: string,
+  source: "accepted_structured" | "reviewed_mapping",
+  commandId: string | null = null,
+) {
+  return db
+    .prepare(
+      `INSERT INTO order_shipment_allocations(shipment_id,order_id,line_id,physical_quantity)
+       WITH candidate AS (
+         SELECT s.id AS shipment_id,s.order_id,
+           json_extract(a.value,'$.lineId') AS line_id,
+           json_extract(a.value,'$.physicalQuantity') AS quantity,
+           sum(json_extract(a.value,'$.physicalQuantity')) OVER (
+             PARTITION BY s.order_id,json_extract(a.value,'$.lineId')
+             ORDER BY s.sequence_number) AS cumulative
+         FROM order_shipments s
+         JOIN order_fulfillment_plans p ON p.order_id=s.order_id,
+           json_each(s.accepted_terms_json,'$.allocations') a
+         WHERE s.order_id=? AND p.source=?
+           AND NOT EXISTS(SELECT 1 FROM order_shipment_allocations current
+             WHERE current.shipment_id=s.id
+               AND current.line_id=json_extract(a.value,'$.lineId'))
+       )
+       SELECT candidate.shipment_id,candidate.order_id,candidate.line_id,candidate.quantity
+       FROM candidate JOIN confirmed_order_lines l
+         ON l.order_id=candidate.order_id AND l.line_id=candidate.line_id
+       WHERE (? IS NULL OR EXISTS(
+           SELECT 1 FROM order_shipment_plan_commands WHERE id=?))
+         AND NOT EXISTS(SELECT 1 FROM order_release_guards guard
+           WHERE guard.order_id=candidate.order_id AND guard.held=1)
+         AND NOT EXISTS(SELECT 1 FROM order_quantity_holds hold
+           WHERE hold.order_id=candidate.order_id AND hold.line_id=candidate.line_id
+             AND hold.shipment_id=candidate.shipment_id AND hold.active=1)
+         AND candidate.cumulative
+           + coalesce((SELECT sum(current.physical_quantity)
+             FROM order_shipment_allocations current
+             WHERE current.order_id=candidate.order_id AND current.line_id=candidate.line_id),0)
+           + coalesce((SELECT sum(hold.physical_quantity)
+             FROM order_quantity_holds hold
+             WHERE hold.order_id=candidate.order_id AND hold.line_id=candidate.line_id
+               AND hold.active=1 AND hold.shipment_id IS NULL),0)
+           <= CASE WHEN l.line_kind='length_based_hose'
+             THEN json_extract(l.snapshot_json,'$.lengthOrder.pieceCount')
+             ELSE json_extract(l.snapshot_json,'$.quantity') END
+       ON CONFLICT(shipment_id,line_id) DO NOTHING`,
+    )
+    .bind(orderId, source, commandId, commandId);
+}
+
 export function shipmentInitializationStatements(
   db: D1Database,
   orderId: string,
@@ -66,22 +116,7 @@ export function shipmentInitializationStatements(
          ON CONFLICT(id) DO NOTHING`,
       )
       .bind(now, now, orderId),
-    db
-      .prepare(
-        `INSERT INTO order_shipment_allocations(shipment_id,order_id,line_id,physical_quantity)
-         SELECT s.id,s.order_id,json_extract(a.value,'$.lineId'),
-           json_extract(a.value,'$.physicalQuantity')
-         FROM order_shipments s
-         JOIN order_fulfillment_plans p ON p.order_id=s.order_id,
-           json_each(s.accepted_terms_json,'$.allocations') a
-         WHERE s.order_id=? AND p.source='accepted_structured'
-           AND NOT EXISTS(SELECT 1 FROM order_release_guards guard
-             WHERE guard.order_id=s.order_id AND guard.held=1)
-           AND NOT EXISTS(SELECT 1 FROM order_quantity_holds hold
-             WHERE hold.order_id=s.order_id AND hold.active=1)
-         ON CONFLICT(shipment_id,line_id) DO NOTHING`,
-      )
-      .bind(orderId),
+    pendingShipmentAllocationStatement(db, orderId, "accepted_structured"),
     db
       .prepare(
         `INSERT INTO order_shipment_allocations(shipment_id,order_id,line_id,physical_quantity)

@@ -215,7 +215,8 @@ function orderedSpecs<T extends { label: string; value: string }>(
 
 function quoteBasis(quote: QuoteRevisionSnapshot) {
   const validated = validateQuoteIssuance(quote, quote.factoryReviewConfirmed, {
-    allowHistoricalUnstructuredSplit: true,
+    allowHistoricalUnstructuredSplit: quote.version === 1,
+    requireReadySchedule: quote.version === 2,
   });
   if (!equal(validated.totals, quote.totals))
     throw new PiLifecycleError(
