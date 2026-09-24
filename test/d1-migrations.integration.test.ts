@@ -287,10 +287,11 @@ afterEach(() => {
 describe("real local D1 migration lifecycle", () => {
   it("backfills legacy Orders and catches up orders created during deployment", async () => {
     const fixture = createD1Fixture();
-    const shipmentMigration = "0092_shipment_plans.sql";
-    const revisionMigration = "0093_shipment_allocation_revision.sql";
-    rmSync(join(fixture.directory, "migrations", shipmentMigration));
-    rmSync(join(fixture.directory, "migrations", revisionMigration));
+    const laterMigrations = schemaContract.migrations.filter(
+      (migration) => migration >= "0092_shipment_plans.sql",
+    );
+    for (const migration of laterMigrations)
+      rmSync(join(fixture.directory, "migrations", migration));
     const beforeUpgrade = applyMigrations(fixture);
     expect(
       beforeUpgrade.status,
@@ -418,14 +419,11 @@ describe("real local D1 migration lifecycle", () => {
        VALUES ('order-held',1,'${now}');`,
     );
 
-    copyFileSync(
-      join(projectRoot, "migrations", shipmentMigration),
-      join(fixture.directory, "migrations", shipmentMigration),
-    );
-    copyFileSync(
-      join(projectRoot, "migrations", revisionMigration),
-      join(fixture.directory, "migrations", revisionMigration),
-    );
+    for (const migration of laterMigrations)
+      copyFileSync(
+        join(projectRoot, "migrations", migration),
+        join(fixture.directory, "migrations", migration),
+      );
     const upgrade = applyMigrations(fixture);
     expect(upgrade.status, `${upgrade.stdout}\n${upgrade.stderr}`).toBe(0);
     expect(

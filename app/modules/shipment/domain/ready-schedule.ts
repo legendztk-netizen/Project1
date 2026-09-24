@@ -117,6 +117,24 @@ export function readyScheduleText(value: ReadyScheduleBasis): string {
     : `Estimated ready to ship: ${schedule.days} China fulfillment business days after Order confirmation`;
 }
 
+export function chinaDateOfInstant(value: string): string {
+  return Temporal.Instant.from(value)
+    .toZonedDateTimeISO("Asia/Shanghai")
+    .toPlainDate()
+    .toString();
+}
+
+export function initialEstimatedReadyDate(
+  acceptedDate: string,
+  basis: ReadyScheduleBasis,
+  confirmedAt: string,
+): string | null {
+  return basis.kind === "fixed_date" &&
+    acceptedDate < chinaDateOfInstant(confirmedAt)
+    ? null
+    : acceptedDate;
+}
+
 export function committedReadyDate(
   confirmedAt: string,
   input: ReadyScheduleBasis,

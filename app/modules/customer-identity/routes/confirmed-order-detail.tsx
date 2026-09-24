@@ -23,6 +23,8 @@ import { requireTrustedAuthPost } from "../application/trusted-auth-request";
 import { CustomerShipmentPlan } from "../../shipment/ui/customer-shipment-plan";
 import { createShipmentReadyScheduleService } from "../../shipment/application/shipment-ready-schedule-service";
 import { CustomerShipmentReadySchedules } from "../../shipment/ui/customer-shipment-ready-schedules";
+import { createShipmentMilestoneService } from "../../shipment/application/shipment-milestone-service";
+import { CustomerShipmentMilestones } from "../../shipment/ui/customer-shipment-milestones";
 
 export const headers = piPrivateHeaders;
 export async function loader({ context, request, params }: LoaderFunctionArgs) {
@@ -32,13 +34,14 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
     profileId,
     piRouteId(params.orderId),
   );
-  const [drafts, shipmentPlan, readySchedules] = await Promise.all([
+  const [drafts, shipmentPlan, readySchedules, milestones] = await Promise.all([
     followOnQuotes(env).customerListForOrder(profileId, order.id),
     shipmentPlans(env).customerRead(profileId, order.id),
     createShipmentReadyScheduleService(env.DB).customerRead(
       profileId,
       order.id,
     ),
+    createShipmentMilestoneService(env.DB).customerRead(profileId, order.id),
   ]);
   return data(
     {
@@ -46,6 +49,7 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
       drafts,
       shipmentPlan,
       readySchedules,
+      milestones,
       commandId: crypto.randomUUID(),
     },
     { headers: headers() },
@@ -79,7 +83,8 @@ export default function ConfirmedOrderDetail({
 }: {
   loaderData: Awaited<ReturnType<typeof loader>>["data"];
 }) {
-  const { order, drafts, shipmentPlan, readySchedules, commandId } = loaderData;
+  const { order, drafts, shipmentPlan, readySchedules, milestones, commandId } =
+    loaderData;
   const snapshot = order.snapshot;
   const address = snapshot.destination;
   return (
@@ -138,6 +143,12 @@ export default function ConfirmedOrderDetail({
           </p>
         </section>
         <CustomerShipmentPlan plan={shipmentPlan} />
+        <CustomerShipmentMilestones
+          milestones={milestones}
+          heldShipmentIds={shipmentPlan.shipments
+            .filter((item) => item.held)
+            .map((item) => item.id)}
+        />
         <CustomerShipmentReadySchedules schedules={readySchedules} />
         {snapshot.lines.map((line) => (
           <ConfirmedOrderLine key={line.id} line={line} />

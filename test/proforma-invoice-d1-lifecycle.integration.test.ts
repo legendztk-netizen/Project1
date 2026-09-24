@@ -1058,6 +1058,7 @@ it("issues a real new Quote Revision, delivers exact replacement PDF and require
     transportMethod: "Sea freight",
     shipmentMode: "split" as const,
     splitPlan: "Two separately quoted dispatches",
+    fixedDatePreparationConfirmed: true,
     shipmentGroups: [
       {
         id: "first",

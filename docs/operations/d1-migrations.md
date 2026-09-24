@@ -48,12 +48,21 @@ quantity holds.
 Shipment documents require migrations `0097` through `0100` before the Worker
 serves packing or file routes. Migration `0097` stores versioned packing records
 and private R2 file metadata; `0098` records orphan-object cleanup; `0099`
-stores one Shipment-level dimensional divisor and prevents packing edits after
-dispatch; `0100` permits periodic orphan rechecks. The hourly Worker schedule
+stores one Shipment-level dimensional divisor; `0100` permits periodic orphan rechecks.
+Migration `0102` removes the initial post-dispatch packing lock so verified
+actuals may be added or corrected later with versioned audit history. The hourly Worker schedule
 retires upload reservations older than one hour and rechecks cleaned failed
 uploads for 24 hours, so a late R2 write remains discoverable without starving
 newer reservations. Failed R2 deletions remain retryable. No private file
 becomes customer-visible without an explicit audited sharing command.
+
+Ready-date migrations `0094` through `0096` retain accepted Shipment schedule
+bases and versioned China calendar evidence. Migration `0101` adds immutable
+readiness/dispatch/delivery milestones, exact dispatched quantities and
+versioned package tracking. Migration `0103` records delayed entry of an
+already-completed carrier handoff without clearing holds or publishing a false
+Ready to Ship event. Apply `0101` through `0103` before enabling milestone
+commands; the Worker health check rejects an older schema.
 
 ## Fail-Closed Health
 

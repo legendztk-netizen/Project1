@@ -97,6 +97,15 @@ const source = {
     },
   ],
 };
+const reviewedTerms = () => ({
+  ...commercialTerms(),
+  preparationDaysByLine: {
+    "line-standard": 10,
+    "line-length": 15,
+    "line-assembly": 20,
+  },
+  assemblyLeadConfirmed: true,
+});
 beforeAll(async () => {
   const migration = spawnSync("pnpm", ["migrate"], {
     encoding: "utf8",
@@ -286,7 +295,7 @@ it("persists terms atomically, rejects missing tax evidence and shares pricing c
       "pricing-rfq",
       draft.version,
       {
-        ...commercialTerms(),
+        ...reviewedTerms(),
         taxTreatment: "Exempt",
         taxEvidenceId: "missing-file",
       },
@@ -297,13 +306,13 @@ it("persists terms atomically, rejects missing tax evidence and shares pricing c
   const version = await service.saveTerms(
     "pricing-rfq",
     draft.version,
-    commercialTerms(),
+    reviewedTerms(),
     command,
   );
   const equivalent = Object.fromEntries(
     Object.entries({
-      ...commercialTerms(),
-      leadTime: ` ${commercialTerms().leadTime} `,
+      ...reviewedTerms(),
+      leadTime: ` ${reviewedTerms().leadTime} `,
     }).reverse(),
   ) as unknown as ReturnType<typeof commercialTerms>;
   expect(
@@ -319,7 +328,7 @@ it("persists terms atomically, rejects missing tax evidence and shares pricing c
     ),
   ).rejects.toMatchObject({ status: 409 });
   const saved = (await service.find("pricing-rfq"))!;
-  expect(saved.terms).toMatchObject(commercialTerms());
+  expect(saved.terms).toMatchObject(reviewedTerms());
   expect(saved.terms?.shipmentGroups).toHaveLength(1);
   expect(saved.source).toEqual(source);
   const repeatedCommand = crypto.randomUUID();
@@ -375,7 +384,7 @@ it("requires an associated private exemption record, not another RFQ's evidence"
       "pricing-rfq",
       draft.version,
       {
-        ...commercialTerms(),
+        ...reviewedTerms(),
         taxTreatment: "Exempt",
         taxEvidenceId: "tax:other-tax-rfq",
       },
@@ -386,7 +395,7 @@ it("requires an associated private exemption record, not another RFQ's evidence"
     "pricing-rfq",
     draft.version,
     {
-      ...commercialTerms(),
+      ...reviewedTerms(),
       taxTreatment: "Exempt",
       taxEvidenceId: "tax:pricing-rfq",
     },
@@ -544,7 +553,7 @@ async function prepareOtherQuote(id: string) {
   await preparation.saveTerms(
     id,
     priced.version,
-    commercialTerms(),
+    reviewedTerms(),
     crypto.randomUUID(),
   );
   return (await preparation.find(id))!;
@@ -810,11 +819,12 @@ it("revises products and terms without replacing history, rejects no-op and stal
     draft.requestId,
     pricedVersion,
     {
-      ...commercialTerms(),
+      ...reviewedTerms(),
       destination: { ...commercialAddress, city: "Boston" },
       addressReplacementReason: "Buyer confirmed new site",
       shipmentMode: "split",
       splitPlan: "Line1 on day10; line2 on day20",
+      preparationDaysByLine: { "line-standard": 10, "line-length": 20 },
       shipmentGroups: [
         {
           id: "batch-1",
@@ -848,7 +858,7 @@ it("revises products and terms without replacing history, rejects no-op and stal
       leadTime: "20 days for revised quantities",
       taxTreatment: "Collected",
       charges: {
-        ...commercialTerms().charges,
+        ...reviewedTerms().charges,
         salesTax: 100,
         freight: 4000,
         dutiesImport: 0,

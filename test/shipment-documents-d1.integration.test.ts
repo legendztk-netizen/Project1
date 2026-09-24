@@ -572,27 +572,35 @@ it("audits before-and-after packing and locks it after dispatch", async () => {
   });
   await db
     .prepare(
-      "UPDATE order_shipments SET status='shipped' WHERE id='shipment-one'",
+      "UPDATE order_shipments SET status='shipped',version=version+1 WHERE id='shipment-one'",
     )
     .run();
+  const lateCommandId = crypto.randomUUID();
+  const lateInput = {
+    orderId: "shipment-order",
+    shipmentId: "shipment-one",
+    expectedVersion: initial.version + 1,
+    commandId: lateCommandId,
+    draft: {
+      cartons: [{ ...initial.cartons[0], length: 60 }],
+      dimensionalDivisor: initial.dimensionalDivisor,
+      notes: "Verified after carrier handoff",
+    },
+  };
+  expect(await service.savePacking(actor, lateInput)).toBe(initial.version + 2);
+  expect(await service.savePacking(actor, lateInput)).toBe(initial.version + 2);
   await expect(
     service.savePacking(actor, {
-      orderId: "shipment-order",
-      shipmentId: "shipment-one",
-      expectedVersion: initial.version + 1,
-      commandId: crypto.randomUUID(),
-      draft: {
-        cartons: [{ ...initial.cartons[0], length: 60 }],
-        dimensionalDivisor: initial.dimensionalDivisor,
-        notes: "Should not replace shipped record",
-      },
+      ...lateInput,
+      expectedVersion: initial.version + 2,
     }),
   ).rejects.toMatchObject({ status: 409 });
-  await expect(
-    db
-      .prepare(
-        "UPDATE shipment_packing_records SET notes='bypassed',version=version+1 WHERE shipment_id='shipment-one'",
-      )
-      .run(),
-  ).rejects.toThrow(/Final packing cannot change after dispatch/);
+  const lateAudit = await db
+    .prepare("SELECT payload_json FROM admin_audit_events WHERE id=?")
+    .bind(`shipment-packing:${lateCommandId}`)
+    .first<{ payload_json: string }>();
+  expect(JSON.parse(lateAudit!.payload_json)).toMatchObject({
+    before: { notes: "Final checked packing" },
+    after: { notes: "Verified after carrier handoff" },
+  });
 });

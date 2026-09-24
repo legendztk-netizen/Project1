@@ -137,7 +137,24 @@ export function createShipmentReadyScheduleService(db: D1Database) {
         .first();
       if (!owned) throw new Response("Order not found", { status: 404 });
       await ensureRows(orderId);
-      return rows(orderId);
+      return (await rows(orderId)).map(
+        ({
+          shipmentVersion: _shipmentVersion,
+          version: _version,
+          history,
+          ...schedule
+        }) => ({
+          ...schedule,
+          history: history.map(
+            ({
+              actorId: _actorId,
+              previousVersion: _previousVersion,
+              version: _historyVersion,
+              ...event
+            }) => event,
+          ),
+        }),
+      );
     },
     async resolveAccepted(
       actor: AdminIdentity,
@@ -153,29 +170,36 @@ export function createShipmentReadyScheduleService(db: D1Database) {
       if (!/^[0-9a-f-]{36}$/.test(input.commandId))
         throw new Response("Command identity required", { status: 400 });
       const eventId = `shipment-ready-resolve:${input.commandId}`;
-      const prior = await db
-        .prepare(
-          "SELECT actor_id,entity_id,payload_json FROM admin_audit_events WHERE id=?",
-        )
-        .bind(eventId)
-        .first<{ actor_id: string; entity_id: string; payload_json: string }>();
-      if (prior) {
-        const payload = JSON.parse(prior.payload_json) as {
+      const replay = async () => {
+        const receipt = await db
+          .prepare(
+            "SELECT actor_id,entity_id,payload_json FROM admin_audit_events WHERE id=?",
+          )
+          .bind(eventId)
+          .first<{
+            actor_id: string;
+            entity_id: string;
+            payload_json: string;
+          }>();
+        if (!receipt) return null;
+        const payload = JSON.parse(receipt.payload_json) as {
           orderId: string;
           previousVersion: number;
           previousShipmentVersion: number;
           resultingVersion: number;
         };
         if (
-          prior.actor_id !== actor.id ||
-          prior.entity_id !== input.shipmentId ||
+          receipt.actor_id !== actor.id ||
+          receipt.entity_id !== input.shipmentId ||
           payload.orderId !== input.orderId ||
           payload.previousVersion !== input.expectedVersion ||
           payload.previousShipmentVersion !== input.expectedShipmentVersion
         )
           throw new Response("Command identity conflict", { status: 409 });
         return payload.resultingVersion;
-      }
+      };
+      const prior = await replay();
+      if (prior !== null) return prior;
       await ensureRows(input.orderId);
       const row = await db
         .prepare(
@@ -311,26 +335,16 @@ export function createShipmentReadyScheduleService(db: D1Database) {
           }),
         ]);
       } catch (error) {
-        const receipt = await db
-          .prepare("SELECT payload_json FROM admin_audit_events WHERE id=?")
-          .bind(eventId)
-          .first<{ payload_json: string }>();
-        if (receipt)
-          return (
-            JSON.parse(receipt.payload_json) as { resultingVersion: number }
-          ).resultingVersion;
+        const receipt = await replay();
+        if (receipt !== null) return receipt;
         throw error;
       }
-      const receipt = await db
-        .prepare("SELECT payload_json FROM admin_audit_events WHERE id=?")
-        .bind(eventId)
-        .first<{ payload_json: string }>();
-      if (!receipt)
+      const receipt = await replay();
+      if (receipt === null)
         throw new Response("Shipment schedule changed; reload", {
           status: 409,
         });
-      return (JSON.parse(receipt.payload_json) as { resultingVersion: number })
-        .resultingVersion;
+      return receipt;
     },
     async revise(
       actor: AdminIdentity,
@@ -359,26 +373,29 @@ export function createShipmentReadyScheduleService(db: D1Database) {
         throw new Response("A reviewed date-change reason is required", {
           status: 400,
         });
-      const prior = await db
-        .prepare(
-          `SELECT actor_id,order_id,shipment_id,new_date,reason,previous_version,
-             resulting_version FROM order_shipment_ready_schedule_revisions
-           WHERE command_id=?`,
-        )
-        .bind(input.commandId)
-        .first<RevisionRow & { order_id: string }>();
-      if (prior) {
+      const replay = async () => {
+        const receipt = await db
+          .prepare(
+            `SELECT actor_id,order_id,shipment_id,new_date,reason,previous_version,
+               resulting_version FROM order_shipment_ready_schedule_revisions
+             WHERE command_id=?`,
+          )
+          .bind(input.commandId)
+          .first<RevisionRow & { order_id: string }>();
+        if (!receipt) return null;
         if (
-          prior.actor_id !== actor.id ||
-          prior.order_id !== input.orderId ||
-          prior.shipment_id !== input.shipmentId ||
-          prior.new_date !== date ||
-          prior.reason !== reason ||
-          prior.previous_version !== input.expectedVersion
+          receipt.actor_id !== actor.id ||
+          receipt.order_id !== input.orderId ||
+          receipt.shipment_id !== input.shipmentId ||
+          receipt.new_date !== date ||
+          receipt.reason !== reason ||
+          receipt.previous_version !== input.expectedVersion
         )
           throw new Response("Command identity conflict", { status: 409 });
-        return prior.resulting_version;
-      }
+        return receipt.resulting_version;
+      };
+      const prior = await replay();
+      if (prior !== null) return prior;
       await ensureRows(input.orderId);
       const row = await db
         .prepare(
@@ -393,6 +410,7 @@ export function createShipmentReadyScheduleService(db: D1Database) {
         .first<{
           version: number;
           accepted_basis_json: string | null;
+          accepted_ready_date: string | null;
           current_estimate_date: string | null;
           shipment_status: string;
           shipment_version: number;
@@ -408,7 +426,13 @@ export function createShipmentReadyScheduleService(db: D1Database) {
         throw new Response("Shipment date changed or already dispatched", {
           status: 409,
         });
-      if (row.accepted_basis_json && !row.current_estimate_date)
+      const acceptedBasis = row.accepted_basis_json
+        ? validatedReadySchedule(JSON.parse(row.accepted_basis_json))
+        : null;
+      if (
+        acceptedBasis?.kind === "china_business_days" &&
+        !row.accepted_ready_date
+      )
         throw new Response("Resolve the accepted calendar commitment first", {
           status: 409,
         });
@@ -416,13 +440,18 @@ export function createShipmentReadyScheduleService(db: D1Database) {
         throw new Response("Choose a different estimated date", {
           status: 400,
         });
-      const source = row.current_estimate_date ? "revised" : "operational";
+      const source =
+        row.current_estimate_date || acceptedBasis?.kind === "fixed_date"
+          ? "revised"
+          : "operational";
       const now = new Date().toISOString();
       const messageId = `shipment-date:${input.commandId}`;
       const body =
-        source === "operational"
-          ? `A current estimated ready-to-ship date of ${date} has been provided for ${row.display_name}. This is an operational estimate, not an original PI commitment. Reason: ${reason}`
-          : `The estimated ready-to-ship date for ${row.display_name} changed from ${row.current_estimate_date} to ${date}. Reason: ${reason}`;
+        !row.current_estimate_date && acceptedBasis?.kind === "fixed_date"
+          ? `The accepted ready-to-ship date of ${row.accepted_ready_date} for ${row.display_name} had passed at Order confirmation. The reviewed current estimate is ${date}. Reason: ${reason}`
+          : source === "operational"
+            ? `A current estimated ready-to-ship date of ${date} has been provided for ${row.display_name}. This is an operational estimate, not an original PI commitment. Reason: ${reason}`
+            : `The estimated ready-to-ship date for ${row.display_name} changed from ${row.current_estimate_date} to ${date}. Reason: ${reason}`;
       const messageHash = await piSha256(new TextEncoder().encode(body));
       try {
         await db.batch([
@@ -456,7 +485,7 @@ export function createShipmentReadyScheduleService(db: D1Database) {
               `shipment-date:${input.commandId}`,
               input.shipmentId,
               input.orderId,
-              row.current_estimate_date,
+              row.current_estimate_date ?? row.accepted_ready_date,
               date,
               source,
               reason,
@@ -479,7 +508,8 @@ export function createShipmentReadyScheduleService(db: D1Database) {
               input.shipmentId,
               actor.id,
               JSON.stringify({
-                previousDate: row.current_estimate_date,
+                previousDate:
+                  row.current_estimate_date ?? row.accepted_ready_date,
                 newDate: date,
                 source,
                 reason,
@@ -523,26 +553,16 @@ export function createShipmentReadyScheduleService(db: D1Database) {
           }),
         ]);
       } catch (error) {
-        const receipt = await db
-          .prepare(
-            "SELECT resulting_version FROM order_shipment_ready_schedule_revisions WHERE command_id=?",
-          )
-          .bind(input.commandId)
-          .first<{ resulting_version: number }>();
-        if (receipt) return receipt.resulting_version;
+        const receipt = await replay();
+        if (receipt !== null) return receipt;
         throw error;
       }
-      const receipt = await db
-        .prepare(
-          "SELECT resulting_version FROM order_shipment_ready_schedule_revisions WHERE command_id=?",
-        )
-        .bind(input.commandId)
-        .first<{ resulting_version: number }>();
-      if (!receipt)
+      const receipt = await replay();
+      if (receipt === null)
         throw new Response("Shipment date changed; reload and retry", {
           status: 409,
         });
-      return receipt.resulting_version;
+      return receipt;
     },
   };
 }

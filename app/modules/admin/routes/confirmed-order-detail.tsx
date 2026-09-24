@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { Temporal } from "@js-temporal/polyfill";
 import {
   ArrowLeft,
   ChevronDown,
@@ -14,6 +15,7 @@ import {
   redirect,
   useActionData,
   useNavigation,
+  useSearchParams,
   type ActionFunctionArgs,
   type LoaderFunctionArgs,
 } from "react-router";
@@ -43,6 +45,8 @@ import { AdminShipmentPlan } from "../../shipment/ui/admin-shipment-plan";
 import { parseShipmentGroupsForm } from "../../shipment/application/parse-shipment-groups-form";
 import { createShipmentReadyScheduleService } from "../../shipment/application/shipment-ready-schedule-service";
 import { AdminShipmentReadySchedules } from "../../shipment/ui/admin-shipment-ready-schedules";
+import { createShipmentMilestoneService } from "../../shipment/application/shipment-milestone-service";
+import { AdminShipmentMilestones } from "../../shipment/ui/admin-shipment-milestones";
 
 export const headers = piPrivateHeaders;
 
@@ -65,15 +69,17 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
     adminIdentity,
     piRouteId(params.orderId),
   );
-  const [drafts, activity, shipmentPlan, readySchedules] = await Promise.all([
-    followOnQuotes(env).adminListForOrder(adminIdentity, order.id),
-    confirmedOrders(env).adminActivity(adminIdentity, order.id),
-    shipmentPlans(env).adminRead(adminIdentity, order.id),
-    createShipmentReadyScheduleService(env.DB).adminRead(
-      adminIdentity,
-      order.id,
-    ),
-  ]);
+  const [drafts, activity, shipmentPlan, readySchedules, milestones] =
+    await Promise.all([
+      followOnQuotes(env).adminListForOrder(adminIdentity, order.id),
+      confirmedOrders(env).adminActivity(adminIdentity, order.id),
+      shipmentPlans(env).adminRead(adminIdentity, order.id),
+      createShipmentReadyScheduleService(env.DB).adminRead(
+        adminIdentity,
+        order.id,
+      ),
+      createShipmentMilestoneService(env.DB).adminRead(adminIdentity, order.id),
+    ]);
   return data(
     {
       order,
@@ -81,6 +87,25 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
       activity,
       shipmentPlan,
       readySchedules,
+      milestones,
+      milestoneCommands: Object.fromEntries(
+        milestones.map((item) => [
+          item.shipmentId,
+          {
+            ready: crypto.randomUUID(),
+            shipped: crypto.randomUUID(),
+            delivered: crypto.randomUUID(),
+            tracking: crypto.randomUUID(),
+            lateReport: crypto.randomUUID(),
+            lateApply: crypto.randomUUID(),
+          },
+        ]),
+      ),
+      trackingCommands: Object.fromEntries(
+        milestones.flatMap((item) =>
+          item.tracking.map((record) => [record.id, crypto.randomUUID()]),
+        ),
+      ),
       scheduleCommandIds: Object.fromEntries(
         readySchedules.map((schedule) => [
           schedule.shipmentId,
@@ -173,12 +198,111 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
         { status: error instanceof Response ? error.status : 400 },
       );
     }
+  } else if (
+    [
+      "milestone-ready",
+      "milestone-ship",
+      "milestone-deliver",
+      "milestone-report-late",
+      "milestone-apply-late",
+      "tracking-save",
+    ].includes(intent)
+  ) {
+    try {
+      const service = createShipmentMilestoneService(env.DB);
+      const input = {
+        orderId,
+        shipmentId: piRouteId(String(form.get("shipmentId") ?? "")),
+        commandId: String(form.get("commandId") ?? ""),
+      };
+      if (intent === "milestone-ready")
+        await service.markReady(adminIdentity, {
+          ...input,
+          expectedVersion: Number(form.get("expectedVersion")),
+          verification: {
+            specificationsVerified: form.get("specificationsVerified") === "on",
+            quantitiesVerified: form.get("quantitiesVerified") === "on",
+            offlinePreparationVerified:
+              form.get("offlinePreparationVerified") === "on",
+            requiredInspectionVerified:
+              form.get("requiredInspectionVerified") === "on",
+          },
+        });
+      else if (intent === "milestone-ship") {
+        const handoffAt = Temporal.PlainDateTime.from(
+          String(form.get("handoffLocal") ?? ""),
+        )
+          .toZonedDateTime("Asia/Shanghai")
+          .toInstant()
+          .toString();
+        await service.markShipped(adminIdentity, {
+          ...input,
+          expectedVersion: Number(form.get("expectedVersion")),
+          handoffAt,
+          carrierName: String(form.get("carrierName") ?? ""),
+          source: String(form.get("source") ?? ""),
+        });
+      } else if (intent === "milestone-report-late") {
+        const handoffAt = Temporal.PlainDateTime.from(
+          String(form.get("handoffLocal") ?? ""),
+        )
+          .toZonedDateTime("Asia/Shanghai")
+          .toInstant()
+          .toString();
+        await service.reportLateHandoff(adminIdentity, {
+          ...input,
+          expectedVersion: Number(form.get("expectedVersion")),
+          handoffAt,
+          carrierName: String(form.get("carrierName") ?? ""),
+          source: String(form.get("source") ?? ""),
+          reason: String(form.get("reason") ?? ""),
+        });
+      } else if (intent === "milestone-apply-late") {
+        await service.applyLateHandoff(adminIdentity, {
+          ...input,
+          expectedVersion: Number(form.get("expectedVersion")),
+          reportId: String(form.get("reportId") ?? ""),
+        });
+      } else if (intent === "milestone-deliver")
+        await service.markDelivered(adminIdentity, {
+          ...input,
+          expectedVersion: Number(form.get("expectedVersion")),
+          actualDate: String(form.get("actualDate") ?? ""),
+          source: String(form.get("source") ?? ""),
+        });
+      else
+        await service.saveTracking(adminIdentity, {
+          ...input,
+          trackingId: String(form.get("trackingId") ?? "") || undefined,
+          expectedVersion: Number(form.get("expectedTrackingVersion")),
+          packageLabel: String(form.get("packageLabel") ?? ""),
+          carrierName: String(form.get("carrierName") ?? ""),
+          trackingNumber: String(form.get("trackingNumber") ?? ""),
+          trackingUrl: String(form.get("trackingUrl") ?? ""),
+          estimatedArrivalDate: String(form.get("estimatedArrivalDate") ?? ""),
+          reason: String(form.get("reason") ?? ""),
+        });
+    } catch (error) {
+      if (error instanceof Response && ![400, 409].includes(error.status))
+        throw error;
+      return data(
+        {
+          error:
+            error instanceof Response
+              ? await error.text()
+              : error instanceof Error
+                ? error.message
+                : "批次状态保存失败",
+        },
+        { status: error instanceof Response ? error.status : 400 },
+      );
+    }
   } else throw new Response("Invalid operation", { status: 400 });
   const returnTo = safeReturnTo(
     new URL(request.url).searchParams.get("returnTo"),
   );
   return redirect(
-    `/admin/orders/${encodeURIComponent(orderId)}?returnTo=${encodeURIComponent(returnTo)}`,
+    `/admin/orders/${encodeURIComponent(orderId)}?returnTo=${encodeURIComponent(returnTo)}${intent.startsWith("shipment-") || intent.startsWith("schedule-") || intent.startsWith("milestone-") || intent === "tracking-save" ? "&tab=shipments" : ""}`,
   );
 }
 
@@ -356,12 +480,18 @@ export default function ConfirmedOrderDetail({
     activity,
     shipmentPlan,
     readySchedules,
+    milestones,
+    milestoneCommands,
+    trackingCommands,
     scheduleCommandIds,
     commandId,
     returnTo,
   } = loaderData;
   const actionData = useActionData<typeof action>();
-  const [tab, setTab] = useState<Tab>("products");
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(
+    searchParams.get("tab") === "shipments" ? "shipments" : "products",
+  );
   const dialog = useRef<HTMLDialogElement>(null);
   const navigation = useNavigation();
   const busy = navigation.state !== "idle";
@@ -518,6 +648,17 @@ export default function ConfirmedOrderDetail({
             <AdminShipmentReadySchedules
               schedules={readySchedules}
               commandIds={scheduleCommandIds}
+              busy={busy}
+              error={actionData?.error}
+            />
+            <AdminShipmentMilestones
+              milestones={milestones}
+              commands={milestoneCommands}
+              trackingCommands={trackingCommands}
+              heldShipmentIds={shipmentPlan.shipments
+                .filter((item) => item.held)
+                .map((item) => item.id)}
+              planReady={shipmentPlan.status === "ready"}
               busy={busy}
               error={actionData?.error}
             />

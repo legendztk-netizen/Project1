@@ -129,6 +129,7 @@ export function createChinaCalendarService(db: D1Database) {
       };
       const prior = await replay();
       if (prior !== null) return prior;
+      const before = await this.adminDetails(actor);
       const next = await db
         .prepare(
           "SELECT coalesce(max(version),0)+1 AS version FROM china_fulfillment_calendar_versions",
@@ -200,8 +201,9 @@ export function createChinaCalendarService(db: D1Database) {
               String(version),
               actor.id,
               JSON.stringify({
-                ...draft,
                 previousVersion: input.expectedCurrentVersion,
+                before,
+                after: draft,
               }),
               now,
               input.commandId,

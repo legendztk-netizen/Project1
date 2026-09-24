@@ -164,3 +164,53 @@ it("requires manual currency confirmation for amended assemblies with captured n
     ).manualCurrencyConfirmed,
   ).toBe(true);
 });
+
+it("keeps new shipment commitments at least as long as the longest reviewed line", () => {
+  expect(() =>
+    validateCommercialTerms(
+      {
+        ...commercialTerms(),
+        readySchedule: { kind: "china_business_days", days: 9 },
+      },
+      source,
+      { requireReadySchedule: true },
+    ),
+  ).toThrow(/longest preparation/);
+  const mixed = {
+    ...source,
+    lines: [
+      ...source.lines,
+      {
+        id: "assembly-1",
+        sku: "ASSEMBLY",
+        lineKind: "configured_assembly",
+        quantity: 1,
+        configuredAssembly: { snapshot: { productBasis: [] } },
+      },
+    ],
+  } as unknown as QuoteRequestSnapshot;
+  const terms = {
+    ...commercialTerms(),
+    preparationDaysByLine: { "line-1": 10, "assembly-1": 15 },
+    readySchedule: { kind: "china_business_days" as const, days: 15 },
+  };
+  expect(() =>
+    validateCommercialTerms(terms, mixed, { requireReadySchedule: true }),
+  ).toThrow(/Sales must confirm assembly/);
+  expect(
+    validateCommercialTerms({ ...terms, assemblyLeadConfirmed: true }, mixed, {
+      requireReadySchedule: true,
+    }).preparationDaysByLine,
+  ).toEqual({ "line-1": 10, "assembly-1": 15 });
+  expect(() =>
+    validateCommercialTerms(
+      {
+        ...terms,
+        assemblyLeadConfirmed: true,
+        readySchedule: { kind: "china_business_days", days: 14 },
+      },
+      mixed,
+      { requireReadySchedule: true },
+    ),
+  ).toThrow(/longest preparation/);
+});

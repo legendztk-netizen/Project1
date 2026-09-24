@@ -72,8 +72,6 @@ async function adminError(error: unknown) {
     return "文件必须大于 0 字节且不超过 10 MB。";
   if (/Upload recovery required|Upload reservation expired/.test(message))
     return "上一次上传已中断，请重新选择文件并提交。";
-  if (/Final packing cannot change after dispatch/.test(message))
-    return "该批次已发货，最终装箱记录不能再修改。";
   if (/Packing record changed|Shipment document changed/.test(message))
     return "资料已被其他管理员更新，请刷新页面后重试。";
   if (/Command identity conflict/.test(message))
@@ -247,7 +245,7 @@ export default function ShipmentDocuments({
   const base = `/admin/orders/${encodeURIComponent(orderId)}/shipments/${encodeURIComponent(shipmentId)}`;
 
   return (
-    <div className="admin-shell">
+    <div className="admin-shell" data-surface="admin">
       <AdminNavigation active="orders" />
       <main className="admin-main shipment-documents-page">
         <Link

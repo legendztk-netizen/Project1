@@ -119,6 +119,15 @@ export async function action({ context, params, request }: Route.ActionArgs) {
         shipmentMode === "together"
           ? parseReadyScheduleForm(form, "ready")
           : undefined,
+      preparationDaysByLine: Object.fromEntries(
+        draft.source.lines.map((line, index) => [
+          line.id,
+          Number(text(`preparationDays-${index}`)),
+        ]),
+      ),
+      assemblyLeadConfirmed: form.get("assemblyLeadConfirmed") === "on",
+      fixedDatePreparationConfirmed:
+        form.get("fixedDatePreparationConfirmed") === "on",
       charges: Object.fromEntries(
         commercialChargeKeys.map((key) => [key, parseUsdCents(text(key))]),
       ) as CommercialCharges,
@@ -365,6 +374,47 @@ export default function CommercialTerms({
                 standardOnly={standardOnly}
               />
             )}
+            <fieldset>
+              <legend>各商品备货需求审核</legend>
+              {draft.source.lines.map((line, index) => (
+                <label key={line.id}>
+                  {line.sku} · 所需中国履约工作日
+                  <input
+                    type="number"
+                    min={line.lineKind === "standard" ? 10 : 1}
+                    max="365"
+                    step="1"
+                    name={`preparationDays-${index}`}
+                    defaultValue={
+                      terms?.preparationDaysByLine?.[line.id] ??
+                      (line.lineKind === "standard" ? 10 : "")
+                    }
+                    required
+                  />
+                </label>
+              ))}
+              {draft.source.lines.some(
+                (line) => line.lineKind === "configured_assembly",
+              ) && (
+                <label className="quote-confirmation">
+                  <input
+                    type="checkbox"
+                    name="assemblyLeadConfirmed"
+                    defaultChecked={terms?.assemblyLeadConfirmed}
+                    required
+                  />
+                  Sales 已核实总成备货天数
+                </label>
+              )}
+              <label className="quote-confirmation">
+                <input
+                  type="checkbox"
+                  name="fixedDatePreparationConfirmed"
+                  defaultChecked={terms?.fixedDatePreparationConfirmed}
+                />
+                如使用固定日期，Sales 已核实该日期覆盖各商品备货需求
+              </label>
+            </fieldset>
             <label>
               运输方式
               <input

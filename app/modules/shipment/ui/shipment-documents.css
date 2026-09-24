@@ -330,6 +330,93 @@
   gap: 6px;
 }
 
+.shipment-milestone-list {
+  display: grid;
+  gap: 0;
+  margin-block: 16px;
+}
+
+.shipment-milestone-list > article {
+  min-width: 0;
+  border-top: 1px solid #d6e0e6;
+  padding: 16px 0;
+}
+
+.shipment-milestone-list h4,
+.shipment-milestone-list h3 {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+}
+
+.shipment-milestone-list details {
+  margin-top: 12px;
+}
+
+.shipment-milestone-list summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.shipment-milestone-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+  max-width: 900px;
+}
+
+.shipment-milestone-form label:not(.quote-confirmation) {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.shipment-milestone-form input:not([type="checkbox"]) {
+  min-width: 0;
+  width: 100%;
+}
+
+.shipment-milestone-form .quote-confirmation,
+.shipment-milestone-form .button {
+  grid-column: 1 / -1;
+}
+
+.shipment-milestone-form .button {
+  justify-self: start;
+}
+
+.shipment-tracking-list,
+.shipment-milestone-history {
+  padding-left: 20px;
+  overflow-wrap: anywhere;
+}
+
+.shipment-tracking-list a {
+  display: inline-block;
+  margin-left: 8px;
+}
+
+.shipment-progress-stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+}
+
+.shipment-progress-stages li {
+  color: #63717c;
+  border-bottom: 2px solid #d6e0e6;
+  padding-bottom: 5px;
+}
+
+.shipment-progress-stages li[data-complete="true"] {
+  color: #1e634c;
+  border-color: #1e634c;
+  font-weight: 700;
+}
+
 @media (max-width: 850px) {
   .shipment-carton-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -343,6 +430,9 @@
 }
 
 @media (max-width: 700px) {
+  .shipment-milestone-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .shipment-calendar-grid,
   .shipment-calendar-exception {
     grid-template-columns: minmax(0, 1fr);

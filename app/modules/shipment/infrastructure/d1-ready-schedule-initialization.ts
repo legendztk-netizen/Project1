@@ -2,6 +2,7 @@ import type { ProformaInvoiceSnapshot } from "../../proforma-invoice/domain/prof
 import { createChinaCalendarService } from "../application/china-calendar-service";
 import {
   committedReadyDate,
+  initialEstimatedReadyDate,
   validatedReadySchedule,
 } from "../domain/ready-schedule";
 
@@ -38,6 +39,11 @@ export async function shipmentReadyScheduleInitializationStatement(
         id: group.id,
         date: computed.date,
         version: computed.calendarVersion,
+        currentDate: initialEstimatedReadyDate(
+          computed.date,
+          basis,
+          confirmedAt,
+        ),
       };
     } catch (error) {
       if (
@@ -59,8 +65,8 @@ export async function shipmentReadyScheduleInitializationStatement(
          json_extract(s.accepted_terms_json,'$.readySchedule'),
          json_extract(computed.value,'$.date'),
          json_extract(computed.value,'$.version'),
-         json_extract(computed.value,'$.date'),
-         CASE WHEN json_extract(computed.value,'$.date') IS NOT NULL
+         json_extract(computed.value,'$.currentDate'),
+         CASE WHEN json_extract(computed.value,'$.currentDate') IS NOT NULL
            THEN 'accepted' ELSE NULL END,?,?
        FROM order_shipments s
        LEFT JOIN json_each(?) computed

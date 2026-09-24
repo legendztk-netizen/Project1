@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 101,
+  "schemaVersion": 104,
   "migrations": [
     "0000_initial_catalog_release.sql",
     "0001_add_admin_identities.sql",
@@ -101,6 +101,9 @@
     "0097_shipment_packing_documents.sql",
     "0098_shipment_document_cleanup.sql",
     "0099_shipment_packing_divisor_and_finality.sql",
-    "0100_shipment_document_recheck.sql"
+    "0100_shipment_document_recheck.sql",
+    "0101_shipment_milestones_tracking.sql",
+    "0102_allow_late_shipment_packing_corrections.sql",
+    "0103_shipment_late_handoff_reports.sql"
   ]
 }

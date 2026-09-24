@@ -44,6 +44,9 @@ export interface QuoteCommercialTerms {
   taxEvidenceId: string | null;
   leadTime: string;
   readySchedule?: ReadyScheduleBasis;
+  preparationDaysByLine?: Record<string, number>;
+  assemblyLeadConfirmed?: boolean;
+  fixedDatePreparationConfirmed?: boolean;
   charges: CommercialCharges;
   manualCurrencyConfirmed: boolean;
 }
@@ -130,6 +133,60 @@ export function validateCommercialTerms(
             requireReadySchedule: options.requireReadySchedule,
           },
         );
+  const reviewPreparation =
+    options.requireReadySchedule ||
+    !!input.preparationDaysByLine ||
+    input.assemblyLeadConfirmed === true ||
+    input.fixedDatePreparationConfirmed === true;
+  const preparationDaysByLine: Record<string, number> | undefined =
+    reviewPreparation
+      ? Object.fromEntries(
+          source.lines.map((line) => {
+            const entered = input.preparationDaysByLine?.[line.id];
+            const days = entered ?? (line.lineKind === "standard" ? 10 : null);
+            if (
+              !Number.isSafeInteger(days) ||
+              days === null ||
+              days < (line.lineKind === "standard" ? 10 : 1) ||
+              days > 365
+            )
+              throw new Error(
+                `Reviewed preparation days required for ${line.sku}`,
+              );
+            return [line.id, days];
+          }),
+        )
+      : undefined;
+  if (
+    reviewPreparation &&
+    source.lines.some((line) => line.lineKind === "configured_assembly") &&
+    input.assemblyLeadConfirmed !== true
+  )
+    throw new Error("Sales must confirm assembly preparation lead time");
+  if (reviewPreparation && shipmentGroups) {
+    for (const group of shipmentGroups) {
+      if (!group.readySchedule) continue;
+      const longest = Math.max(
+        ...group.allocations.map(
+          (allocation) => preparationDaysByLine![allocation.lineId],
+        ),
+      );
+      if (
+        group.readySchedule.kind === "china_business_days" &&
+        group.readySchedule.days < longest
+      )
+        throw new Error(
+          `${group.label}: ready schedule is shorter than the longest preparation requirement`,
+        );
+      if (
+        group.readySchedule.kind === "fixed_date" &&
+        input.fixedDatePreparationConfirmed !== true
+      )
+        throw new Error(
+          "Sales must confirm fixed dates cover preparation requirements",
+        );
+    }
+  }
   const requiresCurrencyReview =
     source.amounts.manualCommercialReview ||
     source.lines.some(
@@ -167,6 +224,14 @@ export function validateCommercialTerms(
     taxEvidenceId: input.taxTreatment === "Exempt" ? input.taxEvidenceId : null,
     leadTime: required(input.leadTime, "Reviewed lead time"),
     readySchedule,
+    ...(preparationDaysByLine ? { preparationDaysByLine } : {}),
+    ...(reviewPreparation
+      ? {
+          assemblyLeadConfirmed: input.assemblyLeadConfirmed === true,
+          fixedDatePreparationConfirmed:
+            input.fixedDatePreparationConfirmed === true,
+        }
+      : {}),
     charges,
     manualCurrencyConfirmed: input.manualCurrencyConfirmed === true,
   };

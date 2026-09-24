@@ -48,6 +48,10 @@ export function AdminShipmentReadySchedules({
             editable &&
             schedule.currentEstimateDate !== null &&
             schedule.currentEstimateDate < todayInChina;
+          const missedFixedDate =
+            schedule.acceptedBasis?.kind === "fixed_date" &&
+            !!schedule.acceptedReadyDate &&
+            !schedule.currentEstimateDate;
           const hidden = (
             <>
               <input
@@ -98,6 +102,11 @@ export function AdminShipmentReadySchedules({
               {unresolved && (
                 <p role="status">
                   约定天数已保留，但日历覆盖尚未落实；不能推定具体日期。
+                </p>
+              )}
+              {missedFixedDate && (
+                <p className="order-hold-notice" role="status">
+                  原固定日期在订单确认时已过。原承诺保留，须核实后填写新的当前预计日期并通知客户。
                 </p>
               )}
               {unresolved && editable && (

@@ -29,6 +29,14 @@ export function CustomerShipmentReadySchedules({
             {schedule.acceptedReadyDate && (
               <p>Original calculated date: {schedule.acceptedReadyDate}</p>
             )}
+            {schedule.acceptedBasis?.kind === "fixed_date" &&
+              schedule.acceptedReadyDate &&
+              !schedule.currentEstimateDate && (
+                <p>
+                  The original fixed date had passed at Order confirmation; a
+                  current estimate is under review.
+                </p>
+              )}
             <p>
               Current estimated ready date:{" "}
               {schedule.currentEstimateDate ?? "Under review"}

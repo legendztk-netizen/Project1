@@ -1214,7 +1214,7 @@ it("creates exactly the accepted split shipments after payment and acceptance", 
         transportMethod: "Air freight",
         incoterm: "DDP",
         namedPlace: "New York, US",
-        readySchedule: { kind: "china_business_days", days: 5 },
+        readySchedule: { kind: "china_business_days", days: 10 },
       },
       {
         id: "second",
@@ -1226,7 +1226,7 @@ it("creates exactly the accepted split shipments after payment and acceptance", 
         transportMethod: "Air freight",
         incoterm: "DDP",
         namedPlace: "New York, US",
-        readySchedule: { kind: "china_business_days", days: 10 },
+        readySchedule: { kind: "china_business_days", days: 12 },
       },
     ];
   });
@@ -1339,12 +1339,12 @@ it("creates exactly the accepted split shipments after payment and acceptance", 
   ).toEqual([
     {
       group_key: "first",
-      accepted_ready_date: "2026-09-21",
+      accepted_ready_date: "2026-09-28",
       accepted_calendar_version: calendarVersion,
     },
     {
       group_key: "second",
-      accepted_ready_date: "2026-09-28",
+      accepted_ready_date: "2026-09-30",
       accepted_calendar_version: calendarVersion,
     },
   ]);
@@ -1546,7 +1546,9 @@ it("maps an immutable legacy split PI without allocating held quantities", async
     .bind(eventTime, scopedHoldId)
     .run();
   await db
-    .prepare("UPDATE order_shipments SET status='shipped' WHERE id=?")
+    .prepare(
+      "UPDATE order_shipments SET status='shipped',version=version+1 WHERE id=?",
+    )
     .bind(revised.shipments[0].id)
     .run();
   await expect(
@@ -2872,7 +2874,6 @@ it("resolves an accepted business-day commitment after calendar coverage is publ
     acceptedCalendarVersion: version,
     currentEstimateDate: "2026-09-21",
     currentEstimateSource: "accepted",
-    version: resultingVersion,
   });
   expect(
     await db

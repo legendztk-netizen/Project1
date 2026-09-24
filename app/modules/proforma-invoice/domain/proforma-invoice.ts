@@ -307,6 +307,18 @@ function validatedProformaInvoiceSnapshot(input: CreateProformaInvoiceInput) {
       ...(validated.terms.readySchedule
         ? { readySchedule: validated.terms.readySchedule }
         : {}),
+      ...(validated.terms.preparationDaysByLine
+        ? { preparationDaysByLine: validated.terms.preparationDaysByLine }
+        : {}),
+      ...(validated.terms.assemblyLeadConfirmed !== undefined
+        ? { assemblyLeadConfirmed: validated.terms.assemblyLeadConfirmed }
+        : {}),
+      ...(validated.terms.fixedDatePreparationConfirmed !== undefined
+        ? {
+            fixedDatePreparationConfirmed:
+              validated.terms.fixedDatePreparationConfirmed,
+          }
+        : {}),
       charges: {
         freight: terms.charges.freight,
         insurance: terms.charges.insurance,

@@ -58,7 +58,13 @@ it("saves all terms before continuing to issue", async () => {
   expect(saveTerms).toHaveBeenCalledWith(
     "test",
     3,
-    commercialTerms(),
+    {
+      ...commercialTerms(),
+      assemblyLeadConfirmed: false,
+      fixedDatePreparationConfirmed: false,
+      preparationDaysByLine: {},
+      shipmentGroups: undefined,
+    },
     "test-command",
   );
   expect((result as Response).headers.get("Location")).toBe(

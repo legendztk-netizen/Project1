@@ -298,15 +298,7 @@ export function createShipmentDocumentsService(
         auditIp?: string | null;
       },
     ) {
-      const shipment = await adminShipment(
-        actor,
-        input.orderId,
-        input.shipmentId,
-      );
-      if (["shipped", "delivered"].includes(shipment.status))
-        throw new Response("Final packing cannot change after dispatch", {
-          status: 409,
-        });
+      await adminShipment(actor, input.orderId, input.shipmentId);
       commandIdentity(input.commandId);
       const draft = validatedPackingDraft(input.draft);
       const payloadHash = await digest(
@@ -329,7 +321,8 @@ export function createShipmentDocumentsService(
         if (
           prior.actor_id !== actor.id ||
           prior.shipment_id !== input.shipmentId ||
-          prior.payload_hash !== payloadHash
+          prior.payload_hash !== payloadHash ||
+          prior.resulting_version !== input.expectedVersion + 1
         )
           throw new Response("Command identity conflict", { status: 409 });
         return prior.resulting_version;
@@ -440,20 +433,20 @@ export function createShipmentDocumentsService(
         if (
           completed?.payload_hash === payloadHash &&
           completed.actor_id === actor.id &&
-          completed.shipment_id === input.shipmentId
+          completed.shipment_id === input.shipmentId &&
+          completed.resulting_version === input.expectedVersion + 1
         )
           return completed.resulting_version;
-        if (
-          error instanceof Error &&
-          error.message.includes("Final packing cannot change after dispatch")
-        )
-          throw new Response("Final packing cannot change after dispatch", {
-            status: 409,
-          });
         throw error;
       }
       const completed = await replay();
-      if (!completed)
+      if (
+        !completed ||
+        completed.actor_id !== actor.id ||
+        completed.shipment_id !== input.shipmentId ||
+        completed.payload_hash !== payloadHash ||
+        completed.resulting_version !== input.expectedVersion + 1
+      )
         throw new Response("Packing record changed; reload before saving", {
           status: 409,
         });
