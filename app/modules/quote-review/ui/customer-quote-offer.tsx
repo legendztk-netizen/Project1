@@ -151,16 +151,20 @@ export function CustomerQuoteOffer({
             <dd>
               <strong>{group.label}</strong>
               {group.allocations.map((allocation) => {
-                const line = offer.lines.find(
+                const lineIndex = offer.lines.findIndex(
                   (item) => item.id === allocation.lineId,
                 );
+                const line = offer.lines[lineIndex];
                 return (
                   <span key={allocation.lineId} className="shipment-group-line">
-                    {line?.displayName ?? allocation.lineId}:{" "}
-                    {allocation.physicalQuantity}{" "}
+                    Line {lineIndex + 1} · {line?.sku ?? allocation.lineId} ·{" "}
+                    {line?.displayName ?? allocation.lineId}
+                    {line?.lengthOrder &&
+                      ` · ${line.lengthOrder.originalLengthValue} ${line.lengthOrder.originalLengthUnit} per piece`}
+                    : {allocation.physicalQuantity}{" "}
                     {line?.lineKind === "length_based_hose"
                       ? "pieces"
-                      : "units"}
+                      : (line?.salesUnit ?? "units")}
                   </span>
                 );
               })}

@@ -2,10 +2,14 @@
 
 ## Ownership
 
-`app/modules/catalog/infrastructure/database-schema.ts` is the Drizzle schema.
-`drizzle.config.ts` generates forward SQL and Drizzle snapshots under
-`migrations/`. `config/database-schema-contract.json` names the exact migrations
-and application schema version required by the current Worker.
+`app/modules/catalog/infrastructure/database-schema.ts` is the Drizzle schema
+for the catalog. `drizzle.config.ts` generated its initial forward SQL and
+snapshots. Cross-module migrations added since the initial catalog rollout,
+including quote, PI, order and shipment tables, are reviewed forward-only SQL
+files in `migrations/`; they are not represented by a single Drizzle schema or
+snapshot. `config/database-schema-contract.json` names the exact migrations
+and application schema version required by the current Worker. New migrations
+must update that contract and include a real-D1 apply/verify test.
 
 Wrangler applies the SQL and records each successful filename once in
 `d1_migrations`. The initial migration creates:
@@ -17,11 +21,11 @@ Wrangler applies the SQL and records each successful filename once in
 
 ## Commands
 
-| Command | Target | Remote access |
-| --- | --- | --- |
-| `pnpm migrate` | local D1 | prohibited |
-| `pnpm migrate:verify` | local D1 | prohibited |
-| `pnpm migrate:preview` | named preview D1 | explicit `--env preview --remote` |
+| Command                   | Target              | Remote access                        |
+| ------------------------- | ------------------- | ------------------------------------ |
+| `pnpm migrate`            | local D1            | prohibited                           |
+| `pnpm migrate:verify`     | local D1            | prohibited                           |
+| `pnpm migrate:preview`    | named preview D1    | explicit `--env preview --remote`    |
 | `pnpm migrate:production` | named production D1 | explicit `--env production --remote` |
 
 The local script deletes any inherited `CLOUDFLARE_ENV` before invoking
@@ -31,6 +35,15 @@ placeholder database IDs must be replaced before a remote migration can run.
 `deploy:preview` and `deploy:production` run environment validation, migration,
 build, and deployment with shell `&&` ordering. A nonzero migration exit stops
 before the new Worker is deployed.
+
+Shipment migrations `0092` and `0093` must be applied together before deploying
+the Spec 6 Worker. Migration `0092` backfills only unambiguous legacy Ship
+Together orders, leaving held quantities and historical split prose under
+review. Migration `0093` protects allocation deletion; an Admin correction uses
+the versioned plan command and an audit record. An order created by an older
+Worker after the migration but before deployment is initialized idempotently on
+its first authorized Order read. This catch-up does not bypass payment or
+quantity holds.
 
 ## Fail-Closed Health
 

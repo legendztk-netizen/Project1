@@ -49,7 +49,7 @@ export function CustomerShipmentPlan({ plan }: { plan: Plan }) {
               {shipment.transportMethod}
             </p>
             <ul>
-              {shipment.allocations.map((allocation) => (
+              {shipment.quotedAllocations.map((allocation) => (
                 <li key={allocation.lineId}>
                   <span>
                     {allocation.displayName} · {allocation.sku}
@@ -58,6 +58,9 @@ export function CustomerShipmentPlan({ plan }: { plan: Plan }) {
                     {allocation.physicalQuantity} {allocation.unit}
                     {allocation.lengthPerPiece &&
                       ` · ${allocation.lengthPerPiece.value} ${allocation.lengthPerPiece.unit} each`}
+                    {!shipment.allocations.some(
+                      (current) => current.lineId === allocation.lineId,
+                    ) && " · planning on hold"}
                   </strong>
                 </li>
               ))}

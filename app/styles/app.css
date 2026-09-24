@@ -4455,3 +4455,7 @@ a.customer-auth-switch {
 .quote-conversation-composer .button {
   justify-self: start;
 }
+.shipment-group-line {
+  display: block;
+  overflow-wrap: anywhere;
+}

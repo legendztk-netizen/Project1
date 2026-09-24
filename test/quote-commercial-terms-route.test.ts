@@ -1,14 +1,17 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { commercialTerms } from "./fixtures/quote-commercial";
 
-const { saveTerms } = vi.hoisted(() => ({ saveTerms: vi.fn() }));
+const { saveTerms, find } = vi.hoisted(() => ({
+  saveTerms: vi.fn(),
+  find: vi.fn(),
+}));
 vi.mock("../app/modules/admin/infrastructure/admin-request-context", () => ({
   requireAdminRequestContext: () => ({ env: { DB: {} }, adminIdentity: {} }),
 }));
 vi.mock(
   "../app/modules/quote-review/infrastructure/d1-quote-preparation",
   () => ({
-    createQuotePreparation: () => ({ saveTerms }),
+    createQuotePreparation: () => ({ saveTerms, find }),
   }),
 );
 vi.mock("../app/modules/quote-review/domain/private-review", () => ({
@@ -17,7 +20,11 @@ vi.mock("../app/modules/quote-review/domain/private-review", () => ({
 }));
 import { action } from "../app/modules/admin/routes/quote-commercial-terms";
 
-beforeEach(() => saveTerms.mockReset());
+beforeEach(() => {
+  saveTerms.mockReset();
+  find.mockReset();
+  find.mockResolvedValue({ source: { lines: [] } });
+});
 async function submit(intent: string) {
   const terms = commercialTerms();
   const form = new FormData();

@@ -66,20 +66,21 @@ CREATE INDEX order_shipment_allocations_line ON order_shipment_allocations(order
 --> statement-breakpoint
 CREATE INDEX order_quantity_holds_active ON order_quantity_holds(order_id,line_id,active);
 --> statement-breakpoint
-CREATE TRIGGER order_shipment_allocation_guard BEFORE INSERT ON order_shipment_allocations BEGIN
-  SELECT CASE WHEN NEW.physical_quantity +
-    coalesce((SELECT sum(a.physical_quantity) FROM order_shipment_allocations a
-      WHERE a.order_id=NEW.order_id AND a.line_id=NEW.line_id),0) +
-    coalesce((SELECT sum(h.physical_quantity) FROM order_quantity_holds h
-      WHERE h.order_id=NEW.order_id AND h.line_id=NEW.line_id AND h.active=1 AND h.shipment_id IS NULL),0)
-    > coalesce((SELECT CASE WHEN l.line_kind='length_based_hose'
-        THEN json_extract(l.snapshot_json,'$.lengthOrder.pieceCount')
-        ELSE json_extract(l.snapshot_json,'$.quantity') END
-       FROM confirmed_order_lines l WHERE l.order_id=NEW.order_id AND l.line_id=NEW.line_id),0)
-    THEN RAISE(ABORT,'Shipment allocation exceeds physical quantity') END;
+CREATE TRIGGER order_shipment_allocation_no_update BEFORE UPDATE ON order_shipment_allocations BEGIN
+  SELECT RAISE(ABORT,'Shipment allocation must be replaced by a versioned plan command');
 END;
 --> statement-breakpoint
 CREATE TRIGGER order_quantity_hold_guard BEFORE INSERT ON order_quantity_holds BEGIN
+  SELECT CASE WHEN NEW.shipment_id IS NOT NULL AND
+    (NOT EXISTS(SELECT 1 FROM order_shipments shipment
+      WHERE shipment.id=NEW.shipment_id AND shipment.order_id=NEW.order_id
+        AND shipment.status IN ('planned','ready_to_ship')) OR
+     NEW.physical_quantity +
+       coalesce((SELECT sum(h.physical_quantity) FROM order_quantity_holds h
+         WHERE h.shipment_id=NEW.shipment_id AND h.line_id=NEW.line_id AND h.active=1),0)
+       > coalesce((SELECT a.physical_quantity FROM order_shipment_allocations a
+         WHERE a.shipment_id=NEW.shipment_id AND a.line_id=NEW.line_id),0))
+    THEN RAISE(ABORT,'Quantity hold exceeds eligible shipment allocation') END;
   SELECT CASE WHEN NEW.physical_quantity +
     coalesce((SELECT sum(h.physical_quantity) FROM order_quantity_holds h
       WHERE h.order_id=NEW.order_id AND h.line_id=NEW.line_id AND h.active=1),0)
@@ -90,9 +91,25 @@ CREATE TRIGGER order_quantity_hold_guard BEFORE INSERT ON order_quantity_holds B
     THEN RAISE(ABORT,'Quantity hold exceeds purchased physical quantity') END;
 END;
 --> statement-breakpoint
+CREATE TRIGGER order_quantity_hold_no_delete BEFORE DELETE ON order_quantity_holds BEGIN
+  SELECT RAISE(ABORT,'Quantity hold history is immutable');
+END;
+--> statement-breakpoint
+CREATE TRIGGER order_quantity_hold_resolution_guard BEFORE UPDATE ON order_quantity_holds BEGIN
+  SELECT CASE WHEN OLD.active!=1 OR NEW.active!=0 OR NEW.resolved_at IS NULL
+    OR NEW.order_id!=OLD.order_id OR NEW.line_id!=OLD.line_id
+    OR NEW.shipment_id IS NOT OLD.shipment_id
+    OR NEW.physical_quantity!=OLD.physical_quantity OR NEW.kind!=OLD.kind
+    OR NEW.reason!=OLD.reason OR NEW.created_at!=OLD.created_at
+    THEN RAISE(ABORT,'Quantity hold may only be resolved') END;
+END;
+--> statement-breakpoint
 INSERT INTO order_fulfillment_plans(order_id,status,source,source_text,version,created_at,updated_at)
 SELECT o.id,
   CASE WHEN json_extract(o.snapshot_json,'$.terms.shipmentMode')='together'
+    AND EXISTS(SELECT 1 FROM confirmed_order_lines l WHERE l.order_id=o.id)
+    AND NOT EXISTS(SELECT 1 FROM order_release_guards guard WHERE guard.order_id=o.id AND guard.held=1)
+    AND NOT EXISTS(SELECT 1 FROM order_quantity_holds hold WHERE hold.order_id=o.id AND hold.active=1)
     AND NOT EXISTS(SELECT 1 FROM confirmed_order_lines l WHERE l.order_id=o.id
       AND (typeof(CASE WHEN l.line_kind='length_based_hose'
         THEN json_extract(l.snapshot_json,'$.lengthOrder.pieceCount')
@@ -102,6 +119,7 @@ SELECT o.id,
           ELSE json_extract(l.snapshot_json,'$.quantity') END,0)<=0))
     THEN 'ready' ELSE 'review' END,
   CASE WHEN json_extract(o.snapshot_json,'$.terms.shipmentMode')='together'
+    AND EXISTS(SELECT 1 FROM confirmed_order_lines l WHERE l.order_id=o.id)
     AND NOT EXISTS(SELECT 1 FROM confirmed_order_lines l WHERE l.order_id=o.id
       AND (typeof(CASE WHEN l.line_kind='length_based_hose'
         THEN json_extract(l.snapshot_json,'$.lengthOrder.pieceCount')
@@ -126,7 +144,7 @@ SELECT 'shipment:'||o.id||':together',o.id,'together',1,'Ship together',
     'namedPlace',json_extract(o.snapshot_json,'$.terms.namedPlace')),
   o.confirmed_at,o.confirmed_at
 FROM confirmed_orders o JOIN order_fulfillment_plans p ON p.order_id=o.id
-WHERE p.status='ready' AND p.source='accepted_together'
+WHERE p.source='accepted_together'
 ON CONFLICT(id) DO NOTHING;
 --> statement-breakpoint
 INSERT INTO order_shipment_allocations(shipment_id,order_id,line_id,physical_quantity)
@@ -135,6 +153,28 @@ SELECT s.id,l.order_id,l.line_id,
     THEN json_extract(l.snapshot_json,'$.lengthOrder.pieceCount')
     ELSE json_extract(l.snapshot_json,'$.quantity') END
 FROM confirmed_order_lines l JOIN order_shipments s ON s.order_id=l.order_id AND s.group_key='together'
+WHERE NOT EXISTS(SELECT 1 FROM order_release_guards guard WHERE guard.order_id=l.order_id AND guard.held=1)
+  AND NOT EXISTS(SELECT 1 FROM order_quantity_holds hold WHERE hold.order_id=l.order_id AND hold.line_id=l.line_id AND hold.active=1)
 ON CONFLICT(shipment_id,line_id) DO NOTHING;
+--> statement-breakpoint
+CREATE TRIGGER order_shipment_allocation_guard BEFORE INSERT ON order_shipment_allocations BEGIN
+  SELECT CASE WHEN EXISTS(SELECT 1 FROM order_release_guards guard
+    WHERE guard.order_id=NEW.order_id AND guard.held=1)
+    THEN RAISE(ABORT,'Payment review blocks new shipment allocation') END;
+  SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM order_shipments shipment
+    WHERE shipment.id=NEW.shipment_id AND shipment.order_id=NEW.order_id
+      AND shipment.status='planned')
+    THEN RAISE(ABORT,'Shipment allocation requires a planned shipment') END;
+  SELECT CASE WHEN NEW.physical_quantity +
+    coalesce((SELECT sum(a.physical_quantity) FROM order_shipment_allocations a
+      WHERE a.order_id=NEW.order_id AND a.line_id=NEW.line_id),0) +
+    coalesce((SELECT sum(h.physical_quantity) FROM order_quantity_holds h
+      WHERE h.order_id=NEW.order_id AND h.line_id=NEW.line_id AND h.active=1 AND h.shipment_id IS NULL),0)
+    > coalesce((SELECT CASE WHEN l.line_kind='length_based_hose'
+        THEN json_extract(l.snapshot_json,'$.lengthOrder.pieceCount')
+        ELSE json_extract(l.snapshot_json,'$.quantity') END
+       FROM confirmed_order_lines l WHERE l.order_id=NEW.order_id AND l.line_id=NEW.line_id),0)
+    THEN RAISE(ABORT,'Shipment allocation exceeds physical quantity') END;
+END;
 --> statement-breakpoint
 UPDATE application_schema_state SET version=93,updated_at=CURRENT_TIMESTAMP WHERE singleton=1;

@@ -42,6 +42,7 @@ export function validateQuoteIssuance(
     terms: QuoteCommercialTerms | null;
   },
   factoryReviewConfirmed: boolean,
+  options: { allowHistoricalUnstructuredSplit?: boolean } = {},
 ) {
   if (!draft.terms || !draft.source.lines.length)
     throw new Error("Complete commercial terms and product lines");
@@ -49,7 +50,7 @@ export function validateQuoteIssuance(
     throw new Error(
       "Confirm unresolved product matters were reviewed with the factory",
     );
-  const terms = validateCommercialTerms(draft.terms, draft.source);
+  const terms = validateCommercialTerms(draft.terms, draft.source, options);
   return {
     terms,
     totals: commercialTotals(draft.source, draft.prices, terms.charges),

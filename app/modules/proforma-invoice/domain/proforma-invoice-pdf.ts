@@ -131,9 +131,18 @@ export function proformaInvoicePdfContent(
     { text: snapshot.terms.splitPlan },
     ...(snapshot.terms.shipmentGroups ?? []).flatMap((group, index) => [
       { text: `Shipment ${index + 1}: ${group.label}`, heading: true },
-      ...group.allocations.map((allocation) => ({
-        text: `${snapshot.lines.find((line) => line.id === allocation.lineId)?.displayName ?? allocation.lineId}: ${allocation.physicalQuantity} ${snapshot.lines.find((line) => line.id === allocation.lineId)?.lineKind === "length_based_hose" ? "pieces" : "units"}`,
-      })),
+      ...group.allocations.map((allocation) => {
+        const lineIndex = snapshot.lines.findIndex(
+          (line) => line.id === allocation.lineId,
+        );
+        const line = snapshot.lines[lineIndex];
+        const length = line?.lengthOrder
+          ? ` | ${line.lengthOrder.originalLengthValue} ${line.lengthOrder.originalLengthUnit} per piece`
+          : "";
+        return {
+          text: `Line ${lineIndex + 1} | ${line?.sku ?? allocation.lineId} | ${line?.displayName ?? allocation.lineId}${length}: ${allocation.physicalQuantity} ${line?.lineKind === "length_based_hose" ? "pieces" : (line?.salesUnit ?? "units")}`,
+        };
+      }),
       {
         text: `Transport: ${group.transportMethod} | ${group.incoterm} ${group.namedPlace}`,
       },

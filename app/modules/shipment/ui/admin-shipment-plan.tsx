@@ -20,16 +20,18 @@ export function AdminShipmentPlan({
 }) {
   const lines = plan.lines ?? [];
   const canMap =
+    plan.status === "review" &&
     ["historical_review", "reviewed_mapping"].includes(plan.source ?? "") &&
+    plan.originalMode === "split";
+  const canRevise =
+    plan.status === "ready" &&
+    plan.source === "reviewed_mapping" &&
     plan.originalMode === "split";
   const groupDefaults: QuotedShipmentGroup[] = plan.shipments.map(
     (shipment) => ({
       id: shipment.groupKey,
       label: shipment.displayName,
-      allocations: shipment.allocations.map((allocation) => ({
-        lineId: allocation.lineId,
-        physicalQuantity: allocation.physicalQuantity,
-      })),
+      allocations: shipment.quotedAllocations,
       freightCents: shipment.freightCents,
       insuranceCents: shipment.insuranceCents,
       dutiesImportCents: shipment.dutiesImportCents,
@@ -56,7 +58,7 @@ export function AdminShipmentPlan({
       {plan.status === "review" && (
         <p role="status">
           原 PI
-          的分批描述尚未形成可核对的逐行数量计划，不会自动推断批次或发货时间。
+          的分批描述需要逐行核对。锁定数量不会分配；解除锁定后可用同一计划补全。
         </p>
       )}
       {plan.sourceText && (
@@ -100,6 +102,10 @@ export function AdminShipmentPlan({
                   </li>
                 ))}
               </ul>
+              {shipment.quotedAllocations.length >
+                shipment.allocations.length && (
+                <p>部分约定数量仍待解除锁定并完成分配。</p>
+              )}
               <p>
                 本批运费 USD {(shipment.freightCents / 100).toFixed(2)} · 保险
                 USD {(shipment.insuranceCents / 100).toFixed(2)} · 进口费用 USD
@@ -109,12 +115,16 @@ export function AdminShipmentPlan({
           ))}
         </div>
       )}
-      {canMap && (
+      {(canMap || canRevise) && (
         <Form
           method="post"
           className="commercial-settings-form order-shipment-map-form"
         >
-          <input type="hidden" name="intent" value="shipment-map" />
+          <input
+            type="hidden"
+            name="intent"
+            value={canRevise ? "shipment-revise" : "shipment-map"}
+          />
           <input type="hidden" name="expectedVersion" value={plan.version} />
           <input type="hidden" name="commandId" value={commandId} />
           <ShipmentGroupFields
@@ -149,10 +159,23 @@ export function AdminShipmentPlan({
             type="submit"
             className="button button-primary"
             disabled={
-              busy || plan.paymentHeld || lines.some((line) => !line.quantity)
+              busy ||
+              lines.some((line) => !line.quantity) ||
+              (canRevise &&
+                (plan.paymentHeld || plan.shipments.some((item) => item.held)))
+            }
+            title={
+              canRevise &&
+              (plan.paymentHeld || plan.shipments.some((item) => item.held))
+                ? "付款或商品数量锁定解除后才能更正分配"
+                : undefined
             }
           >
-            保存分批映射
+            {canRevise
+              ? "更正分批分配"
+              : plan.source === "reviewed_mapping"
+                ? "补全分批映射"
+                : "保存分批映射"}
           </button>
         </Form>
       )}

@@ -179,6 +179,7 @@ function validatedProformaInvoiceSnapshot(input: CreateProformaInvoiceInput) {
   const validated = validateQuoteIssuance(
     revision,
     revision.factoryReviewConfirmed === true,
+    { allowHistoricalUnstructuredSplit: true },
   );
   for (const key of [
     "currency",

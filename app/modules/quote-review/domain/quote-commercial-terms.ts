@@ -52,6 +52,7 @@ function required(value: string, field: string) {
 export function validateCommercialTerms(
   input: QuoteCommercialTerms,
   source: QuoteRequestSnapshot,
+  options: { allowHistoricalUnstructuredSplit?: boolean } = {},
 ): QuoteCommercialTerms {
   const destination = validatedDeliveryAddress(input.destination);
   if (input.freightReviewConfirmed !== true)
@@ -95,14 +96,21 @@ export function validateCommercialTerms(
   ) as CommercialCharges;
   if (input.taxTreatment !== "Collected" && charges.salesTax !== 0)
     throw new Error("Tax amount must be zero when not collected");
-  const shipmentGroups = validatedShipmentGroups(source.lines, {
-    shipmentMode: input.shipmentMode,
-    shipmentGroups: input.shipmentGroups,
-    transportMethod: input.transportMethod,
-    incoterm: input.incoterm,
-    namedPlace: input.namedPlace,
-    charges,
-  });
+  const transportMethod = required(input.transportMethod, "Transport method");
+  const namedPlace = required(input.namedPlace, "Named place");
+  const shipmentGroups =
+    options.allowHistoricalUnstructuredSplit &&
+    input.shipmentMode === "split" &&
+    !input.shipmentGroups
+      ? undefined
+      : validatedShipmentGroups(source.lines, {
+          shipmentMode: input.shipmentMode,
+          shipmentGroups: input.shipmentGroups,
+          transportMethod,
+          incoterm: input.incoterm,
+          namedPlace,
+          charges,
+        });
   const requiresCurrencyReview =
     source.amounts.manualCommercialReview ||
     source.lines.some(
@@ -126,13 +134,13 @@ export function validateCommercialTerms(
     shipmentMode: input.shipmentMode,
     splitPlan: input.shipmentMode === "split" ? input.splitPlan.trim() : "",
     shipmentGroups,
-    transportMethod: required(input.transportMethod, "Transport method"),
+    transportMethod,
     incoterm: input.incoterm,
     termReplacementReason:
       source.importResponsibility.fulfillmentTerm !== input.incoterm
         ? input.termReplacementReason.trim()
         : "",
-    namedPlace: required(input.namedPlace, "Named place"),
+    namedPlace,
     packingEstimate: required(input.packingEstimate, "Packing estimate"),
     freightReviewConfirmed: true,
     actualPacking: input.actualPacking.trim(),

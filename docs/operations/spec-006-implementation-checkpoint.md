@@ -1,6 +1,6 @@
 # Spec 6 Implementation Checkpoint
 
-Status: in progress. No Spec 6 ticket has been accepted or closed.
+Status: in progress. Ticket #94 is in final verification; #95-#99 remain.
 
 Baseline: `62d0373` on `main`. Work branch: `codex/spec6-work`.
 
@@ -15,6 +15,14 @@ Baseline: `62d0373` on `main`. Work branch: `codex/spec6-work`.
   orders while leaving historical split prose for review.
 - Added authorized Admin/customer plan reads, historical split mapping with
   version and command identity, order-detail plan views and list summaries.
+- Added versioned historical allocation correction, audited before/after groups
+  and database protection against direct deletion. Corrections reject holds,
+  stale versions and post-handoff shipments.
+- Added deployment-gap catch-up and payment-hold-aware migration backfill.
+  Unscoped holds reserve only their physical quantity, leaving unaffected
+  batches eligible for allocation.
+- Kept issued legacy Quote Revisions compatible without inventing structured
+  historical split agreements. New Quote Revisions still require exact groups.
 
 ## Verification completed
 
@@ -22,31 +30,23 @@ Baseline: `62d0373` on `main`. Work branch: `codex/spec6-work`.
 - `pnpm exec vitest run test/shipment-plan.test.ts`: 3 passed.
 - `pnpm exec vitest run test/quote-commercial-terms.test.ts`: passed.
 - `pnpm exec vitest run test/quote-preparation-d1.integration.test.ts`: 10 passed.
-- `pnpm exec vitest run test/proforma-invoice-d1.integration.test.ts`: 27 passed.
-- `pnpm migrate` against a temporary D1 directory: passed to schema version 93.
+- `pnpm exec vitest run test/proforma-invoice-d1.integration.test.ts`: 29 passed.
+- Targeted migration test covering held and deployment-gap Orders: passed.
+- `pnpm migrate` against local D1: passed to schema version 94. No remote D1
+  was changed.
 - `git diff --check`: passed.
-- `pnpm lint`: passed. A direct Prettier check found formatting differences,
-  which were corrected and committed.
-- `pnpm migrate:verify` against the temporary D1 directory: passed at version 93.
-
-## Pause note
-
-The latest addition to `test/proforma-invoice-d1.integration.test.ts` covers
-payment-first acceptance of two accepted split shipment groups. It was written
-immediately before the user's pause request and has **not been run yet**.
-Run that test and `pnpm typecheck` first when resuming. The checkpoint commits
-are local only; no Spec 6 code has been pushed.
+- `pnpm lint` and `pnpm typecheck`: passed after the review fixes.
+- Browser check: local Admin Order detail and Shipment tab load at a narrow
+  viewport with physical quantities and no overlap.
 
 ## Remaining before #94 acceptance
 
-- Exercise and verify historical split mapping against D1, including retry,
-  concurrent/stale writes, payment/quantity holds and ownership.
-- Verify new structured split PI through order initialization and check exact
-  allocations/charges and rollback on malformed evidence.
-- Test migration against populated legacy orders and inspect mobile Admin and
-  customer views; resolve any findings.
-- Perform standards/spec code review and run the required broader checks.
+- Run the full test/build/format/health suite after the last changes.
+- Complete final two-axis code review and resolve any remaining findings.
+- Verify customer navigation using an authorized browser session, or document
+  the auth limitation if unavailable; ownership is covered by integration tests.
+- Commit and push #94, update its Issue, then implement #95-#99 in dependency
+  order with their own verification and reviews.
 
-After #94, implement #95-#99 in their published dependency order. No Spec 6
-GitHub issue has been relabeled or closed, and no incomplete code has been
-pushed to `main`.
+No Spec 6 GitHub issue has been closed, and no incomplete code has been pushed
+to `main`.

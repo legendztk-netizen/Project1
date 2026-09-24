@@ -86,6 +86,15 @@ describe("shipment plan", () => {
         ],
       }),
     ).toThrow(/charges/);
+    expect(() =>
+      validatedShipmentGroups(lines, {
+        ...split,
+        shipmentGroups: [
+          { ...split.shipmentGroups[0], transportMethod: "Air freight" },
+          second,
+        ],
+      }),
+    ).toThrow(/accepted delivery terms/);
   });
 
   it("rejects ambiguous split plans and missing physical piece counts", () => {

@@ -41,6 +41,7 @@ import {
   type ReplaceProformaInvoiceCommand,
 } from "../app/modules/proforma-invoice/application/pi-lifecycle-service";
 import { createPiAcceptedAgreementService } from "../app/modules/proforma-invoice/application/pi-accepted-agreement-service";
+import { comparePiQuoteMaterial } from "../app/modules/proforma-invoice/domain/pi-lifecycle";
 
 const directory = mkdtempSync(join(tmpdir(), "pi-d1-"));
 let platform: Awaited<
@@ -620,6 +621,14 @@ it("locks accepted estimate variances and rejects no-op and foreign evidence bef
     code: "seller_freight_estimate_error",
     customerRequested: false,
   };
+  expect(comparePiQuoteMaterial(f.revision, f.next)).toMatchObject({
+    shipmentPlanUnchanged: true,
+    quantitiesUnchanged: true,
+    destinationUnchanged: true,
+    transportUnchanged: true,
+    customerDataUnchanged: true,
+    totalChanged: true,
+  });
   const blocked = await lifecycleService()
     .replace(actor, f.command)
     .catch((error) => error as Response);
@@ -1049,6 +1058,30 @@ it("issues a real new Quote Revision, delivers exact replacement PDF and require
     transportMethod: "Sea freight",
     shipmentMode: "split" as const,
     splitPlan: "Two separately quoted dispatches",
+    shipmentGroups: [
+      {
+        id: "first",
+        label: "First dispatch",
+        allocations: [{ lineId: "line-a", physicalQuantity: 1 }],
+        freightCents: 1000,
+        insuranceCents: 50,
+        dutiesImportCents: 150,
+        transportMethod: "Sea freight",
+        incoterm: "DDP" as const,
+        namedPlace: "New York, US",
+      },
+      {
+        id: "second",
+        label: "Second dispatch",
+        allocations: [{ lineId: "line-a", physicalQuantity: 1 }],
+        freightCents: 1000,
+        insuranceCents: 50,
+        dutiesImportCents: 150,
+        transportMethod: "Sea freight",
+        incoterm: "DDP" as const,
+        namedPlace: "New York, US",
+      },
+    ],
   };
   const version = await createQuotePreparation(db, actor).saveTerms(
     first.requestId,

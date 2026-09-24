@@ -94,10 +94,10 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
       orderId,
       String(form.get("commandId") ?? ""),
     );
-  } else if (intent === "shipment-map") {
+  } else if (intent === "shipment-map" || intent === "shipment-revise") {
     try {
       const plan = await shipmentPlans(env).adminRead(adminIdentity, orderId);
-      await shipmentPlans(env).mapHistoricalSplit(adminIdentity, {
+      const command = {
         orderId,
         expectedVersion: Number(form.get("expectedVersion")),
         commandId: String(form.get("commandId") ?? ""),
@@ -108,7 +108,10 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
         ),
         reviewNote: String(form.get("reviewNote") ?? ""),
         matchesAcceptedTerms: form.get("matchesAcceptedTerms") === "on",
-      });
+      };
+      if (intent === "shipment-revise")
+        await shipmentPlans(env).reviseHistoricalSplit(adminIdentity, command);
+      else await shipmentPlans(env).mapHistoricalSplit(adminIdentity, command);
     } catch (error) {
       if (error instanceof Response && ![400, 409].includes(error.status))
         throw error;

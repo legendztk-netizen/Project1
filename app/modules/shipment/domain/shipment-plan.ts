@@ -1,6 +1,8 @@
+import type { AnonymousQuoteLine } from "../../quote-list/domain/anonymous-quote-list";
+
 export interface ShipmentPlanLine {
   id: string;
-  lineKind: string;
+  lineKind: AnonymousQuoteLine["lineKind"];
   quantity: number;
   lengthOrder?: { pieceCount?: number } | null;
 }
@@ -106,6 +108,7 @@ export function validatedShipmentGroups(
       !group.namedPlace?.trim() ||
       group.transportMethod.length > 200 ||
       group.namedPlace.length > 200 ||
+      group.transportMethod.trim() !== terms.transportMethod.trim() ||
       group.incoterm !== terms.incoterm ||
       group.namedPlace.trim() !== terms.namedPlace.trim()
     )
