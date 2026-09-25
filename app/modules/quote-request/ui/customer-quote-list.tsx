@@ -12,6 +12,7 @@ import {
   quoteImportHandling,
   quotePurchasingAs,
 } from "./customer-quote-presentation";
+import { customerQuoteNextStep } from "./customer-quote-next-step";
 import { CustomerQuoteRequestPreview } from "./customer-quote-product-preview";
 
 export function CustomerQuoteList({
@@ -116,86 +117,81 @@ export function CustomerQuoteList({
           </div>
         ) : (
           <div className="customer-quote-list">
-            {visibleQuotes.map((quoteRequest) => (
-              <article key={quoteRequest.id}>
-                <div className="customer-quote-list-heading">
-                  <div>
-                    <span>{quoteRequest.progress.label}</span>
-                    <h2>{quoteRequest.referenceNumber}</h2>
-                  </div>
+            {visibleQuotes.map((quoteRequest) => {
+              const next = customerQuoteNextStep(quoteRequest);
+              const lineCount = quoteRequest.snapshot.lines.length;
+              const pi = quoteRequest.currentPi;
+              return (
+                <article key={quoteRequest.id} className="customer-quote-card">
                   <CustomerQuoteRequestPreview
                     lines={quoteRequest.snapshot.lines}
                   />
-                  <Link
-                    className="button button-secondary"
-                    to={`/account/quotes/${encodeURIComponent(quoteRequest.id)}`}
-                  >
-                    View details
-                  </Link>
-                  {quoteRequest.orderId ? (
-                    <Link
-                      className="button button-secondary"
-                      to={`/account/orders/${encodeURIComponent(quoteRequest.orderId)}`}
-                    >
-                      View order
-                    </Link>
-                  ) : null}
-                </div>
-                <dl>
-                  <div>
-                    <dt>Submitted</dt>
-                    <dd>
-                      {customerQuoteDateTime.format(
-                        new Date(quoteRequest.submittedAt),
-                      )}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Purchasing as</dt>
-                    <dd>{quotePurchasingAs(quoteRequest)}</dd>
-                  </div>
-                  <div>
-                    <dt>Import handling</dt>
-                    <dd>{quoteImportHandling(quoteRequest)}</dd>
-                  </div>
-                  <div>
-                    <dt>
-                      {quoteRequest.currentPi
-                        ? quoteRequest.progress.code ===
-                          "PI_REPLACEMENT_REQUIRED"
-                          ? "Previous PI total"
-                          : quoteRequest.progress.code === "PI_EXPIRED"
-                            ? "Expired PI total"
-                            : "PI total"
-                        : "Submitted merchandise reference"}
-                    </dt>
-                    <dd>
-                      {quoteRequest.currentPi ? (
-                        <>
-                          <strong className="customer-quote-pi-total">
-                            {quoteRequest.currentPi.currency === "USD" &&
-                            typeof quoteRequest.currentPi.totalCents ===
-                              "number" &&
-                            Number.isSafeInteger(
-                              quoteRequest.currentPi.totalCents,
-                            ) &&
-                            quoteRequest.currentPi.totalCents >= 0
-                              ? `USD ${(quoteRequest.currentPi.totalCents / 100).toFixed(2)}`
-                              : "Not available"}
-                          </strong>
+                  <div className="customer-quote-card-body">
+                    <div className="customer-quote-card-top">
+                      <h2>{quoteRequest.referenceNumber}</h2>
+                      <span className="customer-order-badge">
+                        {quoteRequest.progress.label}
+                      </span>
+                      <div className="customer-quote-card-amount">
+                        <span>
+                          {pi
+                            ? quoteRequest.progress.code ===
+                              "PI_REPLACEMENT_REQUIRED"
+                              ? "Previous PI total"
+                              : quoteRequest.progress.code === "PI_EXPIRED"
+                                ? "Expired PI total"
+                                : "PI total"
+                            : "Submitted merchandise reference"}
+                        </span>
+                        <strong className="customer-quote-pi-total">
+                          {pi
+                            ? pi.currency === "USD" &&
+                              typeof pi.totalCents === "number" &&
+                              Number.isSafeInteger(pi.totalCents) &&
+                              pi.totalCents >= 0
+                              ? `USD ${(pi.totalCents / 100).toFixed(2)}`
+                              : "Not available"
+                            : formatQuoteAmounts(quoteRequest.snapshot.amounts)}
+                        </strong>
+                        {pi && (
                           <span className="customer-quote-submitted-reference">
                             Submitted merchandise reference:{" "}
                             {formatQuoteAmounts(quoteRequest.snapshot.amounts)}
                           </span>
-                        </>
-                      ) : (
-                        formatQuoteAmounts(quoteRequest.snapshot.amounts)
+                        )}
+                      </div>
+                    </div>
+                    <p className="customer-quote-card-meta">
+                      {lineCount} item{lineCount === 1 ? "" : "s"} · Submitted{" "}
+                      {customerQuoteDateTime.format(
+                        new Date(quoteRequest.submittedAt),
                       )}
-                    </dd>
+                    </p>
+                    <p className="customer-quote-card-meta">
+                      {quotePurchasingAs(quoteRequest)} ·{" "}
+                      {quoteImportHandling(quoteRequest)}
+                    </p>
+                    <p className="customer-quote-card-next">{next.summary}</p>
+                    <div className="customer-quote-card-actions">
+                      <Link
+                        className="button button-secondary"
+                        to={`/account/quotes/${encodeURIComponent(quoteRequest.id)}`}
+                      >
+                        View details
+                      </Link>
+                      {quoteRequest.orderId ? (
+                        <Link
+                          className="button button-secondary"
+                          to={`/account/orders/${encodeURIComponent(quoteRequest.orderId)}`}
+                        >
+                          View order
+                        </Link>
+                      ) : null}
+                    </div>
                   </div>
-                </dl>
-              </article>
-            ))}
+                </article>
+              );
+            })}
           </div>
         )}
       </div>

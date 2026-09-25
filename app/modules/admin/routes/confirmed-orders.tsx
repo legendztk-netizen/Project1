@@ -1,4 +1,11 @@
-import { ArrowRight, Package, RotateCcw, Search } from "lucide-react";
+import { useState } from "react";
+import {
+  ArrowRight,
+  CalendarDays,
+  Package,
+  RotateCcw,
+  Search,
+} from "lucide-react";
 import { data, Form, Link, type LoaderFunctionArgs } from "react-router";
 import { confirmedOrders, piPrivateHeaders } from "#workers/proforma-invoice";
 import { requireAdminRequestContext } from "../infrastructure/admin-request-context";
@@ -6,11 +13,25 @@ import { AdminNavigation } from "../ui/admin-navigation";
 import type { AdminOrderFilters } from "../../proforma-invoice/application/confirmed-order-service";
 import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
 import { hoseMediaPath } from "../../storefront/ui/catalog-media";
+import { AdminChinaCalendarDialog } from "../../shipment/ui/admin-china-calendar-dialog";
 import "../ui/confirmed-orders.css";
 
 export const headers = piPrivateHeaders;
 
 const statusOptions = ["all", "confirmed", "hold"] as const;
+const stageOptions = [
+  "all",
+  "processing",
+  "ready",
+  "shipped",
+  "delivered",
+] as const;
+const stageLabels = {
+  processing: "待备妥",
+  ready: "已备妥 · 待发货",
+  shipped: "已发货",
+  delivered: "已送达",
+} as const;
 const productOptions = ["all", "standard", "assembly", "hose"] as const;
 const sortOptions = ["newest", "oldest", "amount_desc", "amount_asc"] as const;
 
@@ -29,6 +50,7 @@ function filtersFromUrl(url: URL): AdminOrderFilters {
   return {
     query: (params.get("q") ?? "").trim().slice(0, 150),
     status: choice(params.get("status"), statusOptions, "all"),
+    stage: choice(params.get("stage"), stageOptions, "all"),
     from: date(params.get("from")),
     to: date(params.get("to")),
     country: (params.get("country") ?? "").trim().slice(0, 3),
@@ -63,6 +85,7 @@ export default function ConfirmedOrders({
       params.set("product", filters.productType);
     if (filters.sort !== "newest") params.set("sort", filters.sort);
     if (filters.status !== "all") params.set("status", filters.status);
+    if (filters.stage !== "all") params.set("stage", filters.stage);
     for (const [key, value] of Object.entries(changes)) {
       if (value === null || value === "") params.delete(key);
       else params.set(key, String(value));
@@ -71,6 +94,7 @@ export default function ConfirmedOrders({
     return `/admin/orders${query ? `?${query}` : ""}`;
   };
   const returnTo = buildUrl({ page });
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const statusTabs = [
     { id: "all", label: "全部订单", count: counts.all },
     { id: "confirmed", label: "正常订单", count: counts.confirmed },
@@ -82,7 +106,14 @@ export default function ConfirmedOrders({
       <main className="admin-main private-review-page orders-workspace">
         <header className="orders-page-heading">
           <h1>订单</h1>
-          <p>浏览已确认订单，按付款复核状态处理待办。</p>
+          <p>浏览已确认订单，按发货状态和付款复核处理待办。</p>
+          <button
+            type="button"
+            className="button button-secondary"
+            onClick={() => setCalendarOpen(true)}
+          >
+            <CalendarDays size={16} aria-hidden="true" /> 中国履约日历
+          </button>
         </header>
         <nav className="orders-status-tabs" aria-label="订单状态">
           {statusTabs.map((tab) => (
@@ -135,6 +166,16 @@ export default function ConfirmedOrders({
             </select>
           </label>
           <label>
+            <span>订单状态</span>
+            <select name="stage" defaultValue={filters.stage}>
+              <option value="all">全部</option>
+              <option value="processing">{stageLabels.processing}</option>
+              <option value="ready">{stageLabels.ready}</option>
+              <option value="shipped">已发货（含部分发货）</option>
+              <option value="delivered">{stageLabels.delivered}</option>
+            </select>
+          </label>
+          <label>
             <span>商品类型</span>
             <select name="product" defaultValue={filters.productType}>
               <option value="all">全部</option>
@@ -164,6 +205,7 @@ export default function ConfirmedOrders({
                 country: null,
                 product: null,
                 sort: null,
+                stage: null,
                 page: null,
               })}
               className="button button-secondary"
@@ -187,6 +229,7 @@ export default function ConfirmedOrders({
                   <th scope="col">商品</th>
                   <th scope="col">总金额</th>
                   <th scope="col">目的地</th>
+                  <th scope="col">发货计划</th>
                   <th scope="col">状态</th>
                   <th scope="col">确认时间</th>
                   <th scope="col">
@@ -248,25 +291,55 @@ export default function ConfirmedOrders({
                       <strong>{money(order.totalCents)}</strong>
                     </td>
                     <td data-label="目的地">{order.countryCode ?? "未记录"}</td>
+                    <td data-label="发货计划">
+                      {order.shipmentPlanStatus === "review"
+                        ? "待核对"
+                        : order.shipmentPlanStatus === "ready"
+                          ? `${order.shipmentCount} 个批次`
+                          : "计划待核查"}
+                      {order.overdueReadyCount > 0 && (
+                        <small role="status">
+                          {order.overdueReadyCount}{" "}
+                          个预计可发货日期已逾期，需内部核对
+                        </small>
+                      )}
+                    </td>
                     <td data-label="状态">
                       <span
-                        className={`orders-status ${order.status === "Payment Review Hold" ? "hold" : "confirmed"}`}
+                        className={`orders-status ${order.status === "Payment Review Hold" ? "hold" : order.stage}`}
                       >
                         {order.status === "Payment Review Hold"
                           ? "付款复核锁定"
-                          : "订单确认"}
+                          : order.stage === "shipped" &&
+                              order.shippedCount < order.shipmentCount
+                            ? `部分发货 ${order.shippedCount}/${order.shipmentCount}`
+                            : stageLabels[order.stage]}
                       </span>
+                      {order.status === "Payment Review Hold" && (
+                        <small>{stageLabels[order.stage]}</small>
+                      )}
                     </td>
-                    <td data-label="确认时间">
-                      {formatPiDate(order.confirmedAt, "admin")}
+                    <td data-label="确认时间" className="orders-confirmed-time">
+                      {(() => {
+                        const [date, ...time] = formatPiDate(
+                          order.confirmedAt,
+                          "admin",
+                        ).split(" ");
+                        return (
+                          <>
+                            {date}
+                            <small>{time.join(" ")}</small>
+                          </>
+                        );
+                      })()}
                     </td>
                     <td data-label="操作">
                       <Link
-                        aria-label={`查看订单 ${order.orderNumber}`}
+                        aria-label={`查看订单 ${order.orderNumber} 详情`}
                         to={`/admin/orders/${encodeURIComponent(order.id)}?returnTo=${encodeURIComponent(returnTo)}`}
-                        className="orders-row-link"
+                        className="button button-secondary orders-detail-button"
                       >
-                        <ArrowRight size={18} />
+                        查看详情 <ArrowRight size={16} aria-hidden="true" />
                       </Link>
                     </td>
                   </tr>
@@ -293,6 +366,9 @@ export default function ConfirmedOrders({
           </nav>
         )}
       </main>
+      {calendarOpen && (
+        <AdminChinaCalendarDialog onClose={() => setCalendarOpen(false)} />
+      )}
     </div>
   );
 }

@@ -214,7 +214,10 @@ function orderedSpecs<T extends { label: string; value: string }>(
 }
 
 function quoteBasis(quote: QuoteRevisionSnapshot) {
-  const validated = validateQuoteIssuance(quote, quote.factoryReviewConfirmed);
+  const validated = validateQuoteIssuance(quote, quote.factoryReviewConfirmed, {
+    allowHistoricalUnstructuredSplit: quote.version === 1,
+    requireReadySchedule: quote.version === 2,
+  });
   if (!equal(validated.totals, quote.totals))
     throw new PiLifecycleError(
       "invalid_source",
@@ -280,7 +283,17 @@ function quoteBasis(quote: QuoteRevisionSnapshot) {
       };
     }),
     destination,
-    shipment_plan: { mode: t.shipmentMode, plan: t.splitPlan },
+    shipment_plan: {
+      mode: t.shipmentMode,
+      plan: t.splitPlan,
+      groups:
+        t.shipmentGroups?.map((group) => ({
+          ...group,
+          allocations: [...group.allocations].sort((a, b) =>
+            a.lineId.localeCompare(b.lineId),
+          ),
+        })) ?? null,
+    },
     transport: t.transportMethod,
     customer_data: {
       kind: buyer.kind,
@@ -303,6 +316,25 @@ function quoteBasis(quote: QuoteRevisionSnapshot) {
     },
     lead_time: t.leadTime,
     packing_estimate: t.packingEstimate,
+  };
+}
+
+function operationalShipmentPlan(
+  plan: ReturnType<typeof quoteBasis>["shipment_plan"],
+) {
+  return {
+    mode: plan.mode,
+    plan: plan.plan,
+    groups: plan.groups?.map((group) => ({
+      id: group.id,
+      label: group.label,
+      allocations: [...group.allocations].sort((a, b) =>
+        a.lineId.localeCompare(b.lineId),
+      ),
+      transportMethod: group.transportMethod,
+      incoterm: group.incoterm,
+      namedPlace: group.namedPlace,
+    })),
   };
 }
 
@@ -331,7 +363,10 @@ export function comparePiQuoteMaterial(
     totalChanged: previous.totals.totalCents !== next.totals.totalCents,
     quantitiesUnchanged: !changes.includes("quantities"),
     destinationUnchanged: !changes.includes("destination"),
-    shipmentPlanUnchanged: !changes.includes("shipment_plan"),
+    shipmentPlanUnchanged: equal(
+      operationalShipmentPlan(before.shipment_plan),
+      operationalShipmentPlan(after.shipment_plan),
+    ),
     transportUnchanged: !changes.includes("transport"),
     customerDataUnchanged: !changes.includes("customer_data"),
   });
@@ -470,9 +505,13 @@ export function planPiReplacement(
     reason.customerDataAccurate;
   const onlyEstimateFields =
     material.changes.length > 0 &&
-    material.changes.every((field) =>
-      ["freight", "import_charges", "packing_estimate"].includes(field),
-    );
+    material.changes
+      .filter(
+        (field) => field !== "shipment_plan" || !material.shipmentPlanUnchanged,
+      )
+      .every((field) =>
+        ["freight", "import_charges", "packing_estimate"].includes(field),
+      );
   const accepted = context.pi.acceptance !== null;
   const common = {
     material,

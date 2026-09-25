@@ -1,4 +1,5 @@
 import {
+  Bell,
   Boxes,
   ClipboardList,
   ChevronDown,
@@ -8,8 +9,8 @@ import {
   Settings,
   Waypoints,
 } from "lucide-react";
-import { useState } from "react";
-import { Link } from "react-router";
+import { useEffect, useState } from "react";
+import { Link, useLocation } from "react-router";
 
 import { BrandMark } from "../../shared/ui/brand-mark";
 
@@ -17,6 +18,7 @@ export type AdminNavigationKey =
   | "catalog"
   | "configurator"
   | "imports"
+  | "notifications"
   | "overview"
   | "orders"
   | "quotes"
@@ -41,6 +43,12 @@ const catalogMaintenanceNavigation = [
 
 const adminNavigation = [
   { key: "overview", label: "总览", icon: LayoutDashboard, to: "/admin" },
+  {
+    key: "notifications",
+    label: "通知",
+    icon: Bell,
+    to: "/admin/notifications",
+  },
   { key: "quotes", label: "询价审核", icon: FileText, to: "/admin/quotes" },
   { key: "orders", label: "订单", icon: ClipboardList, to: "/admin/orders" },
   {
@@ -69,16 +77,57 @@ const adminNavigation = [
   },
 ] as const;
 
+const UNREAD_REFRESH_MS = 30_000;
+
+function useUnreadNotifications(known: number | undefined) {
+  const location = useLocation();
+  const [unread, setUnread] = useState<number | null>(known ?? null);
+  useEffect(() => {
+    if (known !== undefined) setUnread(known);
+  }, [known]);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const response = await fetch("/admin/notifications/unread-count", {
+          headers: { Accept: "application/json" },
+        });
+        if (!response.ok) return;
+        const body = (await response.json()) as { unread?: unknown };
+        if (!cancelled && typeof body.unread === "number")
+          setUnread(body.unread);
+      } catch {
+        // The badge is advisory; the notifications page remains authoritative.
+      }
+    };
+    void refresh();
+    const timer = setInterval(refresh, UNREAD_REFRESH_MS);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [location.key]);
+  return unread;
+}
+
 export function AdminNavigation({
   active,
   maintenanceMode,
+  unreadNotifications,
 }: {
   active: AdminNavigationKey;
   maintenanceMode?: CatalogMaintenanceMode;
+  unreadNotifications?: number;
 }) {
   const [openGroup, setOpenGroup] = useState<AdminNavigationKey | null>(
     active === "imports" ? "imports" : null,
   );
+  const unread = useUnreadNotifications(unreadNotifications);
 
   return (
     <aside className="admin-sidebar">
@@ -93,6 +142,14 @@ export function AdminNavigation({
             <>
               <Icon aria-hidden="true" size={18} />
               <span>{item.label}</span>
+              {item.key === "notifications" && unread ? (
+                <span
+                  className="admin-nav-badge"
+                  aria-label={`${unread} 条未读`}
+                >
+                  {unread > 99 ? "99+" : unread}
+                </span>
+              ) : null}
             </>
           );
           return (

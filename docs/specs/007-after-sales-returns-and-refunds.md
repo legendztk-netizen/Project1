@@ -127,6 +127,8 @@ Problem`. The customer selects lines/quantities, reason, description, and
   double-counting the same entitlement. Authorized refunds do not invalidate an
   otherwise fully funded adjusted Order; payment-review recovery evaluates the
   same effective obligation while preserving the original PI and Order totals.
+  Positive shipping-change adjustments are handled offline at launch: an
+  accepted/effective change is not evidence of system-verified extra funds.
 
 ## Testing Decisions
 

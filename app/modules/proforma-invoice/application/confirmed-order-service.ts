@@ -4,6 +4,7 @@ import {
   piSha256,
   type ProformaInvoiceSnapshot,
 } from "../domain/proforma-invoice";
+import { shipmentInitializationStatements } from "../../shipment/infrastructure/d1-shipment-initialization";
 
 interface OrderRow {
   id: string;
@@ -16,11 +17,42 @@ interface OrderRow {
   total_cents: number;
   confirmed_at: string;
   held: number;
+  shipment_count?: number;
+  shipped_count?: number;
+  delivered_count?: number;
+  plan_status?: "ready" | "review" | null;
 }
+
+export const customerOrderStages = [
+  "processing",
+  "ready",
+  "shipped",
+  "delivered",
+] as const;
+export type CustomerOrderStage = (typeof customerOrderStages)[number];
+
+function shipmentCountSql(condition?: string) {
+  return `(SELECT count(*) FROM order_shipments shipment WHERE shipment.order_id=o.id${condition ? ` AND ${condition}` : ""})`;
+}
+
+// Order fulfillment stage shared by the customer and Admin order lists. A
+// shipment waiting for re-verification after an accepted change is not shown
+// as ready, matching the Order detail timeline.
+const orderStageSql = `CASE
+  WHEN ${shipmentCountSql()}>0
+    AND ${shipmentCountSql("shipment.status='delivered'")}=${shipmentCountSql()}
+    THEN 'delivered'
+  WHEN ${shipmentCountSql("shipment.status IN ('shipped','delivered')")}>0 THEN 'shipped'
+  WHEN ${shipmentCountSql(
+    `shipment.status='ready_to_ship' AND NOT EXISTS (SELECT 1 FROM order_shipping_change_reverification revision
+      WHERE revision.shipment_id=shipment.id AND revision.verified_at IS NULL)`,
+  )}>0 THEN 'ready'
+  ELSE 'processing' END`;
 
 export interface AdminOrderFilters {
   query: string;
   status: "all" | "confirmed" | "hold";
+  stage: "all" | CustomerOrderStage;
   from: string;
   to: string;
   country: string;
@@ -43,6 +75,12 @@ interface AdminOrderSummaryRow {
   country_code: string | null;
   held: number;
   line_count: number;
+  shipment_count: number;
+  shipped_count: number;
+  delivered_count: number;
+  stage: CustomerOrderStage;
+  plan_status: "ready" | "review" | null;
+  overdue_ready_count: number;
   first_line_json: string | null;
   second_line_json: string | null;
 }
@@ -58,10 +96,12 @@ function summaryLine(value: string | null) {
   return {
     displayName: line.displayName,
     sku: line.sku,
-    imageUrl: line.assembly ? null : line.product.mainImageUrl,
+    imageUrl: line.assembly ? null : (line.product?.mainImageUrl ?? null),
     hoseMediaKey:
       line.assembly?.hose.mediaKey ??
-      (line.lineKind === "length_based_hose" ? line.product.mediaKey : null),
+      (line.lineKind === "length_based_hose"
+        ? (line.product?.mediaKey ?? null)
+        : null),
   };
 }
 
@@ -84,11 +124,60 @@ async function projection(row: OrderRow) {
       row.held === 1
         ? ("Payment Review Hold" as const)
         : ("Order Confirmed" as const),
+    shipmentCount: row.shipment_count ?? 0,
+    shippedCount: row.shipped_count ?? 0,
+    deliveredCount: row.delivered_count ?? 0,
+    shipmentPlanStatus: row.plan_status ?? null,
     snapshot,
   };
 }
 
 export function createConfirmedOrderService(db: D1Database) {
+  async function catchUpListedPlans<
+    T extends {
+      id: string;
+      plan_status?: "ready" | "review" | null;
+      shipment_count?: number;
+    },
+  >(rows: T[]) {
+    const missing = rows.filter((row) => row.plan_status == null);
+    if (!missing.length) return;
+    for (const row of missing) {
+      try {
+        await db.batch(
+          shipmentInitializationStatements(
+            db,
+            row.id,
+            new Date().toISOString(),
+          ),
+        );
+      } catch {
+        // One malformed historical order must not hide the other page results.
+      }
+    }
+    const summaries = (
+      await db
+        .prepare(
+          `SELECT plan.order_id,plan.status,
+            (SELECT count(*) FROM order_shipments shipment WHERE shipment.order_id=plan.order_id) AS shipment_count
+           FROM order_fulfillment_plans plan
+           WHERE plan.order_id IN (${missing.map(() => "?").join(",")})`,
+        )
+        .bind(...missing.map((row) => row.id))
+        .all<{
+          order_id: string;
+          status: "ready" | "review";
+          shipment_count: number;
+        }>()
+    ).results;
+    const byOrder = new Map(summaries.map((row) => [row.order_id, row]));
+    for (const row of missing) {
+      const summary = byOrder.get(row.id);
+      if (!summary) continue;
+      row.plan_status = summary.status;
+      row.shipment_count = summary.shipment_count;
+    }
+  }
   const owned = `FROM confirmed_orders o
     LEFT JOIN order_release_guards guard ON guard.order_id=o.id
     JOIN customer_quote_requests request ON request.id=o.request_id
@@ -141,6 +230,12 @@ export function createConfirmedOrderService(db: D1Database) {
         conditions.push(`EXISTS(SELECT 1 FROM confirmed_order_lines line
           WHERE line.order_id=o.id AND line.line_kind=?)`);
         values.push(kinds[filters.productType]);
+      }
+      if (filters.stage !== "all") {
+        if (!customerOrderStages.includes(filters.stage))
+          throw new Response("Invalid order filters", { status: 400 });
+        conditions.push(`${orderStageSql}=?`);
+        values.push(filters.stage);
       }
       const from = `FROM confirmed_orders o
         LEFT JOIN order_release_guards guard ON guard.order_id=o.id
@@ -196,6 +291,15 @@ export function createConfirmedOrderService(db: D1Database) {
           json_extract(o.snapshot_json,'$.destination.countryCode') AS country_code,
           coalesce(guard.held,0) AS held,
           (SELECT count(*) FROM confirmed_order_lines line WHERE line.order_id=o.id) AS line_count,
+          (SELECT count(*) FROM order_shipments shipment WHERE shipment.order_id=o.id) AS shipment_count,
+          ${shipmentCountSql("shipment.status IN ('shipped','delivered')")} AS shipped_count,
+          ${shipmentCountSql("shipment.status='delivered'")} AS delivered_count,
+          ${orderStageSql} AS stage,
+          (SELECT status FROM order_fulfillment_plans plan WHERE plan.order_id=o.id) AS plan_status,
+          (SELECT count(*) FROM order_shipment_ready_schedules ready
+            JOIN order_shipments shipment ON shipment.id=ready.shipment_id
+            WHERE ready.order_id=o.id AND ready.current_estimate_date<date('now','+8 hours')
+              AND shipment.status IN ('planned','ready_to_ship')) AS overdue_ready_count,
           (SELECT snapshot_json FROM confirmed_order_lines line WHERE line.order_id=o.id
             ORDER BY line.line_number LIMIT 1) AS first_line_json,
           (SELECT snapshot_json FROM confirmed_order_lines line WHERE line.order_id=o.id
@@ -206,6 +310,7 @@ export function createConfirmedOrderService(db: D1Database) {
           .bind(...values, (effectiveStatusPage - 1) * 25)
           .all<AdminOrderSummaryRow>()
       ).results;
+      await catchUpListedPlans(rows);
       const countries = (
         await db
           .prepare(
@@ -230,6 +335,12 @@ export function createConfirmedOrderService(db: D1Database) {
           countryCode: row.country_code,
           status: row.held ? "Payment Review Hold" : "Order Confirmed",
           lineCount: row.line_count,
+          shipmentCount: row.shipment_count,
+          shippedCount: row.shipped_count,
+          deliveredCount: row.delivered_count,
+          stage: row.stage,
+          shipmentPlanStatus: row.plan_status,
+          overdueReadyCount: row.overdue_ready_count,
           lines: [
             summaryLine(row.first_line_json),
             summaryLine(row.second_line_json),
@@ -309,24 +420,86 @@ export function createConfirmedOrderService(db: D1Database) {
           .slice(0, 50),
       };
     },
-    async customerList(profileId: string, before: string | null = null) {
+    async customerList(
+      profileId: string,
+      before: string | null = null,
+      stage: CustomerOrderStage | "all" = "all",
+    ) {
       if (!profileId) throw new Response("Forbidden", { status: 403 });
       if (before && before.length > 150)
         throw new Response("Invalid cursor", { status: 400 });
+      if (stage !== "all" && !customerOrderStages.includes(stage))
+        throw new Response("Invalid order status", { status: 400 });
+      const stageCounts = (
+        await db
+          .prepare(
+            `SELECT ${orderStageSql} AS stage,count(*) AS count ${owned}
+             GROUP BY stage`,
+          )
+          .bind(...bindings(profileId))
+          .all<{ stage: CustomerOrderStage; count: number }>()
+      ).results;
       const rows = (
         await db
           .prepare(
-            `SELECT o.*,guard.held ${owned} AND (? IS NULL OR
+            `SELECT o.*,guard.held,
+              ${shipmentCountSql()} AS shipment_count,
+              ${shipmentCountSql("shipment.status IN ('shipped','delivered')")} AS shipped_count,
+              ${shipmentCountSql("shipment.status='delivered'")} AS delivered_count,
+              (SELECT status FROM order_fulfillment_plans plan WHERE plan.order_id=o.id) AS plan_status,
+              ${orderStageSql} AS stage,
+              (SELECT count(*) FROM confirmed_order_lines line WHERE line.order_id=o.id) AS line_count,
+              (SELECT min(ready.current_estimate_date) FROM order_shipment_ready_schedules ready
+                JOIN order_shipments shipment ON shipment.id=ready.shipment_id
+                WHERE ready.order_id=o.id AND shipment.status IN ('planned','ready_to_ship')) AS next_ready_date,
+              (SELECT max(event.actual_date) FROM shipment_milestone_events event
+                WHERE event.order_id=o.id AND event.kind='delivered') AS last_delivered_date,
+              (SELECT snapshot_json FROM confirmed_order_lines line WHERE line.order_id=o.id
+                ORDER BY line.line_number LIMIT 1) AS first_line_json
+              ${owned} AND (? = 'all' OR ${orderStageSql} = ?) AND (? IS NULL OR
           (o.confirmed_at < (SELECT confirmed_at FROM confirmed_orders WHERE id=?) OR
            (o.confirmed_at=(SELECT confirmed_at FROM confirmed_orders WHERE id=?) AND o.id<?)))
          ORDER BY o.confirmed_at DESC,o.id DESC LIMIT 11`,
           )
-          .bind(...bindings(profileId), before, before, before, before)
-          .all<OrderRow>()
+          .bind(
+            ...bindings(profileId),
+            stage,
+            stage,
+            before,
+            before,
+            before,
+            before,
+          )
+          .all<
+            OrderRow & {
+              stage: CustomerOrderStage;
+              line_count: number;
+              next_ready_date: string | null;
+              last_delivered_date: string | null;
+              first_line_json: string | null;
+            }
+          >()
       ).results;
       const page = rows.slice(0, 10);
+      await catchUpListedPlans(page);
       return {
-        records: await Promise.all(page.map(projection)),
+        records: await Promise.all(
+          page.map(async (row) => ({
+            ...(await projection(row)),
+            stage: row.stage,
+            lineCount: row.line_count,
+            nextReadyDate: row.next_ready_date,
+            lastDeliveredDate: row.last_delivered_date,
+            firstLine: summaryLine(row.first_line_json),
+          })),
+        ),
+        counts: Object.fromEntries([
+          ["all", stageCounts.reduce((total, row) => total + row.count, 0)],
+          ...customerOrderStages.map((code) => [
+            code,
+            stageCounts.find((row) => row.stage === code)?.count ?? 0,
+          ]),
+        ]) as Record<CustomerOrderStage | "all", number>,
         nextCursor: rows.length > 10 ? page[9].id : null,
       };
     },

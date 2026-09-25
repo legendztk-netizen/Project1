@@ -46,6 +46,14 @@ export default [
     "modules/customer-identity/routes/confirmed-order-detail.tsx",
   ),
   route(
+    "account/orders/:orderId/shipments/:shipmentId/documents",
+    "modules/customer-identity/routes/shipment-documents.tsx",
+  ),
+  route(
+    "account/orders/:orderId/shipments/:shipmentId/documents/:documentId/download",
+    "modules/customer-identity/routes/shipment-document-download.ts",
+  ),
+  route(
     "account/quotes/:requestId",
     "modules/customer-identity/routes/customer-quote-detail.tsx",
   ),
@@ -66,10 +74,24 @@ export default [
     "modules/storefront/routes/assembly-measurement-guide.tsx",
   ),
   route("admin", "modules/admin/routes/admin-home.tsx"),
+  route("admin/notifications", "modules/admin/routes/notifications.tsx"),
+  route(
+    "admin/notifications/unread-count",
+    "modules/admin/routes/notifications-unread-count.ts",
+  ),
   route("admin/orders", "modules/admin/routes/confirmed-orders.tsx"),
+  route("admin/china-calendar", "modules/admin/routes/china-calendar.tsx"),
   route(
     "admin/orders/:orderId",
     "modules/admin/routes/confirmed-order-detail.tsx",
+  ),
+  route(
+    "admin/orders/:orderId/shipments/:shipmentId",
+    "modules/admin/routes/shipment-documents.tsx",
+  ),
+  route(
+    "admin/orders/:orderId/shipments/:shipmentId/documents/:documentId/download",
+    "modules/admin/routes/shipment-document-download.ts",
   ),
   route("admin/quotes", "modules/admin/routes/quote-reviews.tsx"),
   route(

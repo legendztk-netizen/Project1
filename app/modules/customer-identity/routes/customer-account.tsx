@@ -8,8 +8,10 @@ import {
   ListChecks,
   MapPin,
   Pencil,
+  Plus,
   Trash2,
 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { data, Form, Link, redirect, useNavigation } from "react-router";
 
 import type { Route } from "./+types/customer-account";
@@ -29,6 +31,8 @@ import type {
   PurchasingContext,
 } from "../domain/customer-account";
 import { COUNTRY_CODES } from "../domain/customer-account";
+import { US_STATES, usStateCode } from "../domain/us-states";
+import { ShipmentActionDialog } from "../../shipment/ui/shipment-action-dialog";
 import { requireTrustedAuthPost } from "../application/trusted-auth-request";
 import {
   isAccountDetailView,
@@ -43,6 +47,11 @@ import {
 import { createQuoteRequestService } from "../../quote-request/application/quote-request-service";
 import { CustomerQuoteList } from "../../quote-request/ui/customer-quote-list";
 import { confirmedOrders } from "#workers/proforma-invoice";
+import {
+  CustomerOrderList,
+  customerOrderTabs,
+  type CustomerOrderTab,
+} from "../ui/customer-order-list";
 import { customerPaymentProgress } from "../../proforma-invoice/application/customer-payment-progress";
 
 function selectedView(request: Request): AccountDetailView {
@@ -131,13 +140,18 @@ export async function loader({ context, request }: Route.LoaderArgs) {
   const savedConfigurations =
     (await createSavedConfigurationService(env).list(request)) ?? [];
   const quoteRequests = await createQuoteRequestService(env).listOwned(request);
+  const requestedOrderTab = new URL(request.url).searchParams.get("status");
+  const orderTab: CustomerOrderTab =
+    customerOrderTabs.find((tab) => tab.code === requestedOrderTab)?.code ??
+    "all";
   const orders =
     view === "orders"
       ? await confirmedOrders(env).customerList(
           account.profile.id,
           new URL(request.url).searchParams.get("before"),
+          orderTab,
         )
-      : { records: [], nextCursor: null };
+      : null;
   return {
     ...account,
     editingAddress,
@@ -149,6 +163,7 @@ export async function loader({ context, request }: Route.LoaderArgs) {
       quoteRequests.records,
     ),
     orders,
+    orderTab,
     view,
   };
 }
@@ -335,6 +350,8 @@ function AddressFields({
   address?: DeliveryAddress | null;
   profileEmail: string;
 }) {
+  const [countryCode, setCountryCode] = useState(address?.countryCode ?? "US");
+  const isUs = countryCode === "US";
   return (
     <div className="account-form-grid">
       <label>
@@ -378,50 +395,6 @@ function AddressFields({
           type="tel"
         />
       </label>
-      <label>
-        Country / region
-        <select
-          defaultValue={address?.countryCode ?? "US"}
-          name="countryCode"
-          required
-        >
-          {COUNTRY_CODES.map((countryCode) => (
-            <option key={countryCode} value={countryCode}>
-              {countryOptionLabel(countryCode)}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        State / province
-        <input
-          autoComplete="address-level1"
-          defaultValue={address?.stateProvince ?? ""}
-          maxLength={100}
-          name="stateProvince"
-          required
-        />
-      </label>
-      <label>
-        City
-        <input
-          autoComplete="address-level2"
-          defaultValue={address?.city ?? ""}
-          maxLength={100}
-          name="city"
-          required
-        />
-      </label>
-      <label>
-        Postal code
-        <input
-          autoComplete="postal-code"
-          defaultValue={address?.postalCode ?? ""}
-          maxLength={24}
-          name="postalCode"
-          required
-        />
-      </label>
       <label className="account-form-wide">
         Street address
         <input
@@ -441,8 +414,97 @@ function AddressFields({
           name="addressLine2"
         />
       </label>
+      <label>
+        City
+        <input
+          autoComplete="address-level2"
+          defaultValue={address?.city ?? ""}
+          maxLength={100}
+          name="city"
+          required
+        />
+      </label>
+      <label>
+        Country / region
+        <select
+          autoComplete="country"
+          name="countryCode"
+          onChange={(event) => setCountryCode(event.target.value)}
+          required
+          value={countryCode}
+        >
+          {COUNTRY_CODES.map((code) => (
+            <option key={code} value={code}>
+              {countryOptionLabel(code)}
+            </option>
+          ))}
+        </select>
+      </label>
+      {isUs ? (
+        <label>
+          State
+          <select
+            autoComplete="address-level1"
+            defaultValue={
+              address?.countryCode === "US"
+                ? (usStateCode(address.stateProvince) ?? "")
+                : ""
+            }
+            key="us-state"
+            name="stateProvince"
+            required
+          >
+            <option disabled value="">
+              Select a state
+            </option>
+            {US_STATES.map(([code, name]) => (
+              <option key={code} value={code}>
+                {name} ({code})
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <label>
+          State / province
+          <input
+            autoComplete="address-level1"
+            defaultValue={
+              address?.countryCode === countryCode ? address.stateProvince : ""
+            }
+            key={`state-${countryCode}`}
+            maxLength={100}
+            name="stateProvince"
+            required
+          />
+        </label>
+      )}
+      <label>
+        {isUs ? "ZIP code" : "Postal code"}
+        <input
+          autoComplete="postal-code"
+          defaultValue={address?.postalCode ?? ""}
+          inputMode={isUs ? "numeric" : undefined}
+          key={isUs ? "zip" : "postal"}
+          maxLength={isUs ? 10 : 24}
+          name="postalCode"
+          pattern={isUs ? "[0-9]{5}(-?[0-9]{4})?" : undefined}
+          placeholder={isUs ? "97201 or 97201-1234" : undefined}
+          required
+          title={isUs ? "Enter a 5-digit ZIP or ZIP+4 code" : undefined}
+        />
+      </label>
     </div>
   );
+}
+
+function formatAddressLines(address: DeliveryAddress) {
+  return [
+    address.addressLine1,
+    address.addressLine2,
+    `${address.city}, ${address.stateProvince} ${address.postalCode}`,
+    countryDisplayNames.of(address.countryCode) ?? address.countryCode,
+  ].filter(Boolean);
 }
 
 function AddressesDetail({
@@ -460,54 +522,93 @@ function AddressesDetail({
   profileEmail: string;
   saved: boolean;
 }) {
+  const [dialog, setDialog] = useState<
+    { mode: "create" } | { mode: "edit"; address: DeliveryAddress } | null
+  >(editingAddress ? { mode: "edit", address: editingAddress } : null);
+  const actionAtOpen = useRef(actionData);
+  const submitted = useRef(false);
+  const navigation = useNavigation();
+  useEffect(() => {
+    if (navigation.state !== "idle" || !submitted.current) return;
+    submitted.current = false;
+    if (!actionData?.error) setDialog(null);
+  }, [navigation.state, actionData]);
+  const open = (next: NonNullable<typeof dialog>) => {
+    actionAtOpen.current = actionData;
+    setDialog(next);
+  };
+  const editing = dialog?.mode === "edit" ? dialog.address : null;
   return (
-    <section className="account-record-detail">
-      <span className="eyebrow">Delivery details</span>
-      <h1>Addresses</h1>
+    <section className="account-record-detail account-addresses">
+      <div className="account-addresses-heading">
+        <div>
+          <span className="eyebrow">Delivery details</span>
+          <h1>Addresses</h1>
+        </div>
+        <button
+          className="button button-primary"
+          onClick={() => open({ mode: "create" })}
+          type="button"
+        >
+          <Plus aria-hidden="true" size={17} /> Add address
+        </button>
+      </div>
       <p className="account-detail-intro">
-        Keep reusable delivery addresses here. The address selected for a quote
-        is copied into that request and remains independent from this address
-        book.
+        Save the places you ship to. The default address is used for new quotes;
+        each quote keeps its own copy.
       </p>
       {saved ? (
         <div className="customer-auth-success" role="status">
           Address book updated.
         </div>
       ) : null}
-      {actionData?.error ? (
+      {actionData?.error && !dialog ? (
         <div className="customer-auth-error" role="alert">
           {actionData.error}
         </div>
       ) : null}
       {addresses.length === 0 ? (
-        <p className="account-inline-empty">
-          No reusable delivery addresses yet.
-        </p>
+        <div className="account-addresses-empty">
+          <MapPin aria-hidden="true" size={28} />
+          <p>Add your first delivery address to use it on quotes.</p>
+          <button
+            className="button button-secondary"
+            onClick={() => open({ mode: "create" })}
+            type="button"
+          >
+            <Plus aria-hidden="true" size={16} /> Add address
+          </button>
+        </div>
       ) : (
-        <div className="account-record-list">
+        <div className="account-address-grid">
           {addresses.map((address) => (
-            <article key={address.id}>
-              <div>
-                <div className="account-record-title">
-                  <h2>{address.label}</h2>
-                  {address.isSelected ? (
-                    <span>
-                      <Check aria-hidden="true" size={14} /> Selected
-                    </span>
-                  ) : null}
-                </div>
-                <p>{address.recipientName}</p>
-                <p>{address.addressLine1}</p>
-                {address.addressLine2 ? <p>{address.addressLine2}</p> : null}
-                <p>
-                  {address.city}, {address.stateProvince} {address.postalCode}
-                </p>
-                <p>{address.countryCode}</p>
-                <p>
-                  {address.recipientPhone} · {address.recipientEmail}
-                </p>
+            <article
+              className="account-address-card"
+              data-selected={address.isSelected || undefined}
+              key={address.id}
+            >
+              <div className="account-address-card-heading">
+                <h2>{address.label}</h2>
+                {address.isSelected ? (
+                  <span className="account-address-default">
+                    <Check aria-hidden="true" size={14} /> Default for quotes
+                  </span>
+                ) : null}
               </div>
-              <div className="account-record-actions">
+              <p className="account-address-recipient">
+                {address.recipientName}
+              </p>
+              <address>
+                {formatAddressLines(address).map((line) => (
+                  <span key={line}>{line}</span>
+                ))}
+              </address>
+              <p className="account-address-contact">
+                {address.recipientPhone}
+                <br />
+                {address.recipientEmail}
+              </p>
+              <div className="account-address-actions">
                 {!address.isSelected ? (
                   <Form method="post">
                     <input name="intent" type="hidden" value="select_address" />
@@ -517,21 +618,29 @@ function AddressesDetail({
                       disabled={busy}
                       type="submit"
                     >
-                      <Check aria-hidden="true" size={16} /> Use this address
+                      Set as default
                     </button>
                   </Form>
                 ) : null}
-                <Link
+                <button
                   className="button button-secondary"
-                  to={`/account?view=addresses&editAddress=${encodeURIComponent(address.id)}`}
+                  onClick={() => open({ mode: "edit", address })}
+                  type="button"
                 >
                   <Pencil aria-hidden="true" size={16} /> Edit
-                </Link>
-                <Form method="post">
+                </button>
+                <Form
+                  method="post"
+                  onSubmit={(event) => {
+                    if (!window.confirm(`Delete “${address.label}”?`))
+                      event.preventDefault();
+                  }}
+                >
                   <input name="intent" type="hidden" value="delete_address" />
                   <input name="addressId" type="hidden" value={address.id} />
                   <button
-                    className="button button-danger"
+                    aria-label={`Delete ${address.label}`}
+                    className="button button-secondary account-address-delete"
                     disabled={busy}
                     type="submit"
                   >
@@ -543,39 +652,42 @@ function AddressesDetail({
           ))}
         </div>
       )}
-      <section className="account-record-form-section">
-        <h2>
-          {editingAddress ? "Edit delivery address" : "Add delivery address"}
-        </h2>
-        <Form className="account-record-form" method="post">
-          <input
-            name="intent"
-            type="hidden"
-            value={editingAddress ? "update_address" : "create_address"}
-          />
-          {editingAddress ? (
-            <input name="addressId" type="hidden" value={editingAddress.id} />
-          ) : null}
-          <AddressFields address={editingAddress} profileEmail={profileEmail} />
-          <div className="account-form-actions">
-            {editingAddress ? (
-              <Link
-                className="button button-secondary"
-                to="/account?view=addresses"
-              >
-                Cancel
-              </Link>
+      {dialog ? (
+        <ShipmentActionDialog
+          error={
+            actionData !== actionAtOpen.current ? actionData?.error : undefined
+          }
+          key={editing?.id ?? "new"}
+          language="en"
+          onClose={() => setDialog(null)}
+          onSubmitted={() => {
+            submitted.current = true;
+          }}
+          title={editing ? "Edit delivery address" : "Add delivery address"}
+          wide
+        >
+          <Form className="account-record-form" method="post">
+            <input
+              name="intent"
+              type="hidden"
+              value={editing ? "update_address" : "create_address"}
+            />
+            {editing ? (
+              <input name="addressId" type="hidden" value={editing.id} />
             ) : null}
-            <button
-              className="button button-primary"
-              disabled={busy}
-              type="submit"
-            >
-              {editingAddress ? "Save address" : "Add address"}
-            </button>
-          </div>
-        </Form>
-      </section>
+            <AddressFields address={editing} profileEmail={profileEmail} />
+            <div className="account-form-actions">
+              <button
+                className="button button-primary"
+                disabled={busy}
+                type="submit"
+              >
+                {editing ? "Save address" : "Add address"}
+              </button>
+            </div>
+          </Form>
+        </ShipmentActionDialog>
+      ) : null}
     </section>
   );
 }
@@ -833,50 +945,12 @@ export default function CustomerAccount({
     );
   } else if (view === "my-quotes") {
     detail = <CustomerQuoteList quoteRequests={loaderData.quoteRequests} />;
-  } else if (view === "orders") {
+  } else if (view === "orders" && loaderData.orders) {
     detail = (
-      <section className="account-record-detail">
-        <span className="eyebrow">Purchases</span>
-        <h1>Orders</h1>
-        {loaderData.orders.records.length === 0 ? (
-          <p>No confirmed orders yet.</p>
-        ) : (
-          <div className="customer-quote-list">
-            {loaderData.orders.records.map((order) => (
-              <article key={order.id}>
-                <div className="customer-quote-detail-header">
-                  <div>
-                    <strong>{order.status}</strong>
-                    <h2>{order.orderNumber}</h2>
-                    <p>
-                      {customerDateTime.format(new Date(order.confirmedAt))}
-                    </p>
-                  </div>
-                  <Link
-                    className="button button-secondary"
-                    to={`/account/orders/${encodeURIComponent(order.id)}`}
-                  >
-                    View order
-                  </Link>
-                </div>
-                <p>
-                  {order.snapshot.lines.length} product{" "}
-                  {order.snapshot.lines.length === 1 ? "line" : "lines"} · USD{" "}
-                  {(order.totalCents / 100).toFixed(2)}
-                </p>
-              </article>
-            ))}
-          </div>
-        )}
-        {loaderData.orders.nextCursor && (
-          <Link
-            className="button button-secondary"
-            to={`/account?view=orders&before=${encodeURIComponent(loaderData.orders.nextCursor)}`}
-          >
-            Older orders
-          </Link>
-        )}
-      </section>
+      <CustomerOrderList
+        orders={loaderData.orders}
+        selected={loaderData.orderTab}
+      />
     );
   } else if (view === "addresses") {
     detail = (

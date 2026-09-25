@@ -2,6 +2,7 @@ import type { CustomerQuoteRevision } from "../domain/quote-revision";
 import { QuoteRevisionChanges } from "./quote-revision-changes";
 import type { QuoteRequestLine } from "../../quote-request/domain/quote-request";
 import { referencePriceAdjustment } from "../domain/quote-pricing";
+import { readyScheduleText } from "../../shipment/domain/ready-schedule";
 
 const usd = (cents: number | null) =>
   cents === null ? "Pending" : `USD ${(cents / 100).toFixed(2)}`;
@@ -145,6 +146,45 @@ export function CustomerQuoteOffer({
             {offer.shipmentMode === "split" ? offer.splitPlan : "Ship together"}
           </dd>
         </div>
+        {offer.shipmentGroups?.map((group, index) => (
+          <div key={group.id}>
+            <dt>{label(`Shipment ${index + 1}`, `第 ${index + 1} 批发货`)}</dt>
+            <dd>
+              <strong>{group.label}</strong>
+              {group.allocations.map((allocation) => {
+                const lineIndex = offer.lines.findIndex(
+                  (item) => item.id === allocation.lineId,
+                );
+                const line = offer.lines[lineIndex];
+                return (
+                  <span key={allocation.lineId} className="shipment-group-line">
+                    Line {lineIndex + 1} · {line?.sku ?? allocation.lineId} ·{" "}
+                    {line?.displayName ?? allocation.lineId}
+                    {line?.lengthOrder &&
+                      ` · ${line.lengthOrder.originalLengthValue} ${line.lengthOrder.originalLengthUnit} per piece`}
+                    : {allocation.physicalQuantity}{" "}
+                    {line?.lineKind === "length_based_hose"
+                      ? "pieces"
+                      : (line?.salesUnit ?? "units")}
+                  </span>
+                );
+              })}
+              <span className="shipment-group-line">
+                {group.transportMethod} · {group.incoterm} {group.namedPlace}
+              </span>
+              {group.readySchedule && (
+                <span className="shipment-group-line">
+                  {readyScheduleText(group.readySchedule)}
+                </span>
+              )}
+              <span className="shipment-group-line">
+                Freight {usd(group.freightCents)} · Insurance{" "}
+                {usd(group.insuranceCents)} · Duties/import{" "}
+                {usd(group.dutiesImportCents)}
+              </span>
+            </dd>
+          </div>
+        ))}
         <div>
           <dt>{label("Lead time", "交期")}</dt>
           <dd>{offer.leadTime}</dd>

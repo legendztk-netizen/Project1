@@ -1,3 +1,5 @@
+import { usStateCode, usZipCode } from "./us-states";
+
 export type PurchasingContextKind = "individual" | "organization";
 
 export const COUNTRY_CODES =
@@ -98,8 +100,27 @@ function normalizedEmail(value: string) {
   return normalized;
 }
 
+function usAddressFields(
+  countryCode: string,
+  stateProvince: string,
+  postalCode: string,
+) {
+  if (countryCode !== "US") return { stateProvince, postalCode };
+  const state = usStateCode(stateProvince);
+  if (!state)
+    throw new CustomerAccountValidationError(
+      "Select a valid US state or territory.",
+    );
+  const zip = usZipCode(postalCode);
+  if (!zip)
+    throw new CustomerAccountValidationError(
+      "Enter a valid US ZIP code, such as 97201 or 97201-1234.",
+    );
+  return { stateProvince: state, postalCode: zip };
+}
+
 export function validatedDeliveryAddress(input: DeliveryAddressDraft) {
-  return {
+  const address = {
     addressLine1: normalizedText(input.addressLine1, 160, "Street address"),
     addressLine2: normalizedText(
       input.addressLine2,
@@ -119,6 +140,14 @@ export function validatedDeliveryAddress(input: DeliveryAddressDraft) {
       "Recipient phone number",
     ),
     stateProvince: normalizedText(input.stateProvince, 100, "State / province"),
+  };
+  return {
+    ...address,
+    ...usAddressFields(
+      address.countryCode,
+      address.stateProvince,
+      address.postalCode,
+    ),
   };
 }
 

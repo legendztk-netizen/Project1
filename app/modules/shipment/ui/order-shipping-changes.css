@@ -1,0 +1,110 @@
+.shipping-changes details {
+  border-top: 1px solid #d7dee3;
+  padding: 12px 0;
+}
+.shipping-changes summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.shipping-change-form,
+.shipping-change-accept,
+.shipping-change-withdraw {
+  display: grid;
+  gap: 12px;
+  padding: 12px 0;
+}
+.shipping-change-form fieldset {
+  border: 1px solid #d7dee3;
+  padding: 12px;
+}
+.shipping-change-form label,
+.shipping-change-withdraw label {
+  display: grid;
+  gap: 5px;
+}
+.shipping-change-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.shipping-change-choice {
+  display: flex !important;
+  align-items: flex-start;
+  gap: 9px;
+}
+.shipping-change-choice input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.shipping-change-form .shipping-change-split-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 700;
+}
+.shipping-change-split-toggle input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.shipping-change-record {
+  border-top: 1px solid #d7dee3;
+  padding: 16px 0;
+}
+.shipping-change-record-heading {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+.shipping-change-proposal {
+  border-left: 3px solid #d92d20;
+  padding: 8px 16px;
+}
+.shipping-change-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.shipping-change-summary div {
+  min-width: 0;
+}
+.shipping-change-summary dt {
+  color: #5c6972;
+  font-size: 0.875rem;
+}
+.shipping-change-summary dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+}
+.shipping-change-comparison-section {
+  border-top: 1px solid #d7dee3;
+  padding: 12px 0;
+}
+.shipping-change-comparison-section h5 {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+}
+.shipping-change-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.shipping-change-comparison > div {
+  min-width: 0;
+}
+.shipping-change-comparison .shipping-change-summary {
+  grid-template-columns: 1fr;
+}
+.shipping-change-error {
+  color: #a51d15;
+  font-weight: 700;
+}
+@media (max-width: 700px) {
+  .shipping-change-fields,
+  .shipping-change-summary,
+  .shipping-change-comparison {
+    grid-template-columns: 1fr;
+  }
+}

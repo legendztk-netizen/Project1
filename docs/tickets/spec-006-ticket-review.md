@@ -2,7 +2,7 @@
 
 Date: 2026-09-23. Revision: 2.
 
-Status: **Approved and published. Implementation pending.**
+Status: **Approved, published, and locally implemented on `codex/spec6-work`. Release pending.**
 
 ## Scope and Sources
 
@@ -67,18 +67,18 @@ are included in the published tickets where applicable.
    current glossary and ADR-0045 require. Additional products, quantity purchases
    or changed assembly specifications still use a separate Follow-on Quote.
 4. **Change payments and refunds.** A positive change adjustment is a separate
-   USD obligation tied to that exact confirmation. Reuse externally verified
-   Cleared Funds rules without changing the original PI total, spending original
-   Order funding twice or creating a second Order. Any due date must be explicit
-   in the change agreement, not inherited from the original PI. A negative
+   USD obligation tied to that exact confirmation, handled offline by Admin.
+   After customer acceptance, Admin may manually apply the current proposal
+   without entering receipt evidence or attestation. The system must not label
+   that adjustment Cleared Funds or spend original Order funding twice. A negative
    adjustment creates a durable refund-due record for Spec 7; it does not claim
-   that a refund was sent. Withdrawal or rejection after receiving extra funds
-   retains those funds for reviewed resolution. Accepted adjustments and later
-   authorized resolutions establish an effective Order obligation alongside its
-   unchanged original total. Refund-due funds remain reserved until initiation;
-   they are not newly available excess. Payment-review recovery and Spec 7 use
-   this same obligation/funding contract rather than demanding the original
-   total again after an authorized credit and refund.
+   that a refund was sent. Accepted adjustments and later authorized resolutions
+   establish an effective Order obligation alongside its unchanged original total.
+   Refund-due funds remain reserved until initiation; they are not newly available
+   excess. Payment-review recovery and Spec 7 reconcile authorized credits and
+   original PI funds without claiming that positive offline funds were verified.
+   This supersedes the original extra-funds gate following the user's 2026-09-24
+   decision.
 5. **Dates and holds.** A promised calendar date remains a date, while audit and
    milestone instants remain UTC with customer ET/Admin Beijing display. Holds
    stop new allocation/release where applicable, not truthful recording of an
@@ -127,7 +127,7 @@ are included in the published tickets where applicable.
 | 02     | [#95](https://github.com/legendztk-netizen/Project1/issues/95) | Commit and Revise Ready-to-Ship Dates                      | #94                       | Reviewed schedule terms become reproducible Shipment dates, with calendar maintenance and notified revisions.  |
 | 03     | [#96](https://github.com/legendztk-netizen/Project1/issues/96) | Confirm Readiness, Dispatch and Delivery                   | #94                       | Admin completes offline readiness through delivery, and customers see accurate milestones and tracking.        |
 | 04     | [#97](https://github.com/legendztk-netizen/Project1/issues/97) | Manage Packing Records and Private Shipment Documents      | #94                       | Admin retains optional packing/evidence and deliberately shares selected logistics files.                      |
-| 05     | [#98](https://github.com/legendztk-netizen/Project1/issues/98) | Review and Apply Pre-dispatch Shipping Changes             | #95, #96                  | A held Shipment changes only after reviewed customer acceptance and required additional funding.               |
+| 05     | [#98](https://github.com/legendztk-netizen/Project1/issues/98) | Review and Apply Pre-dispatch Shipping Changes             | #95, #96                  | A held Shipment changes only after reviewed customer acceptance and manual Admin application.                  |
 | 06     | [#99](https://github.com/legendztk-netizen/Project1/issues/99) | Verify Launch Migration and the Order-to-Delivery Workflow | #97, #98                  | Legacy/new Orders complete the workflow without Spec 5, with repeatable acceptance and a Spec 7 data contract. |
 
 After 01, tickets 02, 03 and 04 can proceed independently against its stable
@@ -332,8 +332,8 @@ shares selected logistics documents through the customer's Order.
 
 **What to build:** A customer requests a delivery-address or shipping-plan change
 before handoff, Admin reviews its exact effects, and the revised plan takes
-effect only after the customer accepts the specific Order Change Confirmation
-and any required additional amount becomes Cleared Funds.
+effect after the customer accepts the specific Order Change Confirmation and
+Admin manually applies it.
 
 **Blocked by:** 02 and 03.
 
@@ -347,18 +347,21 @@ and any required additional amount becomes Cleared Funds.
       destination tax treatment and USD financial adjustment. Display before/after
       values and reasons. Default fixed logistics charges remain fixed for ordinary
       seller cost variance; new product purchases/specifications require Follow-on Quotes.
+- [ ] First-release allocation supports splitting one unshipped Shipment into
+      two and reallocating quantities among existing unshipped Shipments. It does
+      not merge two Shipments into one. Admin may decline a merge request with
+      a required reason; do not erase either Shipment's history.
 - [ ] Publish an immutable, versioned Order Change Confirmation linked to the
       original Order and affected Shipments. The customer explicitly accepts the
       exact proposal through an owned view; silence, an email being sent or an Admin
       edit is not acceptance. A revised proposal invalidates stale acceptance.
-- [ ] A positive adjustment has its own exact USD obligation and payment evidence.
-      An authorized Admin records externally verified receipt and confirms Cleared
-      Funds under existing actual-channel rules. Both acceptance/payment orderings
-      converge once; never reuse the original paid allocation, rewrite its PI total,
-      execute a bank transfer or create another Order. Disputed or corrected additional
-      funding keeps/restores the applicable release restriction.
-- [ ] Apply the accepted change atomically only when all required acceptance and
-      payment facts match the current proposal, affected quantities remain eligible
+- [ ] A positive adjustment has its own exact USD obligation in the accepted
+      confirmation, but Admin handles any payment offline. Do not require receipt
+      evidence or attestation or create a system Cleared Funds record. Never reuse
+      the original paid allocation, rewrite its PI total, execute a bank transfer
+      or create another Order. Customer acceptance alone does not apply the change.
+- [ ] Apply the accepted change atomically on an explicit Admin action only when
+      acceptance matches the current proposal, affected quantities remain eligible
       and unrelated release holds permit it. Preserve original PI/Order snapshots;
       an append-only effective change supplies the operational destination/plan.
       Reconfirm readiness if a changed plan invalidates the earlier verification.
@@ -366,8 +369,9 @@ and any required additional amount becomes Cleared Funds.
       its pending status without claiming money was sent. Application follows the
       accepted change terms; executing the refund remains the after-sales workflow.
 - [ ] Define the shared post-order financial contract: original Order obligation
-      plus effective authorized charges/credits/resolutions, exact funding sources,
-      reserved refund obligations and separately recorded initiation. Update payment
+      plus effective authorized charges/credits/resolutions, original system-tracked
+      funding, reserved refund obligations and separately recorded initiation.
+      Positive adjustments remain offline and unverified by this system. Update payment
       review, hold recovery and fund-availability projections to use it for existing
       Orders. A legitimate initiated refund must not appear as unpaid original PI
       value; uninitiated reserved refunds cannot be reallocated, refunded twice or
@@ -378,11 +382,11 @@ and any required additional amount becomes Cleared Funds.
       extra funds and any refund obligation visible for reviewed resolution.
 - [ ] Notify the customer of proposals, decisions and effective changes through
       the existing conversation/event/email mechanisms with durable deduplication.
-      Show actionable pending acceptance/funding/hold states in Admin and customer
+      Show actionable pending acceptance/hold states in Admin and customer
       Shipment views without exposing private payment or tax evidence.
 - [ ] Test submission-versus-dispatch races, overlapping holds, revised/stale
-      proposals, zero/positive/negative adjustments, both event orderings, payment
-      corrections, withdrawal after receipt, versioned date/split changes, duplicate
+      proposals, zero/positive/negative adjustments, no automatic effect or false
+      Cleared Funds claim, original PI payment corrections, versioned date/split changes, duplicate
       commands and immutable original documents through Worker/D1 and browser flows.
       Contract tests include a lawful freight credit/refund followed by payment
       correction/recovery and a later partial cancellation, with no false shortfall
@@ -412,9 +416,9 @@ can reliably use the resulting quantities, holds and delivery evidence.
 - [ ] Verify independently ready/dispatched/delivered split Shipments, date
       revisions, privacy-controlled documents, optional packing, all change-adjustment
       outcomes and immutable original commercial evidence after catalog updates.
-- [ ] Inject allocation/hold/dispatch and change/payment races, stale reads,
+- [ ] Inject allocation/hold/dispatch and change/original-payment races, stale reads,
       transaction failure, lost responses and notification retries. Reconcile
-      quantities and exact funding; no held goods are released, duplicate shipment
+      quantities and original system-tracked funding; no held goods are released, duplicate shipment
       is recorded or milestone email is sent twice.
 - [ ] Prove the Spec 7 contract using focused consumer tests: eligible unshipped
       quantity can be held/cancelled without affecting other lines; release of that
@@ -436,7 +440,7 @@ can reliably use the resulting quantities, holds and delivery evidence.
       Clearly distinguish test substitutes from actual carrier or email-provider
       delivery. No live carrier integration or production deployment is implied.
 - [ ] Document calendar preparation, historical plan review, offline factory
-      verification, dispatch/receipt recording, change-funds handling and operational
+      verification, dispatch/receipt recording, offline positive-adjustment handling and operational
       recovery. Recovery preserves committed events and snapshots; later Spec 5
       activation requires explicit eligible-work selection rather than replaying
       every historical pending production initialization.
@@ -466,3 +470,15 @@ Scope/dependency updates to the PRD and Specs 5/6/7 were explicitly authorized
 separately from publication. Parent issues remain open. Publishing implementation
 tickets does not authorize production deployment or claim implementation is
 complete.
+
+## Implementation Verification
+
+Local acceptance on 2026-09-25 used schema version 114 and 114 migrations.
+`pnpm test` passed 1103 tests across 161 files (3 tests and 1 file skipped);
+`pnpm test:smoke` passed 38 tests across 7 files and included a production
+build. Formatting, lint, typechecking and migration verification passed. The
+[operational handoff](../operations/spec-6-order-to-delivery.md) records the
+local Order inventory, recovery rules and browser-check limitations. This does
+not certify remote migration, bank settlement, carrier handoff, external email
+delivery or production deployment. Spec 7's cancellation and return screens
+remain separate work.

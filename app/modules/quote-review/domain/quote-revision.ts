@@ -8,7 +8,7 @@ import { quoteLineTotals, type QuotedLinePrice } from "./quote-pricing";
 import type { ReviewedQuoteLine } from "./quote-line-revision";
 
 export interface QuoteRevisionSnapshot {
-  version: 1;
+  version: 1 | 2;
   requestId: string;
   revisionNumber: number;
   sourceHash: string;
@@ -42,6 +42,10 @@ export function validateQuoteIssuance(
     terms: QuoteCommercialTerms | null;
   },
   factoryReviewConfirmed: boolean,
+  options: {
+    allowHistoricalUnstructuredSplit?: boolean;
+    requireReadySchedule?: boolean;
+  } = {},
 ) {
   if (!draft.terms || !draft.source.lines.length)
     throw new Error("Complete commercial terms and product lines");
@@ -49,7 +53,7 @@ export function validateQuoteIssuance(
     throw new Error(
       "Confirm unresolved product matters were reviewed with the factory",
     );
-  const terms = validateCommercialTerms(draft.terms, draft.source);
+  const terms = validateCommercialTerms(draft.terms, draft.source, options);
   return {
     terms,
     totals: commercialTotals(draft.source, draft.prices, terms.charges),
@@ -65,6 +69,7 @@ export function customerRevisionProjection(revision: QuoteRevisionSnapshot) {
     differences: revision.differences ?? [],
     lines: revision.source.lines.map((line, index) => ({
       id: line.id,
+      lineKind: line.lineKind,
       sku: line.sku,
       displayName: line.displayName,
       specifications: (line.productSnapshot?.specs ?? []).map(
@@ -94,10 +99,12 @@ export function customerRevisionProjection(revision: QuoteRevisionSnapshot) {
     destination: terms.destination,
     shipmentMode: terms.shipmentMode,
     splitPlan: terms.splitPlan,
+    shipmentGroups: terms.shipmentGroups ?? [],
     transportMethod: terms.transportMethod,
     incoterm: terms.incoterm,
     namedPlace: terms.namedPlace,
     leadTime: terms.leadTime,
+    readySchedule: terms.readySchedule ?? null,
     taxTreatment: terms.taxTreatment,
     charges: terms.charges,
     totals: revision.totals,

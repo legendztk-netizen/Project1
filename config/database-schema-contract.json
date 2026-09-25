@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 92,
+  "schemaVersion": 115,
   "migrations": [
     "0000_initial_catalog_release.sql",
     "0001_add_admin_identities.sql",
@@ -92,6 +92,29 @@
     "0088_follow_on_quote_drafts.sql",
     "0089_pi_order_finalization_assertions.sql",
     "0090_pi_payment_review_and_provenance.sql",
-    "0091_retain_accepted_pi_agreement.sql"
+    "0091_retain_accepted_pi_agreement.sql",
+    "0092_shipment_plans.sql",
+    "0093_shipment_allocation_revision.sql",
+    "0094_shipment_ready_schedule.sql",
+    "0095_china_calendar_commands.sql",
+    "0096_shipment_schedule_calendar_guard.sql",
+    "0097_shipment_packing_documents.sql",
+    "0098_shipment_document_cleanup.sql",
+    "0099_shipment_packing_divisor_and_finality.sql",
+    "0100_shipment_document_recheck.sql",
+    "0101_shipment_milestones_tracking.sql",
+    "0102_allow_late_shipment_packing_corrections.sql",
+    "0103_shipment_late_handoff_reports.sql",
+    "0104_order_shipping_changes.sql",
+    "0105_shipping_change_request_guard.sql",
+    "0106_shipping_change_application_guard.sql",
+    "0107_shipping_change_version_guards.sql",
+    "0108_order_change_financial_contract.sql",
+    "0109_remove_unused_shipping_change_funding.sql",
+    "0110_shipping_change_acceptance_expiry_guard.sql",
+    "0111_order_change_refund_and_hold_guards.sql",
+    "0112_scoped_quantity_holds.sql",
+    "0113_authorized_credit_fund_resolution_guard.sql",
+    "0114_admin_notifications.sql"
   ]
 }

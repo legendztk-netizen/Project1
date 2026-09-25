@@ -26,6 +26,11 @@ import {
 } from "../../quote-review/domain/private-review";
 import { parseUsdCents } from "../../quote-review/domain/quote-pricing";
 import type { DeliveryAddressDraft } from "../../customer-identity/domain/customer-account";
+import { physicalLineQuantity } from "../../shipment/domain/shipment-plan";
+import { parseShipmentGroupsForm } from "../../shipment/application/parse-shipment-groups-form";
+import { ShipmentGroupFields } from "../../shipment/ui/shipment-group-fields";
+import { ReadyScheduleFields } from "../../shipment/ui/ready-schedule-fields";
+import { parseReadyScheduleForm } from "../../shipment/application/parse-ready-schedule-form";
 
 const addressLabels: Record<keyof DeliveryAddressDraft, string> = {
   label: "地址标签",
@@ -73,16 +78,33 @@ export async function action({ context, params, request }: Route.ActionArgs) {
   const form = await readPrivateReviewForm(request);
   const text = (key: string) => String(form.get(key) ?? "");
   try {
+    const preparation = createQuotePreparation(env.DB, adminIdentity);
+    const draft = await preparation.find(params.requestId);
+    if (!draft) throw new Response("Not found", { status: 404 });
+    const shipmentMode = text(
+      "shipmentMode",
+    ) as QuoteCommercialTerms["shipmentMode"];
+    const shipmentGroups =
+      shipmentMode === "split"
+        ? parseShipmentGroupsForm(
+            form,
+            draft.source.lines,
+            {
+              incoterm: text("incoterm") as QuoteCommercialTerms["incoterm"],
+              namedPlace: text("namedPlace"),
+            },
+            { requireReadySchedule: true },
+          )
+        : undefined;
     const terms: QuoteCommercialTerms = {
       destination: Object.fromEntries(
         Object.keys(addressLabels).map((key) => [key, text(key)]),
       ) as unknown as DeliveryAddressDraft,
       addressConfirmed: form.get("addressConfirmed") === "on",
       addressReplacementReason: text("addressReplacementReason"),
-      shipmentMode: text(
-        "shipmentMode",
-      ) as QuoteCommercialTerms["shipmentMode"],
+      shipmentMode,
       splitPlan: text("splitPlan"),
+      shipmentGroups,
       transportMethod: text("transportMethod"),
       incoterm: text("incoterm") as QuoteCommercialTerms["incoterm"],
       termReplacementReason: text("termReplacementReason"),
@@ -93,6 +115,19 @@ export async function action({ context, params, request }: Route.ActionArgs) {
       ) as QuoteCommercialTerms["taxTreatment"],
       taxEvidenceId: text("taxEvidenceId") || null,
       leadTime: text("leadTime"),
+      readySchedule:
+        shipmentMode === "together"
+          ? parseReadyScheduleForm(form, "ready")
+          : undefined,
+      preparationDaysByLine: Object.fromEntries(
+        draft.source.lines.map((line, index) => [
+          line.id,
+          Number(text(`preparationDays-${index}`)),
+        ]),
+      ),
+      assemblyLeadConfirmed: form.get("assemblyLeadConfirmed") === "on",
+      fixedDatePreparationConfirmed:
+        form.get("fixedDatePreparationConfirmed") === "on",
       charges: Object.fromEntries(
         commercialChargeKeys.map((key) => [key, parseUsdCents(text(key))]),
       ) as CommercialCharges,
@@ -100,7 +135,7 @@ export async function action({ context, params, request }: Route.ActionArgs) {
       freightReviewConfirmed: form.get("freightReviewConfirmed") === "on",
       actualPacking: text("actualPacking"),
     };
-    await createQuotePreparation(env.DB, adminIdentity).saveTerms(
+    await preparation.saveTerms(
       params.requestId,
       Number(text("version")),
       terms,
@@ -134,7 +169,13 @@ export default function CommercialTerms({
 }: Route.ComponentProps) {
   const { draft } = loaderData;
   const terms = draft.terms;
+  const [shipmentMode, setShipmentMode] = useState(
+    terms?.shipmentMode ?? "together",
+  );
   const address = terms?.destination ?? draft.source.destination;
+  const standardOnly = draft.source.lines.every(
+    (line) => line.lineKind !== "configured_assembly",
+  );
   const pending = useNavigation().state !== "idle";
   const [searchParams] = useSearchParams();
   const [dirty, setDirty] = useState(false);
@@ -142,6 +183,7 @@ export default function CommercialTerms({
   useEffect(() => {
     setDirty(false);
     submitting.current = false;
+    setShipmentMode(terms?.shipmentMode ?? "together");
   }, [draft.version]);
   useEffect(() => {
     if (actionData?.error) submitting.current = false;
@@ -283,6 +325,9 @@ export default function CommercialTerms({
               <select
                 name="shipmentMode"
                 defaultValue={terms?.shipmentMode ?? "together"}
+                onChange={(event) =>
+                  setShipmentMode(event.target.value as "together" | "split")
+                }
               >
                 <option value="together">合并发货</option>
                 <option value="split">约定分批发货</option>
@@ -292,6 +337,84 @@ export default function CommercialTerms({
               分批计划（分批时必填）
               <textarea name="splitPlan" defaultValue={terms?.splitPlan} />
             </label>
+            {shipmentMode === "split" && (
+              <ShipmentGroupFields
+                key={draft.version}
+                lines={draft.source.lines.map((line) => ({
+                  id: line.id,
+                  sku: line.sku,
+                  unit:
+                    line.lineKind === "length_based_hose"
+                      ? "件"
+                      : line.salesUnit,
+                  physicalQuantity: physicalLineQuantity(line),
+                }))}
+                groups={
+                  terms?.shipmentMode === "split"
+                    ? terms.shipmentGroups
+                    : undefined
+                }
+                charges={
+                  terms?.charges ?? {
+                    freight: 0,
+                    insurance: 0,
+                    dutiesImport: 0,
+                  }
+                }
+                transportMethod={terms?.transportMethod ?? ""}
+                showReadySchedule
+                standardOnly={standardOnly}
+                onDirty={() => setDirty(true)}
+              />
+            )}
+            {shipmentMode === "together" && (
+              <ReadyScheduleFields
+                prefix="ready"
+                value={terms?.readySchedule}
+                standardOnly={standardOnly}
+              />
+            )}
+            <fieldset>
+              <legend>各商品备货需求审核</legend>
+              {draft.source.lines.map((line, index) => (
+                <label key={line.id}>
+                  {line.sku} · 所需中国履约工作日
+                  <input
+                    type="number"
+                    min={1}
+                    max="365"
+                    step="1"
+                    name={`preparationDays-${index}`}
+                    defaultValue={
+                      terms?.preparationDaysByLine?.[line.id] ??
+                      (line.lineKind === "standard" ? 10 : "")
+                    }
+                    required
+                  />
+                </label>
+              ))}
+              {draft.source.lines.some(
+                (line) => line.lineKind === "configured_assembly",
+              ) && (
+                <label className="quote-confirmation">
+                  <input
+                    type="checkbox"
+                    name="assemblyLeadConfirmed"
+                    defaultChecked={terms?.assemblyLeadConfirmed}
+                    required
+                  />
+                  Sales 已核实总成备货天数
+                </label>
+              )}
+              <label className="quote-confirmation">
+                <input
+                  type="checkbox"
+                  name="fixedDatePreparationConfirmed"
+                  defaultChecked={terms?.fixedDatePreparationConfirmed}
+                />
+                如使用固定日期，Sales 已核实该日期覆盖各商品备货需求
+              </label>
+            </fieldset>
             <label>
               运输方式
               <input
@@ -325,7 +448,7 @@ export default function CommercialTerms({
               />
             </label>
             <label>
-              按本次数量审核的交期（英文）
+              交期补充说明（英文）
               <textarea
                 name="leadTime"
                 defaultValue={terms?.leadTime}
