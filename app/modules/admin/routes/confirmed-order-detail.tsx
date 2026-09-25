@@ -41,12 +41,12 @@ import {
   requireReviewMutation,
 } from "../../quote-review/domain/private-review";
 import "../ui/confirmed-orders.css";
-import { AdminShipmentPlan } from "../../shipment/ui/admin-shipment-plan";
+import { AdminShipmentCards } from "../../shipment/ui/admin-shipment-cards";
+import { adminShipmentProgressLabel } from "../../shipment/ui/shipment-display";
+import { adminMilestoneError } from "../../shipment/ui/admin-milestone-errors";
 import { parseShipmentGroupsForm } from "../../shipment/application/parse-shipment-groups-form";
 import { createShipmentReadyScheduleService } from "../../shipment/application/shipment-ready-schedule-service";
-import { AdminShipmentReadySchedules } from "../../shipment/ui/admin-shipment-ready-schedules";
 import { createShipmentMilestoneService } from "../../shipment/application/shipment-milestone-service";
-import { AdminShipmentMilestones } from "../../shipment/ui/admin-shipment-milestones";
 import { createOrderShippingChangeService } from "../../shipment/application/order-shipping-change-service";
 import { AdminOrderShippingChanges } from "../../shipment/ui/admin-order-shipping-changes";
 import { splitShipmentIdForChange } from "../../shipment/domain/order-shipping-change";
@@ -300,10 +300,14 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
         throw error;
       return data(
         {
-          error:
-            error instanceof Response && error.status === 409
-              ? "批次状态或放行条件已变化，请刷新后核查限制与数量。"
-              : "批次状态保存失败，请检查日期、数量和必填凭据。",
+          error: adminMilestoneError(
+            error instanceof Response ? error.status : 400,
+            error instanceof Response
+              ? await error.text()
+              : error instanceof Error
+                ? error.message
+                : "",
+          ),
         },
         { status: error instanceof Response ? error.status : 400 },
       );
@@ -703,7 +707,7 @@ export default function ConfirmedOrderDetail({
             >
               {order.status === "Payment Review Hold"
                 ? "付款复核锁定"
-                : "订单确认"}
+                : adminShipmentProgressLabel(milestones)}
             </span>
             <h1 className="confirmed-order-number">{order.orderNumber}</h1>
             <p>
@@ -820,28 +824,16 @@ export default function ConfirmedOrderDetail({
             className="order-panel"
           >
             <h2>发货批次</h2>
-            <AdminShipmentPlan
+            <AdminShipmentCards
               plan={shipmentPlan}
-              commandId={commandId}
-              busy={busy}
-              error={actionData?.error}
-            />
-            <AdminShipmentReadySchedules
               schedules={readySchedules}
-              commandIds={scheduleCommandIds}
-              busy={busy}
-              error={actionData?.error}
-            />
-            <AdminShipmentMilestones
               milestones={milestones}
-              commands={milestoneCommands}
+              milestoneCommands={milestoneCommands}
               trackingCommands={trackingCommands}
-              heldShipmentIds={shipmentPlan.shipments
-                .filter((item) => item.held)
-                .map((item) => item.id)}
-              planReady={shipmentPlan.status === "ready"}
-              busy={busy}
-              error={actionData?.error}
+              scheduleCommandIds={scheduleCommandIds}
+              planCommandId={commandId}
+              actionData={actionData}
+              onReviewChanges={() => setTab("changes")}
             />
           </section>
         )}

@@ -57,7 +57,7 @@ export function validatedChinaCalendarDraft(
     throw new Error("Select valid China calendar weekdays");
   if (
     typeof input.revisionReason !== "string" ||
-    input.revisionReason.trim().length < 10 ||
+    !input.revisionReason.trim() ||
     input.revisionReason.length > 2000
   )
     throw new Error("Calendar review reason is required");
@@ -72,7 +72,7 @@ export function validatedChinaCalendarDraft(
       Temporal.PlainDate.compare(date, through) > 0 ||
       typeof exception.isWorking !== "boolean" ||
       typeof exception.reason !== "string" ||
-      exception.reason.trim().length < 3 ||
+      !exception.reason.trim() ||
       exception.reason.length > 500
     )
       throw new Error("Invalid or duplicate China calendar exception");

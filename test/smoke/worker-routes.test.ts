@@ -6229,7 +6229,7 @@ describe("Cloudflare Worker route surfaces", () => {
         recipientEmail: "individual-request@example.com",
         recipientName: "Individual Buyer",
         recipientPhone: "+1 212 555 0144",
-        stateProvince: "New York",
+        stateProvince: "NY",
       },
       importResponsibility: {
         fulfillmentTerm: "DDP",

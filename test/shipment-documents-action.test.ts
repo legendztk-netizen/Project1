@@ -16,7 +16,7 @@ import { action } from "../app/modules/admin/routes/shipment-documents";
 
 beforeEach(() => upload.mockReset());
 
-async function submitUpload() {
+async function submitUpload(responseMode?: "dialog") {
   const url = new URL(
     "http://admin.localhost/admin/orders/order-1/shipments/shipment-1",
   );
@@ -24,6 +24,7 @@ async function submitUpload() {
   form.set("intent", "upload");
   form.set("commandId", "00000000-0000-4000-8000-000000000001");
   form.set("kind", "packing_list");
+  if (responseMode) form.set("responseMode", responseMode);
   form.set(
     "file",
     new File(["%PDF-1.4\ntest"], "packing.pdf", {
@@ -64,4 +65,15 @@ it("retains the command ID when a transient object-store failure is retryable", 
   upload.mockRejectedValueOnce(new Error("temporary R2 failure"));
   const result = await submitUpload();
   expect(result).toHaveProperty("data.retryCommandId", undefined);
+});
+
+it("redirects the standalone page but returns data to the order-page dialog", async () => {
+  upload.mockResolvedValue(undefined);
+  const page = await submitUpload();
+  expect(page).toBeInstanceOf(Response);
+  expect((page as Response).headers.get("Location")).toBe(
+    "/admin/orders/order-1/shipments/shipment-1?tab=files&saved=1",
+  );
+  const dialog = await submitUpload("dialog");
+  expect(dialog).toHaveProperty("data", { saved: true, tab: "files" });
 });

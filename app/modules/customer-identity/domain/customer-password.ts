@@ -2,7 +2,7 @@ import { decodeBase64Url, encodeBase64Url } from "./base64-url";
 
 export const customerPasswordAlgorithm = "PBKDF2-HMAC-SHA-256";
 export const customerPasswordWorkFactor = 600_000;
-export const customerPasswordMinimumLength = 15;
+export const customerPasswordMinimumLength = 8;
 export const customerPasswordMaximumLength = 128;
 export const customerPasswordMaximumBytes = 1024;
 export const customerPasswordMaximumAttemptsPerEmail = 10;
@@ -18,6 +18,14 @@ const builtInBlockedPasswords = new Set(
     "letmeinletmeinletmein",
     "passwordpassword",
     "qwertyuiopqwerty",
+    "abcd1234",
+    "password1",
+    "password12",
+    "password123",
+    "passw0rd",
+    "qwerty123",
+    "welcome1",
+    "welcome123",
   ].map((password) => password.normalize("NFC").toLocaleLowerCase("en-US")),
 );
 
@@ -41,7 +49,13 @@ export const builtInPasswordScreening: PasswordScreeningProvider = {
 };
 
 export type PasswordPolicyErrorCode =
-  "COMMON_PASSWORD" | "TOO_LONG" | "TOO_SHORT";
+  "COMMON_PASSWORD" | "MISSING_CHARACTER_TYPES" | "TOO_LONG" | "TOO_SHORT";
+
+export const customerPasswordRequirement =
+  "Use at least 8 characters, including an uppercase letter, a lowercase letter and a number.";
+
+// Browser-side mirror of the policy for password inputs.
+export const customerPasswordPattern = "(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9]).{8,}";
 
 export class PasswordPolicyError extends Error {
   constructor(
@@ -60,7 +74,7 @@ export async function validatedCustomerPassword(
   const characterLength = Array.from(normalized).length;
   if (characterLength < customerPasswordMinimumLength) {
     throw new PasswordPolicyError(
-      `Use at least ${customerPasswordMinimumLength} characters. A passphrase works well.`,
+      `Use at least ${customerPasswordMinimumLength} characters.`,
       "TOO_SHORT",
     );
   }
@@ -73,9 +87,19 @@ export async function validatedCustomerPassword(
       "TOO_LONG",
     );
   }
+  if (
+    !/\p{Lu}/u.test(normalized) ||
+    !/\p{Ll}/u.test(normalized) ||
+    !/\p{Nd}/u.test(normalized)
+  ) {
+    throw new PasswordPolicyError(
+      "Include at least one uppercase letter, one lowercase letter and one number.",
+      "MISSING_CHARACTER_TYPES",
+    );
+  }
   if (await screening.isBlocked(normalized)) {
     throw new PasswordPolicyError(
-      "Choose a less common password or passphrase.",
+      "Choose a less common password.",
       "COMMON_PASSWORD",
     );
   }

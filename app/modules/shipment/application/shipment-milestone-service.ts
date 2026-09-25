@@ -675,11 +675,7 @@ export function createShipmentMilestoneService(
       const handoff = actualHandoffInstant(input.handoffAt, now());
       const carrierName = reviewedText(input.carrierName, "Carrier");
       const source = reviewedText(input.source, "Carrier handoff source");
-      const reason = reviewedText(
-        input.reason,
-        "Late handoff review reason",
-        10,
-      );
+      const reason = reviewedText(input.reason, "Late handoff review reason");
       const payloadHash = await piSha256(
         new TextEncoder().encode(
           JSON.stringify({ ...input, handoff, carrierName, source, reason }),
@@ -953,7 +949,6 @@ export function createShipmentMilestoneService(
       const reason = reviewedText(
         input.reason,
         "Tracking source or correction reason",
-        5,
       );
       const replay = async () => {
         const receipt = await db

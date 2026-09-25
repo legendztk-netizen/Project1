@@ -22,13 +22,17 @@ import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
 import { ConfirmedOrderLine } from "../../proforma-invoice/ui/confirmed-order-line";
 import { AccountWorkspace } from "../ui/account-workspace";
 import { requireTrustedAuthPost } from "../application/trusted-auth-request";
-import { CustomerShipmentPlan } from "../../shipment/ui/customer-shipment-plan";
 import { createShipmentReadyScheduleService } from "../../shipment/application/shipment-ready-schedule-service";
-import { CustomerShipmentReadySchedules } from "../../shipment/ui/customer-shipment-ready-schedules";
 import { createShipmentMilestoneService } from "../../shipment/application/shipment-milestone-service";
-import { CustomerShipmentMilestones } from "../../shipment/ui/customer-shipment-milestones";
+import {
+  CustomerShipmentCards,
+  customerOrderProgress,
+} from "../../shipment/ui/customer-shipment-cards";
 import { createOrderShippingChangeService } from "../../shipment/application/order-shipping-change-service";
-import { CustomerOrderShippingChanges } from "../../shipment/ui/customer-order-shipping-changes";
+import {
+  CustomerOrderShippingChanges,
+  CustomerShippingChangeActions,
+} from "../../shipment/ui/customer-order-shipping-changes";
 
 export const headers = piPrivateHeaders;
 export async function loader({ context, request, params }: LoaderFunctionArgs) {
@@ -141,6 +145,7 @@ export async function action({ context, request, params }: ActionFunctionArgs) {
         throw error;
       return data(
         {
+          intent,
           error:
             error instanceof Response && error.status === 409
               ? "This change or shipment has changed. Refresh and review the latest details."
@@ -182,29 +187,126 @@ export default function ConfirmedOrderDetail({
   const navigation = useNavigation();
   const snapshot = order.snapshot;
   const address = snapshot.destination;
+  const progress = customerOrderProgress(shipmentPlan, milestones);
+  const orderShipments = shipmentPlan.shipments.map((shipment) => ({
+    id: shipment.id,
+    displayName: shipment.displayName,
+    status: shipment.status,
+    version: shipment.version,
+    held: shipment.held,
+  }));
   return (
     <AccountWorkspace activeView="orders">
-      <main className="account-detail-content customer-quote-detail">
+      <main className="account-detail-content customer-quote-detail customer-order-detail">
         <Link className="customer-quote-back-link" to="/account?view=orders">
           <ArrowLeft size={17} />
           Back to Orders
         </Link>
-        <span className="eyebrow">{order.status}</span>
-        <h1 className="confirmed-order-number">{order.orderNumber}</h1>
-        <p>Confirmed {formatPiDate(order.confirmedAt, "customer")}</p>
+        <header className="customer-order-hero">
+          <div>
+            <span className="eyebrow">Order {order.orderNumber}</span>
+            <h1>
+              {order.status === "Payment Review Hold"
+                ? "Payment under review"
+                : progress.headline}
+            </h1>
+            <p>
+              {progress.summary} · Confirmed{" "}
+              {formatPiDate(order.confirmedAt, "customer")}
+            </p>
+          </div>
+          <strong className="customer-order-total">
+            USD {(order.totalCents / 100).toFixed(2)}
+          </strong>
+        </header>
+        <CustomerShippingChangeActions
+          shipments={orderShipments}
+          destination={snapshot.destination}
+          commandId={commandId}
+          actionData={
+            actionData?.intent === "shipping-change-submit"
+              ? actionData
+              : undefined
+          }
+        />
         {order.status === "Payment Review Hold" && (
-          <p role="status">
+          <p className="shipment-card-status" role="status">
             Payment is under review. The order is preserved, but further release
             is paused. Please contact Support.
           </p>
         )}
-        <Link
-          to={`/account/quotes/${encodeURIComponent(order.requestId)}/pi/${encodeURIComponent(order.piId)}`}
-        >
-          View accepted PI
-        </Link>
+        <CustomerShipmentCards
+          plan={shipmentPlan}
+          milestones={milestones}
+          schedules={readySchedules}
+        />
+        <CustomerOrderShippingChanges
+          changes={shippingChanges}
+          shipments={orderShipments}
+          commandId={commandId}
+          busy={navigation.state !== "idle"}
+          error={
+            actionData?.intent === "shipping-change-submit"
+              ? undefined
+              : actionData?.error
+          }
+        />
+        <section className="customer-quote-section customer-order-details">
+          <div className="customer-order-section-heading">
+            <h2>Order details</h2>
+            <Link
+              to={`/account/quotes/${encodeURIComponent(order.requestId)}/pi/${encodeURIComponent(order.piId)}`}
+            >
+              View accepted PI
+            </Link>
+          </div>
+          {snapshot.lines.map((line) => (
+            <ConfirmedOrderLine key={line.id} line={line} />
+          ))}
+          <dl className="customer-order-facts">
+            <div>
+              <dt>Order total</dt>
+              <dd>USD {(order.totalCents / 100).toFixed(2)}</dd>
+            </div>
+            <div>
+              <dt>Terms</dt>
+              <dd>
+                {snapshot.terms.incoterm} · {snapshot.terms.namedPlace} ·{" "}
+                {snapshot.terms.transportMethod}
+              </dd>
+            </div>
+            <div>
+              <dt>Lead time</dt>
+              <dd>{snapshot.terms.leadTime}</dd>
+            </div>
+            <div>
+              <dt>Delivery destination</dt>
+              <dd>
+                <address>
+                  {address.recipientName}
+                  <br />
+                  {address.addressLine1}
+                  <br />
+                  {address.addressLine2 && (
+                    <>
+                      {address.addressLine2}
+                      <br />
+                    </>
+                  )}
+                  {address.city}, {address.stateProvince} {address.postalCode}
+                  <br />
+                  {address.countryCode}
+                </address>
+              </dd>
+            </div>
+          </dl>
+        </section>
         <section className="customer-quote-section">
-          <h2>Additional purchases</h2>
+          <h2>Need more products?</h2>
+          <p>
+            Additional items are quoted separately and don&apos;t change this
+            order.
+          </p>
           <Form method="post">
             <input type="hidden" name="commandId" value={commandId} />
             <button className="button button-secondary">
@@ -228,58 +330,6 @@ export default function ConfirmedOrderDetail({
               )}
             </p>
           ))}
-        </section>
-        <section className="customer-quote-section">
-          <h2>Order total</h2>
-          <p>USD {(order.totalCents / 100).toFixed(2)}</p>
-          <p>
-            {snapshot.terms.incoterm} · {snapshot.terms.namedPlace} ·{" "}
-            {snapshot.terms.transportMethod}
-          </p>
-        </section>
-        <CustomerShipmentPlan plan={shipmentPlan} />
-        <CustomerShipmentMilestones
-          milestones={milestones}
-          heldShipmentIds={shipmentPlan.shipments
-            .filter((item) => item.held)
-            .map((item) => item.id)}
-        />
-        <CustomerShipmentReadySchedules schedules={readySchedules} />
-        <CustomerOrderShippingChanges
-          changes={shippingChanges}
-          shipments={shipmentPlan.shipments.map((shipment) => ({
-            id: shipment.id,
-            displayName: shipment.displayName,
-            status: shipment.status,
-            version: shipment.version,
-            held: shipment.held,
-          }))}
-          destination={snapshot.destination}
-          commandId={commandId}
-          busy={navigation.state !== "idle"}
-          error={actionData?.error}
-        />
-        {snapshot.lines.map((line) => (
-          <ConfirmedOrderLine key={line.id} line={line} />
-        ))}
-        <section className="customer-quote-section">
-          <h2>Delivery destination</h2>
-          <address>
-            {address.recipientName}
-            <br />
-            {address.addressLine1}
-            <br />
-            {address.addressLine2 && (
-              <>
-                {address.addressLine2}
-                <br />
-              </>
-            )}
-            {address.city}, {address.stateProvince} {address.postalCode}
-            <br />
-            {address.countryCode}
-          </address>
-          <p>Lead time: {snapshot.terms.leadTime}</p>
         </section>
       </main>
     </AccountWorkspace>

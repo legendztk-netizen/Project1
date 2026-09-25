@@ -1,32 +1,38 @@
-import { Form, Link } from "react-router";
+import { Form } from "react-router";
 import type { createShipmentPlanService } from "../application/shipment-plan-service";
 import type { QuotedShipmentGroup } from "../domain/shipment-plan";
 import { ShipmentGroupFields } from "./shipment-group-fields";
 
-type Plan = Awaited<
+export type AdminPlan = Awaited<
   ReturnType<ReturnType<typeof createShipmentPlanService>["adminRead"]>
 >;
 
-export function AdminShipmentPlan({
+export function planMappingState(plan: AdminPlan) {
+  return {
+    canMap:
+      plan.status === "review" &&
+      ["historical_review", "reviewed_mapping"].includes(plan.source ?? "") &&
+      plan.originalMode === "split",
+    canRevise:
+      plan.status === "ready" &&
+      plan.source === "reviewed_mapping" &&
+      plan.originalMode === "split",
+  };
+}
+
+export function AdminShipmentPlanReview({
   plan,
   commandId,
   busy,
   error,
 }: {
-  plan: Plan;
+  plan: AdminPlan;
   commandId: string;
   busy: boolean;
   error?: string;
 }) {
   const lines = plan.lines ?? [];
-  const canMap =
-    plan.status === "review" &&
-    ["historical_review", "reviewed_mapping"].includes(plan.source ?? "") &&
-    plan.originalMode === "split";
-  const canRevise =
-    plan.status === "ready" &&
-    plan.source === "reviewed_mapping" &&
-    plan.originalMode === "split";
+  const { canMap, canRevise } = planMappingState(plan);
   const groupDefaults: QuotedShipmentGroup[] = plan.shipments.map(
     (shipment) => ({
       id: shipment.groupKey,
@@ -41,15 +47,7 @@ export function AdminShipmentPlan({
     }),
   );
   return (
-    <div className="order-shipment-workspace">
-      <div className="order-shipment-summary">
-        <strong>
-          {plan.status === "review"
-            ? "计划待核对"
-            : `${plan.shipments.length} 批发货计划`}
-        </strong>
-        <span>计划版本 {plan.version}</span>
-      </div>
+    <>
       {plan.paymentHeld && (
         <p className="order-hold-notice" role="status">
           付款复核期间不可新分配或放行货物。既有批次保留显示。
@@ -71,61 +69,6 @@ export function AdminShipmentPlan({
         <p className="order-shipment-review-note">
           上次核对依据：{plan.reviewNote}
         </p>
-      )}
-      {plan.shipments.length > 0 && (
-        <div className="order-shipment-list">
-          {plan.shipments.map((shipment) => (
-            <article key={shipment.id} className="order-shipment-item">
-              <div className="order-shipment-item-heading">
-                <h3>
-                  第 {shipment.sequenceNumber} 批 · {shipment.displayName}
-                </h3>
-                <span className="orders-status">
-                  {shipment.held ? "暂缓放行" : "计划中"}
-                </span>
-              </div>
-              <p>
-                {shipment.incoterm} · {shipment.namedPlace} ·{" "}
-                {shipment.transportMethod}
-              </p>
-              <ul>
-                {shipment.allocations.map((allocation) => (
-                  <li key={allocation.lineId}>
-                    <span>
-                      {allocation.displayName} · {allocation.sku}
-                    </span>
-                    <strong>
-                      {allocation.physicalQuantity} {allocation.unit}
-                      {allocation.lengthPerPiece &&
-                        ` · 每件 ${allocation.lengthPerPiece.value} ${allocation.lengthPerPiece.unit}`}
-                    </strong>
-                  </li>
-                ))}
-              </ul>
-              {shipment.quotedAllocations.length >
-                shipment.allocations.length && (
-                <p>部分约定数量仍待解除锁定并完成分配。</p>
-              )}
-              <p>
-                {shipment.groupKey.startsWith("change:")
-                  ? "原 PI 分摊运费"
-                  : "本批运费"}{" "}
-                USD {(shipment.freightCents / 100).toFixed(2)} · 保险 USD{" "}
-                {(shipment.insuranceCents / 100).toFixed(2)} · 进口费用 USD
-                {(shipment.dutiesImportCents / 100).toFixed(2)}
-              </p>
-              {shipment.groupKey.startsWith("change:") && (
-                <p>订单变更价款单独记载，不计入原 PI 分摊。</p>
-              )}
-              <Link
-                className="button button-secondary"
-                to={`/admin/orders/${encodeURIComponent(plan.orderId)}/shipments/${encodeURIComponent(shipment.id)}`}
-              >
-                装箱与文件
-              </Link>
-            </article>
-          ))}
-        </div>
       )}
       {(canMap || canRevise) && (
         <Form
@@ -156,7 +99,6 @@ export function AdminShipmentPlan({
             <textarea
               name="reviewNote"
               defaultValue={plan.reviewNote ?? ""}
-              minLength={10}
               maxLength={2000}
               required
             />
@@ -191,6 +133,6 @@ export function AdminShipmentPlan({
           </button>
         </Form>
       )}
-    </div>
+    </>
   );
 }

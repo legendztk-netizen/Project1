@@ -398,11 +398,7 @@ export function createShipmentPlanService(db: D1Database) {
       if (!/^[0-9a-f-]{36}$/.test(input.commandId))
         throw new Response("Command identity required", { status: 400 });
       const note = input.reviewNote.trim();
-      if (
-        input.matchesAcceptedTerms !== true ||
-        note.length < 10 ||
-        note.length > 2000
-      )
+      if (input.matchesAcceptedTerms !== true || !note || note.length > 2000)
         throw new Response("Accepted-plan review and evidence required", {
           status: 400,
         });
@@ -598,11 +594,7 @@ export function createShipmentPlanService(db: D1Database) {
       const note = input.reviewNote.trim();
       if (!/^[0-9a-f-]{36}$/.test(input.commandId))
         throw new Response("Command identity required", { status: 400 });
-      if (
-        input.matchesAcceptedTerms !== true ||
-        note.length < 10 ||
-        note.length > 2000
-      )
+      if (input.matchesAcceptedTerms !== true || !note || note.length > 2000)
         throw new Response("Accepted-plan review and evidence required", {
           status: 400,
         });

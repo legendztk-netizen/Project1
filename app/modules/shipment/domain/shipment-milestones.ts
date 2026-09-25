@@ -77,9 +77,9 @@ export function actualHandoffInstant(value: string, now = new Date()) {
   };
 }
 
-export function reviewedText(value: string, label: string, minimum = 2) {
+export function reviewedText(value: string, label: string) {
   const text = value.trim();
-  if (text.length < minimum || text.length > 2000)
+  if (!text || text.length > 2000)
     throw new Response(`${label} is required`, { status: 400 });
   return text;
 }

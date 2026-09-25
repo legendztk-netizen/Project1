@@ -16,6 +16,7 @@ const actor: AdminIdentity = {
 const filters: AdminOrderFilters = {
   query: "",
   status: "all",
+  stage: "all",
   from: "",
   to: "",
   country: "",
@@ -57,6 +58,10 @@ function fixtureDb(counts = { total: 2, confirmed: 1, held: 1 }) {
                 country_code: "US",
                 held: 1,
                 line_count: 2,
+                shipment_count: 2,
+                shipped_count: 1,
+                delivered_count: 0,
+                stage: "shipped",
                 overdue_ready_count: 1,
                 first_line_json: JSON.stringify({
                   displayName: "Adapter",
@@ -91,6 +96,9 @@ describe("admin confirmed order listing", () => {
       totalCents: 9400,
       status: "Payment Review Hold",
       lineCount: 2,
+      stage: "shipped",
+      shipmentCount: 2,
+      shippedCount: 1,
       overdueReadyCount: 1,
       lines: [{ displayName: "Adapter", imageUrl: "/adapter.png" }],
     });
@@ -129,6 +137,25 @@ describe("admin confirmed order listing", () => {
       "configured_assembly",
       0,
     ]);
+  });
+
+  it("filters by fulfillment stage in both counts and the page query", async () => {
+    const { db, calls } = fixtureDb();
+    await createConfirmedOrderService(db).adminList(actor, {
+      ...filters,
+      stage: "shipped",
+    });
+    const list = calls.find(({ sql }) => sql.includes("LIMIT 25 OFFSET"));
+    const count = calls.find(({ sql }) => sql.includes("count(*) AS total"));
+    expect(list?.sql).toContain("THEN 'shipped'");
+    expect(list?.values).toEqual(["shipped", 0]);
+    expect(count?.values).toEqual(["shipped"]);
+    await expect(
+      createConfirmedOrderService(db).adminList(actor, {
+        ...filters,
+        stage: "lost" as AdminOrderFilters["stage"],
+      }),
+    ).rejects.toMatchObject({ status: 400 });
   });
 
   it("rejects an unauthenticated admin caller", async () => {

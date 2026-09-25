@@ -202,23 +202,30 @@ describe("customer password", () => {
     ).resolves.toBe(false);
   });
 
-  it("accepts Unicode passphrases without composition rules", async () => {
-    await expect(
-      validatedCustomerPassword("液压系统 专用 长密码 2026"),
-    ).resolves.toBe("液压系统 专用 长密码 2026");
+  it("requires uppercase, lowercase and a number in 8 or more characters", async () => {
+    await expect(validatedCustomerPassword("Hydra2026")).resolves.toBe(
+      "Hydra2026",
+    );
+    await expect(validatedCustomerPassword("液压系统 Pass 2026")).resolves.toBe(
+      "液压系统 Pass 2026",
+    );
+    for (const missing of ["hydra2026", "HYDRA2026", "HydraSupply"])
+      await expect(validatedCustomerPassword(missing)).rejects.toMatchObject({
+        code: "MISSING_CHARACTER_TYPES",
+      });
   });
 
   it("rejects short, overlong and common values without truncation", async () => {
-    await expect(validatedCustomerPassword("too short")).rejects.toMatchObject({
+    await expect(validatedCustomerPassword("Ab1cdef")).rejects.toMatchObject({
       code: "TOO_SHORT",
     });
     await expect(
       validatedCustomerPassword("x".repeat(customerPasswordMaximumLength + 1)),
     ).rejects.toMatchObject({ code: "TOO_LONG" });
     await expect(
-      validatedCustomerPassword("correcthorsebatterystaple"),
+      validatedCustomerPassword("Password123"),
     ).rejects.toMatchObject({ code: "COMMON_PASSWORD" });
-    expect(customerPasswordMinimumLength).toBe(15);
+    expect(customerPasswordMinimumLength).toBe(8);
     expect(new PasswordPolicyError("short", "TOO_SHORT").code).toBe(
       "TOO_SHORT",
     );
@@ -227,13 +234,13 @@ describe("customer password", () => {
   it("allows the compromised-value screening provider to be replaced", async () => {
     const screened: string[] = [];
     await expect(
-      validatedCustomerPassword("A unique launch passphrase", {
+      validatedCustomerPassword("A unique launch passphrase 2026", {
         isBlocked(password) {
           screened.push(password);
           return false;
         },
       }),
-    ).resolves.toBe("A unique launch passphrase");
-    expect(screened).toEqual(["A unique launch passphrase"]);
+    ).resolves.toBe("A unique launch passphrase 2026");
+    expect(screened).toEqual(["A unique launch passphrase 2026"]);
   });
 });

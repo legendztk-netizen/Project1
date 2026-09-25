@@ -10,6 +10,7 @@ import { recordOverdueReadyScheduleReminders } from "../app/modules/shipment/app
 import { createOrderShippingChangeService } from "../app/modules/shipment/application/order-shipping-change-service";
 import { splitShipmentIdForChange } from "../app/modules/shipment/domain/order-shipping-change";
 import { piSha256 } from "../app/modules/proforma-invoice/domain/proforma-invoice";
+import { createConfirmedOrderService } from "../app/modules/proforma-invoice/application/confirmed-order-service";
 import { createPiFundResolutionService } from "../app/modules/proforma-invoice/application/pi-fund-resolution-service";
 import { createPiPaymentCorrectionService } from "../app/modules/proforma-invoice/application/pi-payment-correction-service";
 import type { AdminIdentity } from "../workers/admin-access";
@@ -421,6 +422,33 @@ it("records readiness, exact dispatch and delivery once with customer-safe histo
   ).rejects.toMatchObject({
     status: 404,
   });
+  const orders = createConfirmedOrderService(db);
+  const shippedTab = await orders.customerList("buyer", null, "shipped");
+  expect(shippedTab.records.map((order) => order.id)).toEqual([
+    "milestone-order",
+  ]);
+  expect(shippedTab.records[0]).toMatchObject({
+    stage: "shipped",
+    lineCount: 3,
+    firstLine: { displayName: "Test part" },
+    lastDeliveredDate: "2026-09-24",
+  });
+  expect(shippedTab.records[0].shippedCount).toBeGreaterThanOrEqual(1);
+  expect(shippedTab.records[0].shippedCount).toBeLessThan(
+    shippedTab.records[0].shipmentCount,
+  );
+  expect(shippedTab.counts).toMatchObject({ all: 1, shipped: 1 });
+  expect(
+    (await orders.customerList("buyer", null, "processing")).records,
+  ).toEqual([]);
+  expect((await orders.customerList("other", null, "all")).counts.all).toBe(0);
+  await expect(
+    orders.customerList(
+      "buyer",
+      null,
+      "unknown" as Parameters<typeof orders.customerList>[2],
+    ),
+  ).rejects.toMatchObject({ status: 400 });
 });
 
 it("records a late carrier handoff during a hold without releasing remaining work", async () => {

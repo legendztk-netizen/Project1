@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   actualChinaDate,
   actualHandoffInstant,
+  reviewedText,
   trackingDestination,
   verifiedReadiness,
 } from "../app/modules/shipment/domain/shipment-milestones";
@@ -50,4 +51,9 @@ describe("shipment milestone rules", () => {
       trackingDestination("https://www.ups.com.evil.test/").customerUrl,
     ).toBeNull();
   });
+});
+
+it("accepts short reviewed text but still requires a value", () => {
+  expect(reviewedText(" 1 ", "Carrier")).toBe("1");
+  expect(() => reviewedText("   ", "Carrier")).toThrow();
 });

@@ -74,6 +74,11 @@ export default [
     "modules/storefront/routes/assembly-measurement-guide.tsx",
   ),
   route("admin", "modules/admin/routes/admin-home.tsx"),
+  route("admin/notifications", "modules/admin/routes/notifications.tsx"),
+  route(
+    "admin/notifications/unread-count",
+    "modules/admin/routes/notifications-unread-count.ts",
+  ),
   route("admin/orders", "modules/admin/routes/confirmed-orders.tsx"),
   route("admin/china-calendar", "modules/admin/routes/china-calendar.tsx"),
   route(

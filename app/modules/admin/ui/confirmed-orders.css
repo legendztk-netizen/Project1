@@ -62,9 +62,7 @@
 }
 .orders-filters {
   display: grid;
-  grid-template-columns:
-    minmax(230px, 2fr) repeat(2, minmax(145px, 1fr))
-    minmax(105px, 0.7fr) minmax(155px, 1fr) minmax(160px, 1fr) auto;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   align-items: end;
   padding-block: 22px;
@@ -126,7 +124,7 @@
 }
 .orders-table {
   width: 100%;
-  min-width: 980px;
+  min-width: 1080px;
   border-collapse: collapse;
   table-layout: fixed;
   font-size: 13px;
@@ -139,10 +137,10 @@
   text-align: left;
 }
 .orders-table th:nth-child(1) {
-  width: 18%;
+  width: 17%;
 }
 .orders-table th:nth-child(2) {
-  width: 17%;
+  width: 14%;
 }
 .orders-table th:nth-child(3) {
   width: 18%;
@@ -151,16 +149,19 @@
   width: 10%;
 }
 .orders-table th:nth-child(5) {
-  width: 8%;
+  width: 6%;
 }
 .orders-table th:nth-child(6) {
-  width: 10%;
+  width: 9%;
 }
 .orders-table th:nth-child(7) {
-  width: 12%;
+  width: 11%;
 }
 .orders-table th:nth-child(8) {
-  width: 60px;
+  width: 11%;
+}
+.orders-table th:nth-child(9) {
+  width: 124px;
 }
 .orders-table td {
   padding: 14px 12px;
@@ -228,16 +229,38 @@
   background: #fff6e8;
   color: #815315;
 }
-.orders-row-link {
-  display: inline-grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  color: #246782;
+.orders-detail-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  white-space: nowrap;
 }
-.orders-row-link:hover {
-  background: #eaf2f5;
-  border-radius: 4px;
+.orders-status.processing {
+  border-color: #c6d0d6;
+  background: #f1f4f6;
+  color: #3d4a54;
+}
+.orders-status.ready {
+  border-color: #a9cbdb;
+  background: #eaf4f8;
+  color: #1d5670;
+}
+.orders-status.shipped {
+  border-color: #c9bde6;
+  background: #f3effb;
+  color: #54397f;
+}
+.orders-confirmed-time {
+  white-space: nowrap;
+}
+.orders-confirmed-time small {
+  display: block;
+  color: var(--muted);
+}
+.orders-table td[data-label="状态"] small {
+  display: block;
+  margin-top: 4px;
 }
 .orders-pagination {
   display: flex;
@@ -576,16 +599,12 @@
   gap: 8px;
   margin-top: 24px;
 }
-@media (max-width: 1360px) {
-  .orders-filters {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  .orders-search {
-    grid-column: span 2;
-  }
-  .orders-filter-actions {
-    grid-column: span 2;
-  }
+.orders-filters .orders-search {
+  grid-column: span 2;
+}
+.orders-filters .orders-filter-actions {
+  grid-column: 1 / -1;
+  justify-content: flex-end;
 }
 @media (max-width: 760px) {
   .orders-workspace {
@@ -647,15 +666,9 @@
   .orders-table td:last-child::before {
     display: none;
   }
-  .orders-row-link {
-    display: inline-flex;
-    width: auto;
-    justify-content: flex-start;
-    gap: 5px;
-  }
-  .orders-row-link::after {
-    content: "查看订单";
-    font-weight: 700;
+  .orders-detail-button {
+    width: 100%;
+    justify-content: center;
   }
   .order-line-main {
     grid-template-columns: 94px minmax(0, 1fr);
@@ -688,8 +701,8 @@
   .orders-filters {
     grid-template-columns: minmax(0, 1fr);
   }
-  .orders-search,
-  .orders-filter-actions {
+  .orders-filters .orders-search,
+  .orders-filters .orders-filter-actions {
     grid-column: auto;
   }
   .order-facts {

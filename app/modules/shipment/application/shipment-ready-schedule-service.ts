@@ -378,7 +378,7 @@ export function createShipmentReadyScheduleService(
         throw new Response("A fixed ready date is required", { status: 400 });
       const date = schedule.readyDate;
       const reason = input.reason.trim();
-      if (reason.length < 10 || reason.length > 2000)
+      if (!reason || reason.length > 2000)
         throw new Response("A reviewed date-change reason is required", {
           status: 400,
         });
