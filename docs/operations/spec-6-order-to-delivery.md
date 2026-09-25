@@ -134,17 +134,17 @@ inventory, provider checks and launch approval.
 
 Local verification on 2026-09-25:
 
-| Check                                              | Result                                                                                               |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `pnpm format:check`, `pnpm lint`, `pnpm typecheck` | Passed                                                                                               |
-| `pnpm test`                                        | 161 files passed, 1 skipped; 1103 tests passed, 3 skipped                                            |
-| `pnpm migrate:verify`                              | Local schema version 114, 114 migrations, ready                                                      |
-| `pnpm test:smoke` (includes `pnpm build`)          | 7 files passed, 38 tests passed                                                                      |
-| Admin and customer Order pages                     | Read-only browser inspection passed; customer Order detail at 390px had no document/control overflow |
+| Check                                              | Result                                                                                                                        |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm format:check`, `pnpm lint`, `pnpm typecheck` | Passed                                                                                                                        |
+| `pnpm test`                                        | 161 files passed, 1 skipped; 1103 tests passed, 3 skipped                                                                     |
+| `pnpm migrate:verify`                              | Local schema version 114, 114 migrations, ready                                                                               |
+| `pnpm test:smoke` (includes `pnpm build`)          | 7 files passed, 38 tests passed                                                                                               |
+| Admin and customer Order pages                     | Read-only browser inspection passed; both Order details at 390px had no document/control overflow; Admin screenshot inspected |
 
 These are local tests using stub email and test carrier data. Browser screenshot
-capture timed out, so full visual/mobile acceptance was not established; no
-live dispatch or split-batch mutation was performed in the browser. These
+capture of the customer page timed out, so its visual/mobile acceptance remains
+unverified; no live dispatch or split-batch mutation was performed in the browser. These
 checks do not establish production migration readiness, actual carrier
 handoff, external email delivery or bank settlement. Complete the
 pre-migration inventory and provider checks in the target environment before
