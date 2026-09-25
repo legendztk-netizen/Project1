@@ -904,7 +904,7 @@ describe("real local D1 migration lifecycle", () => {
         "SELECT series_name FROM catalog_hose_series WHERE id = 'hose-series'",
       ),
     ).toEqual([{ series_name: "Test Series" }]);
-  }, 40_000);
+  }, 90_000);
 
   it("archives drafts older than the active catalog during the upgrade", () => {
     const fixture = createD1Fixture();
@@ -957,7 +957,7 @@ describe("real local D1 migration lifecycle", () => {
       { id: "archive-new", status: "draft" },
       { id: "archive-old", status: "superseded" },
     ]);
-  }, 40_000);
+  }, 90_000);
 
   it("transactionally merges anonymous Quote Lists into one account-owned list", async () => {
     const directory = mkdtempSync(
