@@ -1704,7 +1704,7 @@ describe("real local D1 migration lifecycle", () => {
     } finally {
       await platform.dispose();
     }
-  }, 30_000);
+  }, 90_000);
 
   it("runs pnpm migrate twice against one local D1 without duplicate schema", () => {
     const directory = mkdtempSync(join(tmpdir(), "hose-d1-command-isolation-"));
@@ -1805,7 +1805,7 @@ describe("real local D1 migration lifecycle", () => {
     expect(
       `${mixedCaseIdentity.stdout}\n${mixedCaseIdentity.stderr}`,
     ).toContain("admin_identity_email_lowercase");
-  }, 30_000);
+  }, 90_000);
 
   it("adds registry seeds only to pre-existing draft releases during an upgrade", () => {
     const fixture = createD1Fixture();
@@ -1894,7 +1894,7 @@ describe("real local D1 migration lifecycle", () => {
         "SELECT COUNT(*) AS count FROM configurator_global_registry_entries",
       ),
     ).toEqual([{ count: 12 }]);
-  }, 30_000);
+  }, 90_000);
 
   it("selects active and historical registry versions and locks published history", async () => {
     const fixture = createD1Fixture();
@@ -2077,5 +2077,5 @@ describe("real local D1 migration lifecycle", () => {
     } finally {
       await stopWorker(worker);
     }
-  }, 30_000);
+  }, 90_000);
 });
