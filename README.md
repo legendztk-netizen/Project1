@@ -148,6 +148,24 @@ production deployment.
 - `app/modules/quote-list` owns anonymous Quote Sessions and line commands.
 - `app/modules/quote-request` owns immutable RFQ submission commands and
   snapshots.
+- `app/modules/configurator` owns hose assembly configuration drafts,
+  validation, clocking, and finished-length rules.
+- `app/modules/configurator-reference` owns configurator reference data such as
+  measurement methods and endpoint classes.
+- `app/modules/customer-identity` owns customer accounts, sessions, email OTP,
+  passwords, saved configurations, and the customer account routes.
+- `app/modules/quote-review` owns Admin quote review, pricing, commercial terms,
+  and quote revisions.
+- `app/modules/quote-conversation` owns customer and Admin quote messages and
+  attachments.
+- `app/modules/quote-inbound-email` owns inbound email receipt and queue
+  processing for quote replies.
+- `app/modules/quote-notifications` owns outbound email notifications for
+  customer-visible quote messages.
+- `app/modules/proforma-invoice` owns Proforma Invoices, PI acceptance and
+  payments, PDF generation, and confirmed order creation.
+- `app/modules/seller-settings` owns versioned seller identity and payment
+  instructions.
 - `app/modules/shared` contains cross-surface UI with no business ownership.
 - `workers` owns the Cloudflare request boundary, health endpoint, and runtime
   context passed into React Router.
