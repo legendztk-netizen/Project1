@@ -13,12 +13,16 @@ const stages = [
   "Delivered",
 ] as const;
 
-function currentStage(status: Milestone["status"]) {
-  return status === "planned"
+function reviewPending(item: Milestone) {
+  return "releaseReviewPending" in item && item.releaseReviewPending;
+}
+
+function currentStage(item: Milestone) {
+  return item.status === "planned" || reviewPending(item)
     ? 0
-    : status === "ready_to_ship"
+    : item.status === "ready_to_ship"
       ? 1
-      : status === "shipped"
+      : item.status === "shipped"
         ? 2
         : 3;
 }
@@ -50,10 +54,7 @@ export function CustomerShipmentMilestones({
             <h3>{item.displayName}</h3>
             <ol className="shipment-progress-stages">
               {stages.map((stage, index) => (
-                <li
-                  key={stage}
-                  data-complete={index <= currentStage(item.status)}
-                >
+                <li key={stage} data-complete={index <= currentStage(item)}>
                   {stage}
                 </li>
               ))}
@@ -65,7 +66,13 @@ export function CustomerShipmentMilestones({
                   details.
                 </p>
               )}
-            {item.status === "ready_to_ship" && (
+            {reviewPending(item) && (
+              <p role="status">
+                Shipment readiness is being rechecked after an accepted change.
+                Carrier handoff is not yet authorized.
+              </p>
+            )}
+            {item.status === "ready_to_ship" && !reviewPending(item) && (
               <p>
                 No action is needed from you. Tracking follows after carrier
                 handoff.

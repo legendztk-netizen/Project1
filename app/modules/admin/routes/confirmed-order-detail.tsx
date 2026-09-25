@@ -49,6 +49,7 @@ import { createShipmentMilestoneService } from "../../shipment/application/shipm
 import { AdminShipmentMilestones } from "../../shipment/ui/admin-shipment-milestones";
 import { createOrderShippingChangeService } from "../../shipment/application/order-shipping-change-service";
 import { AdminOrderShippingChanges } from "../../shipment/ui/admin-order-shipping-changes";
+import { splitShipmentIdForChange } from "../../shipment/domain/order-shipping-change";
 
 export const headers = piPrivateHeaders;
 
@@ -363,6 +364,38 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
               .filter((allocation) => allocation.physicalQuantity > 0),
           };
         });
+        if (form.get("createSplitShipment") === "on") {
+          if (change.kind !== "shipping_plan" || affected.length === 0)
+            throw new Response("仅发货计划变更可新增批次", { status: 400 });
+          const source = affected[0];
+          const shipmentId = splitShipmentIdForChange(requestId);
+          const key = (name: string) =>
+            String(form.get(`shipment:${shipmentId}:${name}`) ?? "");
+          const lineIds = [
+            ...new Set(
+              change.shipments.flatMap((item) =>
+                item.quantities.map((allocation) => allocation.lineId),
+              ),
+            ),
+          ];
+          affected.push({
+            shipmentId,
+            destination: source.destination,
+            carrierName: key("carrierName"),
+            serviceName: key("serviceName"),
+            transportMethod: key("transportMethod"),
+            incoterm: key("incoterm"),
+            namedPlace: key("namedPlace"),
+            destinationTaxTreatment: key("destinationTaxTreatment"),
+            readyDate: key("readyDate") || null,
+            allocations: lineIds
+              .map((lineId) => ({
+                lineId,
+                physicalQuantity: Number(key(`allocation:${lineId}`)),
+              }))
+              .filter((allocation) => allocation.physicalQuantity > 0),
+          });
+        }
         const amount = String(form.get("adjustmentUsd") ?? "");
         if (!/^-?\d+(\.\d{1,2})?$/.test(amount))
           throw new Response("请输入有效 USD 金额", { status: 400 });

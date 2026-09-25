@@ -57,6 +57,9 @@ export function createPiPaymentCorrectionService(
     UNION SELECT r.target_pi_id FROM pi_fund_resolutions r
       JOIN impacted i ON i.pi_id=r.source_pi_id WHERE r.kind='allocation'
   )`;
+  const coveredOrderObligation = `pay.total_due_cents-
+    coalesce(contract.authorized_credit_cents,0)+
+    coalesce(contract.uninitiated_refund_cents,0)`;
   return {
     async read(actor: AdminIdentity, piId: string) {
       actorCheck(actor);
@@ -296,10 +299,10 @@ export function createPiPaymentCorrectionService(
         LEFT JOIN order_change_financial_contract contract ON contract.order_id=o.id
         WHERE (i.pi_id=? AND pay.amount_received_cents<
           pay.allocated_out_cents+pay.refunded_cents+CASE WHEN o.id IS NULL THEN 0 ELSE
-            pay.total_due_cents-coalesce(contract.authorized_credit_cents,0) END)
+            ${coveredOrderObligation} END)
           OR (o.id IS NOT NULL AND
             pay.amount_received_cents+pay.allocated_in_cents-pay.allocated_out_cents-pay.refunded_cents<
-              pay.total_due_cents-coalesce(contract.authorized_credit_cents,0))
+              ${coveredOrderObligation})
         LIMIT 1`,
         )
         .bind(correctionId, piId)
@@ -328,10 +331,10 @@ export function createPiPaymentCorrectionService(
             WHERE (i.pi_id=? AND pay.amount_received_cents<
               pay.allocated_out_cents+pay.refunded_cents+
               CASE WHEN o.id IS NULL THEN 0 ELSE
-                pay.total_due_cents-coalesce(contract.authorized_credit_cents,0) END)
+                ${coveredOrderObligation} END)
               OR (o.id IS NOT NULL AND
                 pay.amount_received_cents+pay.allocated_in_cents-pay.allocated_out_cents-pay.refunded_cents<
-                  pay.total_due_cents-coalesce(contract.authorized_credit_cents,0)))`,
+                  ${coveredOrderObligation}))`,
           )
           .bind(
             id,

@@ -37,6 +37,17 @@
   height: 18px;
   flex: none;
 }
+.shipping-change-form .shipping-change-split-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 700;
+}
+.shipping-change-split-toggle input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
 .shipping-change-record {
   border-top: 1px solid #d7dee3;
   padding: 16px 0;

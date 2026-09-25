@@ -22,9 +22,16 @@ export async function readPrivateReviewForm(request: Request) {
   } finally {
     reader.releaseLock();
   }
-  const form = await new Response(new Blob(chunks), {
-    headers: { "Content-Type": request.headers.get("Content-Type") ?? "" },
-  }).formData();
+  let form: FormData;
+  try {
+    form = await new Response(new Blob(chunks), {
+      headers: { "Content-Type": request.headers.get("Content-Type") ?? "" },
+    }).formData();
+  } catch (error) {
+    if (error instanceof TypeError)
+      throw new Response("Invalid form data", { status: 400 });
+    throw error;
+  }
   if (
     [...form.values()].filter((value) => typeof value !== "string").length > 1
   )

@@ -52,7 +52,7 @@ function available(row: Account) {
       row.allocated_in_cents -
       row.allocated_out_cents -
       row.refunded_cents -
-      (row.confirmed ? row.total_due_cents : 0) -
+      (row.confirmed ? row.total_due_cents - row.authorized_credit_cents : 0) -
       row.uninitiated_refund_cents,
   );
 }
@@ -64,7 +64,8 @@ function shortfall(row: Account) {
       row.amount_received_cents -
       row.allocated_in_cents +
       row.allocated_out_cents +
-      row.refunded_cents,
+      row.refunded_cents +
+      row.uninitiated_refund_cents,
   );
 }
 

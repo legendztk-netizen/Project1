@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 111,
+  "schemaVersion": 114,
   "migrations": [
     "0000_initial_catalog_release.sql",
     "0001_add_admin_identities.sql",
@@ -111,6 +111,9 @@
     "0107_shipping_change_version_guards.sql",
     "0108_order_change_financial_contract.sql",
     "0109_remove_unused_shipping_change_funding.sql",
-    "0110_shipping_change_acceptance_expiry_guard.sql"
+    "0110_shipping_change_acceptance_expiry_guard.sql",
+    "0111_order_change_refund_and_hold_guards.sql",
+    "0112_scoped_quantity_holds.sql",
+    "0113_authorized_credit_fund_resolution_guard.sql"
   ]
 }

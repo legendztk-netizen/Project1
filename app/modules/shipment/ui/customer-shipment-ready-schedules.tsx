@@ -24,7 +24,12 @@ export function CustomerShipmentReadySchedules({
         {schedules.map((schedule) => (
           <article key={schedule.shipmentId}>
             <h3>{schedule.displayName}</h3>
-            {!schedule.acceptedBasis ? (
+            {schedule.fromOrderChange ? (
+              <p>
+                This shipment was created by an accepted Order Change
+                Confirmation; the original PI is unchanged.
+              </p>
+            ) : !schedule.acceptedBasis ? (
               <p>No structured date was recorded in the accepted PI.</p>
             ) : schedule.acceptedBasis.kind === "china_business_days" ? (
               <p>Accepted basis: {readyScheduleText(schedule.acceptedBasis)}</p>
@@ -47,7 +52,11 @@ export function CustomerShipmentReadySchedules({
               {schedule.currentEstimateDate
                 ? customerCalendarDate(schedule.currentEstimateDate)
                 : "Under review"}
-              {schedule.currentEstimateSource === "operational" &&
+              {schedule.fromOrderChange &&
+                schedule.currentEstimateSource === "operational" &&
+                " (initial date agreed in Order Change Confirmation)"}
+              {!schedule.fromOrderChange &&
+                schedule.currentEstimateSource === "operational" &&
                 " (new operational estimate, not an original PI commitment)"}
               {schedule.currentEstimateSource === "revised" && " (revised)"}
             </p>

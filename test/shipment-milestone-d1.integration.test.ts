@@ -5,8 +5,10 @@ import { join } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { getPlatformProxy } from "wrangler";
 import { createShipmentMilestoneService } from "../app/modules/shipment/application/shipment-milestone-service";
+import { createShipmentReadyScheduleService } from "../app/modules/shipment/application/shipment-ready-schedule-service";
 import { recordOverdueReadyScheduleReminders } from "../app/modules/shipment/application/shipment-overdue-reminders";
 import { createOrderShippingChangeService } from "../app/modules/shipment/application/order-shipping-change-service";
+import { splitShipmentIdForChange } from "../app/modules/shipment/domain/order-shipping-change";
 import { piSha256 } from "../app/modules/proforma-invoice/domain/proforma-invoice";
 import { createPiFundResolutionService } from "../app/modules/proforma-invoice/application/pi-fund-resolution-service";
 import { createPiPaymentCorrectionService } from "../app/modules/proforma-invoice/application/pi-payment-correction-service";
@@ -59,7 +61,7 @@ beforeAll(async () => {
       transportMethod: "Sea",
       incoterm: "DDP",
       namedPlace: "Portland",
-      salesTaxTreatment: "Not Collected",
+      taxTreatment: "Not Collected",
     },
   });
   const orderHash = await piSha256(new TextEncoder().encode(orderSnapshot));
@@ -426,15 +428,43 @@ it("records a late carrier handoff during a hold without releasing remaining wor
     now: () => new Date(clock),
   });
   const base = { orderId: "milestone-order", shipmentId: "milestone-late" };
-  await db
-    .prepare(
-      `INSERT INTO order_quantity_holds
-       (id,order_id,line_id,shipment_id,physical_quantity,kind,reason,created_at)
-       VALUES ('late-hold','milestone-order','line-3','milestone-late',1,
-         'shipping_change','Change review after carrier pickup',?)`,
-    )
-    .bind(clock)
-    .run();
+  await db.batch([
+    db.prepare(
+      `INSERT INTO confirmed_order_lines
+       (order_id,line_id,line_number,line_kind,snapshot_json)
+       VALUES ('milestone-order','late-remaining-line',99,'standard',
+         '{"id":"late-remaining-line","quantity":1,"sku":"REMAINING","displayName":"Remaining part"}')`,
+    ),
+    db
+      .prepare(
+        `INSERT INTO order_shipments
+         (id,order_id,group_key,sequence_number,display_name,accepted_terms_json,created_at,updated_at)
+         VALUES ('milestone-unshipped','milestone-order','remaining',99,'Remaining batch',
+           '{"id":"remaining","allocations":[{"lineId":"late-remaining-line","physicalQuantity":1}]}',?,?)`,
+      )
+      .bind(clock, clock),
+    db.prepare(
+      `INSERT INTO order_shipment_allocations
+       (shipment_id,order_id,line_id,physical_quantity)
+       VALUES ('milestone-unshipped','milestone-order','late-remaining-line',1)`,
+    ),
+    db
+      .prepare(
+        `INSERT INTO order_quantity_holds
+         (id,order_id,line_id,shipment_id,physical_quantity,kind,reason,created_at)
+         VALUES ('late-hold','milestone-order','line-3','milestone-late',1,
+           'shipping_change','Change review after carrier pickup',?)`,
+      )
+      .bind(clock),
+    db
+      .prepare(
+        `INSERT INTO order_quantity_holds
+         (id,order_id,line_id,shipment_id,physical_quantity,kind,reason,created_at)
+         VALUES ('late-remaining-hold','milestone-order','late-remaining-line',
+           'milestone-unshipped',1,'cancellation','Remaining goods under review',?)`,
+      )
+      .bind(clock),
+  ]);
   const report = {
     ...base,
     expectedVersion: 1,
@@ -472,6 +502,32 @@ it("records a late carrier handoff during a hold without releasing remaining wor
       )
       .first("physical_quantity"),
   ).toBe(1);
+  expect(
+    (await service.customerRead("buyer", base.orderId)).find(
+      (item) => item.shipmentId === "milestone-unshipped",
+    )?.status,
+  ).toBe("planned");
+  expect(
+    await db
+      .prepare(
+        "SELECT active FROM order_quantity_holds WHERE id='late-remaining-hold'",
+      )
+      .first("active"),
+  ).toBe(1);
+  await expect(
+    service.markReady(actor, {
+      orderId: base.orderId,
+      shipmentId: "milestone-unshipped",
+      expectedVersion: 1,
+      commandId: crypto.randomUUID(),
+      verification: {
+        specificationsVerified: true,
+        quantitiesVerified: true,
+        offlinePreparationVerified: true,
+        requiredInspectionVerified: true,
+      },
+    }),
+  ).rejects.toMatchObject({ status: 409 });
 });
 
 it("locks only the requested unshipped shipment for an owned change request", async () => {
@@ -609,11 +665,39 @@ it("locks only the requested unshipped shipment for an owned change request", as
     }),
   );
   const proposed = (await changes.customerRead("buyer", input.orderId))[0];
+  await expect(
+    changes.adminPropose(actor, {
+      orderId: input.orderId,
+      requestId: id,
+      expectedVersion: 2,
+      shipments: [
+        {
+          shipmentId: "milestone-change",
+          destination: input.requested.destination,
+          carrierName: "DHL",
+          serviceName: "Express",
+          transportMethod: "Air",
+          incoterm: "DAP",
+          namedPlace: "Portland",
+          destinationTaxTreatment: "Buyer pays import taxes",
+          readyDate: "2026-02-31",
+          allocations: [{ lineId: "line-change", physicalQuantity: 2 }],
+        },
+      ],
+      adjustmentCents: 1200,
+      reason: "Invalid calendar date must not be stored",
+      expiresAt: "2026-10-01T12:00:00.000Z",
+      commandId: crypto.randomUUID(),
+    }),
+  ).rejects.toMatchObject({ status: 400 });
   expect(proposed).toMatchObject({
     status: "proposed",
     currentProposalId: proposalId,
     proposals: [{ id: proposalId, adjustmentCents: 1200 }],
   });
+  expect(
+    proposed.proposals[0].before.shipments[0].destinationTaxTreatment,
+  ).toBe("As accepted in PI");
   const proposalHash = proposed.proposals[0].proposalHash;
   await expect(
     changes.customerAccept("buyer", {
@@ -695,6 +779,15 @@ it("locks only the requested unshipped shipment for an owned change request", as
       .bind(effectId)
       .first("adjustment_cents"),
   ).toBe(1200);
+  expect(
+    await db
+      .prepare(
+        `SELECT body FROM quote_conversation_messages
+         WHERE command_id=?`,
+      )
+      .bind(`shipping-change-date:${effectId}:milestone-change`)
+      .first("body"),
+  ).toContain("changed from not recorded to 2026-09-26");
   const milestone = createShipmentMilestoneService(db, {
     now: () => new Date(clock),
   });
@@ -715,7 +808,16 @@ it("locks only the requested unshipped shipment for an owned change request", as
     "revisedReadyReview" in revisedReady &&
       revisedReady.revisedReadyReview?.verifiedAt,
   ).toBe(null);
-  await changes.adminVerifyRevisedReady(actor, {
+  await db
+    .prepare(
+      `INSERT INTO order_quantity_holds
+       (id,order_id,line_id,shipment_id,physical_quantity,kind,reason,created_at)
+       VALUES ('reverification-line-hold','milestone-order','line-change',
+         'milestone-change',1,'cancellation','Independent review',?)`,
+    )
+    .bind(clock)
+    .run();
+  const reverify = {
     orderId: input.orderId,
     shipmentId: "milestone-change",
     effectiveChangeId: effectId,
@@ -727,6 +829,20 @@ it("locks only the requested unshipped shipment for an owned change request", as
       offlinePreparationVerified: true,
       requiredInspectionVerified: true,
     },
+  };
+  await expect(
+    changes.adminVerifyRevisedReady(actor, reverify),
+  ).rejects.toMatchObject({ status: 409 });
+  await db
+    .prepare(
+      `UPDATE order_quantity_holds SET active=0,resolved_at=?
+       WHERE id='reverification-line-hold'`,
+    )
+    .bind(clock)
+    .run();
+  await changes.adminVerifyRevisedReady(actor, {
+    ...reverify,
+    commandId: crypto.randomUUID(),
   });
   expect(
     await stage(
@@ -909,7 +1025,7 @@ it("reallocates only affected batches and reserves a credit without a payment re
       .first("uninitiated_refund_cents"),
   ).toBe(250);
   const finances = createPiFundResolutionService(db);
-  expect((await finances.read(actor, "milestone-pi")).availableCents).toBe(0);
+  expect((await finances.read(actor, "milestone-pi")).availableCents).toBe(250);
   await expect(
     db
       .prepare(
@@ -917,7 +1033,7 @@ it("reallocates only affected batches and reserves a credit without a payment re
      (id,command_id,command_hash,kind,source_pi_id,amount_cents,currency,
       source_version,customer_authorization,external_reference,original_channel,
       actor_id,resolved_at)
-     VALUES (?,?,?,'external_refund','milestone-pi',250,'USD',1,
+     VALUES (?,?,?,'external_refund','milestone-pi',251,'USD',1,
        'Buyer authorized','wrong-surplus','bank_transfer',?,?)`,
       )
       .bind(crypto.randomUUID(), crypto.randomUUID(), hash, actor.id, clock)
@@ -1020,7 +1136,7 @@ it("reallocates only affected batches and reserves a credit without a payment re
   ).toBe(250);
   const afterRefund = await finances.read(actor, "milestone-pi");
   expect(afterRefund.shortfallCents).toBe(0);
-  expect(afterRefund.availableCents).toBe(0);
+  expect(afterRefund.availableCents).toBe(250);
   await expect(
     db
       .prepare(
@@ -1077,6 +1193,422 @@ it("reallocates only affected batches and reserves a credit without a payment re
   expect((await correction.read(actor, "milestone-pi")).confirmationValid).toBe(
     true,
   );
+
+  const supplementalVersion = (await finances.read(actor, "milestone-pi"))
+    .version;
+  await expect(
+    db
+      .prepare(
+        `INSERT INTO pi_fund_resolutions
+         (id,command_id,command_hash,kind,source_pi_id,amount_cents,currency,
+          source_version,customer_authorization,external_reference,original_channel,
+          actor_id,resolved_at)
+         VALUES (?,?,?,'external_refund','milestone-pi',251,'USD',?,
+           'Authorized later cancellation review','cancellation-overdraw',
+           'bank_transfer',?,?)`,
+      )
+      .bind(
+        crypto.randomUUID(),
+        crypto.randomUUID(),
+        hash,
+        supplementalVersion,
+        actor.id,
+        clock,
+      )
+      .run(),
+  ).rejects.toThrow(/Source funds unavailable|Shipping refund reservation/);
+  expect(
+    await db
+      .prepare(
+        `SELECT count(*) AS n FROM pi_fund_resolutions
+         WHERE external_reference='cancellation-overdraw'`,
+      )
+      .first("n"),
+  ).toBe(0);
+  expect((await finances.read(actor, "milestone-pi")).refundedCents).toBe(250);
+  await expect(
+    finances.recordRefund(actor, {
+      piId: "milestone-pi",
+      commandId: crypto.randomUUID(),
+      expectedVersion: supplementalVersion,
+      amount: "2.51",
+      customerAuthorization: "Buyer authorized surplus refund",
+      externalReference: "surplus-overdraw",
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  const supplementalRefund = {
+    piId: "milestone-pi",
+    commandId: crypto.randomUUID(),
+    expectedVersion: supplementalVersion,
+    amount: "2.50",
+    customerAuthorization: "Buyer authorized separate surplus refund",
+    externalReference: "bank-surplus-refund-1",
+  };
+  const afterSupplemental = await finances.recordRefund(
+    actor,
+    supplementalRefund,
+  );
+  expect(afterSupplemental.refundedCents).toBe(500);
+  expect(afterSupplemental.availableCents).toBe(0);
+  expect(afterSupplemental.shortfallCents).toBe(0);
+  await finances.recordRefund(actor, supplementalRefund);
+  await expect(
+    finances.recordRefund(actor, {
+      ...supplementalRefund,
+      commandId: crypto.randomUUID(),
+      expectedVersion: afterSupplemental.version,
+      amount: "0.01",
+      externalReference: "surplus-already-refunded",
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+});
+
+it("creates a new planned batch only after the accepted split change takes effect", async () => {
+  await db.batch([
+    db.prepare(
+      `INSERT INTO confirmed_order_lines
+       (order_id,line_id,line_number,line_kind,snapshot_json)
+       VALUES ('milestone-order','line-new-split',9,'standard',
+         '{"id":"line-new-split","quantity":3,"sku":"SPLIT","displayName":"Split part"}')`,
+    ),
+    db
+      .prepare(
+        `INSERT INTO order_shipments
+       (id,order_id,group_key,sequence_number,display_name,accepted_terms_json,created_at,updated_at)
+       VALUES ('new-split-original','milestone-order','new-split-original',9,
+         'Original batch','{"id":"new-split-original"}',?,?)`,
+      )
+      .bind(clock, clock),
+    db.prepare(
+      `INSERT INTO order_shipment_allocations
+       (shipment_id,order_id,line_id,physical_quantity)
+       VALUES ('new-split-original','milestone-order','line-new-split',3)`,
+    ),
+  ]);
+  const service = createOrderShippingChangeService(db, {
+    now: () => new Date(clock),
+  });
+  const requestId = await service.customerSubmit("buyer", {
+    orderId: "milestone-order",
+    kind: "shipping_plan",
+    requested: { note: "Please split this batch" },
+    shipments: [{ shipmentId: "new-split-original", expectedVersion: 1 }],
+    commandId: crypto.randomUUID(),
+  });
+  const destination = {
+    recipientName: "Test Buyer",
+    addressLine1: "1 Old Street",
+    city: "Portland",
+    stateProvince: "OR",
+    postalCode: "97201",
+    countryCode: "US",
+  };
+  const shipment = (shipmentId: string, physicalQuantity: number) => ({
+    shipmentId,
+    destination,
+    carrierName: "UPS",
+    serviceName: "Ground",
+    transportMethod: "Sea",
+    incoterm: "DDP",
+    namedPlace: "Portland",
+    destinationTaxTreatment: "Not Collected",
+    readyDate: "2026-10-05",
+    allocations: [{ lineId: "line-new-split", physicalQuantity }],
+  });
+  const splitId = splitShipmentIdForChange(requestId);
+  const proposalId = await service.adminPropose(actor, {
+    orderId: "milestone-order",
+    requestId,
+    expectedVersion: 1,
+    shipments: [shipment("new-split-original", 2), shipment(splitId, 1)],
+    adjustmentCents: 0,
+    reason: "Two dispatch dates fit the accepted request",
+    expiresAt: "2026-10-01T12:00:00.000Z",
+    commandId: crypto.randomUUID(),
+  });
+  const proposal = (
+    await service.customerRead("buyer", "milestone-order")
+  ).find((item) => item.id === requestId)!.proposals[0];
+  expect(
+    await db
+      .prepare("SELECT count(*) AS n FROM order_shipments WHERE id=?")
+      .bind(splitId)
+      .first("n"),
+  ).toBe(0);
+  await service.customerAccept("buyer", {
+    orderId: "milestone-order",
+    requestId,
+    proposalId,
+    proposalHash: proposal.proposalHash,
+    expectedVersion: 2,
+    commandId: crypto.randomUUID(),
+  });
+  const command = {
+    orderId: "milestone-order",
+    requestId,
+    proposalId,
+    expectedVersion: 3,
+    commandId: crypto.randomUUID(),
+  };
+  const effectId = await stage(
+    "apply new split",
+    service.adminApply(actor, command),
+  );
+  expect(await service.adminApply(actor, command)).toBe(effectId);
+  await expect(
+    service.adminApply(actor, { ...command, expectedVersion: 4 }),
+  ).rejects.toMatchObject({ status: 409 });
+  expect(
+    (
+      await db
+        .prepare(
+          `SELECT shipment_id,physical_quantity FROM order_shipment_allocations
+       WHERE line_id='line-new-split' ORDER BY shipment_id`,
+        )
+        .all<{ shipment_id: string; physical_quantity: number }>()
+    ).results,
+  ).toEqual([
+    { shipment_id: "new-split-original", physical_quantity: 2 },
+    { shipment_id: splitId, physical_quantity: 1 },
+  ]);
+  expect(
+    await db
+      .prepare(
+        `SELECT status,current_estimate_date,current_estimate_source
+         FROM order_shipments shipment
+       JOIN order_shipment_ready_schedules ready ON ready.shipment_id=shipment.id
+       WHERE shipment.id=?`,
+      )
+      .bind(splitId)
+      .first(),
+  ).toMatchObject({
+    status: "planned",
+    current_estimate_date: "2026-10-05",
+    current_estimate_source: "operational",
+  });
+  expect(
+    await db
+      .prepare(
+        `SELECT json_extract(accepted_terms_json,'$.freightCents') AS freight,
+          json_extract(accepted_terms_json,'$.insuranceCents') AS insurance,
+          json_extract(accepted_terms_json,'$.dutiesImportCents') AS import_charges
+         FROM order_shipments WHERE id=?`,
+      )
+      .bind(splitId)
+      .first(),
+  ).toMatchObject({ freight: 0, insurance: 0, import_charges: 0 });
+  const milestone = createShipmentMilestoneService(db, {
+    now: () => new Date(clock),
+  });
+  expect(
+    (await milestone.customerRead("buyer", "milestone-order")).find(
+      (item) => item.shipmentId === splitId,
+    )?.status,
+  ).toBe("planned");
+  await stage(
+    "ready new split",
+    milestone.markReady(actor, {
+      orderId: "milestone-order",
+      shipmentId: splitId,
+      expectedVersion: 1,
+      commandId: crypto.randomUUID(),
+      verification: {
+        specificationsVerified: true,
+        quantitiesVerified: true,
+        offlinePreparationVerified: true,
+        requiredInspectionVerified: true,
+      },
+    }),
+  );
+  expect(
+    (await milestone.customerRead("buyer", "milestone-order")).find(
+      (item) => item.shipmentId === "new-split-original",
+    )?.status,
+  ).toBe("planned");
+  const dates = createShipmentReadyScheduleService(db);
+  expect(
+    (await dates.customerRead("buyer", "milestone-order")).find(
+      (item) => item.shipmentId === splitId,
+    ),
+  ).toMatchObject({
+    fromOrderChange: true,
+    acceptedBasis: null,
+    currentEstimateSource: "operational",
+  });
+  await stage(
+    "revise new split date",
+    dates.revise(actor, {
+      orderId: "milestone-order",
+      shipmentId: splitId,
+      expectedVersion: 1,
+      expectedShipmentVersion: 2,
+      commandId: crypto.randomUUID(),
+      newDate: "2026-10-06",
+      reason: "Carrier confirmed a revised dispatch slot",
+    }),
+  );
+  expect(
+    (await dates.customerRead("buyer", "milestone-order")).find(
+      (item) => item.shipmentId === splitId,
+    ),
+  ).toMatchObject({ currentEstimateSource: "revised" });
+  await expect(
+    db
+      .prepare(
+        `INSERT INTO order_quantity_holds
+         (id,order_id,line_id,physical_quantity,kind,reason,created_at)
+         VALUES ('ambiguous-split-hold','milestone-order','line-new-split',1,
+           'cancellation','Unscoped review',?)`,
+      )
+      .bind(clock)
+      .run(),
+  ).rejects.toThrow(/Allocated quantity hold requires a Shipment/);
+  await db
+    .prepare(
+      `INSERT INTO order_quantity_holds
+       (id,order_id,line_id,shipment_id,physical_quantity,kind,reason,created_at)
+       VALUES ('scoped-split-hold','milestone-order','line-new-split',?,1,
+         'cancellation','Selected batch review',?)`,
+    )
+    .bind(splitId, clock)
+    .run();
+  await stage(
+    "ready unaffected original batch",
+    milestone.markReady(actor, {
+      orderId: "milestone-order",
+      shipmentId: "new-split-original",
+      expectedVersion: 2,
+      commandId: crypto.randomUUID(),
+      verification: {
+        specificationsVerified: true,
+        quantitiesVerified: true,
+        offlinePreparationVerified: true,
+        requiredInspectionVerified: true,
+      },
+    }),
+  );
+  expect(
+    await db
+      .prepare(
+        "SELECT snapshot_hash FROM confirmed_orders WHERE id='milestone-order'",
+      )
+      .first("snapshot_hash"),
+  ).toBe(
+    await piSha256(
+      new TextEncoder().encode(
+        (await db
+          .prepare(
+            "SELECT snapshot_json FROM confirmed_orders WHERE id='milestone-order'",
+          )
+          .first<string>("snapshot_json"))!,
+      ),
+    ),
+  );
+});
+
+it("blocks a shipping change held by a legacy unscoped review and retains its credit", async () => {
+  const service = createOrderShippingChangeService(db, {
+    now: () => new Date(clock),
+  });
+  const requestId = await service.customerSubmit("buyer", {
+    orderId: "milestone-order",
+    kind: "shipping_plan",
+    requested: { note: "Change the first batch service" },
+    shipments: [{ shipmentId: "change-a", expectedVersion: 2 }],
+    commandId: crypto.randomUUID(),
+  });
+  const independentHoldId = crypto.randomUUID();
+  await db.exec(
+    "DROP TRIGGER order_quantity_hold_requires_shipment_after_allocation",
+  );
+  try {
+    await db
+      .prepare(
+        `INSERT INTO order_quantity_holds
+     (id,order_id,line_id,physical_quantity,kind,active,reason,created_at)
+     VALUES (?,'milestone-order','line-reallocate',1,'cancellation',1,
+       'Independent line-level review',?)`,
+      )
+      .bind(independentHoldId, clock)
+      .run();
+  } finally {
+    await db
+      .prepare(
+        `CREATE TRIGGER order_quantity_hold_requires_shipment_after_allocation
+      BEFORE INSERT ON order_quantity_holds
+      WHEN NEW.active=1 AND NEW.shipment_id IS NULL BEGIN
+        SELECT CASE WHEN EXISTS(
+          SELECT 1 FROM order_shipment_allocations allocation
+          WHERE allocation.order_id=NEW.order_id AND allocation.line_id=NEW.line_id
+        ) THEN RAISE(ABORT,'Allocated quantity hold requires a Shipment') END;
+      END;`,
+      )
+      .run();
+  }
+  const proposed = {
+    shipmentId: "change-a",
+    destination: {
+      recipientName: "Test Buyer",
+      addressLine1: "1 Old Street",
+      city: "Portland",
+      stateProvince: "OR",
+      postalCode: "97201",
+      countryCode: "US",
+    },
+    carrierName: "UPS",
+    serviceName: "Priority",
+    transportMethod: "Sea",
+    incoterm: "DDP",
+    namedPlace: "Portland",
+    destinationTaxTreatment: "Not Collected",
+    readyDate: null,
+    allocations: [{ lineId: "line-reallocate", physicalQuantity: 2 }],
+  };
+  const proposalId = await service.adminPropose(actor, {
+    orderId: "milestone-order",
+    requestId,
+    expectedVersion: 1,
+    shipments: [proposed],
+    adjustmentCents: -100,
+    reason: "Priority service with a credit",
+    expiresAt: "2026-10-01T12:00:00.000Z",
+    commandId: crypto.randomUUID(),
+  });
+  const proposal = (
+    await service.customerRead("buyer", "milestone-order")
+  ).find((item) => item.id === requestId)!.proposals[0];
+  await service.customerAccept("buyer", {
+    orderId: "milestone-order",
+    requestId,
+    proposalId,
+    proposalHash: proposal.proposalHash,
+    expectedVersion: 2,
+    commandId: crypto.randomUUID(),
+  });
+  const apply = {
+    orderId: "milestone-order",
+    requestId,
+    proposalId,
+    expectedVersion: 3,
+    commandId: crypto.randomUUID(),
+  };
+  await expect(service.adminApply(actor, apply)).rejects.toMatchObject({
+    status: 409,
+  });
+  await db
+    .prepare(
+      "UPDATE order_quantity_holds SET active=0,resolved_at=? WHERE id=?",
+    )
+    .bind(clock, independentHoldId)
+    .run();
+  await stage("apply after independent hold", service.adminApply(actor, apply));
+  expect(
+    await db
+      .prepare(
+        "SELECT uninitiated_refund_cents FROM order_change_financial_contract WHERE order_id='milestone-order'",
+      )
+      .first("uninitiated_refund_cents"),
+  ).toBe(100);
 });
 
 it("keeps cancellation and shipping-change holds scoped to their own physical lines", async () => {
@@ -1253,4 +1785,48 @@ it("keeps cancellation and shipping-change holds scoped to their own physical li
       commandId: crypto.randomUUID(),
     }),
   );
+});
+
+it("does not release payment review while an authorized refund remains reserved", async () => {
+  const correction = createPiPaymentCorrectionService(db, {
+    now: () => new Date(clock),
+  });
+  const version = (await db
+    .prepare(
+      "SELECT version FROM pi_payment_accounts WHERE pi_id='milestone-pi'",
+    )
+    .first<number>("version"))!;
+  await stage(
+    "create underfunded correction",
+    correction.correct(actor, {
+      piId: "milestone-pi",
+      commandId: crypto.randomUUID(),
+      expectedVersion: version,
+      correctedAmount: "99.00",
+      reason: "Correct original receipt while another refund is reserved",
+    }),
+  );
+  const dispute = (await correction.read(actor, "milestone-pi")).disputes.find(
+    (item) => (item as { active: number }).active === 1,
+  ) as { correction_id: string };
+  await expect(
+    correction.resolve(actor, {
+      piId: "milestone-pi",
+      correctionId: dispute.correction_id,
+      commandId: crypto.randomUUID(),
+      expectedVersion: version + 1,
+      reason: "Attempt to clear before refund initiation",
+      verificationReference: "bank-review-pending-refund",
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  expect((await correction.read(actor, "milestone-pi")).confirmationValid).toBe(
+    false,
+  );
+  expect(
+    await db
+      .prepare(
+        "SELECT held FROM order_release_guards WHERE order_id='milestone-order'",
+      )
+      .first("held"),
+  ).toBe(1);
 });

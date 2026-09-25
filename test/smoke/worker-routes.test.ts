@@ -885,9 +885,7 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(orders.status).toBe(200);
     expect(ordersHtml).toContain("ticket05.owner@example.com");
     expect(ordersHtml).not.toContain("ticket05.other@example.com");
-    expect(renderedText(ordersHtml)).toContain(
-      "No paid and confirmed orders yet. Quote requests and unpaid PIs do not appear here.",
-    );
+    expect(renderedText(ordersHtml)).toContain("No confirmed orders yet.");
     for (const label of [
       "Overview",
       "Quote List",
@@ -6151,7 +6149,7 @@ describe("Cloudflare Worker route surfaces", () => {
     });
     const ordersText = renderedText(await orders.text());
     expect(orders.status).toBe(200);
-    expect(ordersText).toContain("No paid and confirmed orders yet");
+    expect(ordersText).toContain("No confirmed orders yet.");
     expect(ordersText).not.toContain("QR-20260821");
 
     const repeated = await submit(idempotencyKey ?? "", true);
@@ -7061,7 +7059,7 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(queueText).toContain("Admin Review Buyer");
     expect(queueText).toContain("New York, NY, 10005, US");
     expect(queueText).toContain("$432.10");
-    expect(queueText).toContain("需要技术审核");
+    expect(queueText).toContain("待技术审核");
     expect(queueText).toContain("2026-09-03 11:00 北京时间");
     expect(queueHtml).toContain("/images/catalog/hose/601R1-structure.jpg");
 
@@ -7131,7 +7129,12 @@ describe("Cloudflare Worker route surfaces", () => {
     const writeAttempt = await fetch(`${origin}/admin/quotes/${requestId}`, {
       method: "POST",
     });
-    expect(writeAttempt.status).toBe(405);
+    expect(writeAttempt.status).toBe(403);
+    const sameOriginWriteAttempt = await fetch(
+      `${origin}/admin/quotes/${requestId}`,
+      { method: "POST", headers: { Origin: origin } },
+    );
+    expect(sameOriginWriteAttempt.status).toBe(400);
     expect(
       runLocalD1<{ snapshot_json: string }>(
         `SELECT snapshot_json FROM customer_quote_requests WHERE id = ${sqlText(requestId)}`,

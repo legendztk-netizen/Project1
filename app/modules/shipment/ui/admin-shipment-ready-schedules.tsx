@@ -9,6 +9,8 @@ type Schedule = Awaited<
 >[number];
 
 function acceptedBasis(schedule: Schedule) {
+  if (schedule.fromOrderChange)
+    return "此批次来自客户已接受的订单变更；原 PI 未修改。";
   if (schedule.acceptedBasis?.kind === "fixed_date")
     return `客户已接受固定日期 ${schedule.acceptedBasis.readyDate}`;
   if (schedule.acceptedBasis?.kind === "china_business_days")
@@ -91,7 +93,11 @@ export function AdminShipmentReadySchedules({
               <p>
                 当前预计备妥日期：
                 <strong>{schedule.currentEstimateDate ?? "待核对"}</strong>
-                {schedule.currentEstimateSource === "operational" &&
+                {schedule.fromOrderChange &&
+                  schedule.currentEstimateSource === "operational" &&
+                  " · 订单变更首次约定日期"}
+                {!schedule.fromOrderChange &&
+                  schedule.currentEstimateSource === "operational" &&
                   " · 后补运营预计，非原 PI 承诺"}
                 {schedule.currentEstimateSource === "revised" && " · 已修订"}
               </p>

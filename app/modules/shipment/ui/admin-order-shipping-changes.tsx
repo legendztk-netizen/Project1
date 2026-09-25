@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { Form } from "react-router";
 import type { ProformaInvoiceSnapshot } from "../../proforma-invoice/domain/proforma-invoice";
 import type { createOrderShippingChangeService } from "../application/order-shipping-change-service";
+import { splitShipmentIdForChange } from "../domain/order-shipping-change";
 import "./order-shipping-changes.css";
 
 type Change = Awaited<
@@ -64,6 +66,9 @@ export function AdminOrderShippingChanges({
   busy: boolean;
   error?: string;
 }) {
+  const [splitSelections, setSplitSelections] = useState<
+    Record<string, boolean>
+  >({});
   const expiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
     .toLocaleString("sv-SE", {
       timeZone: "Asia/Shanghai",
@@ -94,6 +99,14 @@ export function AdminOrderShippingChanges({
             ),
           ),
         ];
+        const splitShipmentId = splitShipmentIdForChange(change.id);
+        const proposedSplit = current?.after.shipments.find(
+          (item) => item.shipmentId === splitShipmentId,
+        );
+        const splitEnabled = splitSelections[change.id] ?? !!proposedSplit;
+        const sourceShipment = shipments.find(
+          (item) => item.id === change.shipments[0]?.shipmentId,
+        );
         return (
           <section key={change.id} className="shipping-change-record">
             <div className="shipping-change-record-heading">
@@ -403,6 +416,152 @@ export function AdminOrderShippingChanges({
                       </fieldset>
                     );
                   })}
+                  {change.kind === "shipping_plan" && sourceShipment && (
+                    <>
+                      <label className="shipping-change-split-toggle">
+                        <input
+                          type="checkbox"
+                          name="createSplitShipment"
+                          checked={splitEnabled}
+                          onChange={(event) =>
+                            setSplitSelections((previous) => ({
+                              ...previous,
+                              [change.id]: event.target.checked,
+                            }))
+                          }
+                        />
+                        新增分批发货批次
+                      </label>
+                      {splitEnabled && (
+                        <fieldset className="shipping-change-admin-shipment">
+                          <legend>
+                            新增批次（收货地址沿用第一个涉及批次）
+                          </legend>
+                          <div className="shipping-change-fields">
+                            <label>
+                              承运商
+                              <input
+                                name={field(splitShipmentId, "carrierName")}
+                                defaultValue={
+                                  proposedSplit?.carrierName ??
+                                  sourceShipment.carrierName ??
+                                  ""
+                                }
+                              />
+                            </label>
+                            <label>
+                              服务级别
+                              <input
+                                name={field(splitShipmentId, "serviceName")}
+                                defaultValue={
+                                  proposedSplit?.serviceName ??
+                                  sourceShipment.serviceName ??
+                                  ""
+                                }
+                              />
+                            </label>
+                            <label>
+                              运输方式
+                              <input
+                                name={field(splitShipmentId, "transportMethod")}
+                                required
+                                defaultValue={
+                                  proposedSplit?.transportMethod ??
+                                  sourceShipment.transportMethod
+                                }
+                              />
+                            </label>
+                            <label>
+                              贸易条款
+                              <select
+                                name={field(splitShipmentId, "incoterm")}
+                                defaultValue={
+                                  proposedSplit?.incoterm ??
+                                  sourceShipment.incoterm
+                                }
+                              >
+                                <option>DDP</option>
+                                <option>DAP</option>
+                              </select>
+                            </label>
+                            <label>
+                              指定地点
+                              <input
+                                name={field(splitShipmentId, "namedPlace")}
+                                required
+                                defaultValue={
+                                  proposedSplit?.namedPlace ??
+                                  sourceShipment.namedPlace
+                                }
+                              />
+                            </label>
+                            <label>
+                              目的地税费责任
+                              <select
+                                name={field(
+                                  splitShipmentId,
+                                  "destinationTaxTreatment",
+                                )}
+                                defaultValue={
+                                  proposedSplit?.destinationTaxTreatment ??
+                                  sourceShipment.destinationTaxTreatment ??
+                                  "As accepted in PI"
+                                }
+                              >
+                                <option value="As accepted in PI">
+                                  按原 PI
+                                </option>
+                                <option value="Seller pays import taxes">
+                                  卖方承担进口税费
+                                </option>
+                                <option value="Buyer pays import taxes">
+                                  买方承担进口税费
+                                </option>
+                              </select>
+                            </label>
+                            <label>
+                              预计可发货日期
+                              <input
+                                type="date"
+                                name={field(splitShipmentId, "readyDate")}
+                                defaultValue={
+                                  proposedSplit?.readyDate ??
+                                  sourceShipment.readyDate ??
+                                  ""
+                                }
+                              />
+                            </label>
+                          </div>
+                          <h4>新增批次分配</h4>
+                          <div className="shipping-change-fields">
+                            {affectedLines.map((lineId) => (
+                              <label key={lineId}>
+                                {shipments
+                                  .flatMap((item) => item.allocations)
+                                  .find((item) => item.lineId === lineId)
+                                  ?.displayName ?? lineId}
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  required
+                                  name={field(
+                                    splitShipmentId,
+                                    `allocation:${lineId}`,
+                                  )}
+                                  defaultValue={
+                                    proposedSplit?.allocations.find(
+                                      (item) => item.lineId === lineId,
+                                    )?.physicalQuantity ?? 0
+                                  }
+                                />
+                              </label>
+                            ))}
+                          </div>
+                        </fieldset>
+                      )}
+                    </>
+                  )}
                   <div className="shipping-change-fields">
                     <label>
                       USD 调整金额（负数为退款）

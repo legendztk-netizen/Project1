@@ -141,27 +141,34 @@ async function readPlan(db: D1Database, row: PlanRow, admin: boolean) {
         quantity: number;
       }>()
   ).results;
-  const unscopedHeldShipments = new Set<string>();
-  for (const hold of holds.filter((item) => item.shipment_id === null)) {
-    let remaining = hold.quantity;
-    for (const shipment of [...shipments].reverse()) {
-      const group = JSON.parse(
-        shipment.accepted_terms_json,
-      ) as QuotedShipmentGroup;
-      const accepted =
-        group.allocations ??
-        (row.source === "accepted_together"
-          ? snapshot.lines.map((line) => ({
-              lineId: line.id,
-              physicalQuantity: physicalLineQuantity(line),
-            }))
-          : []);
-      const quantity = accepted.find(
-        (allocation) => allocation.lineId === hold.line_id,
-      )?.physicalQuantity;
-      if (!quantity || remaining <= 0) continue;
-      unscopedHeldShipments.add(shipment.id);
-      remaining -= quantity;
+  const unscopedHeldLines = new Set(
+    holds
+      .filter((hold) => hold.shipment_id === null)
+      .map((hold) => hold.line_id),
+  );
+  const reviewHeldShipments = new Set<string>();
+  if (row.status === "review") {
+    for (const hold of holds.filter((item) => item.shipment_id === null)) {
+      let remaining = hold.quantity;
+      for (const shipment of [...shipments].reverse()) {
+        const group = JSON.parse(
+          shipment.accepted_terms_json,
+        ) as QuotedShipmentGroup;
+        const accepted =
+          group.allocations ??
+          (row.source === "accepted_together"
+            ? snapshot.lines.map((line) => ({
+                lineId: line.id,
+                physicalQuantity: physicalLineQuantity(line),
+              }))
+            : []);
+        const quantity = accepted.find(
+          (allocation) => allocation.lineId === hold.line_id,
+        )?.physicalQuantity;
+        if (!quantity || remaining <= 0) continue;
+        reviewHeldShipments.add(shipment.id);
+        remaining -= quantity;
+      }
     }
   }
   return {
@@ -236,7 +243,11 @@ async function readPlan(db: D1Database, row: PlanRow, admin: boolean) {
         destinationTaxTreatment: effective?.destinationTaxTreatment ?? null,
         held:
           row.held === 1 ||
-          unscopedHeldShipments.has(shipment.id) ||
+          (row.status === "review"
+            ? reviewHeldShipments.has(shipment.id)
+            : shipmentAllocations.some((allocation) =>
+                unscopedHeldLines.has(allocation.line_id),
+              )) ||
           holds.some((hold) => hold.shipment_id === shipment.id),
         quotedAllocations: acceptedAllocations.map((allocation) => {
           const line = snapshot.lines.find(

@@ -64,14 +64,25 @@ command for an ambiguous plan.
    Record delivery from carrier/customer evidence. Split Shipments progress
    independently; use the quantity and Shipment-specific records, not the
    aggregate Order badge, for after-sales decisions.
+   A Shipment is the unit of carrier handoff. Late entry snapshots and checks
+   all quantities allocated to that Shipment. If only part of a Shipment was
+   physically handed over, do not mark the whole Shipment Shipped or apply a
+   full-batch late report. Keep the exception under review until the factual
+   batch allocation can be reconciled; this first-release flow does not invent
+   a retrospective partial-Shipment dispatch.
 4. For a pre-dispatch address or shipping change, the customer submits a
    request. Admin reviews the affected allocations, destination, service,
    dates, tax responsibility and exact USD adjustment; the customer accepts the
    current immutable confirmation; Admin explicitly applies it. Acceptance is
    not application. A positive adjustment is handled offline and is **not**
    system-verified cleared funds. No additional receipt evidence is required
-   for application. A negative adjustment reserves a refund due for Spec 7; it
-   is not a claim that money was sent.
+   for application. For a newly split batch, Admin reallocates exact physical
+   quantities from the affected batch before publishing; the new batch is
+   created only on application and starts in **Planned**. A negative adjustment
+   reserves a refund due for Spec 7; it is not a claim that money was sent.
+   Reallocation among existing unshipped batches is supported. Combining two
+   batches into one is not a first-release action: decline that request with a
+   reason, retaining both Shipment histories.
 5. Reverify readiness after an effective change invalidates an earlier ready
    check. Keep unchanged and already-dispatched Shipments out of the changed
    allocation. Goods handed to the carrier go to Support rather than this
@@ -86,6 +97,13 @@ command for an ambiguous plan.
   cancellation, and after-sales holds remain independent. Expired proposals
   cannot be newly accepted; a proposal accepted before expiry may still be
   applied later if its terms and affected Shipments remain current.
+- An unscoped cancellation or after-sales hold on a line in an affected
+  Shipment blocks application even if the change's own Shipment hold is valid.
+  Resolve that independent case through its own workflow before retrying; do
+  not clear its hold as part of the shipping change.
+- New quantity holds on already allocated lines must identify the Shipment.
+  Historical unscoped holds remain fail-closed until an operator resolves the
+  ambiguous record; do not guess which batch the customer meant.
 - Payment review and fund availability use the original system-tracked PI
   funding, authorized credits and pending refund reservation. A lawful
   initiated credit refund reduces the account balance but must not create a
@@ -106,8 +124,28 @@ The local test matrix covers original-order creation from both valid PI
 acceptance/payment sequences, structured and historical plan initialization,
 cut-hose piece counts, split Shipment progression, document privacy, date
 revisions, change acceptance/application/refund reservation, payment
-correction, scoped cancellation holds and idempotent notification records.
+correction, creation of a new split batch, scoped and unscoped cancellation
+holds, pending refund reservations, later authorized surplus refunds against
+the same PI balance and idempotent notification records.
 Run `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`,
 `pnpm migrate:verify`, `pnpm build`, and `pnpm test:smoke` from the repository
 root. Production requires separate environment configuration, migration
 inventory, provider checks and launch approval.
+
+Local verification on 2026-09-25:
+
+| Check                                              | Result                                                                                               |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `pnpm format:check`, `pnpm lint`, `pnpm typecheck` | Passed                                                                                               |
+| `pnpm test`                                        | 161 files passed, 1 skipped; 1103 tests passed, 3 skipped                                            |
+| `pnpm migrate:verify`                              | Local schema version 114, 114 migrations, ready                                                      |
+| `pnpm test:smoke` (includes `pnpm build`)          | 7 files passed, 38 tests passed                                                                      |
+| Admin and customer Order pages                     | Read-only browser inspection passed; customer Order detail at 390px had no document/control overflow |
+
+These are local tests using stub email and test carrier data. Browser screenshot
+capture timed out, so full visual/mobile acceptance was not established; no
+live dispatch or split-batch mutation was performed in the browser. These
+checks do not establish production migration readiness, actual carrier
+handoff, external email delivery or bank settlement. Complete the
+pre-migration inventory and provider checks in the target environment before
+release.

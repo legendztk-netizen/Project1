@@ -136,6 +136,9 @@ export function AdminShipmentMilestones({
                 !lateReport && (
                   <details>
                     <summary>迟录已发生的承运商交接</summary>
+                    <p className="order-hold-notice">
+                      仅适用于整批已交接且凭据覆盖本批全部分配数量。若只交接部分数量，暂勿归档整批；保留异常并核对实际批次。
+                    </p>
                     <Form method="post" className="shipment-milestone-form">
                       {base}
                       <input
@@ -194,6 +197,7 @@ export function AdminShipmentMilestones({
                       .map((line) => `${line.lineId}: ${line.physicalQuantity}`)
                       .join("; ")}
                   </p>
+                  <p>归档前请确认以上数量已全部实际交接承运商。</p>
                   <Form method="post">
                     {base}
                     <input

@@ -1069,10 +1069,16 @@ it("freezes the default payment deadline exactly once on website acceptance", as
   const holdId = crypto.randomUUID();
   await db
     .prepare(
-      `INSERT INTO order_quantity_holds(id,order_id,line_id,physical_quantity,kind,reason,created_at)
-       VALUES(?,?,?,1,'after_sales','Test quantity reservation',?)`,
+      `INSERT INTO order_quantity_holds(id,order_id,line_id,shipment_id,physical_quantity,kind,reason,created_at)
+       VALUES(?,?,?,?,1,'after_sales','Test quantity reservation',?)`,
     )
-    .bind(holdId, confirmed.order!.id, "line-a", acceptedAt)
+    .bind(
+      holdId,
+      confirmed.order!.id,
+      "line-a",
+      `shipment:${confirmed.order!.id}:together`,
+      acceptedAt,
+    )
     .run();
   await expect(
     db.batch([

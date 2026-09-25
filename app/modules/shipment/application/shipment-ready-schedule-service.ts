@@ -13,6 +13,7 @@ import {
 interface ScheduleRow {
   shipment_id: string;
   group_key: string;
+  shipment_origin: string | null;
   display_name: string;
   shipment_status: "planned" | "ready_to_ship" | "shipped" | "delivered";
   shipment_version: number;
@@ -66,6 +67,7 @@ export function createShipmentReadyScheduleService(
       await db
         .prepare(
           `SELECT s.id AS shipment_id,s.group_key,s.display_name,
+             json_extract(s.accepted_terms_json,'$.source') AS shipment_origin,
              s.status AS shipment_status,s.version AS shipment_version,
              ready.accepted_basis_json,ready.accepted_ready_date,
              ready.accepted_calendar_version,ready.current_estimate_date,
@@ -91,6 +93,7 @@ export function createShipmentReadyScheduleService(
     return shipments.map((item) => ({
       shipmentId: item.shipment_id,
       groupKey: item.group_key,
+      fromOrderChange: item.shipment_origin === "accepted_order_change",
       displayName: item.display_name,
       shipmentStatus: item.shipment_status,
       shipmentVersion: item.shipment_version,

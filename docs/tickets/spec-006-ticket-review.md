@@ -2,7 +2,7 @@
 
 Date: 2026-09-23. Revision: 2.
 
-Status: **Approved and published. Implementation pending.**
+Status: **Approved, published, and locally implemented on `codex/spec6-work`. Release pending.**
 
 ## Scope and Sources
 
@@ -347,6 +347,10 @@ Admin manually applies it.
       destination tax treatment and USD financial adjustment. Display before/after
       values and reasons. Default fixed logistics charges remain fixed for ordinary
       seller cost variance; new product purchases/specifications require Follow-on Quotes.
+- [ ] First-release allocation supports splitting one unshipped Shipment into
+      two and reallocating quantities among existing unshipped Shipments. It does
+      not merge two Shipments into one. Admin may decline a merge request with
+      a required reason; do not erase either Shipment's history.
 - [ ] Publish an immutable, versioned Order Change Confirmation linked to the
       original Order and affected Shipments. The customer explicitly accepts the
       exact proposal through an owned view; silence, an email being sent or an Admin
@@ -466,3 +470,15 @@ Scope/dependency updates to the PRD and Specs 5/6/7 were explicitly authorized
 separately from publication. Parent issues remain open. Publishing implementation
 tickets does not authorize production deployment or claim implementation is
 complete.
+
+## Implementation Verification
+
+Local acceptance on 2026-09-25 used schema version 114 and 114 migrations.
+`pnpm test` passed 1103 tests across 161 files (3 tests and 1 file skipped);
+`pnpm test:smoke` passed 38 tests across 7 files and included a production
+build. Formatting, lint, typechecking and migration verification passed. The
+[operational handoff](../operations/spec-6-order-to-delivery.md) records the
+local Order inventory, recovery rules and browser-check limitations. This does
+not certify remote migration, bank settlement, carrier handoff, external email
+delivery or production deployment. Spec 7's cancellation and return screens
+remain separate work.

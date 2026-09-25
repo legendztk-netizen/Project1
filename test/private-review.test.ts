@@ -24,6 +24,24 @@ it("bounds multipart bytes even without Content-Length and rejects extra file pa
   ).rejects.toMatchObject({ status: 400 });
 });
 
+it("rejects missing or malformed form content types as client errors", async () => {
+  const url = "http://admin.localhost/review";
+  const missingType = new Request(url, { method: "POST", body: "" });
+  await expect(readPrivateReviewForm(missingType)).rejects.toMatchObject({
+    status: 400,
+  });
+  const malformedMultipart = new Request(url, {
+    method: "POST",
+    body: "not a multipart body",
+    headers: { "Content-Type": "multipart/form-data; boundary=test" },
+  });
+  await expect(readPrivateReviewForm(malformedMultipart)).rejects.toMatchObject(
+    {
+      status: 400,
+    },
+  );
+});
+
 it("validates append-only note input and rejects cross-origin mutations", () => {
   expect(privateNote("  factory check  ")).toBe("factory check");
   expect(() => privateNote(" ")).toThrow();

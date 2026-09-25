@@ -107,10 +107,16 @@ export function AdminShipmentPlan({
                 <p>部分约定数量仍待解除锁定并完成分配。</p>
               )}
               <p>
-                本批运费 USD {(shipment.freightCents / 100).toFixed(2)} · 保险
-                USD {(shipment.insuranceCents / 100).toFixed(2)} · 进口费用 USD
+                {shipment.groupKey.startsWith("change:")
+                  ? "原 PI 分摊运费"
+                  : "本批运费"}{" "}
+                USD {(shipment.freightCents / 100).toFixed(2)} · 保险 USD{" "}
+                {(shipment.insuranceCents / 100).toFixed(2)} · 进口费用 USD
                 {(shipment.dutiesImportCents / 100).toFixed(2)}
               </p>
+              {shipment.groupKey.startsWith("change:") && (
+                <p>订单变更价款单独记载，不计入原 PI 分摊。</p>
+              )}
               <Link
                 className="button button-secondary"
                 to={`/admin/orders/${encodeURIComponent(plan.orderId)}/shipments/${encodeURIComponent(shipment.id)}`}

@@ -1,7 +1,10 @@
 import type { AdminIdentity } from "#workers/admin-access";
 import { ownedQuoteRequestWhere } from "../../quote-request/infrastructure/d1-quote-request-repository";
+import type { ProformaInvoiceSnapshot } from "../../proforma-invoice/domain/proforma-invoice";
 import { piSha256 } from "../../proforma-invoice/domain/proforma-invoice";
 import { quoteNotificationOutboxStatement } from "../../quote-notifications/infrastructure/d1-quote-notifications";
+import { splitShipmentIdForChange } from "../domain/order-shipping-change";
+import { validatedReadySchedule } from "../domain/ready-schedule";
 
 type ChangeKind = "delivery_address" | "shipping_plan";
 
@@ -28,7 +31,7 @@ interface RequestRow {
 
 export interface ProposedShipment {
   shipmentId: string;
-  destination: Record<string, string>;
+  destination: ProformaInvoiceSnapshot["destination"];
   carrierName: string;
   serviceName: string;
   transportMethod: string;
@@ -109,7 +112,7 @@ function reviewedShipment(value: unknown): ProposedShipment {
     requestContent("delivery_address", {
       note: "Reviewed shipping terms",
       destination: item.destination,
-    }) as { destination: Record<string, string> }
+    }) as { destination: ProformaInvoiceSnapshot["destination"] }
   ).destination;
   const incoterm = text(item.incoterm, "Incoterm", 3);
   if (incoterm !== "DDP" && incoterm !== "DAP")
@@ -118,8 +121,13 @@ function reviewedShipment(value: unknown): ProposedShipment {
     item.readyDate === null || item.readyDate === ""
       ? null
       : text(item.readyDate, "Ready date", 10);
-  if (readyDate && !/^\d{4}-\d{2}-\d{2}$/.test(readyDate))
-    throw new Response("Invalid ready date", { status: 400 });
+  if (readyDate) {
+    try {
+      validatedReadySchedule({ kind: "fixed_date", readyDate });
+    } catch {
+      throw new Response("Invalid ready date", { status: 400 });
+    }
+  }
   if (
     !Array.isArray(item.allocations) ||
     !item.allocations.length ||
@@ -382,15 +390,7 @@ export function createOrderShippingChangeService(
       .first<{ snapshot_json: string; snapshot_hash: string }>();
     if (!order || (await hash(order.snapshot_json)) !== order.snapshot_hash)
       throw new Response("Order snapshot integrity failure", { status: 409 });
-    const snapshot = JSON.parse(order.snapshot_json) as {
-      destination: Record<string, string>;
-      terms: {
-        transportMethod: string;
-        incoterm: "DDP" | "DAP";
-        namedPlace: string;
-        salesTaxTreatment?: string;
-      };
-    };
+    const snapshot = JSON.parse(order.snapshot_json) as ProformaInvoiceSnapshot;
     const rows = (
       await db
         .prepare(
@@ -466,9 +466,7 @@ export function createOrderShippingChangeService(
           overlay?.namedPlace ??
           ((quoted.namedPlace as string) || snapshot.terms.namedPlace),
         destinationTaxTreatment:
-          overlay?.destinationTaxTreatment ??
-          snapshot.terms.salesTaxTreatment ??
-          "As accepted in PI",
+          overlay?.destinationTaxTreatment ?? "As accepted in PI",
         readyDate: row.current_estimate_date,
         allocations: allocations
           .filter((allocation) => allocation.shipment_id === shipmentId)
@@ -884,8 +882,12 @@ export function createOrderShippingChangeService(
           .bind(requestId)
           .all<{ shipment_id: string }>()
       ).results.map((row) => row.shipment_id);
+      const newShipment = afterShipments.find(
+        (item) => item.shipmentId === splitShipmentIdForChange(requestId),
+      );
       if (
-        affected.length !== afterShipments.length ||
+        afterShipments.length !== affected.length + (newShipment ? 1 : 0) ||
+        (newShipment && request.kind !== "shipping_plan") ||
         affected.some(
           (id) => !afterShipments.some((item) => item.shipmentId === id),
         )
@@ -908,6 +910,17 @@ export function createOrderShippingChangeService(
         throw new Response("A revised ready date is required", {
           status: 400,
         });
+      if (
+        newShipment &&
+        before.shipments.some((item) => item.readyDate) &&
+        !newShipment.readyDate
+      )
+        throw new Response(
+          "A ready date is required for the new split shipment",
+          {
+            status: 400,
+          },
+        );
       const totals = (items: ProposedShipment[]) => {
         const map = new Map<string, number>();
         for (const item of items)
@@ -1197,15 +1210,26 @@ export function createOrderShippingChangeService(
       const commandId = text(input.commandId, "Command ID", 100);
       const prior = await db
         .prepare(
-          `SELECT id,request_id,proposal_id FROM order_shipping_change_effective
-         WHERE command_id=?`,
+          `SELECT effect.id,effect.order_id,effect.request_id,effect.proposal_id,
+            request.version AS request_version
+           FROM order_shipping_change_effective effect
+           JOIN order_shipping_change_requests request ON request.id=effect.request_id
+           WHERE effect.command_id=?`,
         )
         .bind(commandId)
-        .first<{ id: string; request_id: string; proposal_id: string }>();
+        .first<{
+          id: string;
+          order_id: string;
+          request_id: string;
+          proposal_id: string;
+          request_version: number;
+        }>();
       if (prior) {
         if (
+          prior.order_id !== input.orderId ||
           prior.request_id !== input.requestId ||
-          prior.proposal_id !== input.proposalId
+          prior.proposal_id !== input.proposalId ||
+          prior.request_version !== input.expectedVersion + 1
         )
           throw conflict();
         return prior.id;
@@ -1251,6 +1275,24 @@ export function createOrderShippingChangeService(
       const after = JSON.parse(proposal.after_json) as {
         shipments: ProposedShipment[];
       };
+      const newShipment = after.shipments.find(
+        (item) => item.shipmentId === splitShipmentIdForChange(input.requestId),
+      );
+      const dateNotices = after.shipments.flatMap((shipment) => {
+        const previous = before.shipments.find(
+          (item) => item.shipmentId === shipment.shipmentId,
+        );
+        if (!shipment.readyDate || previous?.readyDate === shipment.readyDate)
+          return [];
+        return [
+          {
+            shipmentId: shipment.shipmentId,
+            body: previous
+              ? `Estimated Ready-to-Ship Date for Shipment ${shipment.shipmentId} changed from ${previous.readyDate ?? "not recorded"} to ${shipment.readyDate} under the accepted Order Change Confirmation. The original PI is unchanged.`
+              : `Initial Estimated Ready-to-Ship Date for Shipment ${shipment.shipmentId} is ${shipment.readyDate} under the accepted Order Change Confirmation. The original PI is unchanged.`,
+          },
+        ];
+      });
       const current = await beforeShipments(
         input.orderId,
         before.shipments.map((shipment) => shipment.shipmentId),
@@ -1326,6 +1368,54 @@ export function createOrderShippingChangeService(
           );
         }
       }
+      if (newShipment) {
+        statements.push(
+          db
+            .prepare(
+              `INSERT INTO order_shipments
+           (id,order_id,group_key,sequence_number,display_name,accepted_terms_json,
+            created_at,updated_at)
+           SELECT ?,?,?,coalesce(max(sequence_number),0)+1,
+             'Shipment '||(coalesce(max(sequence_number),0)+1),?,?,?
+           FROM order_shipments WHERE order_id=?`,
+            )
+            .bind(
+              newShipment.shipmentId,
+              input.orderId,
+              `change:${input.requestId}`,
+              JSON.stringify({
+                source: "accepted_order_change",
+                effectiveChangeId: effectId,
+                freightCents: 0,
+                insuranceCents: 0,
+                dutiesImportCents: 0,
+                transportMethod: newShipment.transportMethod,
+                incoterm: newShipment.incoterm,
+                namedPlace: newShipment.namedPlace,
+                allocations: newShipment.allocations,
+              }),
+              timestamp,
+              timestamp,
+              input.orderId,
+            ),
+          db
+            .prepare(
+              `INSERT INTO order_shipment_ready_schedules
+           (shipment_id,order_id,current_estimate_date,
+            current_estimate_source,created_at,updated_at)
+           VALUES (?,?,?,?,?,?)`,
+            )
+            .bind(
+              newShipment.shipmentId,
+              input.orderId,
+              newShipment.readyDate,
+              newShipment.readyDate ? "operational" : null,
+              timestamp,
+              timestamp,
+            ),
+        );
+        changedAllocations.push(newShipment);
+      }
       for (const revised of changedAllocations)
         for (const allocation of revised.allocations)
           statements.push(
@@ -1363,12 +1453,15 @@ export function createOrderShippingChangeService(
         statements.push(
           db
             .prepare(
-              `UPDATE order_shipments SET version=version+1,updated_at=?
+              `UPDATE order_shipments SET version=version+1,updated_at=?,
+             display_name=CASE WHEN ?=1 AND group_key='together'
+               THEN 'Shipment 1' ELSE display_name END
            WHERE id=? AND order_id=? AND version=?
              AND status IN ('planned','ready_to_ship')`,
             )
             .bind(
               timestamp,
+              newShipment ? 1 : 0,
               original.shipmentId,
               input.orderId,
               original.shipmentVersion,
@@ -1515,20 +1608,43 @@ export function createOrderShippingChangeService(
           commandId,
         )),
       );
+      for (const notice of dateNotices)
+        statements.push(
+          ...(await changeMessage(
+            input.requestId,
+            actor.id,
+            order.request_id,
+            notice.body,
+            timestamp,
+            `shipping-change-date:${effectId}:${notice.shipmentId}`,
+            commandId,
+          )),
+        );
       try {
         const results = await db.batch(statements);
         if (results[0].meta.changes !== 1) throw conflict();
       } catch (error) {
         const replay = await db
           .prepare(
-            `SELECT id,request_id,proposal_id FROM order_shipping_change_effective
-           WHERE command_id=?`,
+            `SELECT effect.id,effect.order_id,effect.request_id,effect.proposal_id,
+            request.version AS request_version
+           FROM order_shipping_change_effective effect
+           JOIN order_shipping_change_requests request ON request.id=effect.request_id
+           WHERE effect.command_id=?`,
           )
           .bind(commandId)
-          .first<{ id: string; request_id: string; proposal_id: string }>();
+          .first<{
+            id: string;
+            order_id: string;
+            request_id: string;
+            proposal_id: string;
+            request_version: number;
+          }>();
         if (
+          replay?.order_id === input.orderId &&
           replay?.request_id === input.requestId &&
-          replay.proposal_id === input.proposalId
+          replay.proposal_id === input.proposalId &&
+          replay.request_version === input.expectedVersion + 1
         )
           return replay.id;
         if (error instanceof Response) throw error;
@@ -1590,7 +1706,10 @@ export function createOrderShippingChangeService(
                AND NOT EXISTS(SELECT 1 FROM order_release_guards guard
                  WHERE guard.order_id=? AND guard.held=1)
                AND NOT EXISTS(SELECT 1 FROM order_quantity_holds hold
-                 WHERE hold.shipment_id=? AND hold.active=1)`,
+                 WHERE hold.active=1 AND
+                   (hold.shipment_id=? OR (hold.shipment_id IS NULL AND
+                     EXISTS(SELECT 1 FROM order_shipment_allocations allocation
+                       WHERE allocation.shipment_id=? AND allocation.line_id=hold.line_id))))`,
             )
             .bind(
               timestamp,
@@ -1601,6 +1720,7 @@ export function createOrderShippingChangeService(
               input.orderId,
               input.expectedShipmentVersion,
               input.orderId,
+              input.shipmentId,
               input.shipmentId,
             ),
           db
