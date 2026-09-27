@@ -33,18 +33,18 @@ Review date: 2026-09-27. Status: **Approved, published as GitHub issues #102–#
 
 ## Breakdown and Direct Dependencies
 
-| Ticket | Title | Blocked by | Demonstrable result |
-| --- | --- | --- | --- |
-| 01 | Align the Single Launch Return Policy | None | Product disclosures, PI terms, customer documents and development fixtures use one 14-day, 10% policy. |
-| 02 | Request and Withdraw Quantity-scoped Cancellation | None | Submission immediately holds the exact unshipped quantities; withdrawal releases only its own hold. |
-| 03 | Resolve Cancellation and Reserve the Authorized Refund | 02 | Immutable decisions, accurate remaining fulfillment, transparent amounts and shared refund reservations. |
-| 04 | Review Exceptional Assembly and Pre-cut Hose Cancellation | 03 | Support-initiated review uses actual factory facts without changing the original configuration. |
-| 05 | Open an After-sales Case and Continue Its Conversation | 01 | Shipment-specific delivery and 14-day-window validation with traceable reports, attachments and replies in the same Case. |
-| 06 | Issue a Private Return Authorization with Frozen Instructions | 05 | A maintained address is selected and disclosed only to the authorized customer, with a 30-day arrival deadline and renewed-review path. |
-| 07 | Receive, Inspect and Approve Returned Quantities | 03, 06 | Actual received quantities drive inspection, financial calculations, reservations, decision notices and overdue reminders. |
-| 08 | Record External Refund Initiation and Reconcile Funds | 07 | Cancellation, return and Spec 6 refunds share verified channels, deadlines, limits and records; dependency on 03 is inherited through 07. |
-| 09 | Append Decision Revisions and Supplemental Refunds | 08 | Case revisions preserve history, initiated refunds remain unchanged, and additional amounts receive separate authorization. |
-| 10 | Verify Migrations and the Complete After-sales Workflow | 04, 09 | Complete acceptance evidence for mixed products, split deliveries, concurrent financial operations and the single launch policy. |
+| Ticket | Title                                                         | Blocked by | Demonstrable result                                                                                                                       |
+| ------ | ------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| 01     | Align the Single Launch Return Policy                         | None       | Product disclosures, PI terms, customer documents and development fixtures use one 14-day, 10% policy.                                    |
+| 02     | Request and Withdraw Quantity-scoped Cancellation             | None       | Submission immediately holds the exact unshipped quantities; withdrawal releases only its own hold.                                       |
+| 03     | Resolve Cancellation and Reserve the Authorized Refund        | 02         | Immutable decisions, accurate remaining fulfillment, transparent amounts and shared refund reservations.                                  |
+| 04     | Review Exceptional Assembly and Pre-cut Hose Cancellation     | 03         | Support-initiated review uses actual factory facts without changing the original configuration.                                           |
+| 05     | Open an After-sales Case and Continue Its Conversation        | 01         | Shipment-specific delivery and 14-day-window validation with traceable reports, attachments and replies in the same Case.                 |
+| 06     | Issue a Private Return Authorization with Frozen Instructions | 05         | A maintained address is selected and disclosed only to the authorized customer, with a 30-day arrival deadline and renewed-review path.   |
+| 07     | Receive, Inspect and Approve Returned Quantities              | 03, 06     | Actual received quantities drive inspection, financial calculations, reservations, decision notices and overdue reminders.                |
+| 08     | Record External Refund Initiation and Reconcile Funds         | 07         | Cancellation, return and Spec 6 refunds share verified channels, deadlines, limits and records; dependency on 03 is inherited through 07. |
+| 09     | Append Decision Revisions and Supplemental Refunds            | 08         | Case revisions preserve history, initiated refunds remain unchanged, and additional amounts receive separate authorization.               |
+| 10     | Verify Migrations and the Complete After-sales Workflow       | 04, 09     | Complete acceptance evidence for mixed products, split deliveries, concurrent financial operations and the single launch policy.          |
 
 Proposed single-agent execution order: 01 → 02 → 03 → 04 → 05 → 06 → 07 → 08 → 09 → 10.
 This sequence does not add blocking edges: 01 and 02 can start independently, 05 can start after 01, and 07 reuses the financial contract introduced by 03.

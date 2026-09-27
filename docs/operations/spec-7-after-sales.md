@@ -14,14 +14,14 @@ There is one launch policy (`pi-refund-2026-09-27-v1` in new PIs, public page
 `/policies/returns`). No pre-launch Orders exist, so no earlier policy version
 is mapped.
 
-| Rule | Value |
-| --- | --- |
+| Rule                              | Value                                                                                            |
+| --------------------------------- | ------------------------------------------------------------------------------------------------ |
 | Convenience-return request window | Shipment's actual delivery date in `America/New_York` is day 0; open through 23:59 ET on day +14 |
-| RA arrival | Issuance ET date is day 0; goods must arrive by 23:59 ET on day +30 |
-| Inspection decision target | 5 US business days after receipt (next business day is day 1; 23:59 ET) |
-| Refund initiation | 10 US business days after approval (or after customer confirms a deduction) |
-| Convenience restocking fee | 10% of the discounted merchandise approved for return, cumulative across partial decisions |
-| US Business Calendar | `us-federal-bank-2025-2035-v1`; dates outside 2025–2035 fail with an explicit error |
+| RA arrival                        | Issuance ET date is day 0; goods must arrive by 23:59 ET on day +30                              |
+| Inspection decision target        | 5 US business days after receipt (next business day is day 1; 23:59 ET)                          |
+| Refund initiation                 | 10 US business days after approval (or after customer confirms a deduction)                      |
+| Convenience restocking fee        | 10% of the discounted merchandise approved for return, cumulative across partial decisions       |
+| US Business Calendar              | `us-federal-bank-2025-2035-v1`; dates outside 2025–2035 fail with an explicit error              |
 
 Admin records the Shipment delivery date as the US (ET) delivery date. Seller
 error, damage and Nonconforming Product reports are not limited by the 14-day
@@ -38,11 +38,11 @@ pnpm exec wrangler d1 execute hydraulic-hose-rfq-local --local --command \
    VALUES ('<subaccount id>','after_sales.review','<owner id>',CURRENT_TIMESTAMP)"
 ```
 
-| Permission | Allows |
-| --- | --- |
+| Permission           | Allows                                                                                  |
+| -------------------- | --------------------------------------------------------------------------------------- |
 | `after_sales.review` | Read/decide cancellations, Cases, RAs, receipts, inspections, revisions, evidence files |
-| `after_sales.refund` | Verify refund destinations, view the due-refund queue, record external initiation |
-| Owner only | Approve an alternative refund destination for one exact refund |
+| `after_sales.refund` | Verify refund destinations, view the due-refund queue, record external initiation       |
+| Owner only           | Approve an alternative refund destination for one exact refund                          |
 
 ## Daily operation
 
@@ -126,7 +126,7 @@ pnpm exec wrangler d1 execute hydraulic-hose-rfq-local --local --command \
 
 1. Run the pre-migration inventory from the Spec 6 runbook, plus:
    `SELECT count(*) FROM admin_notifications; SELECT count(*) FROM
-   order_shipping_change_refund_reservations;` and record the results.
+order_shipping_change_refund_reservations;` and record the results.
 2. Apply migrations `0115`–`0122` with `pnpm migrate` (or the target
    environment command) and verify with `pnpm migrate:verify` (schema version
    123). The upgrade keeps Admin notifications and read receipts, keeps Spec 6
@@ -143,14 +143,14 @@ pnpm exec wrangler d1 execute hydraulic-hose-rfq-local --local --command \
 
 ## Local verification (2026-09-27)
 
-| Check | Result |
-| --- | --- |
-| `pnpm format:check`, `pnpm lint`, `pnpm typecheck` | Passed |
-| `pnpm test` | 180 files passed, 1 skipped; 1183 tests passed, 3 skipped. One unrelated catalog UI test (`catalog-request-page`, sidebar series filter) timed out under full-suite load and passed 3/3 when rerun alone |
-| After-sales suite (`test/after-sales-*`) | 13 files, including the mixed-Order workflow with money/quantity conservation and the Spec 6 → Spec 7 upgrade-migration test |
-| `pnpm migrate:verify` | Local schema version 123, 123 migrations, ready |
-| `pnpm test:smoke` (includes `pnpm build`) | 7 files passed, 38 tests passed |
-| Mobile layout | Customer Case, RA, inspection decision and refund breakdown rendered with production CSS at 390px: no horizontal overflow; breakdown amounts align in two columns |
+| Check                                              | Result                                                                                                                                                                                                   |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm format:check`, `pnpm lint`, `pnpm typecheck` | Passed                                                                                                                                                                                                   |
+| `pnpm test`                                        | 180 files passed, 1 skipped; 1183 tests passed, 3 skipped. One unrelated catalog UI test (`catalog-request-page`, sidebar series filter) timed out under full-suite load and passed 3/3 when rerun alone |
+| After-sales suite (`test/after-sales-*`)           | 13 files, including the mixed-Order workflow with money/quantity conservation and the Spec 6 → Spec 7 upgrade-migration test                                                                             |
+| `pnpm migrate:verify`                              | Local schema version 123, 123 migrations, ready                                                                                                                                                          |
+| `pnpm test:smoke` (includes `pnpm build`)          | 7 files passed, 38 tests passed                                                                                                                                                                          |
+| Mobile layout                                      | Customer Case, RA, inspection decision and refund breakdown rendered with production CSS at 390px: no horizontal overflow; breakdown amounts align in two columns                                        |
 
 These are local tests with stub email and test data. They do not establish
 production migration readiness, external email delivery, carrier events or
