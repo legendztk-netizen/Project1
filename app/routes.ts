@@ -54,6 +54,10 @@ export default [
     "modules/customer-identity/routes/shipment-document-download.ts",
   ),
   route(
+    "account/orders/:orderId/after-sales/files/:fileId",
+    "modules/customer-identity/routes/after-sales-file-download.ts",
+  ),
+  route(
     "account/quotes/:requestId",
     "modules/customer-identity/routes/customer-quote-detail.tsx",
   ),
@@ -82,6 +86,10 @@ export default [
   ),
   route("admin/orders", "modules/admin/routes/confirmed-orders.tsx"),
   route("admin/after-sales", "modules/admin/routes/after-sales.tsx"),
+  route(
+    "admin/orders/:orderId/after-sales/files/:fileId",
+    "modules/admin/routes/after-sales-file-download.ts",
+  ),
   route("admin/china-calendar", "modules/admin/routes/china-calendar.tsx"),
   route(
     "admin/orders/:orderId",

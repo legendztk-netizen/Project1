@@ -50,7 +50,10 @@ export async function startAfterSalesDatabase(label: string) {
   });
   if (migration.status !== 0)
     throw new Error(migration.stdout + migration.stderr);
-  const platform = await getPlatformProxy<{ DB: D1Database }>({
+  const platform = await getPlatformProxy<{
+    DB: D1Database;
+    PRIVATE_FILES: R2Bucket;
+  }>({
     configPath: "wrangler.jsonc",
     persist: { path: join(directory, "v3") },
     remoteBindings: false,
@@ -73,6 +76,7 @@ export async function startAfterSalesDatabase(label: string) {
   );
   return {
     db,
+    bucket: platform.env.PRIVATE_FILES,
     async dispose() {
       await platform.dispose();
       rmSync(directory, { recursive: true, force: true });

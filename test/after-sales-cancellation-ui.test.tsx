@@ -28,6 +28,8 @@ type Cancellations = Parameters<
 >[0]["cancellations"];
 
 const cancellations: Cancellations = {
+  supportOnlyLines: [],
+  conversationPath: "/account/quotes/request-1/conversation",
   eligible: [
     {
       lineId: "line-a",
@@ -238,6 +240,7 @@ it("shows the gross-to-net breakdown and asks the customer to confirm a deductio
         element: (
           <CustomerCancellationRequests
             cancellations={{
+              ...cancellations,
               eligible: [],
               requests: [
                 {

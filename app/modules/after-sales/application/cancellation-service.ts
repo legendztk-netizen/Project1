@@ -143,6 +143,7 @@ export interface CancellationDecisionInput {
   taxNote?: string;
   thirdPartyCostCents?: number;
   thirdPartyCostEvidence?: string;
+  factoryEvidence?: FactoryEvidence;
 }
 
 const optionalNote = (value: unknown, label: string) =>
@@ -320,6 +321,61 @@ export function createCancellationService(
     });
   }
 
+  async function validatedFactoryEvidence(
+    value: FactoryEvidence | undefined,
+    requestId: string,
+    orderId: string,
+  ): Promise<FactoryEvidence> {
+    if (!value || typeof value !== "object")
+      throw new Response("Record the actual factory information", {
+        status: 400,
+      });
+    const reviewedAt = afterSalesText(
+      value.reviewedAt,
+      "Factory review time",
+      40,
+    );
+    const reviewed = Date.parse(reviewedAt);
+    if (!Number.isFinite(reviewed) || reviewed > Date.parse(now()))
+      throw new Response("Factory review time must be an actual past time", {
+        status: 400,
+      });
+    const attachmentIds = Array.isArray(value.attachmentIds)
+      ? [...new Set(value.attachmentIds.map(String))].slice(0, 20)
+      : [];
+    if (attachmentIds.length) {
+      const found = await db
+        .prepare(
+          `SELECT count(*) AS count FROM after_sales_files
+           WHERE order_id=? AND scope_kind='cancellation' AND scope_id=?
+             AND id IN (${attachmentIds.map(() => "?").join(",")})`,
+        )
+        .bind(orderId, requestId, ...attachmentIds)
+        .first<number>("count");
+      if (found !== attachmentIds.length)
+        throw new Response("Supporting files must belong to this review", {
+          status: 400,
+        });
+    }
+    return {
+      status: afterSalesText(value.status, "Actual factory status", 1000),
+      source: afterSalesText(value.source, "Factory information source", 300),
+      reviewedAt: new Date(reviewed).toISOString(),
+      supportReference: afterSalesText(
+        value.supportReference,
+        "Support contact reference",
+        300,
+      ),
+      attachmentIds,
+      externalIdentifiers:
+        typeof value.externalIdentifiers === "string"
+          ? value.externalIdentifiers.trim().slice(0, 500)
+          : "",
+      precut:
+        value.precut === true ? true : value.precut === false ? false : null,
+    };
+  }
+
   async function assertAdminOrder(actor: AdminIdentity, orderId: string) {
     requireAfterSalesPermission(actor, "after_sales.review");
     return facts.read(orderId);
@@ -439,7 +495,44 @@ export function createCancellationService(
           };
         }),
         requests: await project(orderFacts, rows, "customer"),
+        supportOnlyLines: orderFacts.lines
+          .filter((line) => line.productClass !== "standard")
+          .filter((line) =>
+            cancellableQuantities(orderFacts, [
+              "made_to_order",
+              "cut_hose",
+            ]).some((item) => item.lineId === line.lineId),
+          )
+          .map((line) => ({
+            lineId: line.lineId,
+            displayName: line.displayName,
+            productClass: line.productClass,
+          })),
+        conversationPath: `/account/quotes/${encodeURIComponent(orderFacts.requestId)}/conversation`,
       };
+    },
+
+    async adminExceptionalEligible(actor: AdminIdentity, orderId: string) {
+      const orderFacts = await assertAdminOrder(actor, orderId);
+      return cancellableQuantities(orderFacts, [
+        "made_to_order",
+        "cut_hose",
+      ]).map((item) => {
+        const line = orderFacts.lines.find(
+          (candidate) => candidate.lineId === item.lineId,
+        )!;
+        return {
+          ...item,
+          displayName: line.displayName,
+          sku: line.sku,
+          productClass: line.productClass,
+          pieceLengthFt: line.pieceLengthFt,
+          shipmentName:
+            orderFacts.shipments.find(
+              (shipment) => shipment.id === item.shipmentId,
+            )?.displayName ?? null,
+        };
+      });
     },
 
     async adminRead(actor: AdminIdentity, orderId: string) {
@@ -670,14 +763,175 @@ export function createCancellationService(
 
     customerWithdraw: closeByCustomer,
 
-    async adminResolve(
+    async adminOpenExceptional(
       actor: AdminIdentity,
-      input: CancellationDecisionInput,
-      extra: {
-        serviceFee?: { cents: number; note: string };
-        factoryEvidence?: FactoryEvidence;
-      } = {},
+      input: {
+        orderId: string;
+        reason: string;
+        supportReference: string;
+        quantities: unknown;
+        commandId: string;
+      },
     ) {
+      requireAfterSalesPermission(actor, "after_sales.review");
+      const commandId = afterSalesCommandId(input.commandId);
+      const reason = afterSalesText(input.reason, "Support request summary");
+      const supportReference = afterSalesText(
+        input.supportReference,
+        "Support contact reference",
+        300,
+      );
+      const quantities = parseCancellationQuantities(input.quantities);
+      const commandHash = await hash(
+        JSON.stringify({
+          actor: actor.id,
+          orderId: input.orderId,
+          reason,
+          supportReference,
+          quantities,
+        }),
+      );
+      const replay = await db
+        .prepare(
+          `SELECT id,submission_hash FROM order_cancellation_requests
+           WHERE submission_command_id=?`,
+        )
+        .bind(commandId)
+        .first<{ id: string; submission_hash: string }>();
+      if (replay) {
+        if (replay.submission_hash !== commandHash)
+          throw cancellationConflict();
+        return replay.id;
+      }
+      const orderFacts = await facts.read(input.orderId);
+      const eligible = cancellableQuantities(orderFacts, [
+        "made_to_order",
+        "cut_hose",
+      ]);
+      for (const quantity of quantities) {
+        const line = orderFacts.lines.find(
+          (item) => item.lineId === quantity.lineId,
+        );
+        if (!line || line.productClass === "standard")
+          throw new Response(
+            "Standard products use the customer cancellation request",
+            { status: 400 },
+          );
+        const available = eligible.find(
+          (item) =>
+            item.lineId === quantity.lineId &&
+            item.shipmentId === quantity.shipmentId,
+        );
+        if (!available || quantity.physicalQuantity > available.available)
+          throw cancellationConflict();
+      }
+      const id = crypto.randomUUID();
+      const timestamp = now();
+      const statements: D1PreparedStatement[] = [
+        db
+          .prepare(
+            `INSERT INTO order_cancellation_requests
+             (id,order_id,kind,origin,status,profile_id,actor_id,reason,
+              submission_command_id,submission_hash,created_at,updated_at)
+             VALUES (?,?,'exceptional','support','pending_review',NULL,?,?,?,?,?,?)`,
+          )
+          .bind(
+            id,
+            orderFacts.orderId,
+            actor.id,
+            reason,
+            commandId,
+            commandHash,
+            timestamp,
+            timestamp,
+          ),
+      ];
+      for (const quantity of quantities) {
+        const holdId = crypto.randomUUID();
+        statements.push(
+          db
+            .prepare(
+              `INSERT INTO order_quantity_holds
+               (id,order_id,line_id,shipment_id,physical_quantity,kind,reason,created_at)
+               VALUES (?,?,?,?,?,'cancellation',?,?)`,
+            )
+            .bind(
+              holdId,
+              orderFacts.orderId,
+              quantity.lineId,
+              quantity.shipmentId,
+              quantity.physicalQuantity,
+              `Exceptional cancellation review ${id}`,
+              timestamp,
+            ),
+          db
+            .prepare(
+              `INSERT INTO order_cancellation_request_lines
+               (request_id,order_id,line_id,shipment_id,physical_quantity,hold_id)
+               VALUES (?,?,?,?,?,?)`,
+            )
+            .bind(
+              id,
+              orderFacts.orderId,
+              quantity.lineId,
+              quantity.shipmentId,
+              quantity.physicalQuantity,
+              holdId,
+            ),
+        );
+      }
+      statements.push(
+        db
+          .prepare(
+            `INSERT INTO order_cancellation_events
+             (id,request_id,kind,details_json,actor_id,occurred_at,command_id)
+             VALUES (?,?,'submitted',?,?,?,?)`,
+          )
+          .bind(
+            `cancellation-submitted:${commandId}`,
+            id,
+            JSON.stringify({ quantities, supportReference }),
+            actor.id,
+            timestamp,
+            commandId,
+          ),
+        db
+          .prepare(
+            `INSERT INTO admin_audit_events
+             (id,event_type,entity_type,entity_id,actor_id,payload_json,occurred_at)
+             VALUES (?,'order.exceptional_cancellation_opened','confirmed_order',?,?,?,?)`,
+          )
+          .bind(
+            `exceptional-cancellation:${id}`,
+            orderFacts.orderId,
+            actor.id,
+            JSON.stringify({
+              requestId: id,
+              supportReference,
+              quantities,
+              commandId,
+              ipAddress: options.auditIp ?? null,
+            }),
+            timestamp,
+          ),
+      );
+      try {
+        await db.batch(statements);
+      } catch {
+        const concurrent = await db
+          .prepare(
+            `SELECT id,submission_hash FROM order_cancellation_requests
+             WHERE submission_command_id=?`,
+          )
+          .bind(commandId)
+          .first<{ id: string; submission_hash: string }>();
+        if (concurrent?.submission_hash === commandHash) return concurrent.id;
+        throw cancellationConflict();
+      }
+      return id;
+    },
+
+    async adminResolve(actor: AdminIdentity, input: CancellationDecisionInput) {
       requireAfterSalesPermission(actor, "after_sales.review");
       const commandId = afterSalesCommandId(input.commandId);
       const customerReason = afterSalesText(
@@ -694,7 +948,7 @@ export function createCancellationService(
       if (!Array.isArray(input.decisions) || !input.decisions.length)
         throw new Response("Decide each requested quantity", { status: 400 });
       const commandHash = await hash(
-        JSON.stringify({ actor: actor.id, input, extra }),
+        JSON.stringify({ actor: actor.id, input }),
       );
       const replay = await db
         .prepare(
@@ -720,6 +974,18 @@ export function createCancellationService(
         throw cancellationConflict();
       const orderFacts = await facts.read(request.order_id);
       const [view] = await project(orderFacts, [request], "admin");
+      const factoryEvidence =
+        request.kind === "exceptional"
+          ? await validatedFactoryEvidence(
+              input.factoryEvidence,
+              request.id,
+              request.order_id,
+            )
+          : null;
+      if (request.kind === "standard" && input.factoryEvidence)
+        throw new Response("Factory review applies only to Support cases", {
+          status: 400,
+        });
       if (view.lines.length !== input.decisions.length)
         throw new Response("Decide each requested quantity", { status: 400 });
       const prior = await priorLineCredits(db, request.order_id);
@@ -743,6 +1009,14 @@ export function createCancellationService(
         return { line, approved: decision.approvedQuantity };
       });
       const approvedLines = decided.filter((item) => item.approved > 0);
+      if (
+        approvedLines.some((item) => item.line.productClass === "cut_hose") &&
+        factoryEvidence?.precut !== true
+      )
+        throw new Response(
+          "Cut-hose cancellation requires documented pre-cut factory facts",
+          { status: 409 },
+        );
       for (const item of approvedLines) {
         const shipment = orderFacts.shipments.find(
           (candidate) => candidate.id === item.line.shipmentId,
@@ -791,6 +1065,26 @@ export function createCancellationService(
         };
       });
       const anyApproved = approvedLines.length > 0;
+      const cutLines = orderFacts.lines.filter(
+        (line) => line.productClass === "cut_hose",
+      );
+      const approvedPieces = approvedLines
+        .filter((item) => item.line.productClass === "cut_hose")
+        .reduce((sum, item) => sum + item.approved, 0);
+      const serviceFee = approvedPieces
+        ? {
+            cents: cumulativeLineAmount(
+              orderFacts.charges.cuttingLabeling ?? 0,
+              cutLines.reduce((sum, line) => sum + line.physicalQuantity, 0),
+              cutLines.reduce(
+                (sum, line) => sum + (prior.get(line.lineId)?.quantity ?? 0),
+                0,
+              ),
+              approvedPieces,
+            ),
+            note: `Cutting & Labeling Fee reversed in full for ${approvedPieces} uncut piece(s)`,
+          }
+        : null;
       const refund = refundComponents({
         merchandiseCents: resolutionLines.reduce(
           (sum, line) => sum + line.merchandiseCents,
@@ -798,7 +1092,7 @@ export function createCancellationService(
         ),
         logisticsCents: anyApproved ? (input.logisticsCents ?? 0) : 0,
         taxCents: anyApproved ? (input.taxCents ?? 0) : 0,
-        serviceFeeCents: anyApproved ? (extra.serviceFee?.cents ?? 0) : 0,
+        serviceFeeCents: serviceFee?.cents ?? 0,
         thirdPartyCostCents: anyApproved ? (input.thirdPartyCostCents ?? 0) : 0,
       });
       if (
@@ -830,7 +1124,7 @@ export function createCancellationService(
         taxCents: refund.taxCents,
         taxNote,
         serviceFeeCents: refund.serviceFeeCents,
-        serviceFeeNote: extra.serviceFee?.note ?? null,
+        serviceFeeNote: serviceFee?.note ?? null,
         thirdPartyCostCents: refund.thirdPartyCostCents,
         thirdPartyCostEvidence,
         grossCents: refund.grossCents,
@@ -869,9 +1163,7 @@ export function createCancellationService(
             internalNote,
             JSON.stringify(resolutionLines),
             JSON.stringify(financial),
-            extra.factoryEvidence
-              ? JSON.stringify(extra.factoryEvidence)
-              : null,
+            factoryEvidence ? JSON.stringify(factoryEvidence) : null,
             authorizationId,
             actor.id,
             timestamp,
@@ -1066,7 +1358,7 @@ export function createCancellationService(
           orderRequestId: orderFacts.requestId,
           actorId: actor.id,
           messageId: `cancellation-decision:${commandId}`,
-          body: `Your cancellation request for Order ${orderFacts.orderNumber} ${outcomeText}. ${lineText}. Reason: ${customerReason} ${refundText} Your original PI and Order records are unchanged.`,
+          body: `Your cancellation request for Order ${orderFacts.orderNumber} ${outcomeText}. ${lineText}. Reason: ${customerReason} ${refundText}${request.kind === "exceptional" ? " The approved specification is not edited; a corrected assembly or new length requires a separate Follow-on Quote, PI, payment and Order." : ""} Your original PI and Order records are unchanged.`,
           timestamp,
           guard: resolved,
         })),

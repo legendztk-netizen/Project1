@@ -101,3 +101,26 @@
 .customer-order-actions:empty {
   display: none;
 }
+
+.after-sales-inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+.after-sales-files ul {
+  display: grid;
+  gap: 8px;
+  padding-left: 18px;
+}
+
+.after-sales-decision {
+  margin-top: 12px;
+}
+
+.after-sales-response {
+  display: grid;
+  gap: 8px;
+}

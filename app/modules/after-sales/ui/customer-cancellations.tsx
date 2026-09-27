@@ -318,3 +318,31 @@ export function CustomerCancellationRequests({
     </section>
   );
 }
+
+export function CustomerSupportPath({
+  cancellations,
+}: {
+  cancellations: CustomerCancellations;
+}) {
+  if (!cancellations.supportOnlyLines.length) return null;
+  return (
+    <section className="customer-quote-section">
+      <h2>Made-to-order items</h2>
+      <p>
+        {cancellations.supportOnlyLines
+          .map((line) => line.displayName)
+          .join(", ")}{" "}
+        can&apos;t be changed or cancelled here after Production Approval or
+        cutting. If you find a configuration error, message Support. The seller
+        reviews actual factory progress; a corrected item is quoted separately
+        and your approved specification stays unchanged.
+      </p>
+      <a
+        className="button button-secondary"
+        href={cancellations.conversationPath}
+      >
+        Message Support
+      </a>
+    </section>
+  );
+}

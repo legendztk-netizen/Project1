@@ -58,6 +58,14 @@ import {
   readCancellationDecisions,
 } from "../../after-sales/ui/admin-cancellations";
 import { parseUsdCents } from "../../after-sales/domain/refund-calculation";
+import { createAfterSalesFiles } from "../../after-sales/application/after-sales-files";
+import {
+  AdminEvidenceFiles,
+  AdminExceptionalOpenForm,
+  FactoryEvidenceFields,
+  readFactoryEvidence,
+} from "../../after-sales/ui/admin-exceptional";
+import { readCancellationQuantities } from "../../after-sales/ui/customer-cancellations";
 
 export const headers = piPrivateHeaders;
 
@@ -99,7 +107,21 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
     createShipmentMilestoneService(env.DB).adminRead(adminIdentity, order.id),
     createOrderShippingChangeService(env.DB).adminRead(adminIdentity, order.id),
     hasAfterSalesPermission(adminIdentity, "after_sales.review")
-      ? createCancellationService(env.DB).adminRead(adminIdentity, order.id)
+      ? Promise.all([
+          createCancellationService(env.DB).adminRead(adminIdentity, order.id),
+          createCancellationService(env.DB).adminExceptionalEligible(
+            adminIdentity,
+            order.id,
+          ),
+          createAfterSalesFiles(env.DB, env.PRIVATE_FILES).adminList(
+            adminIdentity,
+            order.id,
+          ),
+        ]).then(([requests, exceptionalEligible, files]) => ({
+          requests,
+          exceptionalEligible,
+          files,
+        }))
       : Promise.resolve(null),
   ]);
   return data(
@@ -487,6 +509,58 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
         { status: error instanceof Response ? error.status : 400 },
       );
     }
+  } else if (
+    intent === "cancellation-open-exceptional" ||
+    intent === "after-sales-file-upload" ||
+    intent === "after-sales-file-share"
+  ) {
+    try {
+      if (intent === "cancellation-open-exceptional")
+        await createCancellationService(env.DB, {
+          auditIp: request.headers.get("cf-connecting-ip") ?? "local",
+        }).adminOpenExceptional(adminIdentity, {
+          orderId,
+          reason: String(form.get("reason") ?? ""),
+          supportReference: String(form.get("supportReference") ?? ""),
+          quantities: readCancellationQuantities(form),
+          commandId: String(form.get("commandId") ?? ""),
+        });
+      else if (intent === "after-sales-file-upload") {
+        const file = form.get("file");
+        if (!(file instanceof File))
+          throw new Response("请选择文件", { status: 400 });
+        await createAfterSalesFiles(env.DB, env.PRIVATE_FILES).adminUpload(
+          adminIdentity,
+          {
+            orderId,
+            scopeKind: String(form.get("scopeKind") ?? "") as "cancellation",
+            scopeId: String(form.get("scopeId") ?? ""),
+            file,
+            commandId: String(form.get("commandId") ?? ""),
+          },
+        );
+      } else
+        await createAfterSalesFiles(env.DB, env.PRIVATE_FILES).adminShare(
+          adminIdentity,
+          {
+            orderId,
+            fileId: String(form.get("fileId") ?? ""),
+            reason: String(form.get("shareReason") ?? ""),
+          },
+        );
+    } catch (error) {
+      if (
+        error instanceof Response &&
+        ![400, 403, 404, 409].includes(error.status)
+      )
+        throw error;
+      return data(
+        {
+          error: `操作未完成：${error instanceof Response ? await error.text() : "请检查输入"}`,
+        },
+        { status: error instanceof Response ? error.status : 400 },
+      );
+    }
   } else if (intent === "cancellation-resolve") {
     try {
       await createCancellationService(env.DB, {
@@ -508,6 +582,7 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
           "第三方费用",
         ),
         thirdPartyCostEvidence: String(form.get("thirdPartyEvidence") ?? ""),
+        factoryEvidence: readFactoryEvidence(form),
       });
     } catch (error) {
       if (error instanceof Response && ![400, 403, 409].includes(error.status))
@@ -529,7 +604,7 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
     new URL(request.url).searchParams.get("returnTo"),
   );
   return redirect(
-    `/admin/orders/${encodeURIComponent(orderId)}?returnTo=${encodeURIComponent(returnTo)}${intent.startsWith("cancellation-") ? "&tab=after-sales" : intent.startsWith("shipping-change-") ? "&tab=changes" : intent.startsWith("shipment-") || intent.startsWith("schedule-") || intent.startsWith("milestone-") || intent === "tracking-save" ? "&tab=shipments" : ""}`,
+    `/admin/orders/${encodeURIComponent(orderId)}?returnTo=${encodeURIComponent(returnTo)}${intent.startsWith("cancellation-") || intent.startsWith("after-sales-") ? "&tab=after-sales" : intent.startsWith("shipping-change-") ? "&tab=changes" : intent.startsWith("shipment-") || intent.startsWith("schedule-") || intent.startsWith("milestone-") || intent === "tracking-save" ? "&tab=shipments" : ""}`,
   );
 }
 
@@ -705,6 +780,9 @@ const eventLabels: Record<string, string> = {
   "order.cancellation_resolved": "已作出取消决定",
   "order.refund_customer_confirmed": "客户确认退款金额",
   "order.refund_customer_disputed": "客户对退款金额提出异议",
+  "order.exceptional_cancellation_opened": "记录客服特殊取消审核",
+  "order.after_sales_file_added": "添加售后私密附件",
+  "order.after_sales_file_shared": "向客户共享售后附件",
 };
 
 export default function ConfirmedOrderDetail({
@@ -1035,14 +1113,44 @@ export default function ConfirmedOrderDetail({
                     {actionData.error}
                   </p>
                 )}
+                <AdminExceptionalOpenForm
+                  eligible={cancellations.exceptionalEligible}
+                  commandId={commandId}
+                  busy={busy}
+                />
                 <AdminCancellationRequests
-                  requests={cancellations}
+                  requests={cancellations.requests}
                   renderActions={(item) => (
-                    <AdminCancellationDecisionForm
-                      request={item}
-                      commandId={commandId}
-                      busy={busy}
-                    />
+                    <>
+                      {item.kind === "exceptional" && (
+                        <AdminEvidenceFiles
+                          orderId={order.id}
+                          scopeKind="cancellation"
+                          scopeId={item.id}
+                          files={cancellations.files}
+                          commandId={commandId}
+                          busy={busy}
+                        />
+                      )}
+                      <AdminCancellationDecisionForm
+                        request={item}
+                        commandId={commandId}
+                        busy={busy}
+                      >
+                        {item.kind === "exceptional" && (
+                          <FactoryEvidenceFields
+                            files={cancellations.files.filter(
+                              (file) =>
+                                file.scopeKind === "cancellation" &&
+                                file.scopeId === item.id,
+                            )}
+                            hasCutHose={item.lines.some(
+                              (line) => line.productClass === "cut_hose",
+                            )}
+                          />
+                        )}
+                      </AdminCancellationDecisionForm>
+                    </>
                   )}
                 />
               </>

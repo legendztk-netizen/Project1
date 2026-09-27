@@ -37,6 +37,7 @@ import { createCancellationService } from "../../after-sales/application/cancell
 import {
   CustomerCancellationAction,
   CustomerCancellationRequests,
+  CustomerSupportPath,
   readCancellationQuantities,
 } from "../../after-sales/ui/customer-cancellations";
 
@@ -325,6 +326,7 @@ export default function ConfirmedOrderDetail({
               : undefined
           }
         />
+        <CustomerSupportPath cancellations={cancellations} />
         <CustomerCancellationRequests
           cancellations={cancellations}
           commandId={commandId}

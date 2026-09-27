@@ -43,6 +43,7 @@ export interface OrderFacts {
   orderNumber: string;
   requestId: string;
   purchasingContextId: string;
+  charges: Record<string, number>;
   lines: OrderLineFact[];
   shipments: ShipmentFact[];
   activeHolds: HoldFact[];
@@ -152,6 +153,7 @@ export function createD1OrderFacts(db: D1Database) {
       ]);
     const snapshot = JSON.parse(order.snapshot_json) as {
       conditions?: { madeToOrderAcknowledgements?: Array<{ lineId: string }> };
+      terms?: { charges?: Record<string, number | null> };
     };
     const acknowledged = new Set(
       (snapshot.conditions?.madeToOrderAcknowledgements ?? []).map(
@@ -164,6 +166,12 @@ export function createD1OrderFacts(db: D1Database) {
       orderNumber: order.order_number,
       requestId: order.request_id,
       purchasingContextId: order.purchasing_context_id,
+      charges: Object.fromEntries(
+        Object.entries(snapshot.terms?.charges ?? {}).map(([key, value]) => [
+          key,
+          typeof value === "number" && Number.isSafeInteger(value) ? value : 0,
+        ]),
+      ),
       lines: lines.results.map((row) => {
         const line = JSON.parse(row.snapshot_json) as {
           sku?: string;

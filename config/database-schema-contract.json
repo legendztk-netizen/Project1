@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 117,
+  "schemaVersion": 118,
   "migrations": [
     "0000_initial_catalog_release.sql",
     "0001_add_admin_identities.sql",
@@ -117,6 +117,7 @@
     "0113_authorized_credit_fund_resolution_guard.sql",
     "0114_admin_notifications.sql",
     "0115_order_cancellation_requests.sql",
-    "0116_cancellation_resolutions_and_refund_authorizations.sql"
+    "0116_cancellation_resolutions_and_refund_authorizations.sql",
+    "0117_after_sales_private_files.sql"
   ]
 }
