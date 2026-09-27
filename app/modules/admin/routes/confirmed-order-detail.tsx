@@ -55,24 +55,23 @@ import { hasAfterSalesPermission } from "../../after-sales/domain/permissions";
 import {
   AdminCancellationDecisionForm,
   AdminCancellationRequests,
-  readCancellationDecisions,
 } from "../../after-sales/ui/admin-cancellations";
-import { parseUsdCents } from "../../after-sales/domain/refund-calculation";
+import {
+  isAfterSalesAdminIntent,
+  runAfterSalesAdminAction,
+} from "../../after-sales/application/admin-order-actions";
 import { createAfterSalesFiles } from "../../after-sales/application/after-sales-files";
 import {
   AdminEvidenceFiles,
   AdminExceptionalOpenForm,
   FactoryEvidenceFields,
-  readFactoryEvidence,
 } from "../../after-sales/ui/admin-exceptional";
-import { readCancellationQuantities } from "../../after-sales/ui/customer-cancellations";
 import { createCaseService } from "../../after-sales/application/case-service";
 import { AdminCases } from "../../after-sales/ui/admin-cases";
 import { createReturnAuthorizationService } from "../../after-sales/application/return-authorization-service";
-import {
-  AdminReturnAuthorizationPanel,
-  readRaLines,
-} from "../../after-sales/ui/return-authorizations";
+import { AdminReturnAuthorizationPanel } from "../../after-sales/ui/return-authorizations";
+import { createReturnInspectionService } from "../../after-sales/application/return-inspection-service";
+import { AdminReturnReceipts } from "../../after-sales/ui/return-inspection";
 
 export const headers = piPrivateHeaders;
 
@@ -132,14 +131,27 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
           createReturnAuthorizationService(env.DB).adminLocations(
             adminIdentity,
           ),
+          createReturnInspectionService(env.DB).adminRead(
+            adminIdentity,
+            order.id,
+          ),
         ]).then(
-          ([requests, exceptionalEligible, files, cases, ras, locations]) => ({
+          ([
             requests,
             exceptionalEligible,
             files,
             cases,
             ras,
             locations,
+            receipts,
+          ]) => ({
+            requests,
+            exceptionalEligible,
+            files,
+            cases,
+            ras,
+            locations,
+            receipts,
           }),
         )
       : Promise.resolve(null),
@@ -529,146 +541,24 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
         { status: error instanceof Response ? error.status : 400 },
       );
     }
-  } else if (
-    intent === "cancellation-open-exceptional" ||
-    intent === "after-sales-file-upload" ||
-    intent === "after-sales-file-share" ||
-    intent === "case-admin-reply" ||
-    intent === "case-issue-ra" ||
-    intent === "case-decline-return" ||
-    intent === "case-close"
-  ) {
-    try {
-      const ras = createReturnAuthorizationService(env.DB, {
-        auditIp: request.headers.get("cf-connecting-ip") ?? "local",
-      });
-      if (intent === "case-issue-ra")
-        await ras.adminIssue(adminIdentity, {
-          orderId,
-          caseId: String(form.get("caseId") ?? ""),
-          locationId: String(form.get("locationId") ?? ""),
-          instructions: String(form.get("instructions") ?? ""),
-          lines: readRaLines(form),
-          previousRaId: String(form.get("previousRaId") ?? "") || null,
-          reviewNote: String(form.get("reviewNote") ?? ""),
-          commandId: String(form.get("commandId") ?? ""),
-        });
-      else if (intent === "case-decline-return")
-        await ras.adminDeclineReturn(adminIdentity, {
-          orderId,
-          caseId: String(form.get("caseId") ?? ""),
-          reason: String(form.get("reason") ?? ""),
-          commandId: String(form.get("commandId") ?? ""),
-        });
-      else if (intent === "case-close")
-        await ras.adminCloseCase(adminIdentity, {
-          orderId,
-          caseId: String(form.get("caseId") ?? ""),
-          expectedVersion: Number(form.get("expectedVersion")),
-          reason: String(form.get("reason") ?? ""),
-          commandId: String(form.get("commandId") ?? ""),
-        });
-      else if (intent === "case-admin-reply")
-        await createCaseService(env.DB, {
-          auditIp: request.headers.get("cf-connecting-ip") ?? "local",
-        }).adminReply(adminIdentity, {
-          orderId,
-          caseId: String(form.get("caseId") ?? ""),
-          body: String(form.get("body") ?? ""),
-          visibility:
-            form.get("visibility") === "internal" ? "internal" : "customer",
-          commandId: String(form.get("commandId") ?? ""),
-        });
-      else if (intent === "cancellation-open-exceptional")
-        await createCancellationService(env.DB, {
-          auditIp: request.headers.get("cf-connecting-ip") ?? "local",
-        }).adminOpenExceptional(adminIdentity, {
-          orderId,
-          reason: String(form.get("reason") ?? ""),
-          supportReference: String(form.get("supportReference") ?? ""),
-          quantities: readCancellationQuantities(form),
-          commandId: String(form.get("commandId") ?? ""),
-        });
-      else if (intent === "after-sales-file-upload") {
-        const file = form.get("file");
-        if (!(file instanceof File))
-          throw new Response("请选择文件", { status: 400 });
-        await createAfterSalesFiles(env.DB, env.PRIVATE_FILES).adminUpload(
-          adminIdentity,
-          {
-            orderId,
-            scopeKind: String(form.get("scopeKind") ?? "") as "cancellation",
-            scopeId: String(form.get("scopeId") ?? ""),
-            file,
-            commandId: String(form.get("commandId") ?? ""),
-          },
-        );
-      } else
-        await createAfterSalesFiles(env.DB, env.PRIVATE_FILES).adminShare(
-          adminIdentity,
-          {
-            orderId,
-            fileId: String(form.get("fileId") ?? ""),
-            reason: String(form.get("shareReason") ?? ""),
-          },
-        );
-    } catch (error) {
-      if (
-        error instanceof Response &&
-        ![400, 403, 404, 409].includes(error.status)
-      )
-        throw error;
-      return data(
-        {
-          error: `操作未完成：${error instanceof Response ? await error.text() : "请检查输入"}`,
-        },
-        { status: error instanceof Response ? error.status : 400 },
-      );
-    }
-  } else if (intent === "cancellation-resolve") {
-    try {
-      await createCancellationService(env.DB, {
-        auditIp: request.headers.get("cf-connecting-ip") ?? "local",
-      }).adminResolve(adminIdentity, {
-        orderId,
-        requestId: String(form.get("requestId") ?? ""),
-        expectedVersion: Number(form.get("expectedVersion")),
-        commandId: String(form.get("commandId") ?? ""),
-        decisions: readCancellationDecisions(form),
-        customerReason: String(form.get("customerReason") ?? ""),
-        internalNote: String(form.get("internalNote") ?? ""),
-        logisticsCents: parseUsdCents(form.get("logisticsUsd"), "物流费用"),
-        logisticsNote: String(form.get("logisticsNote") ?? ""),
-        taxCents: parseUsdCents(form.get("taxUsd"), "销售税"),
-        taxNote: String(form.get("taxNote") ?? ""),
-        thirdPartyCostCents: parseUsdCents(
-          form.get("thirdPartyUsd"),
-          "第三方费用",
-        ),
-        thirdPartyCostEvidence: String(form.get("thirdPartyEvidence") ?? ""),
-        factoryEvidence: readFactoryEvidence(form),
-      });
-    } catch (error) {
-      if (error instanceof Response && ![400, 403, 409].includes(error.status))
-        throw error;
-      return data(
-        {
-          error:
-            error instanceof Response && error.status === 403
-              ? "当前账号没有售后审核权限。"
-              : error instanceof Response && error.status === 409
-                ? `取消申请、批次或资金状态已变化，请刷新后核对。${await error.text()}`
-                : `请检查批准数量、金额和必填说明。${error instanceof Response ? await error.text() : ""}`,
-        },
-        { status: error instanceof Response ? error.status : 400 },
-      );
-    }
+  } else if (isAfterSalesAdminIntent(intent)) {
+    const failure = await runAfterSalesAdminAction({
+      db: env.DB,
+      bucket: env.PRIVATE_FILES,
+      actor: adminIdentity,
+      orderId,
+      intent,
+      form,
+      auditIp: request.headers.get("cf-connecting-ip") ?? "local",
+    });
+    if (failure)
+      return data({ error: failure.error }, { status: failure.status });
   } else throw new Response("Invalid operation", { status: 400 });
   const returnTo = safeReturnTo(
     new URL(request.url).searchParams.get("returnTo"),
   );
   return redirect(
-    `/admin/orders/${encodeURIComponent(orderId)}?returnTo=${encodeURIComponent(returnTo)}${intent.startsWith("cancellation-") || intent.startsWith("after-sales-") || intent.startsWith("case-") ? "&tab=after-sales" : intent.startsWith("shipping-change-") ? "&tab=changes" : intent.startsWith("shipment-") || intent.startsWith("schedule-") || intent.startsWith("milestone-") || intent === "tracking-save" ? "&tab=shipments" : ""}`,
+    `/admin/orders/${encodeURIComponent(orderId)}?returnTo=${encodeURIComponent(returnTo)}${intent.startsWith("cancellation-") || intent.startsWith("after-sales-") || intent.startsWith("case-") || intent.startsWith("return-") ? "&tab=after-sales" : intent.startsWith("shipping-change-") ? "&tab=changes" : intent.startsWith("shipment-") || intent.startsWith("schedule-") || intent.startsWith("milestone-") || intent === "tracking-save" ? "&tab=shipments" : ""}`,
   );
 }
 
@@ -850,6 +740,9 @@ const eventLabels: Record<string, string> = {
   "order.after_sales_case_opened": "客户提交售后案件",
   "order.return_authorization_issued": "签发退货授权（RA）",
   "order.return_declined": "告知客户不予退货授权",
+  "order.return_received": "记录退货实际到货",
+  "order.late_return_reviewed": "审核逾期到货",
+  "order.return_decided": "发布退货检验决定",
 };
 
 export default function ConfirmedOrderDetail({
@@ -1188,13 +1081,24 @@ export default function ConfirmedOrderDetail({
                   commandId={commandId}
                   busy={busy}
                   renderActions={(item) => (
-                    <AdminReturnAuthorizationPanel
-                      item={item}
-                      ras={cancellations.ras}
-                      locations={cancellations.locations}
-                      commandId={commandId}
-                      busy={busy}
-                    />
+                    <>
+                      <AdminReturnAuthorizationPanel
+                        item={item}
+                        ras={cancellations.ras}
+                        locations={cancellations.locations}
+                        commandId={commandId}
+                        busy={busy}
+                      />
+                      <AdminReturnReceipts
+                        item={item}
+                        ras={cancellations.ras}
+                        receipts={cancellations.receipts}
+                        files={cancellations.files}
+                        orderId={order.id}
+                        commandId={commandId}
+                        busy={busy}
+                      />
+                    </>
                   )}
                 />
                 <h3>取消申请</h3>

@@ -19,26 +19,19 @@ export async function recordAfterSalesOverdueReminders(
     )
     .bind(at, at)
     .run();
-  let inspections = 0;
-  const inspectionTable = await db
+  const inspections = await db
     .prepare(
-      `SELECT 1 FROM sqlite_master WHERE type='table' AND name='after_sales_return_receipts'`,
+      `INSERT OR IGNORE INTO admin_notifications(id,kind,source_id,created_at)
+       SELECT 'inspection-overdue:'||r.id,'return_inspection_overdue',r.id,?
+       FROM after_sales_return_receipts r
+       WHERE r.inspection_deadline_at<? AND NOT EXISTS(
+         SELECT 1 FROM after_sales_return_decisions d WHERE d.receipt_id=r.id)
+       ORDER BY r.inspection_deadline_at LIMIT 200`,
     )
-    .first();
-  if (inspectionTable) {
-    const result = await db
-      .prepare(
-        `INSERT OR IGNORE INTO admin_notifications(id,kind,source_id,created_at)
-         SELECT 'inspection-overdue:'||r.id,'return_inspection_overdue',r.id,?
-         FROM after_sales_return_receipts r
-         WHERE r.inspection_deadline_at<? AND NOT EXISTS(
-           SELECT 1 FROM after_sales_inspection_items item
-           WHERE item.receipt_id=r.id)
-         ORDER BY r.inspection_deadline_at LIMIT 200`,
-      )
-      .bind(at, at)
-      .run();
-    inspections = result.meta.changes ?? 0;
-  }
-  return { refunds: refunds.meta.changes ?? 0, inspections };
+    .bind(at, at)
+    .run();
+  return {
+    refunds: refunds.meta.changes ?? 0,
+    inspections: inspections.meta.changes ?? 0,
+  };
 }
