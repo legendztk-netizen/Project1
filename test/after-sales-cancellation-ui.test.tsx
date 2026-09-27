@@ -51,6 +51,7 @@ const cancellations: Cancellations = {
       createdAt: "2026-09-24T12:00:00.000Z",
       updatedAt: "2026-09-24T12:00:00.000Z",
       handoffConflict: false,
+      resolution: null,
       lines: [
         {
           lineId: "line-a",
@@ -202,4 +203,100 @@ it("labels Admin cancellation holds and handoff conflicts in Chinese", async () 
   expect(await screen.findByText("交接冲突")).toBeTruthy();
   expect(document.body.textContent).toContain("待审核（数量已锁定）");
   expect(document.body.textContent).toContain("锁定中");
+});
+
+it("shows the gross-to-net breakdown and asks the customer to confirm a deduction", async () => {
+  const refund = {
+    id: "refund-1",
+    sourceKind: "cancellation" as const,
+    sourceId: "resolution-1",
+    responsibility: "customer" as const,
+    status: "awaiting_customer_confirmation" as const,
+    version: 1,
+    merchandiseCents: 5000,
+    logisticsCents: 0,
+    sellerLogisticsCents: 0,
+    taxCents: 0,
+    serviceFeeCents: 0,
+    restockingFeeCents: 0,
+    thirdPartyCostCents: 150,
+    thirdPartyCostEvidence: "Bank return fee notice",
+    grossCents: 5000,
+    refundCents: 4850,
+    initiatedCents: 0,
+    remainingCents: 4850,
+    approvedAt: null,
+    deadlineDateEt: null,
+    deadlineAt: null,
+    previousAuthorizationId: null,
+    createdAt: "2026-09-24T12:00:00.000Z",
+  };
+  const router = createMemoryRouter(
+    [
+      {
+        path: "/",
+        element: (
+          <CustomerCancellationRequests
+            cancellations={{
+              eligible: [],
+              requests: [
+                {
+                  ...cancellations.requests[0],
+                  status: "resolved",
+                  resolution: {
+                    id: "resolution-1",
+                    outcome: "approved",
+                    customerReason: "Cancelled before packing.",
+                    decidedAt: "2026-09-24T12:00:00.000Z",
+                    lines: [
+                      {
+                        lineId: "line-a",
+                        shipmentId: "shipment-1",
+                        displayName: "Straight fitting",
+                        requestedQuantity: 1,
+                        approvedQuantity: 1,
+                        declinedQuantity: 0,
+                        merchandiseCents: 5000,
+                      },
+                    ],
+                    financial: {
+                      merchandiseCents: 5000,
+                      logisticsCents: 0,
+                      logisticsNote: null,
+                      taxCents: 0,
+                      taxNote: null,
+                      serviceFeeCents: 0,
+                      serviceFeeNote: null,
+                      thirdPartyCostCents: 150,
+                      thirdPartyCostEvidence: "Bank return fee notice",
+                      grossCents: 5000,
+                      refundCents: 4850,
+                    },
+                    refunds: [refund],
+                  },
+                },
+              ],
+            }}
+            commandId="command-3"
+            busy={false}
+          />
+        ),
+      },
+    ],
+    { initialEntries: ["/"] },
+  );
+  render(<RouterProvider router={router} />);
+  expect(
+    await screen.findByRole("button", { name: "Confirm refund amount" }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Dispute this amount" }),
+  ).toBeTruthy();
+  const text = document.body.textContent ?? "";
+  expect(text).toContain("Your confirmation is needed");
+  expect(text).toContain("USD 50.00");
+  expect(text).toContain("-USD 1.50");
+  expect(text).toContain("USD 48.50");
+  expect(text).not.toContain("Refund initiated");
+  expect(screen.queryByRole("button", { name: "Withdraw request" })).toBe(null);
 });

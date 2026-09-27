@@ -1,9 +1,17 @@
 import type { ReactNode } from "react";
+import { Form } from "react-router";
 
 import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
 import type { CancellationRequestView } from "../application/cancellation-service";
 import "../../shipment/ui/order-shipping-changes.css";
 import "./after-sales.css";
+import { RefundBreakdown, refundStatusLabel } from "./refund-breakdown";
+
+const outcomeLabel: Record<string, string> = {
+  approved: "全部批准",
+  partially_approved: "部分批准",
+  declined: "拒绝",
+};
 
 export const cancellationStatusLabel: Record<string, string> = {
   pending_review: "待审核（数量已锁定）",
@@ -93,9 +101,168 @@ export function AdminCancellationRequests({
               ))}
             </ol>
           </details>
+          {request.resolution && (
+            <div className="shipping-change-proposal">
+              <h4>
+                取消决定：{outcomeLabel[request.resolution.outcome]} ·{" "}
+                {formatPiDate(request.resolution.decidedAt, "admin")}
+              </h4>
+              <p>客户可见说明：{request.resolution.customerReason}</p>
+              {"internalNote" in request.resolution &&
+                request.resolution.internalNote && (
+                  <p>内部备注：{request.resolution.internalNote}</p>
+                )}
+              {"factoryEvidence" in request.resolution &&
+                request.resolution.factoryEvidence && (
+                  <p>
+                    工厂实际信息：{request.resolution.factoryEvidence.status}
+                    （来源：{request.resolution.factoryEvidence.source}
+                    ，核实时间：
+                    {formatPiDate(
+                      request.resolution.factoryEvidence.reviewedAt,
+                      "admin",
+                    )}
+                    ）
+                  </p>
+                )}
+              <ul className="after-sales-line-list">
+                {request.resolution.lines.map((line) => (
+                  <li key={`${line.lineId}:${line.shipmentId ?? ""}`}>
+                    {line.displayName}：批准取消 {line.approvedQuantity}，拒绝{" "}
+                    {line.declinedQuantity}
+                  </li>
+                ))}
+              </ul>
+              {request.resolution.refunds.map((refund) => (
+                <div key={refund.id}>
+                  <p>
+                    <strong>{refundStatusLabel(refund, "zh")}</strong>
+                  </p>
+                  <RefundBreakdown refund={refund} language="zh" />
+                </div>
+              ))}
+            </div>
+          )}
           {renderActions?.(request)}
         </article>
       ))}
     </div>
   );
+}
+
+export function AdminCancellationDecisionForm({
+  request,
+  commandId,
+  busy,
+  intent = "cancellation-resolve",
+  children,
+}: {
+  request: CancellationRequestView;
+  commandId: string;
+  busy: boolean;
+  intent?: string;
+  children?: ReactNode;
+}) {
+  if (request.status !== "pending_review") return null;
+  return (
+    <details className="after-sales-decision">
+      <summary>审核并作出取消决定</summary>
+      <Form method="post" className="shipping-change-form">
+        <input type="hidden" name="intent" value={intent} />
+        <input type="hidden" name="requestId" value={request.id} />
+        <input type="hidden" name="expectedVersion" value={request.version} />
+        <input type="hidden" name="commandId" value={commandId} />
+        <fieldset>
+          <legend>逐行批准数量（其余数量拒绝并恢复履约）</legend>
+          <div className="after-sales-quantity-list">
+            {request.lines.map((line) => (
+              <label
+                key={`${line.lineId}:${line.shipmentId ?? ""}`}
+                className="after-sales-quantity-row"
+              >
+                <span>
+                  <strong>{line.displayName}</strong>
+                  <small>
+                    {line.shipmentName ?? "未分配批次"} · 申请{" "}
+                    {line.physicalQuantity}
+                    {line.handedOff ? " · 已交接，只能拒绝" : ""}
+                  </small>
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  max={line.handedOff ? 0 : line.physicalQuantity}
+                  step={1}
+                  defaultValue={line.handedOff ? 0 : line.physicalQuantity}
+                  name={`approve:${line.lineId}:${line.shipmentId ?? ""}`}
+                  aria-label={`${line.displayName} 批准取消数量`}
+                />
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        {children}
+        <div className="shipping-change-fields">
+          <label>
+            可退回物流费用（USD）
+            <input name="logisticsUsd" inputMode="decimal" placeholder="0.00" />
+          </label>
+          <label>
+            物流核算说明（按剩余履约重新核算，勿按原运费比例分摊）
+            <input name="logisticsNote" />
+          </label>
+          <label>
+            销售税调整（USD）
+            <input name="taxUsd" inputMode="decimal" placeholder="0.00" />
+          </label>
+          <label>
+            税务依据（已接受的税务处理）
+            <input name="taxNote" />
+          </label>
+          <label>
+            已发生且不可退的第三方费用（USD）
+            <input
+              name="thirdPartyUsd"
+              inputMode="decimal"
+              placeholder="0.00"
+            />
+          </label>
+          <label>
+            第三方费用凭证说明（无加价，需客户确认）
+            <input name="thirdPartyEvidence" />
+          </label>
+        </div>
+        <label>
+          客户可见说明
+          <textarea name="customerReason" required rows={2} />
+        </label>
+        <label>
+          内部备注（客户不可见）
+          <textarea name="internalNote" rows={2} />
+        </label>
+        <p>不收取取消手续费或任何加价；原 PI 与订单保持不变。</p>
+        <button className="button button-primary" disabled={busy}>
+          保存不可更改的取消决定
+        </button>
+      </Form>
+    </details>
+  );
+}
+
+export function readCancellationDecisions(form: FormData) {
+  const decisions: Array<{
+    lineId: string;
+    shipmentId: string | null;
+    approvedQuantity: number;
+  }> = [];
+  for (const [key, value] of form.entries()) {
+    if (!key.startsWith("approve:")) continue;
+    const [, lineId, shipmentId] = key.split(":");
+    decisions.push({
+      lineId,
+      shipmentId: shipmentId || null,
+      approvedQuantity: Number(value),
+    });
+  }
+  return decisions;
 }

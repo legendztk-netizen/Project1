@@ -52,7 +52,12 @@ import { AdminOrderShippingChanges } from "../../shipment/ui/admin-order-shippin
 import { splitShipmentIdForChange } from "../../shipment/domain/order-shipping-change";
 import { createCancellationService } from "../../after-sales/application/cancellation-service";
 import { hasAfterSalesPermission } from "../../after-sales/domain/permissions";
-import { AdminCancellationRequests } from "../../after-sales/ui/admin-cancellations";
+import {
+  AdminCancellationDecisionForm,
+  AdminCancellationRequests,
+  readCancellationDecisions,
+} from "../../after-sales/ui/admin-cancellations";
+import { parseUsdCents } from "../../after-sales/domain/refund-calculation";
 
 export const headers = piPrivateHeaders;
 
@@ -482,12 +487,49 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
         { status: error instanceof Response ? error.status : 400 },
       );
     }
+  } else if (intent === "cancellation-resolve") {
+    try {
+      await createCancellationService(env.DB, {
+        auditIp: request.headers.get("cf-connecting-ip") ?? "local",
+      }).adminResolve(adminIdentity, {
+        orderId,
+        requestId: String(form.get("requestId") ?? ""),
+        expectedVersion: Number(form.get("expectedVersion")),
+        commandId: String(form.get("commandId") ?? ""),
+        decisions: readCancellationDecisions(form),
+        customerReason: String(form.get("customerReason") ?? ""),
+        internalNote: String(form.get("internalNote") ?? ""),
+        logisticsCents: parseUsdCents(form.get("logisticsUsd"), "物流费用"),
+        logisticsNote: String(form.get("logisticsNote") ?? ""),
+        taxCents: parseUsdCents(form.get("taxUsd"), "销售税"),
+        taxNote: String(form.get("taxNote") ?? ""),
+        thirdPartyCostCents: parseUsdCents(
+          form.get("thirdPartyUsd"),
+          "第三方费用",
+        ),
+        thirdPartyCostEvidence: String(form.get("thirdPartyEvidence") ?? ""),
+      });
+    } catch (error) {
+      if (error instanceof Response && ![400, 403, 409].includes(error.status))
+        throw error;
+      return data(
+        {
+          error:
+            error instanceof Response && error.status === 403
+              ? "当前账号没有售后审核权限。"
+              : error instanceof Response && error.status === 409
+                ? `取消申请、批次或资金状态已变化，请刷新后核对。${await error.text()}`
+                : `请检查批准数量、金额和必填说明。${error instanceof Response ? await error.text() : ""}`,
+        },
+        { status: error instanceof Response ? error.status : 400 },
+      );
+    }
   } else throw new Response("Invalid operation", { status: 400 });
   const returnTo = safeReturnTo(
     new URL(request.url).searchParams.get("returnTo"),
   );
   return redirect(
-    `/admin/orders/${encodeURIComponent(orderId)}?returnTo=${encodeURIComponent(returnTo)}${intent.startsWith("shipping-change-") ? "&tab=changes" : intent.startsWith("shipment-") || intent.startsWith("schedule-") || intent.startsWith("milestone-") || intent === "tracking-save" ? "&tab=shipments" : ""}`,
+    `/admin/orders/${encodeURIComponent(orderId)}?returnTo=${encodeURIComponent(returnTo)}${intent.startsWith("cancellation-") ? "&tab=after-sales" : intent.startsWith("shipping-change-") ? "&tab=changes" : intent.startsWith("shipment-") || intent.startsWith("schedule-") || intent.startsWith("milestone-") || intent === "tracking-save" ? "&tab=shipments" : ""}`,
   );
 }
 
@@ -660,6 +702,9 @@ const eventLabels: Record<string, string> = {
   "order.shipping_change_effective": "客户接受的发货变更已生效",
   "order.cancellation_requested": "客户提交取消申请",
   "order.cancellation_withdrawn": "客户撤回取消申请",
+  "order.cancellation_resolved": "已作出取消决定",
+  "order.refund_customer_confirmed": "客户确认退款金额",
+  "order.refund_customer_disputed": "客户对退款金额提出异议",
 };
 
 export default function ConfirmedOrderDetail({
@@ -984,7 +1029,23 @@ export default function ConfirmedOrderDetail({
           >
             <h2>取消申请</h2>
             {cancellations ? (
-              <AdminCancellationRequests requests={cancellations} />
+              <>
+                {actionData?.error && (
+                  <p className="shipping-change-error" role="alert">
+                    {actionData.error}
+                  </p>
+                )}
+                <AdminCancellationRequests
+                  requests={cancellations}
+                  renderActions={(item) => (
+                    <AdminCancellationDecisionForm
+                      request={item}
+                      commandId={commandId}
+                      busy={busy}
+                    />
+                  )}
+                />
+              </>
             ) : (
               <p>当前账号没有售后审核权限，请联系 Owner 授权。</p>
             )}

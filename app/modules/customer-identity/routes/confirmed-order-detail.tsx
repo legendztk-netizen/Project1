@@ -94,7 +94,7 @@ export async function action({ context, request, params }: ActionFunctionArgs) {
   const form = await request.formData();
   const commandId = String(form.get("commandId") ?? "");
   const intent = String(form.get("intent") ?? "follow-on");
-  if (intent.startsWith("cancellation-")) {
+  if (intent.startsWith("cancellation-") || intent.startsWith("refund-")) {
     const cancellations = createCancellationService(env.DB, {
       auditIp: request.headers.get("cf-connecting-ip") ?? "local",
     });
@@ -104,6 +104,15 @@ export async function action({ context, request, params }: ActionFunctionArgs) {
           orderId,
           reason: String(form.get("reason") ?? ""),
           quantities: readCancellationQuantities(form),
+          commandId,
+        });
+      else if (intent === "refund-confirm" || intent === "refund-dispute")
+        await cancellations.customerRespondToRefund(profileId, {
+          orderId,
+          authorizationId: String(form.get("authorizationId") ?? ""),
+          expectedVersion: Number(form.get("expectedVersion")),
+          response: intent === "refund-confirm" ? "confirm" : "dispute",
+          note: String(form.get("note") ?? ""),
           commandId,
         });
       else if (intent === "cancellation-withdraw")
@@ -321,7 +330,8 @@ export default function ConfirmedOrderDetail({
           commandId={commandId}
           busy={navigation.state !== "idle"}
           error={
-            actionData?.intent === "cancellation-withdraw"
+            actionData?.intent === "cancellation-withdraw" ||
+            actionData?.intent?.startsWith("refund-")
               ? actionData.error
               : undefined
           }

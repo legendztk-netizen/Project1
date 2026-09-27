@@ -2,6 +2,22 @@ import type { AdminIdentity } from "#workers/admin-access";
 import { piSha256 } from "../../proforma-invoice/domain/proforma-invoice";
 import { requireAfterSalesPermission } from "../domain/permissions";
 import {
+  cumulativeLineAmount,
+  refundComponents,
+  usd,
+} from "../domain/refund-calculation";
+import { refundInitiationDeadline } from "../domain/return-policy";
+import {
+  customerMessageStatements,
+  etDisplayDate,
+} from "../infrastructure/d1-customer-messages";
+import {
+  priorLineCredits,
+  projectRefundAuthorization,
+  readRefundAuthorizations,
+  refundAuthorizationStatements,
+} from "../infrastructure/d1-refund-authorizations";
+import {
   cancellableQuantities,
   createD1OrderFacts,
   type OrderFacts,
@@ -75,6 +91,65 @@ export function parseCancellationQuantities(
   return rows;
 }
 
+export interface ResolutionLine {
+  lineId: string;
+  shipmentId: string | null;
+  displayName: string;
+  requestedQuantity: number;
+  approvedQuantity: number;
+  declinedQuantity: number;
+  merchandiseCents: number;
+}
+
+export interface ResolutionFinancial {
+  merchandiseCents: number;
+  logisticsCents: number;
+  logisticsNote: string | null;
+  taxCents: number;
+  taxNote: string | null;
+  serviceFeeCents: number;
+  serviceFeeNote: string | null;
+  thirdPartyCostCents: number;
+  thirdPartyCostEvidence: string | null;
+  grossCents: number;
+  refundCents: number;
+}
+
+export interface FactoryEvidence {
+  status: string;
+  source: string;
+  reviewedAt: string;
+  supportReference: string;
+  attachmentIds: string[];
+  externalIdentifiers: string;
+  precut: boolean | null;
+}
+
+export interface CancellationDecisionInput {
+  orderId: string;
+  requestId: string;
+  expectedVersion: number;
+  commandId: string;
+  decisions: Array<{
+    lineId: string;
+    shipmentId: string | null;
+    approvedQuantity: number;
+  }>;
+  customerReason: string;
+  internalNote?: string;
+  logisticsCents?: number;
+  logisticsNote?: string;
+  taxCents?: number;
+  taxNote?: string;
+  thirdPartyCostCents?: number;
+  thirdPartyCostEvidence?: string;
+}
+
+const optionalNote = (value: unknown, label: string) =>
+  typeof value === "string" && value.trim()
+    ? afterSalesText(value, label)
+    : null;
+
 export function createCancellationService(
   db: D1Database,
   options: { now?: () => Date; auditIp?: string | null } = {},
@@ -103,7 +178,7 @@ export function createCancellationService(
     if (!rows.length) return [];
     const ids = rows.map((row) => row.id);
     const placeholders = ids.map(() => "?").join(",");
-    const [lines, events] = await Promise.all([
+    const [lines, events, resolutions] = await Promise.all([
       db
         .prepare(
           `SELECT l.request_id,l.line_id,l.shipment_id,l.physical_quantity,l.hold_id,
@@ -135,8 +210,33 @@ export function createCancellationService(
           actor_id: string;
           occurred_at: string;
         }>(),
+      db
+        .prepare(
+          `SELECT id,request_id,outcome,customer_reason,internal_note,lines_json,
+             financial_json,factory_evidence_json,actor_id,decided_at
+           FROM order_cancellation_resolutions WHERE request_id IN (${placeholders})`,
+        )
+        .bind(...ids)
+        .all<{
+          id: string;
+          request_id: string;
+          outcome: "approved" | "partially_approved" | "declined";
+          customer_reason: string;
+          internal_note: string | null;
+          lines_json: string;
+          financial_json: string;
+          factory_evidence_json: string | null;
+          actor_id: string;
+          decided_at: string;
+        }>(),
     ]);
+    const refunds = (
+      await readRefundAuthorizations(db, { orderId: orderFacts.orderId })
+    ).filter((refund) => refund.source_kind === "cancellation");
     return rows.map((row) => {
+      const resolution = resolutions.results.find(
+        (item) => item.request_id === row.id,
+      );
       const requestLines = lines.results
         .filter((line) => line.request_id === row.id)
         .map((line) => {
@@ -175,6 +275,32 @@ export function createCancellationService(
         handoffConflict:
           row.status === "pending_review" &&
           requestLines.some((line) => line.handedOff),
+        resolution: resolution
+          ? {
+              id: resolution.id,
+              outcome: resolution.outcome,
+              customerReason: resolution.customer_reason,
+              decidedAt: resolution.decided_at,
+              lines: JSON.parse(resolution.lines_json) as ResolutionLine[],
+              financial: JSON.parse(
+                resolution.financial_json,
+              ) as ResolutionFinancial,
+              refunds: refunds
+                .filter((refund) => refund.source_id === resolution.id)
+                .map((refund) => projectRefundAuthorization(refund, audience)),
+              ...(audience === "admin"
+                ? {
+                    actorId: resolution.actor_id,
+                    internalNote: resolution.internal_note,
+                    factoryEvidence: resolution.factory_evidence_json
+                      ? (JSON.parse(
+                          resolution.factory_evidence_json,
+                        ) as FactoryEvidence)
+                      : null,
+                  }
+                : {}),
+            }
+          : null,
         events: events.results
           .filter((event) => event.request_id === row.id)
           .map((event) => ({
@@ -543,6 +669,566 @@ export function createCancellationService(
     },
 
     customerWithdraw: closeByCustomer,
+
+    async adminResolve(
+      actor: AdminIdentity,
+      input: CancellationDecisionInput,
+      extra: {
+        serviceFee?: { cents: number; note: string };
+        factoryEvidence?: FactoryEvidence;
+      } = {},
+    ) {
+      requireAfterSalesPermission(actor, "after_sales.review");
+      const commandId = afterSalesCommandId(input.commandId);
+      const customerReason = afterSalesText(
+        input.customerReason,
+        "Customer-visible reason",
+      );
+      const internalNote = optionalNote(input.internalNote, "Internal note");
+      const logisticsNote = optionalNote(input.logisticsNote, "Logistics note");
+      const taxNote = optionalNote(input.taxNote, "Tax note");
+      const thirdPartyCostEvidence = optionalNote(
+        input.thirdPartyCostEvidence,
+        "Third-party cost evidence",
+      );
+      if (!Array.isArray(input.decisions) || !input.decisions.length)
+        throw new Response("Decide each requested quantity", { status: 400 });
+      const commandHash = await hash(
+        JSON.stringify({ actor: actor.id, input, extra }),
+      );
+      const replay = await db
+        .prepare(
+          `SELECT id,command_hash FROM order_cancellation_resolutions WHERE command_id=?`,
+        )
+        .bind(commandId)
+        .first<{ id: string; command_hash: string }>();
+      if (replay) {
+        if (replay.command_hash !== commandHash) throw cancellationConflict();
+        return replay.id;
+      }
+      const [request] = await requestRows(
+        "WHERE id=? AND order_id=?",
+        input.requestId,
+        input.orderId,
+      );
+      if (!request)
+        throw new Response("Cancellation request not found", { status: 404 });
+      if (
+        request.status !== "pending_review" ||
+        request.version !== input.expectedVersion
+      )
+        throw cancellationConflict();
+      const orderFacts = await facts.read(request.order_id);
+      const [view] = await project(orderFacts, [request], "admin");
+      if (view.lines.length !== input.decisions.length)
+        throw new Response("Decide each requested quantity", { status: 400 });
+      const prior = await priorLineCredits(db, request.order_id);
+      const decided = view.lines.map((line) => {
+        const decision = input.decisions.find(
+          (item) =>
+            item.lineId === line.lineId &&
+            (item.shipmentId ?? null) === line.shipmentId,
+        );
+        if (
+          !decision ||
+          !Number.isSafeInteger(decision.approvedQuantity) ||
+          decision.approvedQuantity < 0 ||
+          decision.approvedQuantity > line.physicalQuantity
+        )
+          throw new Response("Invalid approved quantity", { status: 400 });
+        if (decision.approvedQuantity > 0 && line.handedOff)
+          throw new Response("Handed-off quantities can only be declined", {
+            status: 409,
+          });
+        return { line, approved: decision.approvedQuantity };
+      });
+      const approvedLines = decided.filter((item) => item.approved > 0);
+      for (const item of approvedLines) {
+        const shipment = orderFacts.shipments.find(
+          (candidate) => candidate.id === item.line.shipmentId,
+        );
+        if (
+          item.line.shipmentId &&
+          (!shipment ||
+            shipment.handedOff ||
+            !["planned", "ready_to_ship"].includes(shipment.status))
+        )
+          throw cancellationConflict();
+      }
+      const merchandiseByLine = new Map<
+        string,
+        { quantity: number; cents: number }
+      >();
+      const resolutionLines: ResolutionLine[] = decided.map((item) => {
+        const orderLine = orderFacts.lines.find(
+          (line) => line.lineId === item.line.lineId,
+        )!;
+        const already =
+          (prior.get(orderLine.lineId)?.quantity ?? 0) +
+          (merchandiseByLine.get(orderLine.lineId)?.quantity ?? 0);
+        const merchandiseCents = cumulativeLineAmount(
+          orderLine.lineTotalCents,
+          orderLine.physicalQuantity,
+          already,
+          item.approved,
+        );
+        const current = merchandiseByLine.get(orderLine.lineId) ?? {
+          quantity: 0,
+          cents: 0,
+        };
+        merchandiseByLine.set(orderLine.lineId, {
+          quantity: current.quantity + item.approved,
+          cents: current.cents + merchandiseCents,
+        });
+        return {
+          lineId: item.line.lineId,
+          shipmentId: item.line.shipmentId,
+          displayName: item.line.displayName,
+          requestedQuantity: item.line.physicalQuantity,
+          approvedQuantity: item.approved,
+          declinedQuantity: item.line.physicalQuantity - item.approved,
+          merchandiseCents,
+        };
+      });
+      const anyApproved = approvedLines.length > 0;
+      const refund = refundComponents({
+        merchandiseCents: resolutionLines.reduce(
+          (sum, line) => sum + line.merchandiseCents,
+          0,
+        ),
+        logisticsCents: anyApproved ? (input.logisticsCents ?? 0) : 0,
+        taxCents: anyApproved ? (input.taxCents ?? 0) : 0,
+        serviceFeeCents: anyApproved ? (extra.serviceFee?.cents ?? 0) : 0,
+        thirdPartyCostCents: anyApproved ? (input.thirdPartyCostCents ?? 0) : 0,
+      });
+      if (
+        !anyApproved &&
+        (input.logisticsCents || input.taxCents || input.thirdPartyCostCents)
+      )
+        throw new Response("A declined request has no refund components", {
+          status: 400,
+        });
+      if (refund.logisticsCents > 0 && !logisticsNote)
+        throw new Response("Explain the recoverable logistics amount", {
+          status: 400,
+        });
+      if (refund.taxCents > 0 && !taxNote)
+        throw new Response("Record the accepted tax basis", { status: 400 });
+      if (refund.thirdPartyCostCents > 0 && !thirdPartyCostEvidence)
+        throw new Response("Document the non-refundable third-party cost", {
+          status: 400,
+        });
+      const outcome = !anyApproved
+        ? "declined"
+        : decided.every((item) => item.approved === item.line.physicalQuantity)
+          ? "approved"
+          : "partially_approved";
+      const financial: ResolutionFinancial = {
+        merchandiseCents: refund.merchandiseCents,
+        logisticsCents: refund.logisticsCents,
+        logisticsNote,
+        taxCents: refund.taxCents,
+        taxNote,
+        serviceFeeCents: refund.serviceFeeCents,
+        serviceFeeNote: extra.serviceFee?.note ?? null,
+        thirdPartyCostCents: refund.thirdPartyCostCents,
+        thirdPartyCostEvidence,
+        grossCents: refund.grossCents,
+        refundCents: refund.refundCents,
+      };
+      const resolutionId = crypto.randomUUID();
+      const authorizationId =
+        refund.refundCents > 0 ? crypto.randomUUID() : null;
+      const timestamp = now();
+      const resolved = {
+        sql: "EXISTS(SELECT 1 FROM order_cancellation_resolutions WHERE id=?)",
+        bindings: [resolutionId],
+      };
+      const statements: D1PreparedStatement[] = [
+        db
+          .prepare(
+            `UPDATE order_cancellation_requests
+             SET status='resolved',version=version+1,updated_at=?
+             WHERE id=? AND order_id=? AND version=? AND status='pending_review'`,
+          )
+          .bind(timestamp, request.id, request.order_id, input.expectedVersion),
+        db
+          .prepare(
+            `INSERT INTO order_cancellation_resolutions
+             (id,request_id,order_id,outcome,customer_reason,internal_note,lines_json,
+              financial_json,factory_evidence_json,refund_authorization_id,actor_id,
+              decided_at,command_id,command_hash)
+             SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE changes()=1`,
+          )
+          .bind(
+            resolutionId,
+            request.id,
+            request.order_id,
+            outcome,
+            customerReason,
+            internalNote,
+            JSON.stringify(resolutionLines),
+            JSON.stringify(financial),
+            extra.factoryEvidence
+              ? JSON.stringify(extra.factoryEvidence)
+              : null,
+            authorizationId,
+            actor.id,
+            timestamp,
+            commandId,
+            commandHash,
+          ),
+        db
+          .prepare(
+            `UPDATE order_quantity_holds SET active=0,resolved_at=?
+             WHERE active=1 AND id IN (SELECT hold_id
+               FROM order_cancellation_request_lines WHERE request_id=?)
+               AND ${resolved.sql}`,
+          )
+          .bind(timestamp, request.id, ...resolved.bindings),
+      ];
+      for (const line of resolutionLines.filter(
+        (item) => item.approvedQuantity,
+      ))
+        statements.push(
+          db
+            .prepare(
+              `INSERT INTO order_cancelled_quantities
+               (resolution_id,order_id,line_id,shipment_id,physical_quantity)
+               SELECT ?,?,?,?,? WHERE ${resolved.sql}`,
+            )
+            .bind(
+              resolutionId,
+              request.order_id,
+              line.lineId,
+              line.shipmentId,
+              line.approvedQuantity,
+              ...resolved.bindings,
+            ),
+        );
+      const scoped = resolutionLines.filter(
+        (item) => item.approvedQuantity && item.shipmentId,
+      );
+      const shipmentIds = [...new Set(scoped.map((line) => line.shipmentId))];
+      if (scoped.length) {
+        statements.push(
+          db
+            .prepare(
+              `INSERT INTO order_cancellation_allocation_edit_context(order_id,resolution_id)
+               SELECT ?,? WHERE ${resolved.sql}`,
+            )
+            .bind(request.order_id, resolutionId, ...resolved.bindings),
+        );
+        for (const line of scoped) {
+          const allocation = orderFacts.shipments
+            .find((shipment) => shipment.id === line.shipmentId)!
+            .allocations.find((item) => item.lineId === line.lineId)!;
+          const remaining = allocation.physicalQuantity - line.approvedQuantity;
+          statements.push(
+            db
+              .prepare(
+                `DELETE FROM order_shipment_allocations
+                 WHERE shipment_id=? AND line_id=? AND physical_quantity=?
+                   AND EXISTS(SELECT 1 FROM order_cancellation_allocation_edit_context
+                     WHERE order_id=? AND resolution_id=?)`,
+              )
+              .bind(
+                line.shipmentId,
+                line.lineId,
+                allocation.physicalQuantity,
+                request.order_id,
+                resolutionId,
+              ),
+          );
+          if (remaining > 0)
+            statements.push(
+              db
+                .prepare(
+                  `INSERT INTO order_shipment_allocations
+                   (shipment_id,order_id,line_id,physical_quantity)
+                   SELECT ?,?,?,? WHERE changes()=1`,
+                )
+                .bind(
+                  line.shipmentId,
+                  request.order_id,
+                  line.lineId,
+                  remaining,
+                ),
+            );
+        }
+        statements.push(
+          db
+            .prepare(
+              `UPDATE order_shipments SET version=version+1,updated_at=?
+               WHERE order_id=? AND id IN (${shipmentIds.map(() => "?").join(",")})
+                 AND ${resolved.sql}`,
+            )
+            .bind(
+              timestamp,
+              request.order_id,
+              ...shipmentIds,
+              ...resolved.bindings,
+            ),
+          db
+            .prepare(
+              `DELETE FROM order_cancellation_allocation_edit_context
+               WHERE order_id=? AND resolution_id=?`,
+            )
+            .bind(request.order_id, resolutionId),
+        );
+      }
+      let deadline: { dateEt: string } | null = null;
+      let refundStatus: string | null = null;
+      if (authorizationId) {
+        const authorization = refundAuthorizationStatements(db, {
+          id: authorizationId,
+          orderId: request.order_id,
+          sourceKind: "cancellation",
+          sourceId: resolutionId,
+          responsibility: "customer",
+          refund,
+          thirdPartyCostEvidence,
+          lineCredits: [...merchandiseByLine].map(([lineId, value]) => ({
+            lineId,
+            physicalQuantity: value.quantity,
+            merchandiseCents: value.cents,
+          })),
+          actorId: actor.id,
+          timestamp,
+          commandId,
+          guard: resolved,
+        });
+        statements.push(...authorization.statements);
+        deadline = authorization.deadline;
+        refundStatus = authorization.status;
+      }
+      const eventId = `cancellation-resolved:${commandId}`;
+      statements.push(
+        db
+          .prepare(
+            `INSERT INTO order_cancellation_events
+             (id,request_id,kind,details_json,actor_id,occurred_at,command_id)
+             SELECT ?,?,'resolved',?,?,?,? WHERE ${resolved.sql}`,
+          )
+          .bind(
+            eventId,
+            request.id,
+            JSON.stringify({ resolutionId, outcome }),
+            actor.id,
+            timestamp,
+            commandId,
+            ...resolved.bindings,
+          ),
+        db
+          .prepare(
+            `INSERT INTO admin_audit_events
+             (id,event_type,entity_type,entity_id,actor_id,payload_json,occurred_at)
+             SELECT ?,'order.cancellation_resolved','confirmed_order',?,?,?,?
+             WHERE ${resolved.sql}`,
+          )
+          .bind(
+            eventId,
+            request.order_id,
+            actor.id,
+            JSON.stringify({
+              requestId: request.id,
+              resolutionId,
+              outcome,
+              lines: resolutionLines,
+              financial,
+              refundAuthorizationId: authorizationId,
+              commandId,
+              ipAddress: options.auditIp ?? null,
+            }),
+            timestamp,
+            ...resolved.bindings,
+          ),
+      );
+      const outcomeText =
+        outcome === "approved"
+          ? "was approved"
+          : outcome === "partially_approved"
+            ? "was partially approved"
+            : "was declined";
+      const lineText = resolutionLines
+        .map(
+          (line) =>
+            `${line.displayName}: ${line.approvedQuantity} of ${line.requestedQuantity} cancelled`,
+        )
+        .join("; ");
+      const refundText = !authorizationId
+        ? "No refund is due from this decision."
+        : refundStatus === "approved"
+          ? `Refund approved: ${usd(refund.refundCents)} (merchandise ${usd(refund.merchandiseCents)}${refund.logisticsCents ? `, logistics ${usd(refund.logisticsCents)}` : ""}${refund.taxCents ? `, Sales Tax ${usd(refund.taxCents)}` : ""}${refund.serviceFeeCents ? `, service fee ${usd(refund.serviceFeeCents)}` : ""}). It has not been sent yet; we will initiate it by ${etDisplayDate(deadline!.dateEt)} ET and record the date here.`
+          : `Proposed refund: gross ${usd(refund.grossCents)} less documented third-party cost ${usd(refund.thirdPartyCostCents)} = ${usd(refund.refundCents)}. Please review and confirm or dispute this amount in your Order.`;
+      statements.push(
+        ...(await customerMessageStatements(db, {
+          orderRequestId: orderFacts.requestId,
+          actorId: actor.id,
+          messageId: `cancellation-decision:${commandId}`,
+          body: `Your cancellation request for Order ${orderFacts.orderNumber} ${outcomeText}. ${lineText}. Reason: ${customerReason} ${refundText} Your original PI and Order records are unchanged.`,
+          timestamp,
+          guard: resolved,
+        })),
+      );
+      try {
+        const results = await db.batch(statements);
+        if (results[0].meta.changes !== 1) throw cancellationConflict();
+      } catch (error) {
+        const concurrent = await db
+          .prepare(
+            `SELECT id,command_hash FROM order_cancellation_resolutions WHERE command_id=?`,
+          )
+          .bind(commandId)
+          .first<{ id: string; command_hash: string }>();
+        if (concurrent?.command_hash === commandHash) return concurrent.id;
+        if (error instanceof Response) throw error;
+        const message = error instanceof Error ? error.message : "";
+        if (/funds|exceed|Payment review/i.test(message))
+          throw new Response(message.replace(/^.*?: /, ""), { status: 409 });
+        throw cancellationConflict();
+      }
+      return resolutionId;
+    },
+
+    async customerRespondToRefund(
+      profileId: string,
+      input: {
+        orderId: string;
+        authorizationId: string;
+        expectedVersion: number;
+        response: "confirm" | "dispute";
+        note?: string;
+        commandId: string;
+      },
+    ) {
+      const commandId = afterSalesCommandId(input.commandId);
+      const orderId = await facts.ownedOrder(profileId, input.orderId);
+      if (!["confirm", "dispute"].includes(input.response))
+        throw new Response("Invalid response", { status: 400 });
+      const note =
+        input.response === "dispute"
+          ? afterSalesText(input.note, "What should be reviewed")
+          : null;
+      const eventId = `refund-response:${commandId}`;
+      const replay = await db
+        .prepare(
+          `SELECT authorization_id,actor_id FROM after_sales_refund_events WHERE id=?`,
+        )
+        .bind(eventId)
+        .first<{ authorization_id: string; actor_id: string }>();
+      if (replay) {
+        if (
+          replay.authorization_id !== input.authorizationId ||
+          replay.actor_id !== profileId
+        )
+          throw cancellationConflict();
+        return;
+      }
+      const [authorization] = await readRefundAuthorizations(db, {
+        ids: [input.authorizationId],
+      });
+      if (!authorization || authorization.order_id !== orderId)
+        throw new Response("Refund not found", { status: 404 });
+      if (
+        authorization.version !== input.expectedVersion ||
+        !["awaiting_customer_confirmation", "disputed"].includes(
+          authorization.status,
+        ) ||
+        (input.response === "dispute" &&
+          authorization.status !== "awaiting_customer_confirmation")
+      )
+        throw cancellationConflict();
+      const timestamp = now();
+      const deadline =
+        input.response === "confirm"
+          ? refundInitiationDeadline(timestamp)
+          : null;
+      const orderFacts = await facts.read(orderId);
+      const statements: D1PreparedStatement[] = [
+        db
+          .prepare(
+            `UPDATE after_sales_refund_authorizations
+             SET status=?,version=version+1,approved_at=?,deadline_date_et=?,
+               deadline_at=?,calendar_version=?,customer_response_at=?,
+               customer_response_by=?
+             WHERE id=? AND order_id=? AND version=?`,
+          )
+          .bind(
+            input.response === "confirm" ? "approved" : "disputed",
+            deadline ? timestamp : null,
+            deadline?.dateEt ?? null,
+            deadline?.at ?? null,
+            deadline?.calendarVersion ?? null,
+            timestamp,
+            profileId,
+            authorization.id,
+            orderId,
+            input.expectedVersion,
+          ),
+        db
+          .prepare(
+            `INSERT INTO after_sales_refund_events
+             (id,authorization_id,kind,details_json,actor_id,occurred_at,command_id)
+             SELECT ?,?,?,?,?,?,? WHERE changes()=1`,
+          )
+          .bind(
+            eventId,
+            authorization.id,
+            input.response === "confirm"
+              ? "customer_confirmed"
+              : "customer_disputed",
+            JSON.stringify({ note, refundCents: authorization.refund_cents }),
+            profileId,
+            timestamp,
+            commandId,
+          ),
+        db
+          .prepare(
+            `INSERT INTO admin_audit_events
+             (id,event_type,entity_type,entity_id,actor_id,payload_json,occurred_at)
+             SELECT ?,?,'confirmed_order',?,?,?,?
+             WHERE EXISTS(SELECT 1 FROM after_sales_refund_events WHERE id=?)`,
+          )
+          .bind(
+            eventId,
+            input.response === "confirm"
+              ? "order.refund_customer_confirmed"
+              : "order.refund_customer_disputed",
+            orderId,
+            profileId,
+            JSON.stringify({
+              authorizationId: authorization.id,
+              note,
+              commandId,
+              ipAddress: options.auditIp ?? null,
+            }),
+            timestamp,
+            eventId,
+          ),
+      ];
+      if (deadline)
+        statements.push(
+          ...(await customerMessageStatements(db, {
+            orderRequestId: orderFacts.requestId,
+            actorId: "system",
+            messageId: `refund-confirmed:${commandId}`,
+            body: `Thank you. Your refund of ${usd(authorization.refund_cents)} for Order ${orderFacts.orderNumber} is approved. It has not been sent yet; we will initiate it by ${etDisplayDate(deadline.dateEt)} ET.`,
+            timestamp,
+            guard: {
+              sql: "EXISTS(SELECT 1 FROM after_sales_refund_events WHERE id=?)",
+              bindings: [eventId],
+            },
+          })),
+        );
+      try {
+        const results = await db.batch(statements);
+        if (results[0].meta.changes !== 1) throw cancellationConflict();
+      } catch (error) {
+        if (error instanceof Response) throw error;
+        throw cancellationConflict();
+      }
+    },
   };
 }
 

@@ -4,6 +4,7 @@ import { XCircle } from "lucide-react";
 
 import { ShipmentActionDialog } from "../../shipment/ui/shipment-action-dialog";
 import type { createCancellationService } from "../application/cancellation-service";
+import { RefundBreakdown, refundStatusLabel } from "./refund-breakdown";
 import "../../shipment/ui/order-shipping-changes.css";
 import "./after-sales.css";
 
@@ -15,6 +16,12 @@ const statusLabel: Record<string, string> = {
   pending_review: "Under review — these quantities are on hold",
   withdrawn: "Withdrawn",
   resolved: "Decision recorded",
+};
+
+const outcomeLabel: Record<string, string> = {
+  approved: "Approved",
+  partially_approved: "Partially approved",
+  declined: "Declined",
 };
 
 export const cancellationQuantityField = (
@@ -184,6 +191,107 @@ export function CustomerCancellationRequests({
               ))}
             </ul>
             <p>{request.reason}</p>
+            {request.resolution && (
+              <div className="shipping-change-proposal">
+                <h4>Decision: {outcomeLabel[request.resolution.outcome]}</h4>
+                <p>{request.resolution.customerReason}</p>
+                <ul className="after-sales-line-list">
+                  {request.resolution.lines.map((line) => (
+                    <li key={`${line.lineId}:${line.shipmentId ?? ""}`}>
+                      {line.displayName}: {line.approvedQuantity} cancelled
+                      {line.declinedQuantity
+                        ? `, ${line.declinedQuantity} will still ship`
+                        : ""}
+                    </li>
+                  ))}
+                </ul>
+                {request.resolution.refunds
+                  .filter((refund) => refund.status !== "superseded")
+                  .map((refund) => (
+                    <div key={refund.id}>
+                      <p role="status">
+                        <strong>{refundStatusLabel(refund, "en")}</strong>
+                      </p>
+                      <RefundBreakdown refund={refund} language="en" />
+                      <p>
+                        Refunds are initiated through your original payment
+                        channel where possible. We can&apos;t promise when your
+                        bank or PayPal will post the funds.
+                      </p>
+                      {refund.status === "awaiting_customer_confirmation" && (
+                        <div className="after-sales-response">
+                          <Form
+                            method="post"
+                            className="shipping-change-accept"
+                          >
+                            <input
+                              type="hidden"
+                              name="intent"
+                              value="refund-confirm"
+                            />
+                            <input
+                              type="hidden"
+                              name="authorizationId"
+                              value={refund.id}
+                            />
+                            <input
+                              type="hidden"
+                              name="expectedVersion"
+                              value={refund.version}
+                            />
+                            <input
+                              type="hidden"
+                              name="commandId"
+                              value={commandId}
+                            />
+                            <button
+                              className="button button-primary"
+                              disabled={busy}
+                            >
+                              Confirm refund amount
+                            </button>
+                          </Form>
+                          <Form
+                            method="post"
+                            className="shipping-change-withdraw"
+                          >
+                            <input
+                              type="hidden"
+                              name="intent"
+                              value="refund-dispute"
+                            />
+                            <input
+                              type="hidden"
+                              name="authorizationId"
+                              value={refund.id}
+                            />
+                            <input
+                              type="hidden"
+                              name="expectedVersion"
+                              value={refund.version}
+                            />
+                            <input
+                              type="hidden"
+                              name="commandId"
+                              value={commandId}
+                            />
+                            <label>
+                              What should be reviewed?
+                              <textarea name="note" required rows={2} />
+                            </label>
+                            <button
+                              className="button button-secondary"
+                              disabled={busy}
+                            >
+                              Dispute this amount
+                            </button>
+                          </Form>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+              </div>
+            )}
             {request.status === "pending_review" &&
               request.origin === "customer" && (
                 <Form method="post" className="shipping-change-withdraw">
