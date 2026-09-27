@@ -1,4 +1,6 @@
 import type { AdminIdentity } from "#workers/admin-access";
+import { piSha256 } from "../../proforma-invoice/domain/proforma-invoice";
+import { validateEvidence } from "../../quote-review/domain/private-review";
 import { parseUsdCents } from "../domain/refund-calculation";
 import { readCancellationDecisions } from "../ui/admin-cancellations";
 import { readFactoryEvidence } from "../ui/admin-exceptional";
@@ -16,7 +18,6 @@ import {
   type AfterSalesFileScope,
 } from "./after-sales-files";
 import { createCancellationService } from "./cancellation-service";
-import { createCaseService } from "./case-service";
 import { createReturnAuthorizationService } from "./return-authorization-service";
 import { createReturnInspectionService } from "./return-inspection-service";
 import {
@@ -29,7 +30,6 @@ const intents = new Set([
   "cancellation-open-exceptional",
   "after-sales-file-upload",
   "after-sales-file-share",
-  "case-admin-reply",
   "case-issue-ra",
   "case-decline-return",
   "case-close",
@@ -57,6 +57,30 @@ export function isAfterSalesAdminIntent(intent: string) {
 
 const text = (form: FormData, name: string) => String(form.get(name) ?? "");
 
+// Decisions that append a customer-visible Case event and may carry files.
+const eventAttachmentLabels: Record<string, string> = {
+  "case-issue-ra": "随退货授权（RA）附给客户",
+  "case-decline-return": "随不予授权说明附给客户",
+  "case-close": "随关闭案件说明附给客户",
+  "return-decide": "随检验决定附给客户",
+  "return-revise": "随决定修订附给客户",
+};
+const MAX_EVENT_ATTACHMENTS = 5;
+
+function eventAttachments(form: FormData) {
+  return form
+    .getAll("attachment")
+    .filter((value): value is File => value instanceof File && value.size > 0);
+}
+
+/** Stable per-file command id so a retried submission reuses the same file. */
+async function attachmentCommandId(commandId: string, index: number) {
+  const hex = await piSha256(
+    new TextEncoder().encode(`${commandId.toLowerCase()}:attachment:${index}`),
+  );
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
 /**
  * Runs one Admin after-sales command from the Order page. Returns an
  * actionable Chinese error message for expected failures, or null.
@@ -74,6 +98,15 @@ export async function runAfterSalesAdminAction(input: {
   const options = { auditIp: input.auditIp };
   const commandId = text(form, "commandId");
   try {
+    const attachments = eventAttachmentLabels[intent]
+      ? eventAttachments(form)
+      : [];
+    if (attachments.length > MAX_EVENT_ATTACHMENTS)
+      throw new Response(`最多附 ${MAX_EVENT_ATTACHMENTS} 个文件`, {
+        status: 400,
+      });
+    // Reject a bad file before the decision is recorded.
+    for (const file of attachments) await validateEvidence(file);
     switch (intent) {
       case "cancellation-resolve":
         await createCancellationService(db, options).adminResolve(actor, {
@@ -126,16 +159,6 @@ export async function runAfterSalesAdminAction(input: {
           orderId,
           fileId: text(form, "fileId"),
           reason: text(form, "shareReason"),
-        });
-        break;
-      case "case-admin-reply":
-        await createCaseService(db, options).adminReply(actor, {
-          orderId,
-          caseId: text(form, "caseId"),
-          body: text(form, "body"),
-          visibility:
-            form.get("visibility") === "internal" ? "internal" : "customer",
-          commandId,
         });
         break;
       case "case-issue-ra":
@@ -289,6 +312,19 @@ export async function runAfterSalesAdminAction(input: {
         break;
       default:
         throw new Response("Invalid operation", { status: 400 });
+    }
+    if (attachments.length) {
+      const caseId = text(form, "caseId");
+      const files = createAfterSalesFiles(db, input.bucket);
+      for (const [index, file] of attachments.entries())
+        await files.adminAttachToEvent(actor, {
+          orderId,
+          caseId,
+          eventId: `case-event:${commandId}`,
+          file,
+          commandId: await attachmentCommandId(commandId, index),
+          label: eventAttachmentLabels[intent],
+        });
     }
   } catch (error) {
     if (

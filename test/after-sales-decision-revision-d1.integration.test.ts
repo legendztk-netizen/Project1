@@ -97,7 +97,9 @@ async function decided(prefix: string, approvedQuantity: number) {
       },
     ],
     customerReason:
-      approvedQuantity === 2 ? undefined : "One adapter shows no defect.",
+      approvedQuantity === 2
+        ? "Both adapters leak at the seat."
+        : "One adapter shows no defect.",
     commandId: crypto.randomUUID(),
   });
   return { order, line, decisionId };

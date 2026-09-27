@@ -138,6 +138,7 @@ it("gates refunds on receipt and complete inspection, then applies the 10% conve
       responsibility: "customer",
       remedy: "refund",
       items: [{ ...selected[0], approvedQuantity: 1, conditions: good }],
+      customerReason: "Inspection confirms the reported issue.",
       commandId: crypto.randomUUID(),
     }),
   ).rejects.toMatchObject({ status: 403 });
@@ -150,6 +151,7 @@ it("gates refunds on receipt and complete inspection, then applies the 10% conve
       items: [{ ...selected[0], approvedQuantity: 1, conditions: good }],
       logisticsCents: 500,
       logisticsNote: "Try to refund DDP",
+      customerReason: "Inspection confirms the reported issue.",
       commandId: crypto.randomUUID(),
     }),
   ).rejects.toMatchObject({ status: 400 });
@@ -159,6 +161,7 @@ it("gates refunds on receipt and complete inspection, then applies the 10% conve
     responsibility: "customer",
     remedy: "refund",
     items: [{ ...selected[0], approvedQuantity: 1, conditions: good }],
+    customerReason: "Inspection confirms the reported issue.",
     commandId: crypto.randomUUID(),
   });
   const [customer] = await inspection("2026-09-21T15:00:00.000Z").customerRead(
@@ -192,7 +195,7 @@ it("gates refunds on receipt and complete inspection, then applies the 10% conve
   ).toBe(1);
 });
 
-it("requires reasons for partial decisions and keeps cumulative fees exact across batches", async () => {
+it("requires a reason for every decision and keeps cumulative fees exact across batches", async () => {
   const { order, raId, selected } = await authorized(
     "i2",
     "convenience_return",
@@ -215,12 +218,24 @@ it("requires reasons for partial decisions and keeps cumulative fees exact acros
     lines: [{ ...selected[0], physicalQuantity: 1 }],
     commandId: crypto.randomUUID(),
   });
+  // Full approval also tells the customer why.
+  await expect(
+    service.adminDecide(owner, {
+      orderId: order.orderId,
+      receiptId: first,
+      responsibility: "customer",
+      remedy: "refund",
+      items: [{ ...selected[0], approvedQuantity: 1, conditions: good }],
+      commandId: crypto.randomUUID(),
+    }),
+  ).rejects.toMatchObject({ status: 400 });
   await service.adminDecide(owner, {
     orderId: order.orderId,
     receiptId: first,
     responsibility: "customer",
     remedy: "refund",
     items: [{ ...selected[0], approvedQuantity: 1, conditions: good }],
+    customerReason: "Inspection confirms the reported issue.",
     commandId: crypto.randomUUID(),
   });
   await expect(
@@ -300,6 +315,7 @@ it("uses seller-funded remedies without deductions and records replacements with
         approvedQuantity: line.physicalQuantity,
         conditions: good,
       })),
+      customerReason: "Inspection confirms the reported issue.",
       commandId: crypto.randomUUID(),
     }),
   ).rejects.toMatchObject({ status: 400 });
@@ -316,6 +332,7 @@ it("uses seller-funded remedies without deductions and records replacements with
       })),
       thirdPartyCostCents: 100,
       thirdPartyCostEvidence: "Bank fee",
+      customerReason: "Inspection confirms the reported issue.",
       commandId: crypto.randomUUID(),
     }),
   ).rejects.toMatchObject({ status: 400 });
@@ -333,6 +350,7 @@ it("uses seller-funded remedies without deductions and records replacements with
     sellerLogisticsNote: "Customer's prepaid return label",
     logisticsCents: 1500,
     logisticsNote: "Original freight share refunded for defective goods",
+    customerReason: "Inspection confirms the reported issue.",
     commandId: crypto.randomUUID(),
   });
   const [receipt] = await service.adminRead(owner, order.orderId);
@@ -372,6 +390,7 @@ it("uses seller-funded remedies without deductions and records replacements with
       costs: "Seller pays product and DHL",
       fulfillmentEvidence: "DHL 123 booked 2026-09-22",
     },
+    customerReason: "Inspection confirms the reported issue.",
     commandId: crypto.randomUUID(),
   });
   const [replaced] = await service.adminRead(
@@ -416,6 +435,7 @@ it("keeps late arrivals in review and reminds once when inspection is overdue", 
         approvedQuantity: 1,
         conditions: good,
       })),
+      customerReason: "Inspection confirms the reported issue.",
       commandId: crypto.randomUUID(),
     }),
   ).rejects.toMatchObject({ status: 409 });
@@ -450,6 +470,7 @@ it("keeps late arrivals in review and reminds once when inspection is overdue", 
       approvedQuantity: 1,
       conditions: good,
     })),
+    customerReason: "Inspection confirms the reported issue.",
     commandId: crypto.randomUUID(),
   });
   const [decided] = await service.adminRead(owner, order.orderId);

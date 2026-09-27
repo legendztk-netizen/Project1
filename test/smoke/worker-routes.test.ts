@@ -480,6 +480,17 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(afterSalesResponse.status).toBe(200);
     expect(afterSales).toContain("取消申请");
     expect(afterSales).toContain('data-surface="admin"');
+    expect(admin).toContain('href="/admin/messages"');
+    const messagesResponse = await fetch(`${origin}/admin/messages`);
+    const messages = await messagesResponse.text();
+    expect(messagesResponse.status).toBe(200);
+    expect(messages).toContain("消息管理");
+    expect(messages).toContain("待回复");
+    const unread = await fetch(`${origin}/admin/notifications/unread-count`);
+    expect(await unread.json()).toMatchObject({
+      unread: expect.any(Number),
+      messages: expect.any(Number),
+    });
   });
 
   it("versions Admin-only seller identity and payment instructions", async () => {

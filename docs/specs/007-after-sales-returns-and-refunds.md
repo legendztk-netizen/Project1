@@ -93,10 +93,12 @@ Problem`. The customer selects lines/quantities, reason, description, and
   packaging/accessories, installation evidence, and fluid exposure. Decision is
   Approved, Partially Approved, or Declined within 5 US business days after
   receipt. Overdue inspection creates an internal reminder only.
-- Partial or declined decisions require a customer-visible reason. Private R2
-  evidence remains Internal unless an authorized user explicitly shares selected
-  supporting files.
-- Customer disagreement continues in the original case conversation. An
+- Every decision (approved, partially approved or declined; cancellation
+  approved or declined; RA declined; Case closed) requires a customer-visible
+  reason. Private R2 evidence remains Internal unless an authorized user
+  explicitly shares selected supporting files; files attached to a decision are
+  shared with the customer with that decision.
+- Customer disagreement continues in Messages, labelled with the Case. An
   Inspection Decision Revision appends old/new decision, reason, actor, and time.
 - Customer-choice convenience return deducts 10% of the discounted merchandise
   amount approved for return. Customer pays return shipping; original performed

@@ -69,9 +69,15 @@ import {
 import { createCaseService } from "../../after-sales/application/case-service";
 import { AdminCases } from "../../after-sales/ui/admin-cases";
 import { createReturnAuthorizationService } from "../../after-sales/application/return-authorization-service";
-import { AdminReturnAuthorizationPanel } from "../../after-sales/ui/return-authorizations";
+import {
+  AdminCaseDecisionActions,
+  AdminReturnAuthorizationList,
+} from "../../after-sales/ui/return-authorizations";
 import { createReturnInspectionService } from "../../after-sales/application/return-inspection-service";
-import { AdminReturnReceipts } from "../../after-sales/ui/return-inspection";
+import {
+  AdminReceiptRecordActions,
+  AdminReturnReceipts,
+} from "../../after-sales/ui/return-inspection";
 import { createRefundInitiationService } from "../../after-sales/application/refund-initiation-service";
 import { AdminOrderRefunds } from "../../after-sales/ui/admin-refunds";
 import { etDate } from "../../after-sales/domain/return-policy";
@@ -1096,21 +1102,36 @@ export default function ConfirmedOrderDetail({
                 <AdminCases
                   cases={cancellations.cases}
                   orderId={order.id}
+                  requestId={order.requestId}
                   files={cancellations.files}
                   commandId={commandId}
                   busy={busy}
                   renderActions={(item) => (
                     <>
-                      <AdminReturnAuthorizationPanel
+                      <AdminCaseDecisionActions
                         item={item}
                         ras={cancellations.ras}
                         locations={cancellations.locations}
                         commandId={commandId}
                         busy={busy}
                       />
-                      <AdminReturnReceipts
+                      <AdminReceiptRecordActions
                         item={item}
                         ras={cancellations.ras}
+                        receipts={cancellations.receipts}
+                        commandId={commandId}
+                        busy={busy}
+                      />
+                    </>
+                  )}
+                  renderDetails={(item) => (
+                    <>
+                      <AdminReturnAuthorizationList
+                        item={item}
+                        ras={cancellations.ras}
+                      />
+                      <AdminReturnReceipts
+                        item={item}
                         receipts={cancellations.receipts}
                         files={cancellations.files}
                         orderId={order.id}

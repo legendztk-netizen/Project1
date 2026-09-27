@@ -1,4 +1,4 @@
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, MessagesSquare } from "lucide-react";
 import {
   data,
   Form,
@@ -38,14 +38,12 @@ import { createCaseService } from "../../after-sales/application/case-service";
 import { createAfterSalesFiles } from "../../after-sales/application/after-sales-files";
 import {
   CustomerCaseAction,
-  CustomerCases,
   readCaseLines,
 } from "../../after-sales/ui/customer-cases";
+import { CustomerReturnsTab } from "../../after-sales/ui/customer-returns";
 import { readPrivateReviewForm } from "../../quote-review/domain/private-review";
 import { createReturnAuthorizationService } from "../../after-sales/application/return-authorization-service";
-import { CustomerReturnAuthorizations } from "../../after-sales/ui/return-authorizations";
 import { createReturnInspectionService } from "../../after-sales/application/return-inspection-service";
-import { CustomerReturnReceipts } from "../../after-sales/ui/return-inspection";
 import {
   CustomerCancellationAction,
   CustomerCancellationRequests,
@@ -85,8 +83,15 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
     createReturnAuthorizationService(env.DB).customerRead(profileId, order.id),
     createReturnInspectionService(env.DB).customerRead(profileId, order.id),
   ]);
+  const hasReturns =
+    cases.cases.length > 0 || cancellations.requests.length > 0;
   return data(
     {
+      tab:
+        hasReturns && new URL(request.url).searchParams.get("tab") === "returns"
+          ? ("returns" as const)
+          : ("details" as const),
+      hasReturns,
       order,
       drafts,
       shipmentPlan,
@@ -116,30 +121,21 @@ export async function action({ context, request, params }: ActionFunctionArgs) {
   const form = await readPrivateReviewForm(request);
   const commandId = String(form.get("commandId") ?? "");
   const intent = String(form.get("intent") ?? "follow-on");
-  if (intent === "case-open" || intent === "case-reply") {
+  const returnsHref = `/account/orders/${encodeURIComponent(orderId)}?tab=returns`;
+  if (intent === "case-open") {
     const auditIp = request.headers.get("cf-connecting-ip") ?? "local";
     const file = form.get("file");
     try {
-      const caseId =
-        intent === "case-open"
-          ? await createCaseService(env.DB, { auditIp }).customerOpen(
-              profileId,
-              {
-                orderId,
-                reason: String(form.get("reason") ?? ""),
-                description: String(form.get("description") ?? ""),
-                lines: readCaseLines(form),
-                commandId,
-              },
-            )
-          : String(form.get("caseId") ?? "");
-      if (intent === "case-reply")
-        await createCaseService(env.DB, { auditIp }).customerReply(profileId, {
+      const caseId = await createCaseService(env.DB, { auditIp }).customerOpen(
+        profileId,
+        {
           orderId,
-          caseId,
-          body: String(form.get("body") ?? ""),
+          reason: String(form.get("reason") ?? ""),
+          description: String(form.get("description") ?? ""),
+          lines: readCaseLines(form),
           commandId,
-        });
+        },
+      );
       if (file instanceof File && file.size > 0)
         await createAfterSalesFiles(env.DB, env.PRIVATE_FILES).customerUpload(
           profileId,
@@ -164,7 +160,7 @@ export async function action({ context, request, params }: ActionFunctionArgs) {
         },
       );
     }
-    return redirect(`/account/orders/${encodeURIComponent(orderId)}`);
+    return redirect(returnsHref);
   }
   if (intent.startsWith("cancellation-") || intent.startsWith("refund-")) {
     const cancellations = createCancellationService(env.DB, {
@@ -214,7 +210,7 @@ export async function action({ context, request, params }: ActionFunctionArgs) {
         },
       );
     }
-    return redirect(`/account/orders/${encodeURIComponent(orderId)}`);
+    return redirect(returnsHref);
   }
   if (intent.startsWith("shipping-change-")) {
     const changes = createOrderShippingChangeService(env.DB, {
@@ -308,6 +304,8 @@ export default function ConfirmedOrderDetail({
   loaderData: Awaited<ReturnType<typeof loader>>["data"];
 }) {
   const {
+    tab,
+    hasReturns,
     order,
     drafts,
     shipmentPlan,
@@ -357,6 +355,13 @@ export default function ConfirmedOrderDetail({
           </strong>
         </header>
         <div className="customer-order-actions">
+          <Link
+            className="button button-secondary"
+            to={`/account/messages/${encodeURIComponent(order.requestId)}`}
+          >
+            <MessagesSquare size={17} aria-hidden="true" />
+            Message us
+          </Link>
           <CustomerShippingChangeActions
             shipments={orderShipments}
             destination={snapshot.destination}
@@ -384,153 +389,171 @@ export default function ConfirmedOrderDetail({
             }
           />
         </div>
-        {order.status === "Payment Review Hold" && (
-          <p className="shipment-card-status" role="status">
-            Payment is under review. The order is preserved, but further release
-            is paused. Please contact Support.
-          </p>
-        )}
-        <CustomerShipmentCards
-          plan={shipmentPlan}
-          milestones={milestones}
-          schedules={readySchedules}
-        />
-        <CustomerOrderShippingChanges
-          changes={shippingChanges}
-          shipments={orderShipments}
-          commandId={commandId}
-          busy={navigation.state !== "idle"}
-          error={
-            actionData?.intent?.startsWith("shipping-change-") &&
-            actionData.intent !== "shipping-change-submit"
-              ? actionData.error
-              : undefined
-          }
-        />
-        <CustomerCases
-          cases={cases}
-          orderId={order.id}
-          commandId={commandId}
-          busy={navigation.state !== "idle"}
-          error={
-            actionData?.intent === "case-reply" ? actionData.error : undefined
-          }
-          renderCaseDetails={(item) => {
-            const lineName = (lineId: string) =>
-              item.lines.find((line) => line.lineId === lineId)?.displayName ??
-              lineId;
-            return (
-              <>
-                <CustomerReturnAuthorizations
-                  ras={returnAuthorizations.filter(
-                    (ra) => ra.caseId === item.id,
-                  )}
-                  lineName={lineName}
-                />
-                <CustomerReturnReceipts
-                  receipts={returnReceipts.filter(
-                    (receipt) => receipt.caseId === item.id,
-                  )}
-                  lineName={lineName}
-                  commandId={commandId}
-                  busy={navigation.state !== "idle"}
-                />
-              </>
-            );
-          }}
-        />
-        <CustomerSupportPath cancellations={cancellations} />
-        <CustomerCancellationRequests
-          cancellations={cancellations}
-          commandId={commandId}
-          busy={navigation.state !== "idle"}
-          error={
-            actionData?.intent === "cancellation-withdraw" ||
-            actionData?.intent?.startsWith("refund-")
-              ? actionData.error
-              : undefined
-          }
-        />
-        <section className="customer-quote-section customer-order-details">
-          <div className="customer-order-section-heading">
-            <h2>Order details</h2>
+        {hasReturns && (
+          <nav className="customer-quote-tabs" aria-label="Order sections">
             <Link
-              to={`/account/quotes/${encodeURIComponent(order.requestId)}/pi/${encodeURIComponent(order.piId)}`}
+              to={`/account/orders/${encodeURIComponent(order.id)}`}
+              aria-current={tab === "details" ? "page" : undefined}
+              preventScrollReset
             >
-              View accepted PI
+              <span
+                className="customer-quote-tab-label"
+                data-label="Order details"
+              >
+                <span>Order details</span>
+              </span>
             </Link>
-          </div>
-          {snapshot.lines.map((line) => (
-            <ConfirmedOrderLine key={line.id} line={line} />
-          ))}
-          <dl className="customer-order-facts">
-            <div>
-              <dt>Order total</dt>
-              <dd>USD {(order.totalCents / 100).toFixed(2)}</dd>
-            </div>
-            <div>
-              <dt>Terms</dt>
-              <dd>
-                {snapshot.terms.incoterm} · {snapshot.terms.namedPlace} ·{" "}
-                {snapshot.terms.transportMethod}
-              </dd>
-            </div>
-            <div>
-              <dt>Lead time</dt>
-              <dd>{snapshot.terms.leadTime}</dd>
-            </div>
-            <div>
-              <dt>Delivery destination</dt>
-              <dd>
-                <address>
-                  {address.recipientName}
-                  <br />
-                  {address.addressLine1}
-                  <br />
-                  {address.addressLine2 && (
-                    <>
-                      {address.addressLine2}
-                      <br />
-                    </>
-                  )}
-                  {address.city}, {address.stateProvince} {address.postalCode}
-                  <br />
-                  {address.countryCode}
-                </address>
-              </dd>
-            </div>
-          </dl>
-        </section>
-        <section className="customer-quote-section">
-          <h2>Need more products?</h2>
-          <p>
-            Additional items are quoted separately and don&apos;t change this
-            order.
-          </p>
-          <Form method="post">
-            <input type="hidden" name="commandId" value={commandId} />
-            <button className="button button-secondary">
-              Start a follow-on quote
-            </button>
-          </Form>
-          {drafts.map((draft) => (
-            <p key={draft.id}>
-              {draft.submittedRequestId ? (
-                <Link
-                  to={`/account/quotes/${encodeURIComponent(draft.submittedRequestId)}`}
-                >
-                  View follow-on request
-                </Link>
-              ) : (
-                <Link
-                  to={`/quote-list?followOnDraftId=${encodeURIComponent(draft.id)}`}
-                >
-                  Continue follow-on draft
-                </Link>
+            <Link
+              to={`/account/orders/${encodeURIComponent(order.id)}?tab=returns`}
+              aria-current={tab === "returns" ? "page" : undefined}
+              preventScrollReset
+            >
+              <span
+                className="customer-quote-tab-label"
+                data-label="Returns and problem reports"
+              >
+                <span>Returns and problem reports</span>
+              </span>
+              <span className="customer-quote-tab-count">
+                {cases.cases.length + cancellations.requests.length}
+              </span>
+            </Link>
+          </nav>
+        )}
+        {tab === "returns" ? (
+          <section className="customer-quote-section after-sales-returns-panel">
+            <h2>Returns and problem reports</h2>
+            {actionData?.error &&
+              (actionData.intent === "cancellation-withdraw" ||
+                actionData.intent?.startsWith("refund-")) && (
+                <p className="shipping-change-error" role="alert">
+                  {actionData.error}
+                </p>
               )}
-            </p>
-          ))}
-        </section>
+            <CustomerReturnsTab
+              cases={cases}
+              ras={returnAuthorizations}
+              receipts={returnReceipts}
+              orderId={order.id}
+              requestId={order.requestId}
+              commandId={commandId}
+              busy={navigation.state !== "idle"}
+            />
+            <CustomerCancellationRequests
+              cancellations={cancellations}
+              commandId={commandId}
+              busy={navigation.state !== "idle"}
+            />
+          </section>
+        ) : (
+          <>
+            {order.status === "Payment Review Hold" && (
+              <p className="shipment-card-status" role="status">
+                Payment is under review. The order is preserved, but further
+                release is paused. Please contact Support.
+              </p>
+            )}
+            <CustomerShipmentCards
+              plan={shipmentPlan}
+              milestones={milestones}
+              schedules={readySchedules}
+            />
+            <CustomerOrderShippingChanges
+              changes={shippingChanges}
+              shipments={orderShipments}
+              commandId={commandId}
+              busy={navigation.state !== "idle"}
+              error={
+                actionData?.intent?.startsWith("shipping-change-") &&
+                actionData.intent !== "shipping-change-submit"
+                  ? actionData.error
+                  : undefined
+              }
+            />
+            <CustomerSupportPath cancellations={cancellations} />
+            <section className="customer-quote-section customer-order-details">
+              <div className="customer-order-section-heading">
+                <h2>Order details</h2>
+                <Link
+                  to={`/account/quotes/${encodeURIComponent(order.requestId)}/pi/${encodeURIComponent(order.piId)}`}
+                >
+                  View accepted PI
+                </Link>
+              </div>
+              {snapshot.lines.map((line) => (
+                <ConfirmedOrderLine key={line.id} line={line} />
+              ))}
+              <dl className="customer-order-facts">
+                <div>
+                  <dt>Order total</dt>
+                  <dd>USD {(order.totalCents / 100).toFixed(2)}</dd>
+                </div>
+                <div>
+                  <dt>Terms</dt>
+                  <dd>
+                    {snapshot.terms.incoterm} · {snapshot.terms.namedPlace} ·{" "}
+                    {snapshot.terms.transportMethod}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Lead time</dt>
+                  <dd>{snapshot.terms.leadTime}</dd>
+                </div>
+                <div>
+                  <dt>Delivery destination</dt>
+                  <dd>
+                    <address>
+                      {address.recipientName}
+                      <br />
+                      {address.addressLine1}
+                      <br />
+                      {address.addressLine2 && (
+                        <>
+                          {address.addressLine2}
+                          <br />
+                        </>
+                      )}
+                      {address.city}, {address.stateProvince}{" "}
+                      {address.postalCode}
+                      <br />
+                      {address.countryCode}
+                    </address>
+                  </dd>
+                </div>
+              </dl>
+            </section>
+            <section className="customer-quote-section">
+              <h2>Need more products?</h2>
+              <p>
+                Additional items are quoted separately and don&apos;t change
+                this order.
+              </p>
+              <Form method="post">
+                <input type="hidden" name="commandId" value={commandId} />
+                <button className="button button-secondary">
+                  Start a follow-on quote
+                </button>
+              </Form>
+              {drafts.map((draft) => (
+                <p key={draft.id}>
+                  {draft.submittedRequestId ? (
+                    <Link
+                      to={`/account/quotes/${encodeURIComponent(draft.submittedRequestId)}`}
+                    >
+                      View follow-on request
+                    </Link>
+                  ) : (
+                    <Link
+                      to={`/quote-list?followOnDraftId=${encodeURIComponent(draft.id)}`}
+                    >
+                      Continue follow-on draft
+                    </Link>
+                  )}
+                </p>
+              ))}
+            </section>
+          </>
+        )}
       </main>
     </AccountWorkspace>
   );

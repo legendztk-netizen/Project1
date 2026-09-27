@@ -2,7 +2,7 @@ import { piSha256 } from "../../proforma-invoice/domain/proforma-invoice";
 import { quoteNotificationOutboxStatement } from "../../quote-notifications/infrastructure/d1-quote-notifications";
 
 /**
- * Durable customer notification for an after-sales decision: one Order
+ * Durable customer notification for an after-sales decision: one Messages
  * conversation message plus its email outbox row, written in the same batch
  * as the business record. `guard` is a SQL condition that is true only when
  * the business record was written, so a failed or replayed command sends
@@ -18,6 +18,8 @@ export async function customerMessageStatements(
     body: string;
     timestamp: string;
     guard: { sql: string; bindings: unknown[] };
+    // Shows the message under this After-sales Case in Messages.
+    caseId?: string;
   },
 ) {
   const payloadHash = await piSha256(new TextEncoder().encode(input.body));
@@ -52,6 +54,17 @@ export async function customerMessageStatements(
       requestId: input.orderRequestId,
       createdAt: input.timestamp,
     }),
+    ...(input.caseId
+      ? [
+          db
+            .prepare(
+              `INSERT INTO message_case_topics(message_id,case_id)
+               SELECT ?,? WHERE EXISTS(SELECT 1 FROM quote_conversation_messages WHERE id=?)
+               ON CONFLICT(message_id) DO NOTHING`,
+            )
+            .bind(input.messageId, input.caseId, input.messageId),
+        ]
+      : []),
   ];
 }
 

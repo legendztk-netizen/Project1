@@ -5,10 +5,10 @@ import type { AfterSalesFileView } from "../application/after-sales-files";
 import type { CaseView } from "../application/case-service";
 import type { ReturnAuthorizationView } from "../application/return-authorization-service";
 import type { ReceiptView } from "../application/return-inspection-service";
-import { etDisplayDate } from "../domain/return-policy";
 import { AdminEvidenceFiles } from "./admin-exceptional";
 import { RefundBreakdown, refundStatusLabel } from "./refund-breakdown";
 import { readScopedFields, scopedField } from "./scoped-fields";
+import { AdminActionDialog, EventAttachmentField } from "./admin-action-dialog";
 import "./after-sales.css";
 
 const conditionLabels = [
@@ -24,11 +24,6 @@ const outcomeZh: Record<string, string> = {
   approved: "批准",
   partially_approved: "部分批准",
   declined: "拒绝",
-};
-const outcomeEn: Record<string, string> = {
-  approved: "Approved",
-  partially_approved: "Partially approved",
-  declined: "Declined",
 };
 
 export function readReceiptLines(form: FormData) {
@@ -72,28 +67,25 @@ export function beijingLocalToIso(value: string) {
     : value;
 }
 
-export function AdminReturnReceipts({
+export function AdminReceiptRecordActions({
   item,
   ras,
   receipts,
-  files,
-  orderId,
   commandId,
   busy,
 }: {
   item: CaseView;
   ras: ReturnAuthorizationView[];
   receipts: ReceiptView[];
-  files: AfterSalesFileView[];
-  orderId: string;
   commandId: string;
   busy: boolean;
 }) {
   const caseRas = ras.filter((ra) => ra.caseId === item.id);
   const name = (lineId: string) =>
     item.lines.find((line) => line.lineId === lineId)?.displayName ?? lineId;
+  if (item.status !== "open") return null;
   return (
-    <div>
+    <>
       {caseRas.map((ra) => {
         const received = (lineId: string, shipmentId: string) =>
           receipts
@@ -111,8 +103,12 @@ export function AdminReturnReceipts({
         }));
         if (!remaining.some((line) => line.remaining > 0)) return null;
         return (
-          <details key={ra.id} className="after-sales-decision">
-            <summary>记录 {ra.raNumber} 的实际收货</summary>
+          <AdminActionDialog
+            key={ra.id}
+            label={`记录 ${ra.raNumber} 收货`}
+            title={`记录 ${ra.raNumber} 的实际收货`}
+            wide
+          >
             <Form method="post" className="shipping-change-form">
               <input type="hidden" name="intent" value="return-receive" />
               <input type="hidden" name="raId" value={ra.id} />
@@ -169,125 +165,162 @@ export function AdminReturnReceipts({
                 保存收货记录
               </button>
             </Form>
-          </details>
+          </AdminActionDialog>
         );
       })}
-      {receipts
-        .filter((receipt) => receipt.caseId === item.id)
-        .map((receipt) => (
-          <section key={receipt.id} className="shipping-change-proposal">
-            <h4>
-              收货 {formatPiDate(receipt.receivedAt, "admin")}
-              {receipt.timeliness === "late" ? " · 逾期到货" : ""}
-              {receipt.inspectionOverdue ? " · 检验已超期" : ""}
-            </h4>
-            <p>
-              登记时间 {formatPiDate(receipt.recordedAt, "admin")} · 来源{" "}
-              {receipt.source}
-              {receipt.packageReference ? ` · ${receipt.packageReference}` : ""}
-              {receipt.excessNote
-                ? ` · 多余/未授权：${receipt.excessNote}`
-                : ""}
-            </p>
-            <p>
-              检验决定期限：
-              {formatPiDate(receipt.inspectionDeadlineAt, "admin")}
-              （5 个美国工作日，超期仅内部提醒）
-            </p>
-            <ul className="after-sales-line-list">
-              {receipt.lines.map((line) => (
-                <li key={`${line.lineId}:${line.shipmentId}`}>
-                  {name(line.lineId)} × {line.physicalQuantity}
-                </li>
-              ))}
-            </ul>
-            <AdminEvidenceFiles
-              orderId={orderId}
-              scopeKind="inspection"
-              scopeId={receipt.id}
-              files={files}
-              commandId={commandId}
-              busy={busy}
-            />
-            {receipt.timeliness === "late" && !receipt.lateReviewed && (
-              <Form method="post" className="shipping-change-withdraw">
-                <input type="hidden" name="intent" value="return-late-review" />
-                <input type="hidden" name="receiptId" value={receipt.id} />
-                <label>
-                  逾期到货审核记录（接受检验的依据）
-                  <textarea name="note" required rows={2} />
-                </label>
-                <button className="button button-secondary" disabled={busy}>
-                  记录审核并允许检验
-                </button>
-              </Form>
-            )}
-            {receipt.decision ? (
-              <div>
+    </>
+  );
+}
+
+export function AdminReturnReceipts({
+  item,
+  receipts,
+  files,
+  orderId,
+  commandId,
+  busy,
+}: {
+  item: CaseView;
+  receipts: ReceiptView[];
+  files: AfterSalesFileView[];
+  orderId: string;
+  commandId: string;
+  busy: boolean;
+}) {
+  const name = (lineId: string) =>
+    item.lines.find((line) => line.lineId === lineId)?.displayName ?? lineId;
+  const caseReceipts = receipts.filter((receipt) => receipt.caseId === item.id);
+  if (!caseReceipts.length) return null;
+  return (
+    <div className="after-sales-receipt-list">
+      {caseReceipts.map((receipt) => (
+        <section key={receipt.id} className="shipping-change-proposal">
+          <h4>
+            收货 {formatPiDate(receipt.receivedAt, "admin")}
+            {receipt.timeliness === "late" ? " · 逾期到货" : ""}
+            {receipt.inspectionOverdue ? " · 检验已超期" : ""}
+          </h4>
+          <p>
+            登记时间 {formatPiDate(receipt.recordedAt, "admin")} · 来源{" "}
+            {receipt.source}
+            {receipt.packageReference ? ` · ${receipt.packageReference}` : ""}
+            {receipt.excessNote ? ` · 多余/未授权：${receipt.excessNote}` : ""}
+          </p>
+          <p>
+            检验决定期限：
+            {formatPiDate(receipt.inspectionDeadlineAt, "admin")}
+            （5 个美国工作日，超期仅内部提醒）
+          </p>
+          <ul className="after-sales-line-list">
+            {receipt.lines.map((line) => (
+              <li key={`${line.lineId}:${line.shipmentId}`}>
+                {name(line.lineId)} × {line.physicalQuantity}
+              </li>
+            ))}
+          </ul>
+          <AdminEvidenceFiles
+            orderId={orderId}
+            scopeKind="inspection"
+            scopeId={receipt.id}
+            files={files}
+            commandId={commandId}
+            busy={busy}
+          />
+          {receipt.timeliness === "late" && !receipt.lateReviewed && (
+            <div className="after-sales-case-actions">
+              <AdminActionDialog label="审核逾期到货">
+                <Form method="post" className="shipping-change-form">
+                  <input
+                    type="hidden"
+                    name="intent"
+                    value="return-late-review"
+                  />
+                  <input type="hidden" name="receiptId" value={receipt.id} />
+                  <label>
+                    逾期到货审核记录（接受检验的依据）
+                    <textarea name="note" required rows={3} />
+                  </label>
+                  <button className="button button-primary" disabled={busy}>
+                    记录审核并允许检验
+                  </button>
+                </Form>
+              </AdminActionDialog>
+            </div>
+          )}
+          {receipt.decision ? (
+            <div>
+              <p>
+                <strong>
+                  检验决定：{outcomeZh[receipt.decision.outcome]} ·{" "}
+                  {receipt.decision.responsibility === "customer"
+                    ? "客户原因退货"
+                    : "卖方责任"}{" "}
+                  ·{" "}
+                  {receipt.decision.remedy === "replacement"
+                    ? "更换"
+                    : receipt.decision.remedy === "refund"
+                      ? "退款"
+                      : "无补救"}
+                </strong>
+              </p>
+              {receipt.decision.customerReason && (
+                <p>客户可见原因：{receipt.decision.customerReason}</p>
+              )}
+              {receipt.decision.replacement && (
                 <p>
-                  <strong>
-                    检验决定：{outcomeZh[receipt.decision.outcome]} ·{" "}
-                    {receipt.decision.responsibility === "customer"
-                      ? "客户原因退货"
-                      : "卖方责任"}{" "}
-                    ·{" "}
-                    {receipt.decision.remedy === "replacement"
-                      ? "更换"
-                      : receipt.decision.remedy === "refund"
-                        ? "退款"
-                        : "无补救"}
-                  </strong>
+                  更换范围：{receipt.decision.replacement.scope} · 费用：
+                  {receipt.decision.replacement.costs} · 履约证据：
+                  {receipt.decision.replacement.fulfillmentEvidence}
                 </p>
-                {receipt.decision.customerReason && (
-                  <p>客户可见原因：{receipt.decision.customerReason}</p>
-                )}
-                {receipt.decision.replacement && (
+              )}
+              {receipt.inspection?.map((row) => (
+                <p key={`${row.lineId}:${row.shipmentId}`}>
+                  {name(row.lineId)}：检验 {row.inspectedQuantity}，批准{" "}
+                  {row.approvedQuantity}；
+                  {conditionLabels
+                    .map(([key, label]) => `${label}：${row.conditions[key]}`)
+                    .join("；")}
+                </p>
+              ))}
+              {receipt.decision.revisions.map((revision) => (
+                <p key={revision.id}>
+                  修订 #{revision.revisionNumber}（
+                  {formatPiDate(revision.createdAt, "admin")}）：
+                  {outcomeZh[revision.outcome]} · {revision.customerReason} ·{" "}
+                  {revision.financialEffect === "supplemental"
+                    ? "已生成补充退款"
+                    : revision.financialEffect === "replaced"
+                      ? "未发起前已替换退款授权"
+                      : revision.financialEffect === "flagged"
+                        ? "已发起金额不变，需人工复核"
+                        : "金额不变"}
+                </p>
+              ))}
+              {receipt.decision.refunds.map((refund) => (
+                <div key={refund.id}>
                   <p>
-                    更换范围：{receipt.decision.replacement.scope} · 费用：
-                    {receipt.decision.replacement.costs} · 履约证据：
-                    {receipt.decision.replacement.fulfillmentEvidence}
+                    <strong>
+                      {refund.sourceKind === "supplemental"
+                        ? "补充退款 · "
+                        : ""}
+                      {refundStatusLabel(refund, "zh")}
+                    </strong>
                   </p>
-                )}
-                {receipt.inspection?.map((row) => (
-                  <p key={`${row.lineId}:${row.shipmentId}`}>
-                    {name(row.lineId)}：检验 {row.inspectedQuantity}，批准{" "}
-                    {row.approvedQuantity}；
-                    {conditionLabels
-                      .map(([key, label]) => `${label}：${row.conditions[key]}`)
-                      .join("；")}
-                  </p>
-                ))}
-                {receipt.decision.revisions.map((revision) => (
-                  <p key={revision.id}>
-                    修订 #{revision.revisionNumber}（
-                    {formatPiDate(revision.createdAt, "admin")}）：
-                    {outcomeZh[revision.outcome]} · {revision.customerReason} ·{" "}
-                    {revision.financialEffect === "supplemental"
-                      ? "已生成补充退款"
-                      : revision.financialEffect === "replaced"
-                        ? "未发起前已替换退款授权"
-                        : revision.financialEffect === "flagged"
-                          ? "已发起金额不变，需人工复核"
-                          : "金额不变"}
-                  </p>
-                ))}
-                {receipt.decision.refunds.map((refund) => (
-                  <div key={refund.id}>
-                    <p>
-                      <strong>
-                        {refund.sourceKind === "supplemental"
-                          ? "补充退款 · "
-                          : ""}
-                        {refundStatusLabel(refund, "zh")}
-                      </strong>
-                    </p>
-                    <RefundBreakdown refund={refund} language="zh" />
-                  </div>
-                ))}
-                <details className="after-sales-decision">
-                  <summary>追加检验决定修订（不覆盖历史）</summary>
-                  <Form method="post" className="shipping-change-form">
+                  <RefundBreakdown refund={refund} language="zh" />
+                </div>
+              ))}
+              <div className="after-sales-case-actions">
+                <AdminActionDialog
+                  label="修订检验决定"
+                  title="追加检验决定修订（不覆盖历史）"
+                >
+                  <Form
+                    method="post"
+                    encType="multipart/form-data"
+                    className="shipping-change-form"
+                  >
                     <input type="hidden" name="intent" value="return-revise" />
+                    <input type="hidden" name="caseId" value={item.id} />
                     <input
                       type="hidden"
                       name="decisionId"
@@ -330,24 +363,36 @@ export function AdminReturnReceipts({
                       </label>
                     ))}
                     <label>
-                      修订原因（客户可见）
-                      <textarea name="customerReason" required rows={2} />
+                      修订原因（客户可见，必填）
+                      <textarea name="customerReason" required rows={3} />
                     </label>
+                    <EventAttachmentField />
                     <p>
                       已发起的退款不会被修改；增加的金额生成补充退款，减少的金额仅标记待复核。
                     </p>
-                    <button className="button button-secondary" disabled={busy}>
+                    <button className="button button-primary" disabled={busy}>
                       追加修订
                     </button>
                   </Form>
-                </details>
+                </AdminActionDialog>
               </div>
-            ) : (
-              (receipt.timeliness === "timely" || receipt.lateReviewed) && (
-                <details className="after-sales-decision">
-                  <summary>记录检验并发布决定</summary>
-                  <Form method="post" className="shipping-change-form">
+            </div>
+          ) : (
+            (receipt.timeliness === "timely" || receipt.lateReviewed) && (
+              <div className="after-sales-case-actions">
+                <AdminActionDialog
+                  label="检验并决定退款"
+                  title="记录检验并发布决定"
+                  primary
+                  wide
+                >
+                  <Form
+                    method="post"
+                    encType="multipart/form-data"
+                    className="shipping-change-form"
+                  >
                     <input type="hidden" name="intent" value="return-decide" />
+                    <input type="hidden" name="caseId" value={item.id} />
                     <input type="hidden" name="receiptId" value={receipt.id} />
                     <input type="hidden" name="commandId" value={commandId} />
                     {receipt.lines.map((line) => {
@@ -465,182 +510,24 @@ export function AdminReturnReceipts({
                       </label>
                     </div>
                     <label>
-                      客户可见原因（部分批准或拒绝时必填）
-                      <textarea name="customerReason" rows={2} />
+                      处理原因（客户可见，批准、部分批准或驳回均必填）
+                      <textarea name="customerReason" required rows={3} />
                     </label>
                     <label>
                       内部备注
                       <textarea name="internalNote" rows={2} />
                     </label>
-                    <p>检验照片默认仅内部可见，不会随决定自动共享。</p>
+                    <EventAttachmentField />
+                    <p>
+                      此处附件随决定对客户可见；检验照片请在收货记录的证据文件中上传，默认仅内部可见。
+                    </p>
                     <button className="button button-primary" disabled={busy}>
                       发布检验决定
                     </button>
                   </Form>
-                </details>
-              )
-            )}
-          </section>
-        ))}
-    </div>
-  );
-}
-
-export function CustomerReturnReceipts({
-  receipts,
-  lineName,
-  commandId,
-  busy,
-}: {
-  receipts: ReceiptView[];
-  lineName: (lineId: string) => string;
-  commandId: string;
-  busy: boolean;
-}) {
-  if (!receipts.length) return null;
-  return (
-    <div>
-      {receipts.map((receipt) => (
-        <section key={receipt.id} className="shipping-change-proposal">
-          <h4>
-            Received{" "}
-            {new Date(receipt.receivedAt).toLocaleDateString("en-US", {
-              timeZone: "America/New_York",
-              dateStyle: "medium",
-            })}
-          </h4>
-          <ul className="after-sales-line-list">
-            {receipt.lines.map((line) => (
-              <li key={`${line.lineId}:${line.shipmentId}`}>
-                {lineName(line.lineId)} × {line.physicalQuantity}
-              </li>
-            ))}
-          </ul>
-          {!receipt.decision ? (
-            <p role="status">
-              {receipt.timeliness === "late" && !receipt.lateReviewed
-                ? "This package arrived after the RA expired and is under review."
-                : `Inspection in progress; we aim to decide by ${etDisplayDate(receipt.inspectionDeadlineDateEt)}.`}
-            </p>
-          ) : (
-            <div>
-              <p>
-                <strong>
-                  Inspection decision: {outcomeEn[receipt.decision.outcome]}
-                </strong>
-              </p>
-              {receipt.decision.lines.map((line) => (
-                <p key={`${line.lineId}:${line.shipmentId}`}>
-                  {line.displayName}: {line.approvedQuantity} of{" "}
-                  {line.receivedQuantity} approved
-                </p>
-              ))}
-              {receipt.decision.customerReason && (
-                <p>Reason: {receipt.decision.customerReason}</p>
-              )}
-              {receipt.decision.revisions.map((revision) => (
-                <p key={revision.id}>
-                  <strong>
-                    Revised decision #{revision.revisionNumber}:{" "}
-                    {outcomeEn[revision.outcome]}
-                  </strong>{" "}
-                  — {revision.customerReason}
-                </p>
-              ))}
-              {receipt.decision.replacement && (
-                <p>
-                  Remedy: replacement — {receipt.decision.replacement.scope}
-                </p>
-              )}
-              {receipt.decision.responsibility === "customer" && (
-                <p>
-                  Performed outbound DDP shipping and import charges are not
-                  refunded for a convenience return.
-                </p>
-              )}
-              {receipt.decision.refunds
-                .filter((refund) => refund.status !== "superseded")
-                .map((refund) => (
-                  <div key={refund.id}>
-                    <p role="status">
-                      <strong>
-                        {refund.sourceKind === "supplemental"
-                          ? "Supplemental Refund: "
-                          : ""}
-                        {refundStatusLabel(refund, "en")}
-                      </strong>
-                    </p>
-                    <RefundBreakdown refund={refund} language="en" />
-                    {refund.status === "awaiting_customer_confirmation" && (
-                      <div className="after-sales-response">
-                        <Form method="post" className="shipping-change-accept">
-                          <input
-                            type="hidden"
-                            name="intent"
-                            value="refund-confirm"
-                          />
-                          <input
-                            type="hidden"
-                            name="authorizationId"
-                            value={refund.id}
-                          />
-                          <input
-                            type="hidden"
-                            name="expectedVersion"
-                            value={refund.version}
-                          />
-                          <input
-                            type="hidden"
-                            name="commandId"
-                            value={commandId}
-                          />
-                          <button
-                            className="button button-primary"
-                            disabled={busy}
-                          >
-                            Confirm refund amount
-                          </button>
-                        </Form>
-                        <Form
-                          method="post"
-                          className="shipping-change-withdraw"
-                        >
-                          <input
-                            type="hidden"
-                            name="intent"
-                            value="refund-dispute"
-                          />
-                          <input
-                            type="hidden"
-                            name="authorizationId"
-                            value={refund.id}
-                          />
-                          <input
-                            type="hidden"
-                            name="expectedVersion"
-                            value={refund.version}
-                          />
-                          <input
-                            type="hidden"
-                            name="commandId"
-                            value={commandId}
-                          />
-                          <label>
-                            What should be reviewed?
-                            <textarea name="note" required rows={2} />
-                          </label>
-                          <button
-                            className="button button-secondary"
-                            disabled={busy}
-                          >
-                            Dispute this amount
-                          </button>
-                        </Form>
-                      </div>
-                    )}
-                  </div>
-                ))}
-            </div>
+                </AdminActionDialog>
+              </div>
+            )
           )}
         </section>
       ))}

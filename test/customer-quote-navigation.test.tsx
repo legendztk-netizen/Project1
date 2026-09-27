@@ -13,15 +13,13 @@ it("switches between quote sections and marks only the current page", () => {
     </MemoryRouter>,
   );
   const overview = screen.getByRole("link", { name: "Overview" });
-  const conversation = screen.getByRole("link", { name: "Quote conversation" });
+  const conversation = screen.getByRole("link", { name: "Messages" });
   const pi = screen.getByRole("link", { name: "Proforma invoice" });
   expect(overview.getAttribute("aria-current")).toBe("page");
   expect(overview.getAttribute("href")).toBe("/account/quotes/request-1");
   expect(conversation.getAttribute("aria-current")).toBeNull();
   expect(pi.getAttribute("aria-current")).toBeNull();
-  expect(conversation.getAttribute("href")).toBe(
-    "/account/quotes/request-1/conversation",
-  );
+  expect(conversation.getAttribute("href")).toBe("/account/messages/request-1");
   expect(pi.getAttribute("href")).toBe("/account/quotes/request-1/pi");
   fireEvent.click(conversation);
   expect(overview.getAttribute("aria-current")).toBeNull();

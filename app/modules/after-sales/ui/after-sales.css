@@ -160,3 +160,231 @@ dl.after-sales-money dd {
 .after-sales-instructions {
   white-space: pre-wrap;
 }
+
+/* Case cards: summary, actions, details and the operation record. */
+.after-sales-case-list,
+.after-sales-customer-cases,
+.after-sales-receipt-list,
+.after-sales-ra-list {
+  display: grid;
+  gap: 16px;
+}
+
+.after-sales-case-card {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 18px 20px;
+  background: #ffffff;
+  border: 1px solid #d7dee3;
+  border-radius: 8px;
+}
+
+.after-sales-case-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.after-sales-case-header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  overflow-wrap: anywhere;
+}
+
+.after-sales-case-header small {
+  color: #5c6972;
+}
+
+.after-sales-status {
+  flex: none;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.after-sales-status-open {
+  color: #8a4b00;
+  background: #fff1e0;
+}
+
+.after-sales-status-closed {
+  color: #4a5860;
+  background: #eef1f2;
+}
+
+.after-sales-case-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.after-sales-case-actions:empty {
+  display: none;
+}
+
+.after-sales-next-step {
+  margin: 0;
+  padding: 10px 14px;
+  background: #f3f8fa;
+  border-left: 3px solid #28708a;
+}
+
+.after-sales-case-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 16px;
+}
+
+.after-sales-case-section {
+  min-width: 0;
+}
+
+.after-sales-case-section h4 {
+  margin: 0 0 8px;
+  color: #33444c;
+  font-size: 0.9rem;
+}
+
+.after-sales-description {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.after-sales-compact-lines {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.after-sales-compact-lines li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.after-sales-compact-lines span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.after-sales-compact-lines small {
+  color: #5c6972;
+  overflow-wrap: anywhere;
+}
+
+.after-sales-compact-lines b {
+  white-space: nowrap;
+}
+
+.after-sales-timeline {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0 0 0 16px;
+  list-style: none;
+  border-left: 2px solid #d7dee3;
+}
+
+.after-sales-timeline > li {
+  position: relative;
+  min-width: 0;
+}
+
+.after-sales-timeline > li::before {
+  position: absolute;
+  top: 6px;
+  left: -22px;
+  width: 10px;
+  height: 10px;
+  content: "";
+  background: #28708a;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+}
+
+.after-sales-timeline time {
+  color: #5c6972;
+  font-size: 0.8125rem;
+}
+
+.after-sales-timeline p {
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.after-sales-file-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.after-sales-file-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+
+.after-sales-ra-card,
+.after-sales-refund-summary {
+  padding: 12px 14px;
+  border: 1px solid #e3e8eb;
+  border-radius: 6px;
+}
+
+.after-sales-ra-card header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+dl.after-sales-facts {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 10px 0 0;
+}
+
+dl.after-sales-facts div {
+  display: contents;
+}
+
+dl.after-sales-facts dt {
+  color: #5c6972;
+}
+
+dl.after-sales-facts dd {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.after-sales-refund-summary p {
+  margin: 0;
+}
+
+.after-sales-refund-summary details,
+.after-sales-evidence {
+  margin-top: 6px;
+}
+
+.after-sales-refund-summary summary,
+.after-sales-evidence summary {
+  color: #28708a;
+  cursor: pointer;
+}

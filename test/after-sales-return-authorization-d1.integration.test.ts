@@ -234,8 +234,8 @@ it("declines or closes with customer-visible outcomes in the Case", async () => 
   const cases = createCaseService(db);
   const customer = await cases.customerRead("buyer", order.orderId);
   expect(
-    customer.cases[0].messages.filter((message) =>
-      message.body.startsWith("Return not authorized"),
+    customer.cases[0].events.filter((event) =>
+      event.body.startsWith("Return not authorized"),
     ),
   ).toHaveLength(1);
   const [admin] = await cases.adminRead(owner, order.orderId);

@@ -6,6 +6,7 @@ import {
   writeFileSync,
   copyFileSync,
   existsSync,
+  readFileSync,
 } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
@@ -328,6 +329,13 @@ beforeAll(async () => {
     join(migrationDirectory, "0072_quote_inbound_email_recovery.sql"),
   );
   wrangler(["d1", "migrations", "apply", "quote-inbound-isolated-test"]);
+  // The conversation read path uses the current schema (for example Case
+  // labels from the Message Center), so finish the migration chain.
+  for (const file of readdirSync("migrations")
+    .filter((name) => /^\d{4}_.*\.sql$/.test(name) && name.slice(0, 4) > "0072")
+    .sort())
+    copyFileSync(join("migrations", file), join(migrationDirectory, file));
+  wrangler(["d1", "migrations", "apply", "quote-inbound-isolated-test"]);
   platform = await getPlatformProxy<{
     DB: D1Database;
     PRIVATE_FILES: R2Bucket;
@@ -349,7 +357,13 @@ it("migrates existing website messages and notification FKs without rewriting hi
     await db
       .prepare("SELECT version FROM application_schema_state WHERE singleton=1")
       .first(),
-  ).toEqual({ version: 73 });
+  ).toEqual({
+    version: (
+      JSON.parse(
+        readFileSync("config/database-schema-contract.json", "utf8"),
+      ) as { schemaVersion: number }
+    ).schemaVersion,
+  });
   expect(await row("migration-terminal")).toMatchObject({
     state: "dead_letter",
     cleanup_pending: 1,

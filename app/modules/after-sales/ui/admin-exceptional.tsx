@@ -5,6 +5,7 @@ import type { AfterSalesFileView } from "../application/after-sales-files";
 import { productClassLabel } from "./admin-cancellations";
 import "../../shipment/ui/order-shipping-changes.css";
 import { scopedField } from "./scoped-fields";
+import { AdminActionDialog } from "./admin-action-dialog";
 import "./after-sales.css";
 
 interface ExceptionalEligible {
@@ -29,8 +30,11 @@ export function AdminExceptionalOpenForm({
 }) {
   if (!eligible.length) return null;
   return (
-    <details className="after-sales-decision">
-      <summary>记录客服发起的定制品 / 未切割软管取消审核</summary>
+    <AdminActionDialog
+      label="记录客服发起的取消审核"
+      title="记录客服发起的定制品 / 未切割软管取消审核"
+      wide
+    >
       <Form method="post" className="shipping-change-form">
         <input
           type="hidden"
@@ -85,7 +89,7 @@ export function AdminExceptionalOpenForm({
           锁定数量并开始审核
         </button>
       </Form>
-    </details>
+    </AdminActionDialog>
   );
 }
 

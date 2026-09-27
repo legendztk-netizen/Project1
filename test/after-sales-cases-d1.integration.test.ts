@@ -200,74 +200,19 @@ it("prevents duplicate claims and ignores undelivered quantities", async () => {
   ).rejects.toMatchObject({ status: 404 });
 });
 
-it("keeps the conversation in the Case, hides internal notes and notifies once", async () => {
+it("keeps only operation events on the Case; conversation lives in Messages", async () => {
   const order = await delivered("k4");
   const now = "2026-09-21T12:00:00.000Z";
   const service = at(now);
-  const caseId = await open(order, now, "wrong_item", [
+  await open(order, now, "wrong_item", [
     [order.lines.standard, order.shipments.first, 1],
   ]);
-  await expect(
-    service.customerReply("other", {
-      orderId: order.orderId,
-      caseId,
-      body: "Not mine",
-      commandId: crypto.randomUUID(),
-    }),
-  ).rejects.toMatchObject({ status: 404 });
-  const replyId = await service.customerReply("buyer", {
-    orderId: order.orderId,
-    caseId,
-    body: "Photos attached",
-    commandId: crypto.randomUUID(),
-  });
-  expect(
-    await db
-      .prepare("SELECT kind FROM admin_notifications WHERE source_id=?")
-      .bind(replyId)
-      .first("kind"),
-  ).toBe("after_sales_customer_reply");
-  await service.adminReply(reviewer, {
-    orderId: order.orderId,
-    caseId,
-    body: "Supplier batch 44 may be mislabeled",
-    visibility: "internal",
-    commandId: crypto.randomUUID(),
-  });
-  const visible = {
-    orderId: order.orderId,
-    caseId,
-    body: "Thanks, we are reviewing the label photos.",
-    visibility: "customer" as const,
-    commandId: crypto.randomUUID(),
-  };
-  await service.adminReply(reviewer, visible);
-  await service.adminReply(reviewer, visible);
-  await expect(
-    service.adminReply(unprivileged, {
-      ...visible,
-      commandId: crypto.randomUUID(),
-    }),
-  ).rejects.toMatchObject({ status: 403 });
   const customer = await service.customerRead("buyer", order.orderId);
-  const bodies = customer.cases[0].messages.map((message) => message.body);
-  expect(bodies).toEqual([
-    "Photos attached",
-    "Thanks, we are reviewing the label photos.",
-  ]);
-  expect(JSON.stringify(customer)).not.toContain("Supplier batch");
-  const admin = await service.adminRead(owner, order.orderId);
-  expect(admin[0].messages).toHaveLength(3);
-  expect(
-    await db
-      .prepare(
-        `SELECT count(*) AS count FROM quote_notification_outbox o
-         JOIN quote_conversation_messages m ON m.id=o.message_id
-         WHERE m.request_id=? AND m.body LIKE '%reviewing the label photos%'`,
-      )
-      .bind(order.requestId)
-      .first("count"),
-  ).toBe(1);
+  expect(customer.cases[0].events).toEqual([]);
+  expect(customer.cases[0]).not.toHaveProperty("messages");
+  await expect(
+    service.adminRead(unprivileged, order.orderId),
+  ).rejects.toMatchObject({ status: 403 });
   // No RA, refund or return address is created by the Case.
   expect(
     await db

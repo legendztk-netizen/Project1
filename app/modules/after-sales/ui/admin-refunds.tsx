@@ -4,6 +4,7 @@ import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
 import type { OrderRefunds } from "../application/refund-initiation-service";
 import { usd } from "../domain/refund-calculation";
 import { refundStatusLabel } from "./refund-breakdown";
+import { AdminActionDialog } from "./admin-action-dialog";
 import "./after-sales.css";
 
 const sourceLabel: Record<string, string> = {
@@ -130,8 +131,7 @@ export function AdminOrderRefunds({
         <p>尚未核实退款目的地。</p>
       )}
       {canRefund && (
-        <details className="after-sales-decision">
-          <summary>核实退款目的地</summary>
+        <AdminActionDialog label="核实退款目的地">
           <Form method="post" className="shipping-change-form">
             <input type="hidden" name="intent" value="refund-destination-add" />
             <input type="hidden" name="commandId" value={commandId} />
@@ -191,11 +191,13 @@ export function AdminOrderRefunds({
               保存目的地
             </button>
           </Form>
-        </details>
+        </AdminActionDialog>
       )}
       {isOwner && alternatives.length > 0 && (
-        <details className="after-sales-decision">
-          <summary>Owner 批准替代账户（逐笔退款）</summary>
+        <AdminActionDialog
+          label="Owner 批准替代账户"
+          title="Owner 批准替代账户（逐笔退款）"
+        >
           <Form method="post" className="shipping-change-form">
             <input
               type="hidden"
@@ -234,13 +236,16 @@ export function AdminOrderRefunds({
               批准
             </button>
           </Form>
-        </details>
+        </AdminActionDialog>
       )}
       {canRefund &&
         payable.some((refund) => refund.payableNow) &&
         refunds.destinations.length > 0 && (
-          <details className="after-sales-decision">
-            <summary>记录线下已发起的退款</summary>
+          <AdminActionDialog
+            label="记录已发起的退款"
+            title="记录线下已发起的退款"
+            primary
+          >
             <Form method="post" className="shipping-change-form">
               <input
                 type="hidden"
@@ -296,7 +301,7 @@ export function AdminOrderRefunds({
                 记录已发起退款
               </button>
             </Form>
-          </details>
+          </AdminActionDialog>
         )}
     </div>
   );

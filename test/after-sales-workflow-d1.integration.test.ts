@@ -267,6 +267,7 @@ it("runs a mixed Order from cancellation through supplemental refund while conse
     responsibility: "customer",
     remedy: "refund",
     items: [{ ...returnLines[0], approvedQuantity: 1, conditions: good }],
+    customerReason: "Inspection confirms the reported issue.",
     commandId: uuid(),
   });
   const declined = await inspections.adminDecide(reviewer, {
@@ -352,6 +353,7 @@ it("runs a mixed Order from cancellation through supplemental refund while conse
     ],
     sellerLogisticsCents: 1200,
     sellerLogisticsNote: "Customer's return label",
+    customerReason: "Inspection confirms the reported issue.",
     commandId: uuid(),
   });
 

@@ -5,6 +5,7 @@ import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
 import type { CancellationRequestView } from "../application/cancellation-service";
 import "../../shipment/ui/order-shipping-changes.css";
 import { readScopedFields, scopedField } from "./scoped-fields";
+import { AdminActionDialog } from "./admin-action-dialog";
 import "./after-sales.css";
 import { RefundBreakdown, refundStatusLabel } from "./refund-breakdown";
 
@@ -166,8 +167,7 @@ export function AdminCancellationDecisionForm({
 }) {
   if (request.status !== "pending_review") return null;
   return (
-    <details className="after-sales-decision">
-      <summary>审核并作出取消决定</summary>
+    <AdminActionDialog label="审核并作出取消决定" wide primary>
       <Form method="post" className="shipping-change-form">
         <input type="hidden" name="intent" value={intent} />
         <input type="hidden" name="requestId" value={request.id} />
@@ -234,8 +234,8 @@ export function AdminCancellationDecisionForm({
           </label>
         </div>
         <label>
-          客户可见说明
-          <textarea name="customerReason" required rows={2} />
+          处理原因（客户可见，批准或驳回均必填）
+          <textarea name="customerReason" required rows={3} />
         </label>
         <label>
           内部备注（客户不可见）
@@ -246,7 +246,7 @@ export function AdminCancellationDecisionForm({
           保存不可更改的取消决定
         </button>
       </Form>
-    </details>
+    </AdminActionDialog>
   );
 }
 

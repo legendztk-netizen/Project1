@@ -86,6 +86,7 @@ export function createQuoteConversationService(
       commandId: string;
       body: string;
       attachment?: File | null;
+      caseId?: string | null;
     }) {
       requireReviewMutation(input.request);
       await repository.requireQuote(input.requestId, author);
@@ -97,6 +98,8 @@ export function createQuoteConversationService(
       const file = input.attachment
         ? await validateConversationAttachment(input.attachment)
         : null;
+      const caseId = input.caseId?.trim() || null;
+      if (caseId) await repository.requireCase(input.requestId, caseId);
       const payloadHash = await digest(
         new TextEncoder().encode(
           JSON.stringify([
@@ -112,6 +115,7 @@ export function createQuoteConversationService(
                   file.checksum,
                 ]
               : null,
+            ...(caseId ? [caseId] : []),
           ]),
         ).buffer,
       );
@@ -172,6 +176,7 @@ export function createQuoteConversationService(
           body: normalized.body,
           createdAt,
           attachment,
+          caseId,
         });
       } catch (error) {
         const abandoned = await repository.abandon(id, false);

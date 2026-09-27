@@ -62,6 +62,14 @@ export default [
     "modules/customer-identity/routes/customer-quote-detail.tsx",
   ),
   route(
+    "account/messages",
+    "modules/customer-identity/routes/customer-messages.tsx",
+  ),
+  route(
+    "account/messages/:requestId",
+    "modules/customer-identity/routes/customer-message-thread.tsx",
+  ),
+  route(
     "account/security",
     "modules/customer-identity/routes/account-security.tsx",
   ),
@@ -84,6 +92,8 @@ export default [
     "admin/notifications/unread-count",
     "modules/admin/routes/notifications-unread-count.ts",
   ),
+  route("admin/messages", "modules/admin/routes/messages.tsx"),
+  route("admin/messages/:requestId", "modules/admin/routes/message-thread.tsx"),
   route("admin/orders", "modules/admin/routes/confirmed-orders.tsx"),
   route("admin/after-sales", "modules/admin/routes/after-sales.tsx"),
   route(

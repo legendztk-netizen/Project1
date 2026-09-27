@@ -211,7 +211,7 @@ export default function QuoteReviewDetail({
               )}
               <Link
                 className="button button-secondary"
-                to={`/admin/quotes/${review.id}/conversation`}
+                to={`/admin/messages/${encodeURIComponent(review.id)}`}
               >
                 客户会话
               </Link>

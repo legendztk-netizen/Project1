@@ -194,6 +194,7 @@ export function createReturnAuthorizationService(
           actorId: input.actorId,
           messageId: `case-event-email:${input.commandId}`,
           body: input.email,
+          caseId: input.caseId,
           timestamp: input.timestamp,
           guard: {
             sql: "EXISTS(SELECT 1 FROM after_sales_case_messages WHERE id=?)",
@@ -329,9 +330,9 @@ export function createReturnAuthorizationService(
         caseId: caseRow.id,
         orderId: input.orderId,
         actorId: actor.id,
-        body: `Return Authorization ${raNumber} issued for inspection. The return address and instructions are shown in this case. The goods must arrive by 11:59 PM ET on ${etDisplayDate(deadline.dateEt)}. Shipping them before that date is not enough. Inspection comes before any refund decision.`,
+        body: `Return Authorization ${raNumber} issued for inspection. The return address and packing instructions are shown under Returns and problem reports in your Order. The goods must arrive by 11:59 PM ET on ${etDisplayDate(deadline.dateEt)}. Shipping them before that date is not enough. Inspection comes before any refund decision.`,
         commandId,
-        email: `Return Authorization ${raNumber} was issued for Order case ${caseRow.case_number}. Open the case in your Order to see the return address and packing instructions. The goods must arrive by 11:59 PM ET on ${etDisplayDate(deadline.dateEt)}. An RA authorizes return for inspection; it is not a refund approval.`,
+        email: `Return Authorization ${raNumber} was issued for Order case ${caseRow.case_number}. Open Returns and problem reports in your Order to see the return address and packing instructions. The goods must arrive by 11:59 PM ET on ${etDisplayDate(deadline.dateEt)}. An RA authorizes return for inspection; it is not a refund approval.`,
         timestamp,
         guard: {
           sql: "EXISTS(SELECT 1 FROM after_sales_return_authorizations WHERE id=?)",
@@ -443,9 +444,9 @@ export function createReturnAuthorizationService(
         caseId: caseRow.id,
         orderId: input.orderId,
         actorId: actor.id,
-        body: `Return not authorized. Reason: ${reason} You can reply in this case if you disagree or have more information.`,
+        body: `Return not authorized. Reason: ${reason} Message us if you disagree or have more information.`,
         commandId,
-        email: `An update on case ${caseRow.case_number}: the return was not authorized. Reason: ${reason} Reply in the case in your Order if you disagree.`,
+        email: `An update on case ${caseRow.case_number}: the return was not authorized. Reason: ${reason} Reply to this message if you disagree.`,
         timestamp,
       });
       const replay = await db

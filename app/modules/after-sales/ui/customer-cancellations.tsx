@@ -4,7 +4,11 @@ import { XCircle } from "lucide-react";
 
 import { ShipmentActionDialog } from "../../shipment/ui/shipment-action-dialog";
 import type { createCancellationService } from "../application/cancellation-service";
-import { RefundBreakdown, refundStatusLabel } from "./refund-breakdown";
+import {
+  CustomerRefundResponse,
+  RefundBreakdown,
+  refundStatusLabel,
+} from "./refund-breakdown";
 import "../../shipment/ui/order-shipping-changes.css";
 import { readScopedFields, scopedField } from "./scoped-fields";
 import "./after-sales.css";
@@ -216,76 +220,11 @@ export function CustomerCancellationRequests({
                         channel where possible. We can&apos;t promise when your
                         bank or PayPal will post the funds.
                       </p>
-                      {refund.status === "awaiting_customer_confirmation" && (
-                        <div className="after-sales-response">
-                          <Form
-                            method="post"
-                            className="shipping-change-accept"
-                          >
-                            <input
-                              type="hidden"
-                              name="intent"
-                              value="refund-confirm"
-                            />
-                            <input
-                              type="hidden"
-                              name="authorizationId"
-                              value={refund.id}
-                            />
-                            <input
-                              type="hidden"
-                              name="expectedVersion"
-                              value={refund.version}
-                            />
-                            <input
-                              type="hidden"
-                              name="commandId"
-                              value={commandId}
-                            />
-                            <button
-                              className="button button-primary"
-                              disabled={busy}
-                            >
-                              Confirm refund amount
-                            </button>
-                          </Form>
-                          <Form
-                            method="post"
-                            className="shipping-change-withdraw"
-                          >
-                            <input
-                              type="hidden"
-                              name="intent"
-                              value="refund-dispute"
-                            />
-                            <input
-                              type="hidden"
-                              name="authorizationId"
-                              value={refund.id}
-                            />
-                            <input
-                              type="hidden"
-                              name="expectedVersion"
-                              value={refund.version}
-                            />
-                            <input
-                              type="hidden"
-                              name="commandId"
-                              value={commandId}
-                            />
-                            <label>
-                              What should be reviewed?
-                              <textarea name="note" required rows={2} />
-                            </label>
-                            <button
-                              className="button button-secondary"
-                              disabled={busy}
-                            >
-                              Dispute this amount
-                            </button>
-                          </Form>
-                        </div>
-                      )}
+                      <CustomerRefundResponse
+                        refund={refund}
+                        commandId={commandId}
+                        busy={busy}
+                      />
                     </div>
                   ))}
               </div>

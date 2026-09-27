@@ -6,7 +6,6 @@ import {
   isOnOrBefore,
   LAUNCH_RETURN_POLICY,
 } from "../domain/return-policy";
-import { customerMessageStatements } from "../infrastructure/d1-customer-messages";
 import {
   createD1OrderFacts,
   type OrderFacts,
@@ -143,9 +142,12 @@ export function createCaseService(
         }>(),
       db
         .prepare(
-          `SELECT * FROM after_sales_case_messages WHERE case_id IN (${placeholders})
-           ${audience === "customer" ? "AND visibility='customer'" : ""}
-           ORDER BY created_at,rowid`,
+          `SELECT m.*,(SELECT json_group_array(ef.file_id) FROM after_sales_event_files ef
+             WHERE ef.event_id=m.id) AS file_ids_json
+           FROM after_sales_case_messages m WHERE m.case_id IN (${placeholders})
+             AND m.kind='event'
+           ${audience === "customer" ? "AND m.visibility='customer'" : ""}
+           ORDER BY m.created_at,m.rowid`,
         )
         .bind(...ids)
         .all<{
@@ -157,6 +159,7 @@ export function createCaseService(
           kind: string;
           body: string;
           created_at: string;
+          file_ids_json: string;
         }>(),
       db
         .prepare(
@@ -210,15 +213,15 @@ export function createCaseService(
           };
         })
         .sort((a, b) => a.lineNumber - b.lineNumber),
-      messages: messages.results
+      // Operation record: customer-visible events appended by each decision.
+      // Conversation happens in Messages, never on the Case.
+      events: messages.results
         .filter((message) => message.case_id === row.id)
         .map((message) => ({
           id: message.id,
-          authorRole: message.author_role,
-          visibility: message.visibility,
-          kind: message.kind,
           body: message.body,
           createdAt: message.created_at,
+          fileIds: JSON.parse(message.file_ids_json) as string[],
           ...(audience === "admin" ? { authorId: message.author_id } : {}),
         })),
       files: files.results
@@ -232,93 +235,6 @@ export function createCaseService(
           createdAt: file.created_at,
         })),
     }));
-  }
-
-  async function message(input: {
-    caseRow: CaseRow;
-    orderFacts: OrderFacts;
-    authorRole: "customer" | "admin";
-    authorId: string;
-    visibility: "customer" | "internal";
-    body: string;
-    commandId: string;
-  }) {
-    const commandHash = await hash(
-      JSON.stringify({
-        caseId: input.caseRow.id,
-        authorId: input.authorId,
-        visibility: input.visibility,
-        body: input.body,
-      }),
-    );
-    const replay = await db
-      .prepare(
-        `SELECT id,command_hash FROM after_sales_case_messages WHERE command_id=?`,
-      )
-      .bind(input.commandId)
-      .first<{ id: string; command_hash: string }>();
-    if (replay) {
-      if (replay.command_hash !== commandHash) throw conflict();
-      return replay.id;
-    }
-    const id = crypto.randomUUID();
-    const timestamp = now();
-    const statements: D1PreparedStatement[] = [
-      db
-        .prepare(
-          `INSERT INTO after_sales_case_messages
-           (id,case_id,author_role,author_id,visibility,kind,body,created_at,
-            command_id,command_hash)
-           SELECT ?,?,?,?,?,'message',?,?,?,? WHERE EXISTS(
-             SELECT 1 FROM after_sales_cases WHERE id=? AND order_id=?)`,
-        )
-        .bind(
-          id,
-          input.caseRow.id,
-          input.authorRole,
-          input.authorId,
-          input.visibility,
-          input.body,
-          timestamp,
-          input.commandId,
-          commandHash,
-          input.caseRow.id,
-          input.orderFacts.orderId,
-        ),
-      db
-        .prepare(
-          `UPDATE after_sales_cases SET version=version+1,updated_at=?
-           WHERE id=? AND EXISTS(SELECT 1 FROM after_sales_case_messages WHERE id=?)`,
-        )
-        .bind(timestamp, input.caseRow.id, id),
-    ];
-    if (input.authorRole === "admin" && input.visibility === "customer")
-      statements.push(
-        ...(await customerMessageStatements(db, {
-          orderRequestId: input.orderFacts.requestId,
-          actorId: input.authorId,
-          messageId: `after-sales-message:${input.commandId}`,
-          body: `New message about After-sales Case ${input.caseRow.case_number} for Order ${input.orderFacts.orderNumber}: ${input.body} — Reply from the Case in your Order so the seller keeps it with this case.`,
-          timestamp,
-          guard: {
-            sql: "EXISTS(SELECT 1 FROM after_sales_case_messages WHERE id=?)",
-            bindings: [id],
-          },
-        })),
-      );
-    try {
-      await db.batch(statements);
-    } catch {
-      const concurrent = await db
-        .prepare(
-          `SELECT id,command_hash FROM after_sales_case_messages WHERE command_id=?`,
-        )
-        .bind(input.commandId)
-        .first<{ id: string; command_hash: string }>();
-      if (concurrent?.command_hash === commandHash) return concurrent.id;
-      throw conflict();
-    }
-    return id;
   }
 
   async function ownedCase(profileId: string, orderId: string, caseId: string) {
@@ -381,9 +297,10 @@ export function createCaseService(
         db
           .prepare(
             `SELECT c.id,c.case_number,c.order_id,c.reason,c.status,c.created_at,
-               c.updated_at,o.order_number,
-               (SELECT max(m.created_at) FROM after_sales_case_messages m
-                 WHERE m.case_id=c.id AND m.author_role='customer') AS last_customer_at
+               c.updated_at,o.order_number,o.request_id,
+               (SELECT max(m.created_at) FROM quote_conversation_messages m
+                 JOIN message_case_topics t ON t.message_id=m.id
+                 WHERE t.case_id=c.id AND m.author_role='customer') AS last_customer_at
              FROM after_sales_cases c JOIN confirmed_orders o ON o.id=c.order_id
              ${where} ORDER BY c.updated_at DESC,c.id DESC
              LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`,
@@ -398,6 +315,7 @@ export function createCaseService(
             created_at: string;
             updated_at: string;
             order_number: string;
+            request_id: string;
             last_customer_at: string | null;
           }>(),
         db
@@ -414,6 +332,7 @@ export function createCaseService(
           caseNumber: row.case_number,
           orderId: row.order_id,
           orderNumber: row.order_number,
+          requestId: row.request_id,
           reason: row.reason,
           status: row.status,
           createdAt: row.created_at,
@@ -595,65 +514,6 @@ export function createCaseService(
         throw conflict();
       }
       return id;
-    },
-
-    async customerReply(
-      profileId: string,
-      input: {
-        orderId: string;
-        caseId: string;
-        body: string;
-        commandId: string;
-      },
-    ) {
-      const commandId = afterSalesCommandId(input.commandId);
-      const body = afterSalesText(input.body, "Message", 5000);
-      const { row, orderFacts } = await ownedCase(
-        profileId,
-        input.orderId,
-        input.caseId,
-      );
-      return message({
-        caseRow: row,
-        orderFacts,
-        authorRole: "customer",
-        authorId: profileId,
-        visibility: "customer",
-        body,
-        commandId,
-      });
-    },
-
-    async adminReply(
-      actor: AdminIdentity,
-      input: {
-        orderId: string;
-        caseId: string;
-        body: string;
-        visibility: "customer" | "internal";
-        commandId: string;
-      },
-    ) {
-      requireAfterSalesPermission(actor, "after_sales.review");
-      const commandId = afterSalesCommandId(input.commandId);
-      const body = afterSalesText(input.body, "Message", 5000);
-      if (!["customer", "internal"].includes(input.visibility))
-        throw new Response("Choose message visibility", { status: 400 });
-      const [row] = await caseRows(
-        "WHERE id=? AND order_id=?",
-        input.caseId,
-        input.orderId,
-      );
-      if (!row) throw new Response("Case not found", { status: 404 });
-      return message({
-        caseRow: row,
-        orderFacts: await facts.read(input.orderId),
-        authorRole: "admin",
-        authorId: actor.id,
-        visibility: input.visibility,
-        body,
-        commandId,
-      });
     },
 
     ownedCase,

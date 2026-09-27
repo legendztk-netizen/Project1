@@ -6,10 +6,13 @@ import { afterEach, expect, it } from "vitest";
 
 import {
   CustomerCaseAction,
-  CustomerCases,
   readCaseLines,
 } from "../app/modules/after-sales/ui/customer-cases";
 import { AdminCases } from "../app/modules/after-sales/ui/admin-cases";
+import {
+  CustomerReturnsTab,
+  customerCaseNextStep,
+} from "../app/modules/after-sales/ui/customer-returns";
 
 afterEach(cleanup);
 
@@ -86,17 +89,24 @@ const cases: Cases = {
           convenienceCutoffAt: null,
         },
       ],
-      messages: [
+      events: [
         {
-          id: "m1",
-          authorRole: "admin",
-          visibility: "customer",
-          kind: "message",
-          body: "We are reviewing your photos.",
+          id: "case-event:1",
+          body: "Return not authorized. Reason: the carton photos show no damage.",
+          createdAt: "2026-09-12T13:00:00.000Z",
+          fileIds: ["file-1"],
+        },
+      ],
+      files: [
+        {
+          id: "file-1",
+          filename: "carton-check.pdf",
+          uploaderRole: "admin",
+          visibility: "shared",
+          shareReason: "随不予授权说明附给客户",
           createdAt: "2026-09-12T13:00:00.000Z",
         },
       ],
-      files: [],
     },
   ],
 };
@@ -136,16 +146,19 @@ it("explains per-Shipment return windows and made-to-order limits in the report 
   ]);
 });
 
-it("renders the Case thread, reply form and undelivered guidance for customers and Admin", async () => {
+it("shows the operation record without a reply form and links the conversation to Messages", async () => {
   const router = createMemoryRouter(
     [
       {
         path: "/",
         element: (
           <>
-            <CustomerCases
+            <CustomerReturnsTab
               cases={cases}
+              ras={[]}
+              receipts={[]}
               orderId="order-1"
+              requestId="request-1"
               commandId="command-2"
               busy={false}
             />
@@ -153,25 +166,29 @@ it("renders the Case thread, reply form and undelivered guidance for customers a
               cases={[
                 {
                   ...cases.cases[0],
-                  messages: [
-                    ...cases.cases[0].messages.map((message) => ({
-                      ...message,
-                      authorId: "owner",
-                    })),
-                    {
-                      id: "m2",
-                      authorRole: "admin",
-                      authorId: "owner",
-                      visibility: "internal",
-                      kind: "message",
-                      body: "Check supplier lot",
-                      createdAt: "2026-09-12T14:00:00.000Z",
-                    },
-                  ],
-                } as Parameters<typeof AdminCases>[0]["cases"][number],
+                  events: cases.cases[0].events.map((event) => ({
+                    ...event,
+                    authorId: "owner",
+                  })),
+                },
               ]}
               orderId="order-1"
-              files={[]}
+              requestId="request-1"
+              files={[
+                {
+                  id: "file-1",
+                  filename: "carton-check.pdf",
+                  uploaderRole: "admin",
+                  visibility: "shared",
+                  shareReason: "随不予授权说明附给客户",
+                  createdAt: "2026-09-12T13:00:00.000Z",
+                  scopeKind: "case",
+                  scopeId: "case-1",
+                  contentType: "application/pdf",
+                  byteSize: 10,
+                  sharedAt: "2026-09-12T13:00:00.000Z",
+                },
+              ]}
               commandId="command-3"
               busy={false}
             />
@@ -183,11 +200,72 @@ it("renders the Case thread, reply form and undelivered guidance for customers a
   );
   render(<RouterProvider router={router} />);
   expect(await screen.findByText(/Case AS-ORDER-1-1/)).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Send reply" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Send reply" })).toBeNull();
+  expect(document.querySelector("textarea")).toBeNull();
+  expect(
+    screen
+      .getByRole("link", { name: "Message us about this case" })
+      .getAttribute("href"),
+  ).toBe("/account/messages/request-1?case=case-1#latest");
+  expect(
+    screen.getByRole("link", { name: "客户对话" }).getAttribute("href"),
+  ).toBe("/admin/messages/request-1?case=case-1#latest");
+  // The attachment is shown on the event it was sent with, for both sides,
+  // and in the Admin evidence list.
+  expect(
+    screen
+      .getAllByRole("link", { name: "carton-check.pdf" })
+      .map((link) => link.getAttribute("href")),
+  ).toEqual([
+    "/account/orders/order-1/after-sales/files/file-1",
+    "/admin/orders/order-1/after-sales/files/file-1",
+    "/admin/orders/order-1/after-sales/files/file-1",
+  ]);
   const text = document.body.textContent ?? "";
   expect(text).toContain("Shipment 3 shipped but delivery isn't recorded yet");
-  expect(text).toContain("（内部备注）");
+  expect(text).toContain("Return not authorized");
   expect(text).toContain("运输损坏");
+});
+
+it("tells the customer the next step for each Case stage", () => {
+  const ra = {
+    id: "ra-1",
+    expired: false,
+    arrivalDeadlineDateEt: "2026-10-27",
+  };
+  expect(customerCaseNextStep({ status: "open" }, [], [])).toContain(
+    "reviewing your report",
+  );
+  expect(customerCaseNextStep({ status: "open" }, [ra], [])).toContain(
+    "arrive by 11:59 PM ET on Oct 27, 2026",
+  );
+  const receipt = {
+    raId: "ra-1",
+    timeliness: "timely" as const,
+    lateReviewed: false,
+    inspectionDeadlineDateEt: "2026-10-05",
+    decision: null,
+  };
+  expect(customerCaseNextStep({ status: "open" }, [ra], [receipt])).toContain(
+    "decide by Oct 5, 2026",
+  );
+  const refund = {
+    id: "refund-1",
+    status: "approved",
+    refundCents: 24000,
+    initiatedCents: 0,
+    deadlineDateEt: "2026-10-09",
+  };
+  const decided = {
+    ...receipt,
+    decision: { refunds: [refund] },
+  } as unknown as Parameters<typeof customerCaseNextStep>[2][number];
+  expect(customerCaseNextStep({ status: "open" }, [ra], [decided])).toBe(
+    "Your refund of USD 240.00 is approved. We'll initiate it by Oct 9, 2026; your bank or PayPal may take longer to post it.",
+  );
+  expect(customerCaseNextStep({ status: "closed" }, [], [])).toBe(
+    "This case is closed.",
+  );
 });
 
 it("round-trips Spec 6 Shipment ids that contain colons in every scoped form", async () => {

@@ -594,6 +594,7 @@ export function createDecisionRevisionService(
           actorId: actor.id,
           messageId: `decision-revision:${commandId}`,
           body: `Case ${decision.case_number}: ${body}`,
+          caseId: decision.case_id,
           timestamp,
           guard,
         })),

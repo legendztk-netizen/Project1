@@ -247,6 +247,50 @@ export function createAfterSalesFiles(
       });
     },
 
+    /**
+     * Attaches a file to a customer-visible Case operation record (RA,
+     * decline, closure, inspection decision). The file is stored as Admin
+     * evidence, shared with the customer and linked to that record.
+     */
+    async adminAttachToEvent(
+      actor: AdminIdentity,
+      input: {
+        orderId: string;
+        caseId: string;
+        eventId: string;
+        file: File;
+        commandId: string;
+        label: string;
+      },
+    ) {
+      requireAfterSalesPermission(actor, "after_sales.review");
+      const fileId = await store({
+        orderId: input.orderId,
+        scopeKind: "case",
+        scopeId: input.caseId,
+        file: input.file,
+        commandId: input.commandId,
+        uploaderRole: "admin",
+        uploaderId: actor.id,
+      });
+      const timestamp = now();
+      await db.batch([
+        db
+          .prepare(
+            `UPDATE after_sales_files SET visibility='shared',shared_by=?,shared_at=?,
+               share_reason=? WHERE id=? AND order_id=? AND visibility='internal'`,
+          )
+          .bind(actor.id, timestamp, input.label, fileId, input.orderId),
+        db
+          .prepare(
+            `INSERT INTO after_sales_event_files(event_id,file_id,created_at)
+             VALUES(?,?,?) ON CONFLICT(event_id,file_id) DO NOTHING`,
+          )
+          .bind(input.eventId, fileId, timestamp),
+      ]);
+      return fileId;
+    },
+
     async adminList(actor: AdminIdentity, orderId: string) {
       requireAfterSalesPermission(actor, "after_sales.review");
       return (

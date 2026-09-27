@@ -6,6 +6,7 @@ import {
   FileText,
   FileUp,
   LayoutDashboard,
+  MessagesSquare,
   RotateCcw,
   Settings,
   Waypoints,
@@ -20,6 +21,7 @@ export type AdminNavigationKey =
   | "catalog"
   | "configurator"
   | "imports"
+  | "messages"
   | "notifications"
   | "overview"
   | "orders"
@@ -50,6 +52,12 @@ const adminNavigation = [
     label: "通知",
     icon: Bell,
     to: "/admin/notifications",
+  },
+  {
+    key: "messages",
+    label: "消息管理",
+    icon: MessagesSquare,
+    to: "/admin/messages",
   },
   { key: "quotes", label: "询价审核", icon: FileText, to: "/admin/quotes" },
   { key: "orders", label: "订单", icon: ClipboardList, to: "/admin/orders" },
@@ -90,6 +98,7 @@ const UNREAD_REFRESH_MS = 30_000;
 function useUnreadNotifications(known: number | undefined) {
   const location = useLocation();
   const [unread, setUnread] = useState<number | null>(known ?? null);
+  const [messages, setMessages] = useState<number | null>(null);
   useEffect(() => {
     if (known !== undefined) setUnread(known);
   }, [known]);
@@ -102,9 +111,14 @@ function useUnreadNotifications(known: number | undefined) {
           headers: { Accept: "application/json" },
         });
         if (!response.ok) return;
-        const body = (await response.json()) as { unread?: unknown };
+        const body = (await response.json()) as {
+          unread?: unknown;
+          messages?: unknown;
+        };
         if (!cancelled && typeof body.unread === "number")
           setUnread(body.unread);
+        if (!cancelled && typeof body.messages === "number")
+          setMessages(body.messages);
       } catch {
         // The badge is advisory; the notifications page remains authoritative.
       }
@@ -120,7 +134,7 @@ function useUnreadNotifications(known: number | undefined) {
       document.removeEventListener("visibilitychange", refresh);
     };
   }, [location.key]);
-  return unread;
+  return { unread, messages };
 }
 
 export function AdminNavigation({
@@ -135,7 +149,7 @@ export function AdminNavigation({
   const [openGroup, setOpenGroup] = useState<AdminNavigationKey | null>(
     active === "imports" ? "imports" : null,
   );
-  const unread = useUnreadNotifications(unreadNotifications);
+  const { unread, messages } = useUnreadNotifications(unreadNotifications);
 
   return (
     <aside className="admin-sidebar">
@@ -156,6 +170,14 @@ export function AdminNavigation({
                   aria-label={`${unread} 条未读`}
                 >
                   {unread > 99 ? "99+" : unread}
+                </span>
+              ) : null}
+              {item.key === "messages" && messages ? (
+                <span
+                  className="admin-nav-badge"
+                  aria-label={`${messages} 个对话有未读消息`}
+                >
+                  {messages > 99 ? "99+" : messages}
                 </span>
               ) : null}
             </>

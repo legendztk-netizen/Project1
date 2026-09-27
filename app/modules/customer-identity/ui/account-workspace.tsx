@@ -32,6 +32,7 @@ export function AccountWorkspace({
           </div>
           <AccountDetailNavigation
             activeView={activeView}
+            unreadMessages={rootData?.customer?.unreadMessages ?? 0}
             pendingHref={
               navigation.location
                 ? navigation.location.pathname + navigation.location.search

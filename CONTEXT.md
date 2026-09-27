@@ -352,10 +352,20 @@ _Avoid_: Superseded PI, cancelled order, Accepted PI
 
 **Quote Conversation**:
 The authoritative message and attachment history associated with one My Quote.
-Messages sent in the Personal Center and authorized replies to quote-specific
+It continues unchanged through the resulting Order and its After-sales Cases.
+Messages sent in Messages and authorized replies to quote-specific
 notification emails enter the same conversation and remain visible to the
-customer and Admin Backoffice.
+customer and Admin Backoffice. A message may be labelled with one After-sales
+Case of that Order.
 _Avoid_: Private salesperson mailbox, order status history, general contact form
+
+**Messages**:
+The customer's in-site inbox (Personal Center) and the Admin Backoffice
+「消息管理」 listing every Quote Conversation, with a summary of the Quote or
+Order, links to it and unread counts. It is the only place for conversation:
+Quote, Order and After-sales pages show records and decisions, not replies.
+Admin Internal Notes in a conversation are never visible to the customer.
+_Avoid_: Order conversation, Case reply thread, notification list
 
 **Pre-Quote Support Chat**:
 A third-party live-chat conversation used to help a visitor navigate products,
@@ -973,8 +983,9 @@ _Avoid_: Automatic freight refund, import-charge reversal, seller-error policy
 **After-sales Case**:
 A numbered customer request associated with delivered Order lines for a return,
 wrong item, damage, or possible Nonconforming Product. It records evidence,
-review, communication, and the approved resolution but does not itself approve
-a return or issue a refund.
+review, each customer-visible decision with its reason and attachments, and the
+approved resolution but does not itself approve a return or issue a refund.
+Discussion about a Case happens in Messages, labelled with the Case.
 _Avoid_: Return Authorization, automatic refund, general Quote Conversation
 
 ## Payment

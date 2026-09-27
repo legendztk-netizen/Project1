@@ -1,3 +1,4 @@
+import { Form } from "react-router";
 import type { RefundAuthorizationView } from "../infrastructure/d1-refund-authorizations";
 import { usd } from "../domain/refund-calculation";
 import "./after-sales.css";
@@ -130,5 +131,44 @@ export function RefundBreakdown({
         </>
       )}
     </dl>
+  );
+}
+
+/** Customer confirmation or dispute of a refund with a gross-to-net deduction. */
+export function CustomerRefundResponse({
+  refund,
+  commandId,
+  busy,
+}: {
+  refund: Pick<RefundAuthorizationView, "id" | "version" | "status">;
+  commandId: string;
+  busy: boolean;
+}) {
+  if (refund.status !== "awaiting_customer_confirmation") return null;
+  return (
+    <div className="after-sales-response">
+      <Form method="post" className="shipping-change-accept">
+        <input type="hidden" name="intent" value="refund-confirm" />
+        <input type="hidden" name="authorizationId" value={refund.id} />
+        <input type="hidden" name="expectedVersion" value={refund.version} />
+        <input type="hidden" name="commandId" value={commandId} />
+        <button className="button button-primary" disabled={busy}>
+          Confirm refund amount
+        </button>
+      </Form>
+      <Form method="post" className="shipping-change-withdraw">
+        <input type="hidden" name="intent" value="refund-dispute" />
+        <input type="hidden" name="authorizationId" value={refund.id} />
+        <input type="hidden" name="expectedVersion" value={refund.version} />
+        <input type="hidden" name="commandId" value={commandId} />
+        <label>
+          What should be reviewed?
+          <textarea name="note" required rows={2} />
+        </label>
+        <button className="button button-secondary" disabled={busy}>
+          Dispute this amount
+        </button>
+      </Form>
+    </div>
   );
 }

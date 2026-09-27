@@ -214,7 +214,7 @@ export default function AdminAfterSales({
                       <th>案件</th>
                       <th>订单</th>
                       <th>原因</th>
-                      <th>最近客户回复</th>
+                      <th>最近客户消息</th>
                       <th>更新时间</th>
                     </tr>
                   </thead>
@@ -231,9 +231,13 @@ export default function AdminAfterSales({
                         <td>{record.orderNumber}</td>
                         <td>{adminCaseReasonLabel[record.reason]}</td>
                         <td>
-                          {record.lastCustomerAt
-                            ? formatPiDate(record.lastCustomerAt, "admin")
-                            : "—"}
+                          <Link
+                            to={`/admin/messages/${encodeURIComponent(record.requestId)}?case=${encodeURIComponent(record.id)}`}
+                          >
+                            {record.lastCustomerAt
+                              ? formatPiDate(record.lastCustomerAt, "admin")
+                              : "查看对话"}
+                          </Link>
                         </td>
                         <td>{formatPiDate(record.updatedAt, "admin")}</td>
                       </tr>

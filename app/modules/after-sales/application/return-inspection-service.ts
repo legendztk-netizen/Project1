@@ -132,6 +132,7 @@ export function createReturnInspectionService(
           actorId: input.actorId,
           messageId: `case-event-email:${input.commandId}`,
           body: input.email,
+          caseId: input.caseId,
           timestamp: input.timestamp,
           guard: {
             sql: "EXISTS(SELECT 1 FROM after_sales_case_messages WHERE id=?)",
@@ -709,11 +710,11 @@ export function createReturnInspectionService(
         input.customerReason,
         "Customer-visible reason",
       );
-      if (outcome !== "approved" && !customerReason)
-        throw new Response(
-          "A partial or declined decision needs a customer-visible reason",
-          { status: 400 },
-        );
+      // Every outcome, including full approval, tells the customer why.
+      if (!customerReason)
+        throw new Response("A decision needs a customer-visible reason", {
+          status: 400,
+        });
       const merchandiseCents = inspected.reduce(
         (sum, item) => sum + item.merchandiseCents,
         0,
@@ -959,7 +960,7 @@ export function createReturnInspectionService(
           orderRequestId: orderFacts.requestId,
           actorId: actor.id,
           body,
-          email: `Case ${receipt.case_number} for Order ${orderFacts.orderNumber}: ${body} Reply in the case if you have questions.`,
+          email: `Case ${receipt.case_number} for Order ${orderFacts.orderNumber}: ${body} Reply to this message if you have questions.`,
           commandId,
           timestamp,
           guard,

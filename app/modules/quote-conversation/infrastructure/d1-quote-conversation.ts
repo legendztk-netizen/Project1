@@ -15,6 +15,7 @@ export interface ConversationCommand {
   body: string;
   createdAt: string;
   attachment: (ConversationAttachment & { objectKey: string }) | null;
+  caseId: string | null;
 }
 
 export interface ConversationReservation {
@@ -38,6 +39,8 @@ interface MessageRow {
   content_type: string | null;
   byte_size: number | null;
   checksum: string | null;
+  topic_case_id: string | null;
+  topic_case_number: string | null;
 }
 
 function projectMessage(row: MessageRow): ConversationMessage {
@@ -57,14 +60,24 @@ function projectMessage(row: MessageRow): ConversationMessage {
             byteSize: row.byte_size!,
             checksum: row.checksum!,
           },
+    topic:
+      row.topic_case_id === null
+        ? null
+        : {
+            caseId: row.topic_case_id,
+            caseNumber: row.topic_case_number!,
+          },
   };
 }
 
 export function createD1QuoteConversationRepository(database: D1Database) {
   const projection = `SELECT m.id,m.author_role,m.body,m.created_at,m.source,m.delivery_state,
-    a.filename,a.content_type,a.byte_size,a.checksum
+    a.filename,a.content_type,a.byte_size,a.checksum,
+    t.case_id AS topic_case_id,c.case_number AS topic_case_number
     FROM quote_conversation_messages m
-    LEFT JOIN quote_conversation_attachments a ON a.message_id=m.id`;
+    LEFT JOIN quote_conversation_attachments a ON a.message_id=m.id
+    LEFT JOIN message_case_topics t ON t.message_id=m.id
+    LEFT JOIN after_sales_cases c ON c.id=t.case_id`;
 
   function access(requestId: string, author: ConversationAuthor) {
     return author.role === "admin"
@@ -86,6 +99,18 @@ export function createD1QuoteConversationRepository(database: D1Database) {
         .bind(...guard.bindings)
         .first();
       if (!quote) throw new Response("Not found", { status: 404 });
+    },
+
+    async requireCase(requestId: string, caseId: string) {
+      const found = await database
+        .prepare(
+          `SELECT 1 FROM after_sales_cases c JOIN confirmed_orders o ON o.id=c.order_id
+           WHERE c.id=? AND o.request_id=?`,
+        )
+        .bind(caseId, requestId)
+        .first();
+      if (!found)
+        throw new Response("Choose a case from this order", { status: 400 });
     },
 
     async list(requestId: string, author: ConversationAuthor, before?: string) {
@@ -315,6 +340,14 @@ export function createD1QuoteConversationRepository(database: D1Database) {
             ),
         );
       }
+      if (command.caseId)
+        statements.push(
+          database
+            .prepare(
+              "INSERT INTO message_case_topics(message_id,case_id) VALUES(?,?)",
+            )
+            .bind(command.id, command.caseId),
+        );
       statements.push(
         database
           .prepare(
@@ -329,6 +362,7 @@ export function createD1QuoteConversationRepository(database: D1Database) {
             JSON.stringify({
               messageId: command.id,
               authorRole: command.author.role,
+              ...(command.caseId ? { caseId: command.caseId } : {}),
             }),
             command.createdAt,
           ),

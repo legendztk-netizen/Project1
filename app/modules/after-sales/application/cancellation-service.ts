@@ -508,7 +508,7 @@ export function createCancellationService(
             displayName: line.displayName,
             productClass: line.productClass,
           })),
-        conversationPath: `/account/quotes/${encodeURIComponent(orderFacts.requestId)}/conversation`,
+        conversationPath: `/account/messages/${encodeURIComponent(orderFacts.requestId)}`,
       };
     },
 
