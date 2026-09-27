@@ -50,6 +50,9 @@ import { createShipmentMilestoneService } from "../../shipment/application/shipm
 import { createOrderShippingChangeService } from "../../shipment/application/order-shipping-change-service";
 import { AdminOrderShippingChanges } from "../../shipment/ui/admin-order-shipping-changes";
 import { splitShipmentIdForChange } from "../../shipment/domain/order-shipping-change";
+import { createCancellationService } from "../../after-sales/application/cancellation-service";
+import { hasAfterSalesPermission } from "../../after-sales/domain/permissions";
+import { AdminCancellationRequests } from "../../after-sales/ui/admin-cancellations";
 
 export const headers = piPrivateHeaders;
 
@@ -79,6 +82,7 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
     readySchedules,
     milestones,
     shippingChanges,
+    cancellations,
   ] = await Promise.all([
     followOnQuotes(env).adminListForOrder(adminIdentity, order.id),
     confirmedOrders(env).adminActivity(adminIdentity, order.id),
@@ -89,6 +93,9 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
     ),
     createShipmentMilestoneService(env.DB).adminRead(adminIdentity, order.id),
     createOrderShippingChangeService(env.DB).adminRead(adminIdentity, order.id),
+    hasAfterSalesPermission(adminIdentity, "after_sales.review")
+      ? createCancellationService(env.DB).adminRead(adminIdentity, order.id)
+      : Promise.resolve(null),
   ]);
   return data(
     {
@@ -99,6 +106,7 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
       readySchedules,
       milestones,
       shippingChanges,
+      cancellations,
       milestoneCommands: Object.fromEntries(
         milestones.map((item) => [
           item.shipmentId,
@@ -634,6 +642,7 @@ const tabs = [
   { id: "products", label: "商品与金额" },
   { id: "shipments", label: "发货批次" },
   { id: "changes", label: "变更申请" },
+  { id: "after-sales", label: "取消与售后" },
   { id: "delivery", label: "客户与交付" },
   { id: "payment", label: "付款与协议" },
   { id: "history", label: "操作记录" },
@@ -649,6 +658,8 @@ const eventLabels: Record<string, string> = {
   "order.shipping_change_requested": "客户申请发货变更",
   "order.shipping_change_proposed": "已发布发货变更提案",
   "order.shipping_change_effective": "客户接受的发货变更已生效",
+  "order.cancellation_requested": "客户提交取消申请",
+  "order.cancellation_withdrawn": "客户撤回取消申请",
 };
 
 export default function ConfirmedOrderDetail({
@@ -664,6 +675,7 @@ export default function ConfirmedOrderDetail({
     readySchedules,
     milestones,
     shippingChanges,
+    cancellations,
     milestoneCommands,
     trackingCommands,
     scheduleCommandIds,
@@ -961,6 +973,21 @@ export default function ConfirmedOrderDetail({
               busy={busy}
               error={actionData?.error}
             />
+          </section>
+        )}
+        {tab === "after-sales" && (
+          <section
+            id="order-panel-after-sales"
+            role="tabpanel"
+            aria-labelledby="order-tab-after-sales"
+            className="order-panel"
+          >
+            <h2>取消申请</h2>
+            {cancellations ? (
+              <AdminCancellationRequests requests={cancellations} />
+            ) : (
+              <p>当前账号没有售后审核权限，请联系 Owner 授权。</p>
+            )}
           </section>
         )}
         {tab === "payment" && (

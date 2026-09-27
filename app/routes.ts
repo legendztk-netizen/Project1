@@ -81,6 +81,7 @@ export default [
     "modules/admin/routes/notifications-unread-count.ts",
   ),
   route("admin/orders", "modules/admin/routes/confirmed-orders.tsx"),
+  route("admin/after-sales", "modules/admin/routes/after-sales.tsx"),
   route("admin/china-calendar", "modules/admin/routes/china-calendar.tsx"),
   route(
     "admin/orders/:orderId",

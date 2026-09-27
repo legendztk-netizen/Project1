@@ -474,6 +474,12 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(admin).not.toContain('href="#"');
     expect(admin).toContain("owner@local.invalid");
     expect(admin).toContain("local-development");
+    expect(admin).toContain('href="/admin/after-sales"');
+    const afterSalesResponse = await fetch(`${origin}/admin/after-sales`);
+    const afterSales = await afterSalesResponse.text();
+    expect(afterSalesResponse.status).toBe(200);
+    expect(afterSales).toContain("取消申请");
+    expect(afterSales).toContain('data-surface="admin"');
   });
 
   it("versions Admin-only seller identity and payment instructions", async () => {

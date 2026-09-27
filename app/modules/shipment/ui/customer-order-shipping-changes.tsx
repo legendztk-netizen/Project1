@@ -83,7 +83,7 @@ export function CustomerShippingChangeActions({
   const eligible = eligibleShipments(shipments);
   if (!eligible.length) return null;
   return (
-    <div className="customer-order-actions">
+    <>
       {(["delivery_address", "shipping_plan"] as const).map((option) => (
         <button
           key={option}
@@ -224,7 +224,7 @@ export function CustomerShippingChangeActions({
           </Form>
         </ShipmentActionDialog>
       )}
-    </div>
+    </>
   );
 }
 

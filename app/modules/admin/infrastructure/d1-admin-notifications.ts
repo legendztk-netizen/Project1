@@ -1,5 +1,11 @@
 export type AdminNotificationKind =
-  "rfq_submitted" | "shipping_change_requested";
+  | "rfq_submitted"
+  | "shipping_change_requested"
+  | "cancellation_requested"
+  | "after_sales_case_opened"
+  | "after_sales_customer_reply"
+  | "return_inspection_overdue"
+  | "refund_initiation_overdue";
 export type AdminNotificationFilter = "all" | "unread";
 
 export interface AdminNotification {
@@ -31,6 +37,8 @@ const MAX_BATCH_READ = 200;
 function target(row: AdminNotificationRow) {
   if (row.kind === "shipping_change_requested" && row.order_id)
     return `/admin/orders/${encodeURIComponent(row.order_id)}?tab=changes`;
+  if (row.kind !== "rfq_submitted" && row.order_id)
+    return `/admin/orders/${encodeURIComponent(row.order_id)}?tab=after-sales`;
   if (row.kind === "rfq_submitted")
     return `/admin/quotes/${encodeURIComponent(row.source_id)}`;
   return "/admin/notifications";
@@ -51,14 +59,16 @@ function project(row: AdminNotificationRow): AdminNotification {
 
 const notificationSelect = `SELECT n.id, n.kind, n.source_id, n.created_at, r.read_at,
   COALESCE(q.reference_number, o.order_number) AS reference,
-  COALESCE(qp.email_display, cp.email_display) AS customer_email,
-  c.kind AS change_kind, c.order_id
+  COALESCE(qp.email_display, cp.email_display, xp.email_display) AS customer_email,
+  c.kind AS change_kind, COALESCE(c.order_id, x.order_id) AS order_id
   FROM admin_notifications n
   LEFT JOIN admin_notification_reads r ON r.notification_id=n.id AND r.admin_id=?1
   LEFT JOIN customer_quote_requests q ON n.kind='rfq_submitted' AND q.id=n.source_id
   LEFT JOIN customer_profiles qp ON qp.id=q.profile_id
   LEFT JOIN order_shipping_change_requests c ON n.kind='shipping_change_requested' AND c.id=n.source_id
-  LEFT JOIN confirmed_orders o ON o.id=c.order_id
+  LEFT JOIN order_cancellation_requests x ON n.kind='cancellation_requested' AND x.id=n.source_id
+  LEFT JOIN customer_profiles xp ON xp.id=x.profile_id
+  LEFT JOIN confirmed_orders o ON o.id=COALESCE(c.order_id, x.order_id)
   LEFT JOIN customer_profiles cp ON cp.id=c.profile_id`;
 
 export function createD1AdminNotifications(database: D1Database) {

@@ -1,0 +1,103 @@
+.after-sales-quantity-list {
+  display: grid;
+  gap: 10px;
+}
+
+.after-sales-quantity-row {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  align-items: center;
+  gap: 12px;
+}
+
+.after-sales-quantity-row span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.after-sales-quantity-row small {
+  color: #5c6972;
+  overflow-wrap: anywhere;
+}
+
+.after-sales-line-list {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.after-sales-flag {
+  display: inline-block;
+  padding: 2px 8px;
+  color: #8a1c12;
+  background: #fdecea;
+  border-radius: 4px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.after-sales-money {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 16px;
+  margin: 10px 0;
+}
+
+.after-sales-money dt {
+  color: #5c6972;
+}
+
+.after-sales-money dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.after-sales-money .after-sales-money-total {
+  font-weight: 700;
+}
+
+.after-sales-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.after-sales-table th,
+.after-sales-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #d7dee3;
+  text-align: left;
+  vertical-align: top;
+}
+
+.after-sales-pagination {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 16px;
+}
+
+@media (max-width: 640px) {
+  .after-sales-quantity-row {
+    grid-template-columns: minmax(0, 1fr) 72px;
+  }
+
+  .after-sales-table thead {
+    display: none;
+  }
+
+  .after-sales-table tr {
+    display: grid;
+    padding: 8px 0;
+    border-bottom: 1px solid #d7dee3;
+  }
+
+  .after-sales-table td {
+    border: 0;
+    padding: 2px 0;
+  }
+}
+
+.customer-order-actions:empty {
+  display: none;
+}

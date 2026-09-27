@@ -6,6 +6,7 @@ import {
   FileText,
   FileUp,
   LayoutDashboard,
+  RotateCcw,
   Settings,
   Waypoints,
 } from "lucide-react";
@@ -15,6 +16,7 @@ import { Link, useLocation } from "react-router";
 import { BrandMark } from "../../shared/ui/brand-mark";
 
 export type AdminNavigationKey =
+  | "after-sales"
   | "catalog"
   | "configurator"
   | "imports"
@@ -51,6 +53,12 @@ const adminNavigation = [
   },
   { key: "quotes", label: "询价审核", icon: FileText, to: "/admin/quotes" },
   { key: "orders", label: "订单", icon: ClipboardList, to: "/admin/orders" },
+  {
+    key: "after-sales",
+    label: "取消与售后",
+    icon: RotateCcw,
+    to: "/admin/after-sales",
+  },
   {
     key: "catalog",
     label: "产品审核与发布",

@@ -33,6 +33,12 @@ import {
   CustomerOrderShippingChanges,
   CustomerShippingChangeActions,
 } from "../../shipment/ui/customer-order-shipping-changes";
+import { createCancellationService } from "../../after-sales/application/cancellation-service";
+import {
+  CustomerCancellationAction,
+  CustomerCancellationRequests,
+  readCancellationQuantities,
+} from "../../after-sales/ui/customer-cancellations";
 
 export const headers = piPrivateHeaders;
 export async function loader({ context, request, params }: LoaderFunctionArgs) {
@@ -42,20 +48,24 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
     profileId,
     piRouteId(params.orderId),
   );
-  const [drafts, shipmentPlan, readySchedules, milestones, shippingChanges] =
-    await Promise.all([
-      followOnQuotes(env).customerListForOrder(profileId, order.id),
-      shipmentPlans(env).customerRead(profileId, order.id),
-      createShipmentReadyScheduleService(env.DB).customerRead(
-        profileId,
-        order.id,
-      ),
-      createShipmentMilestoneService(env.DB).customerRead(profileId, order.id),
-      createOrderShippingChangeService(env.DB).customerRead(
-        profileId,
-        order.id,
-      ),
-    ]);
+  const [
+    drafts,
+    shipmentPlan,
+    readySchedules,
+    milestones,
+    shippingChanges,
+    cancellations,
+  ] = await Promise.all([
+    followOnQuotes(env).customerListForOrder(profileId, order.id),
+    shipmentPlans(env).customerRead(profileId, order.id),
+    createShipmentReadyScheduleService(env.DB).customerRead(
+      profileId,
+      order.id,
+    ),
+    createShipmentMilestoneService(env.DB).customerRead(profileId, order.id),
+    createOrderShippingChangeService(env.DB).customerRead(profileId, order.id),
+    createCancellationService(env.DB).customerRead(profileId, order.id),
+  ]);
   return data(
     {
       order,
@@ -64,6 +74,7 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
       readySchedules,
       milestones,
       shippingChanges,
+      cancellations,
       commandId: crypto.randomUUID(),
     },
     { headers: headers() },
@@ -83,6 +94,47 @@ export async function action({ context, request, params }: ActionFunctionArgs) {
   const form = await request.formData();
   const commandId = String(form.get("commandId") ?? "");
   const intent = String(form.get("intent") ?? "follow-on");
+  if (intent.startsWith("cancellation-")) {
+    const cancellations = createCancellationService(env.DB, {
+      auditIp: request.headers.get("cf-connecting-ip") ?? "local",
+    });
+    try {
+      if (intent === "cancellation-submit")
+        await cancellations.customerSubmit(profileId, {
+          orderId,
+          reason: String(form.get("reason") ?? ""),
+          quantities: readCancellationQuantities(form),
+          commandId,
+        });
+      else if (intent === "cancellation-withdraw")
+        await cancellations.customerWithdraw(profileId, {
+          orderId,
+          requestId: String(form.get("requestId") ?? ""),
+          expectedVersion: Number(form.get("expectedVersion")),
+          commandId,
+        });
+      else throw new Response("Invalid operation", { status: 400 });
+    } catch (error) {
+      if (error instanceof Response && ![400, 409].includes(error.status))
+        throw error;
+      return data(
+        {
+          intent,
+          error:
+            error instanceof Response && error.status === 409
+              ? "These quantities or this request changed. Refresh and review the current order."
+              : error instanceof Response
+                ? `Check the cancellation details: ${await error.text()}.`
+                : "Check the cancellation details.",
+        },
+        {
+          status: error instanceof Response ? error.status : 400,
+          headers: headers(),
+        },
+      );
+    }
+    return redirect(`/account/orders/${encodeURIComponent(orderId)}`);
+  }
   if (intent.startsWith("shipping-change-")) {
     const changes = createOrderShippingChangeService(env.DB, {
       auditIp: request.headers.get("cf-connecting-ip") ?? "local",
@@ -181,6 +233,7 @@ export default function ConfirmedOrderDetail({
     readySchedules,
     milestones,
     shippingChanges,
+    cancellations,
     commandId,
   } = loaderData;
   const actionData = useActionData<typeof action>();
@@ -219,16 +272,27 @@ export default function ConfirmedOrderDetail({
             USD {(order.totalCents / 100).toFixed(2)}
           </strong>
         </header>
-        <CustomerShippingChangeActions
-          shipments={orderShipments}
-          destination={snapshot.destination}
-          commandId={commandId}
-          actionData={
-            actionData?.intent === "shipping-change-submit"
-              ? actionData
-              : undefined
-          }
-        />
+        <div className="customer-order-actions">
+          <CustomerShippingChangeActions
+            shipments={orderShipments}
+            destination={snapshot.destination}
+            commandId={commandId}
+            actionData={
+              actionData?.intent === "shipping-change-submit"
+                ? actionData
+                : undefined
+            }
+          />
+          <CustomerCancellationAction
+            cancellations={cancellations}
+            commandId={commandId}
+            actionData={
+              actionData?.intent === "cancellation-submit"
+                ? actionData
+                : undefined
+            }
+          />
+        </div>
         {order.status === "Payment Review Hold" && (
           <p className="shipment-card-status" role="status">
             Payment is under review. The order is preserved, but further release
@@ -246,9 +310,20 @@ export default function ConfirmedOrderDetail({
           commandId={commandId}
           busy={navigation.state !== "idle"}
           error={
-            actionData?.intent === "shipping-change-submit"
-              ? undefined
-              : actionData?.error
+            actionData?.intent?.startsWith("shipping-change-") &&
+            actionData.intent !== "shipping-change-submit"
+              ? actionData.error
+              : undefined
+          }
+        />
+        <CustomerCancellationRequests
+          cancellations={cancellations}
+          commandId={commandId}
+          busy={navigation.state !== "idle"}
+          error={
+            actionData?.intent === "cancellation-withdraw"
+              ? actionData.error
+              : undefined
           }
         />
         <section className="customer-quote-section customer-order-details">

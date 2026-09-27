@@ -21,6 +21,7 @@ export interface AdminAccessBindings {
 
 export interface AdminIdentity {
   catalogPermission?: "view" | "edit";
+  permissions?: readonly ("after_sales.review" | "after_sales.refund")[];
   accountType: "owner" | "subaccount";
   canManageSubaccounts: boolean;
   email: string;
