@@ -1,6 +1,6 @@
 # Spec 7: After-sales, Return Inspection, and Refund
 
-> Status: Blocked by Spec 6 / Issue #8. Spec 4B / Issue #6 is completed.
+> Status: Ready. Spec 4B / Issue #6 and Spec 6 / Issue #8 are completed. Tickets: #102–#111.
 > Spec 5 / Issue #7 is deferred and is not a first-release prerequisite.
 
 ## First-release Boundary
