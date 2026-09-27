@@ -55,9 +55,4 @@ export async function customerMessageStatements(
   ];
 }
 
-export function etDisplayDate(dateEt: string) {
-  return new Date(`${dateEt}T12:00:00Z`).toLocaleDateString("en-US", {
-    timeZone: "UTC",
-    dateStyle: "medium",
-  });
-}
+export { etDisplayDate } from "../domain/return-policy";

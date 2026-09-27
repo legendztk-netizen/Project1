@@ -66,6 +66,8 @@ import {
   readFactoryEvidence,
 } from "../../after-sales/ui/admin-exceptional";
 import { readCancellationQuantities } from "../../after-sales/ui/customer-cancellations";
+import { createCaseService } from "../../after-sales/application/case-service";
+import { AdminCases } from "../../after-sales/ui/admin-cases";
 
 export const headers = piPrivateHeaders;
 
@@ -117,10 +119,12 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
             adminIdentity,
             order.id,
           ),
-        ]).then(([requests, exceptionalEligible, files]) => ({
+          createCaseService(env.DB).adminRead(adminIdentity, order.id),
+        ]).then(([requests, exceptionalEligible, files, cases]) => ({
           requests,
           exceptionalEligible,
           files,
+          cases,
         }))
       : Promise.resolve(null),
   ]);
@@ -512,10 +516,22 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
   } else if (
     intent === "cancellation-open-exceptional" ||
     intent === "after-sales-file-upload" ||
-    intent === "after-sales-file-share"
+    intent === "after-sales-file-share" ||
+    intent === "case-admin-reply"
   ) {
     try {
-      if (intent === "cancellation-open-exceptional")
+      if (intent === "case-admin-reply")
+        await createCaseService(env.DB, {
+          auditIp: request.headers.get("cf-connecting-ip") ?? "local",
+        }).adminReply(adminIdentity, {
+          orderId,
+          caseId: String(form.get("caseId") ?? ""),
+          body: String(form.get("body") ?? ""),
+          visibility:
+            form.get("visibility") === "internal" ? "internal" : "customer",
+          commandId: String(form.get("commandId") ?? ""),
+        });
+      else if (intent === "cancellation-open-exceptional")
         await createCancellationService(env.DB, {
           auditIp: request.headers.get("cf-connecting-ip") ?? "local",
         }).adminOpenExceptional(adminIdentity, {
@@ -604,7 +620,7 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
     new URL(request.url).searchParams.get("returnTo"),
   );
   return redirect(
-    `/admin/orders/${encodeURIComponent(orderId)}?returnTo=${encodeURIComponent(returnTo)}${intent.startsWith("cancellation-") || intent.startsWith("after-sales-") ? "&tab=after-sales" : intent.startsWith("shipping-change-") ? "&tab=changes" : intent.startsWith("shipment-") || intent.startsWith("schedule-") || intent.startsWith("milestone-") || intent === "tracking-save" ? "&tab=shipments" : ""}`,
+    `/admin/orders/${encodeURIComponent(orderId)}?returnTo=${encodeURIComponent(returnTo)}${intent.startsWith("cancellation-") || intent.startsWith("after-sales-") || intent.startsWith("case-") ? "&tab=after-sales" : intent.startsWith("shipping-change-") ? "&tab=changes" : intent.startsWith("shipment-") || intent.startsWith("schedule-") || intent.startsWith("milestone-") || intent === "tracking-save" ? "&tab=shipments" : ""}`,
   );
 }
 
@@ -783,6 +799,7 @@ const eventLabels: Record<string, string> = {
   "order.exceptional_cancellation_opened": "记录客服特殊取消审核",
   "order.after_sales_file_added": "添加售后私密附件",
   "order.after_sales_file_shared": "向客户共享售后附件",
+  "order.after_sales_case_opened": "客户提交售后案件",
 };
 
 export default function ConfirmedOrderDetail({
@@ -1105,7 +1122,7 @@ export default function ConfirmedOrderDetail({
             aria-labelledby="order-tab-after-sales"
             className="order-panel"
           >
-            <h2>取消申请</h2>
+            <h2>取消与售后</h2>
             {cancellations ? (
               <>
                 {actionData?.error && (
@@ -1113,6 +1130,15 @@ export default function ConfirmedOrderDetail({
                     {actionData.error}
                   </p>
                 )}
+                <h3>售后案件</h3>
+                <AdminCases
+                  cases={cancellations.cases}
+                  orderId={order.id}
+                  files={cancellations.files}
+                  commandId={commandId}
+                  busy={busy}
+                />
+                <h3>取消申请</h3>
                 <AdminExceptionalOpenForm
                   eligible={cancellations.exceptionalEligible}
                   commandId={commandId}

@@ -95,6 +95,16 @@ export function businessDayDeadline(
   };
 }
 
+/** Same rule when the recorded fact is the ET delivery date itself. */
+export function convenienceReturnCutoffForDate(deliveredDateEt: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(deliveredDateEt))
+    throw new Error("Invalid ET delivery date");
+  const date = Temporal.PlainDate.from(deliveredDateEt).add({
+    days: LAUNCH_RETURN_POLICY.requestWindowCalendarDays,
+  });
+  return { dateEt: date.toString(), at: dueDateInstant(date.toString()) };
+}
+
 export function convenienceReturnCutoff(deliveredAt: string) {
   return calendarDayDeadline(
     deliveredAt,
@@ -143,3 +153,10 @@ export const PRODUCT_RETURN_DISCLOSURE = Object.freeze({
   madeToOrder:
     "Convenience returns are unavailable after cutting or production approval. Remedies remain available for seller error or a nonconforming product.",
 });
+
+export function etDisplayDate(dateEt: string) {
+  return new Date(`${dateEt}T12:00:00Z`).toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    dateStyle: "medium",
+  });
+}

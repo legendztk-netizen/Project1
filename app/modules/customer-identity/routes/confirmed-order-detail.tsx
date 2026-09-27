@@ -34,6 +34,14 @@ import {
   CustomerShippingChangeActions,
 } from "../../shipment/ui/customer-order-shipping-changes";
 import { createCancellationService } from "../../after-sales/application/cancellation-service";
+import { createCaseService } from "../../after-sales/application/case-service";
+import { createAfterSalesFiles } from "../../after-sales/application/after-sales-files";
+import {
+  CustomerCaseAction,
+  CustomerCases,
+  readCaseLines,
+} from "../../after-sales/ui/customer-cases";
+import { readPrivateReviewForm } from "../../quote-review/domain/private-review";
 import {
   CustomerCancellationAction,
   CustomerCancellationRequests,
@@ -56,6 +64,7 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
     milestones,
     shippingChanges,
     cancellations,
+    cases,
   ] = await Promise.all([
     followOnQuotes(env).customerListForOrder(profileId, order.id),
     shipmentPlans(env).customerRead(profileId, order.id),
@@ -66,6 +75,7 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
     createShipmentMilestoneService(env.DB).customerRead(profileId, order.id),
     createOrderShippingChangeService(env.DB).customerRead(profileId, order.id),
     createCancellationService(env.DB).customerRead(profileId, order.id),
+    createCaseService(env.DB).customerRead(profileId, order.id),
   ]);
   return data(
     {
@@ -76,6 +86,7 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
       milestones,
       shippingChanges,
       cancellations,
+      cases,
       commandId: crypto.randomUUID(),
     },
     { headers: headers() },
@@ -92,9 +103,59 @@ export async function action({ context, request, params }: ActionFunctionArgs) {
   const profileId = await piCustomerProfile(env, request);
   const orderId = piRouteId(params.orderId);
   await confirmedOrders(env).customerRead(profileId, orderId);
-  const form = await request.formData();
+  const form = await readPrivateReviewForm(request);
   const commandId = String(form.get("commandId") ?? "");
   const intent = String(form.get("intent") ?? "follow-on");
+  if (intent === "case-open" || intent === "case-reply") {
+    const auditIp = request.headers.get("cf-connecting-ip") ?? "local";
+    const file = form.get("file");
+    try {
+      const caseId =
+        intent === "case-open"
+          ? await createCaseService(env.DB, { auditIp }).customerOpen(
+              profileId,
+              {
+                orderId,
+                reason: String(form.get("reason") ?? ""),
+                description: String(form.get("description") ?? ""),
+                lines: readCaseLines(form),
+                commandId,
+              },
+            )
+          : String(form.get("caseId") ?? "");
+      if (intent === "case-reply")
+        await createCaseService(env.DB, { auditIp }).customerReply(profileId, {
+          orderId,
+          caseId,
+          body: String(form.get("body") ?? ""),
+          commandId,
+        });
+      if (file instanceof File && file.size > 0)
+        await createAfterSalesFiles(env.DB, env.PRIVATE_FILES).customerUpload(
+          profileId,
+          { orderId, scopeKind: "case", scopeId: caseId, file, commandId },
+        );
+    } catch (error) {
+      if (error instanceof Response && ![400, 404, 409].includes(error.status))
+        throw error;
+      return data(
+        {
+          intent,
+          error:
+            error instanceof Response && error.status === 409
+              ? "These items or this case changed. Refresh and review the current order."
+              : error instanceof Response
+                ? await error.text()
+                : "Check the details and try again.",
+        },
+        {
+          status: error instanceof Response ? error.status : 400,
+          headers: headers(),
+        },
+      );
+    }
+    return redirect(`/account/orders/${encodeURIComponent(orderId)}`);
+  }
   if (intent.startsWith("cancellation-") || intent.startsWith("refund-")) {
     const cancellations = createCancellationService(env.DB, {
       auditIp: request.headers.get("cf-connecting-ip") ?? "local",
@@ -244,6 +305,7 @@ export default function ConfirmedOrderDetail({
     milestones,
     shippingChanges,
     cancellations,
+    cases,
     commandId,
   } = loaderData;
   const actionData = useActionData<typeof action>();
@@ -293,6 +355,13 @@ export default function ConfirmedOrderDetail({
                 : undefined
             }
           />
+          <CustomerCaseAction
+            cases={cases}
+            commandId={commandId}
+            actionData={
+              actionData?.intent === "case-open" ? actionData : undefined
+            }
+          />
           <CustomerCancellationAction
             cancellations={cancellations}
             commandId={commandId}
@@ -324,6 +393,15 @@ export default function ConfirmedOrderDetail({
             actionData.intent !== "shipping-change-submit"
               ? actionData.error
               : undefined
+          }
+        />
+        <CustomerCases
+          cases={cases}
+          orderId={order.id}
+          commandId={commandId}
+          busy={navigation.state !== "idle"}
+          error={
+            actionData?.intent === "case-reply" ? actionData.error : undefined
           }
         />
         <CustomerSupportPath cancellations={cancellations} />

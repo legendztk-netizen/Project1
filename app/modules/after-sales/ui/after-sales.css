@@ -124,3 +124,27 @@
   display: grid;
   gap: 8px;
 }
+
+.after-sales-thread {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.after-sales-thread li {
+  padding: 10px 12px;
+  background: #f5f7f8;
+  border-radius: 6px;
+}
+
+.after-sales-thread li.internal {
+  background: #fff7e6;
+}
+
+.after-sales-thread p {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
