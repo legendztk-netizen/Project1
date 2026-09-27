@@ -853,7 +853,8 @@ _Avoid_: Return label, refund approval
 
 **RA Expiration Date**:
 The date 30 calendar days after Return Authorization issuance by which the
-authorized merchandise must be received at the Return Location. Expiration
+authorized merchandise must be received at the Return Location. The issuance
+date in `America/New_York` is day 0 and the RA closes at 11:59 PM ET on day 30. Expiration
 closes the authorization without automatically deciding the underlying
 After-sales Case or issuing a refund.
 _Avoid_: Return request window, carrier ship date, automatic case rejection
@@ -934,7 +935,9 @@ _Avoid_: Replacement refund record, edited original payout, store credit
 **Convenience Return Request Window**:
 The 14-calendar-day period beginning on the actual delivery date of the
 applicable Shipment during which a customer may submit an After-sales Case for
-an eligible, unused Standard Product. Submission within the window does not
+an eligible, unused Standard Product. The delivery date in `America/New_York`
+is day 0 and the window closes at 11:59 PM ET on day 14. This is the single
+launch policy; no earlier return-policy version applies. Submission within the window does not
 automatically issue a Return Authorization or approve a refund. Length-Based
 Hose Orders and made-to-order Hose Assemblies are excluded.
 _Avoid_: PI validity period, automatic return approval, defect-report deadline

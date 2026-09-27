@@ -4974,6 +4974,13 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(available).not.toMatch(/product-quote-command[^>]*disabled/);
     expect(available).toContain("14 calendar days");
     expect(available).toContain("10% restocking fee");
+    expect(available).toContain('href="/policies/returns"');
+    const policyResponse = await fetch(`${origin}/policies/returns`);
+    const policy = await policyResponse.text();
+    expect(policyResponse.status).toBe(200);
+    expect(policy).toContain("Returns and Refunds");
+    expect(policy).toContain("11:59 PM ET on day 14");
+    expect(policy).not.toContain("No restocking fee");
 
     const lengthBasedAdd = new FormData();
     lengthBasedAdd.set("intent", "add");

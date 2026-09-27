@@ -69,6 +69,7 @@ export default [
     "reset-password",
     "modules/customer-identity/routes/reset-password.tsx",
   ),
+  route("policies/returns", "modules/storefront/routes/returns-policy.tsx"),
   route(
     "assembly-measurement-guide",
     "modules/storefront/routes/assembly-measurement-guide.tsx",

@@ -6,6 +6,10 @@ import { createD1PublicCatalogRepository } from "../../catalog/infrastructure/d1
 import { createAnonymousQuoteListService } from "../../quote-list/application/anonymous-quote-list-service";
 import { QuoteListCommandRejected } from "../../quote-list/domain/anonymous-quote-list";
 import { parseLengthBasedHoseOrder } from "../../quote-list/domain/length-based-hose";
+import {
+  PRODUCT_RETURN_DISCLOSURE,
+  RETURN_POLICY_PATH,
+} from "../../after-sales/domain/return-policy";
 import { requireCatalogFamilyId } from "../domain/catalog-route";
 import { CatalogMedia } from "../ui/catalog-media";
 import {
@@ -201,8 +205,9 @@ export default function CatalogProductFamily({
                   </strong>
                   <span>
                     {offer?.madeToOrder
-                      ? "Convenience returns are unavailable after cutting or production approval. Remedies remain available for seller error or a nonconforming product."
-                      : "Unused standard products may request return review within 14 calendar days of delivery. Approved convenience returns carry a 10% restocking fee; customer-paid return shipping applies."}
+                      ? PRODUCT_RETURN_DISCLOSURE.madeToOrder
+                      : PRODUCT_RETURN_DISCLOSURE.standard}{" "}
+                    <Link to={RETURN_POLICY_PATH}>Full return policy</Link>
                   </span>
                 </p>
               </div>
