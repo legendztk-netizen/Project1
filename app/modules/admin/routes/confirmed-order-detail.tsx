@@ -761,6 +761,7 @@ const eventLabels: Record<string, string> = {
   "order.refund_destination_verified": "核实退款目的地",
   "order.refund_destination_approved": "Owner 批准替代退款账户",
   "order.refund_initiated": "记录线下已发起退款",
+  "order.return_decision_revised": "追加检验决定修订",
 };
 
 export default function ConfirmedOrderDetail({

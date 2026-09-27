@@ -253,14 +253,86 @@ export function AdminReturnReceipts({
                       .join("；")}
                   </p>
                 ))}
+                {receipt.decision.revisions.map((revision) => (
+                  <p key={revision.id}>
+                    修订 #{revision.revisionNumber}（
+                    {formatPiDate(revision.createdAt, "admin")}）：
+                    {outcomeZh[revision.outcome]} · {revision.customerReason} ·{" "}
+                    {revision.financialEffect === "supplemental"
+                      ? "已生成补充退款"
+                      : revision.financialEffect === "replaced"
+                        ? "未发起前已替换退款授权"
+                        : revision.financialEffect === "flagged"
+                          ? "已发起金额不变，需人工复核"
+                          : "金额不变"}
+                  </p>
+                ))}
                 {receipt.decision.refunds.map((refund) => (
                   <div key={refund.id}>
                     <p>
-                      <strong>{refundStatusLabel(refund, "zh")}</strong>
+                      <strong>
+                        {refund.sourceKind === "supplemental"
+                          ? "补充退款 · "
+                          : ""}
+                        {refundStatusLabel(refund, "zh")}
+                      </strong>
                     </p>
                     <RefundBreakdown refund={refund} language="zh" />
                   </div>
                 ))}
+                <details className="after-sales-decision">
+                  <summary>追加检验决定修订（不覆盖历史）</summary>
+                  <Form method="post" className="shipping-change-form">
+                    <input type="hidden" name="intent" value="return-revise" />
+                    <input
+                      type="hidden"
+                      name="decisionId"
+                      value={receipt.decision.id}
+                    />
+                    <input
+                      type="hidden"
+                      name="expectedRevision"
+                      value={receipt.decision.revisions.length}
+                    />
+                    <input type="hidden" name="commandId" value={commandId} />
+                    {(
+                      receipt.decision.revisions.at(-1)?.effective.lines ??
+                      receipt.decision.lines
+                    ).map((line) => (
+                      <label
+                        key={`${line.lineId}:${line.shipmentId}`}
+                        className="after-sales-quantity-row"
+                      >
+                        <span>
+                          <strong>{line.displayName}</strong>
+                          <small>
+                            已检验 {line.receivedQuantity} · 当前批准{" "}
+                            {line.approvedQuantity}
+                          </small>
+                        </span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={line.receivedQuantity}
+                          step={1}
+                          defaultValue={line.approvedQuantity}
+                          name={`reviseApprove:${line.lineId}:${line.shipmentId}`}
+                          aria-label={`${line.displayName} 修订后批准数量`}
+                        />
+                      </label>
+                    ))}
+                    <label>
+                      修订原因（客户可见）
+                      <textarea name="customerReason" required rows={2} />
+                    </label>
+                    <p>
+                      已发起的退款不会被修改；增加的金额生成补充退款，减少的金额仅标记待复核。
+                    </p>
+                    <button className="button button-secondary" disabled={busy}>
+                      追加修订
+                    </button>
+                  </Form>
+                </details>
               </div>
             ) : (
               (receipt.timeliness === "timely" || receipt.lateReviewed) && (
@@ -450,6 +522,15 @@ export function CustomerReturnReceipts({
               {receipt.decision.customerReason && (
                 <p>Reason: {receipt.decision.customerReason}</p>
               )}
+              {receipt.decision.revisions.map((revision) => (
+                <p key={revision.id}>
+                  <strong>
+                    Revised decision #{revision.revisionNumber}:{" "}
+                    {outcomeEn[revision.outcome]}
+                  </strong>{" "}
+                  — {revision.customerReason}
+                </p>
+              ))}
               {receipt.decision.replacement && (
                 <p>
                   Remedy: replacement — {receipt.decision.replacement.scope}
@@ -466,7 +547,12 @@ export function CustomerReturnReceipts({
                 .map((refund) => (
                   <div key={refund.id}>
                     <p role="status">
-                      <strong>{refundStatusLabel(refund, "en")}</strong>
+                      <strong>
+                        {refund.sourceKind === "supplemental"
+                          ? "Supplemental Refund: "
+                          : ""}
+                        {refundStatusLabel(refund, "en")}
+                      </strong>
                     </p>
                     <RefundBreakdown refund={refund} language="en" />
                     {refund.status === "awaiting_customer_confirmation" && (
@@ -544,4 +630,18 @@ export function CustomerReturnReceipts({
       ))}
     </div>
   );
+}
+
+export function readRevisionItems(form: FormData) {
+  const items: Array<{
+    lineId: string;
+    shipmentId: string;
+    approvedQuantity: number;
+  }> = [];
+  for (const [key, value] of form.entries()) {
+    if (!key.startsWith("reviseApprove:")) continue;
+    const [, lineId, shipmentId] = key.split(":");
+    items.push({ lineId, shipmentId, approvedQuantity: Number(value) });
+  }
+  return items;
 }

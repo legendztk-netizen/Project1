@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 122,
+  "schemaVersion": 123,
   "migrations": [
     "0000_initial_catalog_release.sql",
     "0001_add_admin_identities.sql",
@@ -122,6 +122,7 @@
     "0118_after_sales_cases.sql",
     "0119_return_authorizations.sql",
     "0120_return_receipts_and_inspection.sql",
-    "0121_refund_destinations_and_initiation.sql"
+    "0121_refund_destinations_and_initiation.sql",
+    "0122_decision_revisions_and_supplemental_refunds.sql"
   ]
 }

@@ -8,7 +8,9 @@ import {
   beijingLocalToIso,
   readInspectionItems,
   readReceiptLines,
+  readRevisionItems,
 } from "../ui/return-inspection";
+import { createDecisionRevisionService } from "./decision-revision-service";
 import {
   createAfterSalesFiles,
   type AfterSalesFileScope,
@@ -34,6 +36,7 @@ const intents = new Set([
   "return-receive",
   "return-late-review",
   "return-decide",
+  "return-revise",
   "refund-destination-add",
   "refund-destination-approve",
   "refund-initiation-record",
@@ -226,6 +229,16 @@ export async function runAfterSalesAdminAction(input: {
                   fulfillmentEvidence: text(form, "replacementEvidence"),
                 }
               : undefined,
+          commandId,
+        });
+        break;
+      case "return-revise":
+        await createDecisionRevisionService(db, options).adminRevise(actor, {
+          orderId,
+          decisionId: text(form, "decisionId"),
+          expectedRevision: Number(form.get("expectedRevision")),
+          items: readRevisionItems(form),
+          customerReason: text(form, "customerReason"),
           commandId,
         });
         break;

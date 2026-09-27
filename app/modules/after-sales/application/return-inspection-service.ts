@@ -21,6 +21,7 @@ import {
   refundAuthorizationStatements,
 } from "../infrastructure/d1-refund-authorizations";
 import { afterSalesCommandId, afterSalesText } from "./cancellation-service";
+import { createDecisionRevisionService } from "./decision-revision-service";
 
 export const inspectionConditionKeys = [
   "interfaces",
@@ -216,6 +217,10 @@ export function createReturnInspectionService(
           }>(),
         readRefundAuthorizations(db, { orderId }),
       ]);
+    const revisions = await createDecisionRevisionService(db).read(
+      orderId,
+      decisions.results.map((decision) => decision.id),
+    );
     return receipts.results.map((receipt) => {
       const decision = decisions.results.find(
         (item) => item.receipt_id === receipt.id,
@@ -257,11 +262,20 @@ export function createReturnInspectionService(
                     string
                   >)
                 : null,
+              revisions: revisions.filter(
+                (revision) => revision.decisionId === decision.id,
+              ),
               refunds: refunds
                 .filter(
                   (refund) =>
-                    refund.source_kind === "return" &&
-                    refund.source_id === decision.id,
+                    (refund.source_kind === "return" ||
+                      refund.source_kind === "supplemental") &&
+                    (refund.source_id === decision.id ||
+                      revisions.some(
+                        (revision) =>
+                          revision.decisionId === decision.id &&
+                          revision.id === refund.source_id,
+                      )),
                 )
                 .map((refund) => projectRefundAuthorization(refund, audience)),
               ...(audience === "admin"

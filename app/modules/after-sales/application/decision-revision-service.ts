@@ -1,0 +1,654 @@
+import type { AdminIdentity } from "#workers/admin-access";
+import { piSha256 } from "../../proforma-invoice/domain/proforma-invoice";
+import { requireAfterSalesPermission } from "../domain/permissions";
+import {
+  cumulativeLineAmount,
+  cumulativeRestockingFee,
+  refundComponents,
+  usd,
+  type CalculatedRefund,
+} from "../domain/refund-calculation";
+import { etDisplayDate } from "../domain/return-policy";
+import { customerMessageStatements } from "../infrastructure/d1-customer-messages";
+import { createD1OrderFacts } from "../infrastructure/d1-order-facts";
+import {
+  readRefundAuthorizations,
+  refundAuthorizationStatements,
+  type RefundAuthorizationRow,
+} from "../infrastructure/d1-refund-authorizations";
+import { afterSalesCommandId, afterSalesText } from "./cancellation-service";
+import type {
+  ReturnDecisionFinancial,
+  ReturnDecisionLine,
+} from "./return-inspection-service";
+
+const hash = (value: string) => piSha256(new TextEncoder().encode(value));
+const conflict = () =>
+  new Response("Decision changed; reload", { status: 409 });
+
+const componentKeys = [
+  "merchandiseCents",
+  "logisticsCents",
+  "sellerLogisticsCents",
+  "taxCents",
+  "serviceFeeCents",
+  "restockingFeeCents",
+  "thirdPartyCostCents",
+] as const;
+
+function rowComponents(row: RefundAuthorizationRow) {
+  return {
+    merchandiseCents: row.merchandise_cents,
+    logisticsCents: row.logistics_cents,
+    sellerLogisticsCents: row.seller_logistics_cents,
+    taxCents: row.tax_cents,
+    serviceFeeCents: row.service_fee_cents,
+    restockingFeeCents: row.restocking_fee_cents,
+    thirdPartyCostCents: row.third_party_cost_cents,
+  };
+}
+
+export function createDecisionRevisionService(
+  db: D1Database,
+  options: { now?: () => Date; auditIp?: string | null } = {},
+) {
+  const now = () => (options.now?.() ?? new Date()).toISOString();
+  const facts = createD1OrderFacts(db);
+
+  async function chain(orderId: string, decisionId: string) {
+    const revisions = (
+      await db
+        .prepare(
+          `SELECT * FROM after_sales_decision_revisions WHERE decision_id=?
+           ORDER BY revision_number`,
+        )
+        .bind(decisionId)
+        .all<{
+          id: string;
+          revision_number: number;
+          outcome: string;
+          customer_reason: string;
+          new_json: string;
+          financial_effect: string;
+          authorization_id: string | null;
+          created_at: string;
+        }>()
+    ).results;
+    const sources = new Set([decisionId, ...revisions.map((item) => item.id)]);
+    const authorizations = (
+      await readRefundAuthorizations(db, { orderId })
+    ).filter(
+      (row) =>
+        (row.source_kind === "return" || row.source_kind === "supplemental") &&
+        sources.has(row.source_id),
+    );
+    return { revisions, authorizations };
+  }
+
+  return {
+    async read(orderId: string, decisionIds: string[]) {
+      if (!decisionIds.length) return [];
+      const rows = (
+        await db
+          .prepare(
+            `SELECT * FROM after_sales_decision_revisions
+             WHERE decision_id IN (${decisionIds.map(() => "?").join(",")})
+             ORDER BY decision_id,revision_number`,
+          )
+          .bind(...decisionIds)
+          .all<{
+            id: string;
+            decision_id: string;
+            revision_number: number;
+            outcome: "approved" | "partially_approved" | "declined";
+            customer_reason: string;
+            new_json: string;
+            financial_effect: "replaced" | "supplemental" | "none" | "flagged";
+            authorization_id: string | null;
+            created_at: string;
+            actor_id: string;
+          }>()
+      ).results;
+      void orderId;
+      return rows.map((row) => ({
+        id: row.id,
+        decisionId: row.decision_id,
+        revisionNumber: row.revision_number,
+        outcome: row.outcome,
+        customerReason: row.customer_reason,
+        effective: JSON.parse(row.new_json) as {
+          lines: ReturnDecisionLine[];
+          financial: ReturnDecisionFinancial;
+        },
+        financialEffect: row.financial_effect,
+        authorizationId: row.authorization_id,
+        createdAt: row.created_at,
+      }));
+    },
+
+    async adminRevise(
+      actor: AdminIdentity,
+      input: {
+        orderId: string;
+        decisionId: string;
+        expectedRevision: number;
+        items: Array<{
+          lineId: string;
+          shipmentId: string;
+          approvedQuantity: number;
+        }>;
+        customerReason: string;
+        logisticsCents?: number;
+        logisticsNote?: string;
+        sellerLogisticsCents?: number;
+        sellerLogisticsNote?: string;
+        taxCents?: number;
+        taxNote?: string;
+        commandId: string;
+      },
+    ) {
+      requireAfterSalesPermission(actor, "after_sales.review");
+      const commandId = afterSalesCommandId(input.commandId);
+      const customerReason = afterSalesText(
+        input.customerReason,
+        "Customer-visible reason",
+      );
+      const commandHash = await hash(
+        JSON.stringify({ actor: actor.id, input }),
+      );
+      const replay = await db
+        .prepare(
+          `SELECT id,command_hash FROM after_sales_decision_revisions WHERE command_id=?`,
+        )
+        .bind(commandId)
+        .first<{ id: string; command_hash: string }>();
+      if (replay) {
+        if (replay.command_hash !== commandHash) throw conflict();
+        return replay.id;
+      }
+      const decision = await db
+        .prepare(
+          `SELECT d.*,c.case_number FROM after_sales_return_decisions d
+           JOIN after_sales_cases c ON c.id=d.case_id
+           WHERE d.id=? AND d.order_id=?`,
+        )
+        .bind(input.decisionId, input.orderId)
+        .first<{
+          id: string;
+          case_id: string;
+          case_number: string;
+          outcome: string;
+          responsibility: "customer" | "seller";
+          remedy: "refund" | "replacement" | "none";
+          customer_reason: string | null;
+          lines_json: string;
+          financial_json: string;
+        }>();
+      if (!decision) throw new Response("Decision not found", { status: 404 });
+      const { revisions, authorizations } = await chain(
+        input.orderId,
+        decision.id,
+      );
+      if (revisions.length !== input.expectedRevision) throw conflict();
+      const latest = revisions.at(-1);
+      const current = latest
+        ? (JSON.parse(latest.new_json) as {
+            lines: ReturnDecisionLine[];
+            financial: ReturnDecisionFinancial;
+          })
+        : {
+            lines: JSON.parse(decision.lines_json) as ReturnDecisionLine[],
+            financial: JSON.parse(
+              decision.financial_json,
+            ) as ReturnDecisionFinancial,
+          };
+      if (
+        !Array.isArray(input.items) ||
+        input.items.length !== current.lines.length
+      )
+        throw new Response("Decide every inspected line", { status: 400 });
+      const orderFacts = await facts.read(input.orderId);
+      const all = await readRefundAuthorizations(db, {
+        orderId: input.orderId,
+      });
+      const chainIds = new Set(authorizations.map((row) => row.id));
+      const effectiveChain = authorizations.filter(
+        (row) => row.status !== "superseded",
+      );
+      const otherCredits = (
+        await db
+          .prepare(
+            `SELECT c.authorization_id,c.line_id,c.physical_quantity,c.merchandise_cents
+             FROM after_sales_refund_line_credits c
+             JOIN after_sales_refund_authorizations a ON a.id=c.authorization_id
+             WHERE c.order_id=? AND a.status!='superseded'`,
+          )
+          .bind(input.orderId)
+          .all<{
+            authorization_id: string;
+            line_id: string;
+            physical_quantity: number;
+            merchandise_cents: number;
+          }>()
+      ).results;
+      const creditedQuantity = (lineId: string, inChain: boolean) =>
+        otherCredits
+          .filter(
+            (credit) =>
+              credit.line_id === lineId &&
+              chainIds.has(credit.authorization_id) === inChain,
+          )
+          .reduce((sum, credit) => sum + credit.physical_quantity, 0);
+      const creditedMerchandise = (lineId: string) =>
+        otherCredits
+          .filter(
+            (credit) =>
+              credit.line_id === lineId &&
+              chainIds.has(credit.authorization_id),
+          )
+          .reduce((sum, credit) => sum + credit.merchandise_cents, 0);
+      const refunding = decision.remedy !== "replacement";
+      const newLines: ReturnDecisionLine[] = current.lines.map((line) => {
+        const item = input.items.find(
+          (candidate) =>
+            candidate.lineId === line.lineId &&
+            candidate.shipmentId === line.shipmentId,
+        );
+        if (
+          !item ||
+          !Number.isSafeInteger(item.approvedQuantity) ||
+          item.approvedQuantity < 0 ||
+          item.approvedQuantity > line.receivedQuantity
+        )
+          throw new Response("Invalid approved quantity", { status: 400 });
+        const orderLine = orderFacts.lines.find(
+          (candidate) => candidate.lineId === line.lineId,
+        )!;
+        return {
+          ...line,
+          approvedQuantity: item.approvedQuantity,
+          declinedQuantity: line.receivedQuantity - item.approvedQuantity,
+          merchandiseCents: refunding
+            ? cumulativeLineAmount(
+                orderLine.lineTotalCents,
+                orderLine.physicalQuantity,
+                creditedQuantity(line.lineId, false),
+                item.approvedQuantity,
+              )
+            : 0,
+        };
+      });
+      const approvedTotal = newLines.reduce(
+        (sum, line) => sum + line.approvedQuantity,
+        0,
+      );
+      const receivedTotal = newLines.reduce(
+        (sum, line) => sum + line.receivedQuantity,
+        0,
+      );
+      const outcome =
+        approvedTotal === 0
+          ? "declined"
+          : approvedTotal === receivedTotal
+            ? "approved"
+            : "partially_approved";
+      const merchandiseCents = newLines.reduce(
+        (sum, line) => sum + line.merchandiseCents,
+        0,
+      );
+      const customer = decision.responsibility === "customer";
+      const priorCustomerMerchandise = all
+        .filter(
+          (row) =>
+            !chainIds.has(row.id) &&
+            row.status !== "superseded" &&
+            row.responsibility === "customer" &&
+            (row.source_kind === "return" ||
+              row.source_kind === "supplemental"),
+        )
+        .reduce((sum, row) => sum + row.merchandise_cents, 0);
+      const cutLines = orderFacts.lines.filter(
+        (line) => line.productClass === "cut_hose",
+      );
+      const cutApproved =
+        !customer && refunding
+          ? newLines
+              .filter((line) =>
+                cutLines.some((cut) => cut.lineId === line.lineId),
+              )
+              .reduce((sum, line) => sum + line.approvedQuantity, 0)
+          : 0;
+      const any = approvedTotal > 0;
+      const pick = (value: number | undefined, fallback: number) =>
+        any ? (value ?? fallback) : 0;
+      if (customer && (input.logisticsCents ?? 0) > 0)
+        throw new Response(
+          "Performed outbound DDP charges are not refunded for a convenience return",
+          { status: 400 },
+        );
+      const target = refundComponents({
+        merchandiseCents,
+        restockingFeeCents: customer
+          ? cumulativeRestockingFee(priorCustomerMerchandise, merchandiseCents)
+          : 0,
+        logisticsCents: pick(
+          input.logisticsCents,
+          current.financial.logisticsCents,
+        ),
+        sellerLogisticsCents: pick(
+          input.sellerLogisticsCents,
+          current.financial.sellerLogisticsCents,
+        ),
+        taxCents: pick(input.taxCents, current.financial.taxCents),
+        serviceFeeCents: cutApproved
+          ? cumulativeLineAmount(
+              orderFacts.charges.cuttingLabeling ?? 0,
+              cutLines.reduce((sum, line) => sum + line.physicalQuantity, 0),
+              cutLines.reduce(
+                (sum, line) => sum + creditedQuantity(line.lineId, false),
+                0,
+              ),
+              cutApproved,
+            )
+          : 0,
+        thirdPartyCostCents: any ? current.financial.thirdPartyCostCents : 0,
+      });
+      const existing = componentKeys.reduce(
+        (sum, key) => {
+          sum[key] = effectiveChain.reduce(
+            (total, row) => total + rowComponents(row)[key],
+            0,
+          );
+          return sum;
+        },
+        {} as Record<(typeof componentKeys)[number], number>,
+      );
+      const authorizedCents = effectiveChain.reduce(
+        (sum, row) => sum + row.refund_cents,
+        0,
+      );
+      const initiatedCents = effectiveChain.reduce(
+        (sum, row) => sum + (row.initiated_cents ?? 0),
+        0,
+      );
+      const id = crypto.randomUUID();
+      const timestamp = now();
+      const guard = {
+        sql: "EXISTS(SELECT 1 FROM after_sales_decision_revisions WHERE id=?)",
+        bindings: [id],
+      };
+      let effect: "replaced" | "supplemental" | "none" | "flagged";
+      let authorizationRefund: CalculatedRefund | null = null;
+      let lineCredits: Array<{
+        lineId: string;
+        physicalQuantity: number;
+        merchandiseCents: number;
+      }> = [];
+      const statements: D1PreparedStatement[] = [];
+      const newAuthorizationId = crypto.randomUUID();
+      if (initiatedCents === 0) {
+        effect =
+          target.refundCents > 0 || authorizedCents > 0 ? "replaced" : "none";
+        for (const row of effectiveChain)
+          statements.push(
+            db
+              .prepare(
+                `UPDATE after_sales_refund_authorizations
+                 SET status='superseded',version=version+1
+                 WHERE id=? AND version=? AND status!='superseded' AND ${guard.sql}`,
+              )
+              .bind(row.id, row.version, ...guard.bindings),
+            db
+              .prepare(
+                `INSERT INTO after_sales_refund_events
+                 (id,authorization_id,kind,details_json,actor_id,occurred_at,command_id)
+                 SELECT ?,?,'superseded',?,?,?,? WHERE ${guard.sql}`,
+              )
+              .bind(
+                `refund-superseded:${row.id}:${id}`,
+                row.id,
+                JSON.stringify({ revisionId: id }),
+                actor.id,
+                timestamp,
+                `refund-superseded:${row.id}:${commandId}`,
+                ...guard.bindings,
+              ),
+          );
+        if (target.refundCents > 0) {
+          authorizationRefund = target;
+          lineCredits = newLines
+            .filter((line) => line.approvedQuantity > 0 && refunding)
+            .map((line) => ({
+              lineId: line.lineId,
+              physicalQuantity: line.approvedQuantity,
+              merchandiseCents: line.merchandiseCents,
+            }));
+        }
+      } else {
+        const diff = Object.fromEntries(
+          componentKeys.map((key) => [key, target[key] - existing[key]]),
+        ) as Record<(typeof componentKeys)[number], number>;
+        const increase = target.refundCents - authorizedCents;
+        if (increase === 0 && componentKeys.every((key) => diff[key] === 0))
+          effect = "none";
+        else if (increase > 0 && componentKeys.every((key) => diff[key] >= 0)) {
+          effect = "supplemental";
+          authorizationRefund = refundComponents(diff);
+          lineCredits = newLines
+            .map((line) => ({
+              lineId: line.lineId,
+              physicalQuantity: refunding
+                ? Math.max(
+                    0,
+                    line.approvedQuantity - creditedQuantity(line.lineId, true),
+                  )
+                : 0,
+              merchandiseCents: refunding
+                ? Math.max(
+                    0,
+                    line.merchandiseCents - creditedMerchandise(line.lineId),
+                  )
+                : 0,
+            }))
+            .filter(
+              (credit) =>
+                credit.physicalQuantity > 0 || credit.merchandiseCents > 0,
+            );
+        } else effect = "flagged";
+      }
+      const previousAuthorization = [...effectiveChain]
+        .reverse()
+        .find((row) => (row.initiated_cents ?? 0) > 0);
+      statements.unshift(
+        db
+          .prepare(
+            `INSERT INTO after_sales_decision_revisions
+             (id,decision_id,revision_number,case_id,order_id,outcome,customer_reason,
+              previous_json,new_json,financial_effect,authorization_id,actor_id,
+              created_at,command_id,command_hash)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          )
+          .bind(
+            id,
+            decision.id,
+            input.expectedRevision + 1,
+            decision.case_id,
+            input.orderId,
+            outcome,
+            customerReason,
+            JSON.stringify(current),
+            JSON.stringify({
+              lines: newLines,
+              financial: {
+                ...current.financial,
+                merchandiseCents: target.merchandiseCents,
+                restockingFeeCents: target.restockingFeeCents,
+                logisticsCents: target.logisticsCents,
+                logisticsNote:
+                  typeof input.logisticsNote === "string" &&
+                  input.logisticsNote.trim()
+                    ? input.logisticsNote.trim()
+                    : current.financial.logisticsNote,
+                sellerLogisticsCents: target.sellerLogisticsCents,
+                sellerLogisticsNote:
+                  typeof input.sellerLogisticsNote === "string" &&
+                  input.sellerLogisticsNote.trim()
+                    ? input.sellerLogisticsNote.trim()
+                    : current.financial.sellerLogisticsNote,
+                taxCents: target.taxCents,
+                taxNote:
+                  typeof input.taxNote === "string" && input.taxNote.trim()
+                    ? input.taxNote.trim()
+                    : current.financial.taxNote,
+                serviceFeeCents: target.serviceFeeCents,
+                grossCents: target.grossCents,
+                refundCents: target.refundCents,
+              },
+            }),
+            effect,
+            authorizationRefund ? newAuthorizationId : null,
+            actor.id,
+            timestamp,
+            commandId,
+            commandHash,
+          ),
+        ...newLines.map((line) =>
+          db
+            .prepare(
+              `INSERT INTO after_sales_decision_revision_lines
+               (revision_id,line_id,shipment_id,approved_quantity) VALUES (?,?,?,?)`,
+            )
+            .bind(id, line.lineId, line.shipmentId, line.approvedQuantity),
+        ),
+      );
+      let refundText = "";
+      if (authorizationRefund) {
+        const authorization = refundAuthorizationStatements(db, {
+          id: newAuthorizationId,
+          orderId: input.orderId,
+          sourceKind: effect === "supplemental" ? "supplemental" : "return",
+          sourceId: id,
+          responsibility: decision.responsibility,
+          refund: authorizationRefund,
+          thirdPartyCostEvidence: current.financial.thirdPartyCostEvidence,
+          lineCredits,
+          previousAuthorizationId:
+            effect === "supplemental"
+              ? (previousAuthorization?.id ?? null)
+              : null,
+          actorId: actor.id,
+          timestamp,
+          commandId,
+          guard,
+        });
+        statements.push(...authorization.statements);
+        refundText =
+          effect === "supplemental"
+            ? ` Your earlier refund stays as recorded. An additional Supplemental Refund of ${usd(authorizationRefund.refundCents)} is approved and will be initiated by ${etDisplayDate(authorization.deadline!.dateEt)} ET.`
+            : ` The revised refund is ${usd(authorizationRefund.refundCents)}${authorization.deadline ? `, to be initiated by ${etDisplayDate(authorization.deadline.dateEt)} ET` : ""}.`;
+      } else if (effect === "replaced")
+        refundText = " No refund is due under the revised decision.";
+      else if (effect === "flagged")
+        refundText =
+          " The refund already initiated stays as recorded while we review the amounts with you.";
+      const outcomeText =
+        outcome === "approved"
+          ? "Approved"
+          : outcome === "partially_approved"
+            ? "Partially approved"
+            : "Declined";
+      const orderRequestId = orderFacts.requestId;
+      const body = `Revised inspection decision #${input.expectedRevision + 1}: ${outcomeText}. ${newLines
+        .map(
+          (line) =>
+            `${line.displayName}: ${line.approvedQuantity} of ${line.receivedQuantity} approved`,
+        )
+        .join("; ")}. Reason: ${customerReason}${refundText}`;
+      const eventId = `case-event:${commandId}`;
+      statements.push(
+        db
+          .prepare(
+            `INSERT INTO after_sales_case_messages
+             (id,case_id,author_role,author_id,visibility,kind,body,created_at,
+              command_id,command_hash)
+             SELECT ?,?,'admin',?,'customer','event',?,?,?,? WHERE ${guard.sql}`,
+          )
+          .bind(
+            eventId,
+            decision.case_id,
+            actor.id,
+            body,
+            timestamp,
+            eventId,
+            await hash(body),
+            ...guard.bindings,
+          ),
+        db
+          .prepare(
+            `UPDATE after_sales_cases SET version=version+1,updated_at=?
+             WHERE id=? AND EXISTS(SELECT 1 FROM after_sales_case_messages WHERE id=?)`,
+          )
+          .bind(timestamp, decision.case_id, eventId),
+        ...(await customerMessageStatements(db, {
+          orderRequestId,
+          actorId: actor.id,
+          messageId: `decision-revision:${commandId}`,
+          body: `Case ${decision.case_number}: ${body}`,
+          timestamp,
+          guard,
+        })),
+        db
+          .prepare(
+            `INSERT INTO admin_audit_events
+             (id,event_type,entity_type,entity_id,actor_id,payload_json,occurred_at)
+             SELECT ?,'order.return_decision_revised','confirmed_order',?,?,?,?
+             WHERE ${guard.sql}`,
+          )
+          .bind(
+            `decision-revision:${id}`,
+            input.orderId,
+            actor.id,
+            JSON.stringify({
+              decisionId: decision.id,
+              revisionId: id,
+              outcome,
+              effect,
+              previous: current,
+              lines: newLines,
+              target,
+              authorizedCents,
+              initiatedCents,
+              commandId,
+              ipAddress: options.auditIp ?? null,
+            }),
+            timestamp,
+            ...guard.bindings,
+          ),
+      );
+      try {
+        await db.batch(statements);
+      } catch (error) {
+        const concurrent = await db
+          .prepare(
+            `SELECT id,command_hash FROM after_sales_decision_revisions WHERE command_id=?`,
+          )
+          .bind(commandId)
+          .first<{ id: string; command_hash: string }>();
+        if (concurrent?.command_hash === commandHash) return concurrent.id;
+        const message = error instanceof Error ? error.message : "";
+        if (
+          /Gate|exceed|funds|sequence|Supplemental|UNIQUE|superseded/i.test(
+            message,
+          )
+        )
+          throw new Response(message.replace(/^.*?: /, ""), { status: 409 });
+        throw conflict();
+      }
+      return id;
+    },
+  };
+}
+
+export type DecisionRevisionView = Awaited<
+  ReturnType<ReturnType<typeof createDecisionRevisionService>["read"]>
+>[number];
