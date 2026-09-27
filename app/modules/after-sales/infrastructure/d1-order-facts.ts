@@ -44,6 +44,8 @@ export interface OrderFacts {
   requestId: string;
   purchasingContextId: string;
   charges: Record<string, number>;
+  // Refund terms version frozen in the accepted PI.
+  refundTermsVersion: string | null;
   lines: OrderLineFact[];
   shipments: ShipmentFact[];
   activeHolds: HoldFact[];
@@ -152,7 +154,10 @@ export function createD1OrderFacts(db: D1Database) {
           }>(),
       ]);
     const snapshot = JSON.parse(order.snapshot_json) as {
-      conditions?: { madeToOrderAcknowledgements?: Array<{ lineId: string }> };
+      conditions?: {
+        madeToOrderAcknowledgements?: Array<{ lineId: string }>;
+        refund?: { version?: string };
+      };
       terms?: { charges?: Record<string, number | null> };
     };
     const acknowledged = new Set(
@@ -166,6 +171,7 @@ export function createD1OrderFacts(db: D1Database) {
       orderNumber: order.order_number,
       requestId: order.request_id,
       purchasingContextId: order.purchasing_context_id,
+      refundTermsVersion: snapshot.conditions?.refund?.version ?? null,
       charges: Object.fromEntries(
         Object.entries(snapshot.terms?.charges ?? {}).map(([key, value]) => [
           key,

@@ -43,8 +43,9 @@ async function authorized(
   prefix: string,
   reason: string,
   lines: Array<[keyof SeededOrder["lines"], "first" | "second", number]>,
+  refundTermsVersion?: string,
 ) {
-  const order = await seedAfterSalesOrder(db, prefix);
+  const order = await seedAfterSalesOrder(db, prefix, { refundTermsVersion });
   await shipShipment(db, order.orderId, order.shipments.first, {
     handoffAt: "2026-09-05T02:00:00.000Z",
     deliveredDate: "2026-09-10",
@@ -287,6 +288,87 @@ it("requires a reason for every decision and keeps cumulative fees exact across 
   expect(receipts.map((receipt) => receipt.inspectionDeadlineDateEt)).toEqual([
     "2026-09-25",
     "2026-09-28",
+  ]);
+});
+
+it("lets Admin apply customer terms to a buyer-caused Other problem only under v2 refund terms", async () => {
+  const decide = async (
+    prefix: string,
+    refundTermsVersion: string,
+    responsibility: "customer" | "seller",
+    extra: { logisticsCents?: number; logisticsNote?: string } = {},
+  ) => {
+    const { order, raId, selected } = await authorized(
+      prefix,
+      "other",
+      [["standard", "first", 1]],
+      refundTermsVersion,
+    );
+    const service = inspection("2026-09-22T15:00:00.000Z");
+    const receiptId = await service.adminRecordReceipt(owner, {
+      orderId: order.orderId,
+      raId,
+      receivedAt: "2026-09-18T14:00:00.000Z",
+      source: "Intake",
+      lines: selected,
+      commandId: crypto.randomUUID(),
+    });
+    const decisionId = await service.adminDecide(owner, {
+      orderId: order.orderId,
+      receiptId,
+      responsibility,
+      remedy: "refund",
+      items: selected.map((line) => ({
+        ...line,
+        approvedQuantity: 1,
+        conditions: { ...good, installationEvidence: "Wrench marks" },
+      })),
+      customerReason:
+        "The fitting was installed; the thread damage is from use.",
+      commandId: crypto.randomUUID(),
+      ...extra,
+    });
+    const [receipt] = await service.adminRead(owner, order.orderId);
+    return { decisionId, receipt, order };
+  };
+  const customer = await decide(
+    "i-other-2",
+    "pi-refund-2026-09-27-v2",
+    "customer",
+  );
+  const [refund] = customer.receipt.decision!.refunds;
+  expect(refund).toMatchObject({ responsibility: "customer" });
+  expect(refund.restockingFeeCents).toBe(
+    Math.round(refund.merchandiseCents / 10),
+  );
+  // Customer terms never refund performed outbound DDP charges.
+  await expect(
+    decide("i-other-3", "pi-refund-2026-09-27-v2", "customer", {
+      logisticsCents: 500,
+      logisticsNote: "Outbound DDP",
+    }),
+  ).rejects.toMatchObject({ status: 400 });
+  // Orders that accepted the earlier terms keep seller terms.
+  await expect(
+    decide("i-other-4", "pi-refund-2026-09-27-v1", "customer"),
+  ).rejects.toMatchObject({ status: 400 });
+  const seller = await decide("i-other-5", "pi-refund-2026-09-27-v1", "seller");
+  expect(seller.receipt.decision!.refunds[0]).toMatchObject({
+    responsibility: "seller",
+    restockingFeeCents: 0,
+  });
+  // The decision dialog offers customer terms only where they were accepted.
+  const [v1Case] = await createCaseService(db).adminRead(
+    owner,
+    seller.order.orderId,
+  );
+  const [v2Case] = await createCaseService(db).adminRead(
+    owner,
+    customer.order.orderId,
+  );
+  expect([v1Case.customerTermsAllowed, v2Case.customerTermsAllowed]).toEqual([
+    false,
+    true,
   ]);
 });
 

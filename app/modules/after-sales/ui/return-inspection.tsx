@@ -440,22 +440,42 @@ export function AdminReturnReceipts({
                         责任
                         <select
                           name="responsibility"
+                          required
                           defaultValue={
                             item.reason === "convenience_return"
                               ? "customer"
-                              : "seller"
+                              : item.reason === "other" &&
+                                  item.customerTermsAllowed
+                                ? ""
+                                : "seller"
                           }
                         >
-                          {item.reason === "convenience_return" && (
+                          {item.reason === "other" &&
+                            item.customerTermsAllowed && (
+                              <option value="" disabled>
+                                请根据检验结果选择责任方
+                              </option>
+                            )}
+                          {item.customerTermsAllowed && (
                             <option value="customer">
-                              客户选择退货（扣 10% 手续费，不退已履行的 DDP
-                              费用）
+                              {item.reason === "convenience_return"
+                                ? "客户选择退货"
+                                : "客户原因"}
+                              （扣 10% 退货手续费，不退已履行的 DDP
+                              费用，可扣有凭证的第三方费用）
                             </option>
                           )}
                           <option value="seller">
-                            卖方责任（错发 / 损坏 / 不合格，无扣费）
+                            卖方责任（错发 / 损坏 / 不合格等，无扣费）
                           </option>
                         </select>
+                        {item.reason === "other" &&
+                          !item.customerTermsAllowed && (
+                            <small>
+                              该订单接受的 PI
+                              退款条款未约定“其他问题”的客户责任扣费，只能按卖方责任处理。
+                            </small>
+                          )}
                       </label>
                       <label>
                         补救方式

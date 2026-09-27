@@ -558,11 +558,11 @@ it("selects versioned policy acknowledgements per standard, cut, assembly and ma
     result.generalAcknowledgement,
     ...result.madeToOrderAcknowledgements,
   ]) {
-    expect(policy.version).toMatch(/^pi-.+-v1$/);
+    expect(policy.version).toMatch(/^pi-.+-v\d+$/);
     expect(policy.text.length).toBeGreaterThan(30);
   }
   expect(result.cancellation.text).toContain("before cutting begins");
-  expect(result.refund.version).toBe("pi-refund-2026-09-27-v1");
+  expect(result.refund.version).toBe("pi-refund-2026-09-27-v2");
   expect(result.refund.text).toContain("within 14 calendar days");
   expect(result.refund.text).toContain("10% restocking fee");
   expect(result.refund.text).toContain("11:59 PM ET on day 14");

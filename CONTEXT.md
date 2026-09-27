@@ -966,7 +966,9 @@ _Avoid_: Policy-page-only disclosure, universal free returns, hidden custom-prod
 **Convenience Return Restocking Fee**:
 A 10% deduction from the discounted merchandise amount of the approved returned
 quantity when an eligible Standard Product is returned for a customer-choice
-reason. The customer pays return shipping. Seller error and Nonconforming
+reason. The customer pays return shipping. The same fee applies when Admin
+determines on inspection that an "Other problem" was caused by the buyer, if
+the Order's accepted refund terms disclose it. Seller error and Nonconforming
 Product remedies do not use this fee, and the seller bears reasonable return or
 replacement logistics for those cases.
 _Avoid_: Pre-dispatch cancellation fee, freight percentage, seller-error deduction

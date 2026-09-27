@@ -9,6 +9,7 @@ import {
   readCaseLines,
 } from "../app/modules/after-sales/ui/customer-cases";
 import { AdminCases } from "../app/modules/after-sales/ui/admin-cases";
+import { AdminReturnReceipts } from "../app/modules/after-sales/ui/return-inspection";
 import {
   CustomerReturnsTab,
   customerCaseNextStep,
@@ -68,6 +69,7 @@ const cases: Cases = {
       caseNumber: "AS-ORDER-1-1",
       orderId: "order-1",
       reason: "damaged",
+      customerTermsAllowed: false,
       description: "Carton crushed",
       policyVersion: "return-policy-2026-09-27-launch",
       status: "open",
@@ -358,4 +360,75 @@ it("hides the unused-item return reason when no delivered item qualifies", async
       name: "Return an unused item (change of mind or wrong selection)",
     }),
   ).toBeTruthy();
+});
+
+it("offers customer responsibility for an Other problem only when the Order's terms allow it", async () => {
+  const item = {
+    ...cases.cases[0],
+    reason: "other",
+    events: [],
+  } as unknown as Parameters<typeof AdminReturnReceipts>[0]["item"];
+  const receipt = {
+    id: "receipt-1",
+    caseId: "case-1",
+    raId: "ra-1",
+    receivedAt: "2026-09-18T14:00:00.000Z",
+    recordedAt: "2026-09-18T15:00:00.000Z",
+    source: "Intake",
+    packageReference: null,
+    excessNote: null,
+    timeliness: "timely",
+    lateReviewed: false,
+    inspectionOverdue: false,
+    inspectionDeadlineAt: "2026-09-26T03:59:00.000Z",
+    inspectionDeadlineDateEt: "2026-09-25",
+    lines: [{ lineId: "open", shipmentId: "s1", physicalQuantity: 1 }],
+    inspection: null,
+    decision: null,
+  } as unknown as Parameters<typeof AdminReturnReceipts>[0]["receipts"][number];
+  const options = async (customerTermsAllowed: boolean) => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/",
+          element: (
+            <AdminReturnReceipts
+              item={{ ...item, customerTermsAllowed }}
+              receipts={[receipt]}
+              files={[]}
+              orderId="order-1"
+              commandId="command-4"
+              busy={false}
+            />
+          ),
+        },
+      ],
+      { initialEntries: ["/"] },
+    );
+    render(<RouterProvider router={router} />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "检验并决定退款" }),
+    );
+    const select = document.querySelector(
+      'select[name="responsibility"]',
+    ) as unknown as { value: string; options: ArrayLike<{ value: string }> };
+    const result = {
+      value: select.value,
+      options: Array.from(select.options, (option) => option.value),
+      note: document.body.textContent?.includes("只能按卖方责任处理"),
+    };
+    cleanup();
+    return result;
+  };
+  // Admin must choose explicitly; nothing defaults to customer terms.
+  expect(await options(true)).toEqual({
+    value: "",
+    options: ["", "customer", "seller"],
+    note: false,
+  });
+  expect(await options(false)).toEqual({
+    value: "seller",
+    options: ["seller"],
+    note: true,
+  });
 });

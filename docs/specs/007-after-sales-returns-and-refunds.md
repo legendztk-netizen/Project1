@@ -101,7 +101,10 @@ Problem`. The customer selects lines/quantities, reason, description, and
 - Customer disagreement continues in Messages, labelled with the Case. An
   Inspection Decision Revision appends old/new decision, reason, actor, and time.
 - Customer-choice convenience return deducts 10% of the discounted merchandise
-  amount approved for return. Customer pays return shipping; original performed
+  amount approved for return. The same customer terms apply to an "Other
+  problem" that inspection shows the buyer caused, when the Order's accepted
+  refund terms are `pi-refund-2026-09-27-v2` or later; Admin chooses the
+  responsibility and gives the reason. Customer pays return shipping; original performed
   DDP Shipping and Import Charges are not refunded. Applicable Sales Tax is
   adjusted separately.
 - Seller error or Nonconforming Product has no restocking fee. Seller-funded

@@ -2,7 +2,7 @@
 
 This is the single launch return policy (Spec 7). There are no pre-launch
 Orders, so no earlier return policy is carried forward. Newly issued PIs freeze
-this policy's terms (`pi-refund-2026-09-27-v1`); the public summary is served at
+this policy's terms (`pi-refund-2026-09-27-v2`); the public summary is served at
 `/policies/returns`.
 
 ## Standard Products
@@ -24,6 +24,11 @@ this policy's terms (`pi-refund-2026-09-27-v1`); the public summary is served at
 - Performed outbound DDP shipping, duties, import taxes, and clearance charges
   are not refunded for a convenience return. Applicable Sales Tax is adjusted
   separately under the accepted tax treatment.
+- The same terms apply when inspection shows that a reported problem was
+  caused by the buyer, for example incorrect selection, installation damage
+  or misuse. Admin records that responsibility in the inspection decision with
+  a customer-visible reason. Orders whose PI accepted earlier refund terms
+  (`pi-refund-2026-09-27-v1`) keep seller terms for every problem report.
 - A customer-caused refund may deduct only documented, non-refundable
   third-party bank or payment-channel costs where permitted by law and the
   accepted terms, shown gross-to-net. No separate handling fee or markup
@@ -51,7 +56,7 @@ Nonconforming Product.
 
 - Returned goods are inspected after receipt. Operations targets a decision
   (`Approved`, `Partially Approved`, or `Declined`) within 5 US business days
-  after receipt. A partial or declined decision includes a reason.
+  after receipt. Every decision includes a reason.
 - An approved refund is initiated within 10 US business days after approval
   through the original payment channel where possible, to an account verified
   for the same Purchasing Context. The website records the initiation; it does

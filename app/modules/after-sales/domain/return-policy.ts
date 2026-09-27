@@ -6,10 +6,10 @@ import {
   US_BANK_CALENDAR_VERSION,
 } from "../../proforma-invoice/domain/pi-payment-terms";
 
-// The single launch return policy (Spec 7 / ADR-0024). The service has no
-// pre-launch Orders, so there is intentionally no historical policy branch.
+// The launch return policy (Spec 7 / ADR-0024). Version 2 adds customer
+// terms for problem reports that inspection shows the buyer caused.
 export const LAUNCH_RETURN_POLICY = Object.freeze({
-  version: "return-policy-2026-09-27-launch",
+  version: "return-policy-2026-09-27-v2",
   requestWindowCalendarDays: 14,
   restockingFeeBasisPoints: 1000,
   raArrivalCalendarDays: 30,
@@ -19,6 +19,27 @@ export const LAUNCH_RETURN_POLICY = Object.freeze({
 });
 
 export const RETURN_POLICY_PATH = "/policies/returns";
+
+// PI refund terms that disclose customer terms for an "Other problem" the
+// buyer caused. Earlier accepted terms only disclose them for convenience
+// returns, so those Orders keep seller terms for every problem report.
+const CUSTOMER_CAUSED_PROBLEM_TERMS = new Set(["pi-refund-2026-09-27-v2"]);
+
+/**
+ * Whether Admin may resolve a Case under customer terms (restocking fee, no
+ * refund of performed DDP charges, documented third-party deductions).
+ */
+export function customerTermsAllowed(
+  reason: string,
+  refundTermsVersion: string | null,
+) {
+  if (reason === "convenience_return") return true;
+  return (
+    reason === "other" &&
+    refundTermsVersion !== null &&
+    CUSTOMER_CAUSED_PROBLEM_TERMS.has(refundTermsVersion)
+  );
+}
 
 const zone = "America/New_York";
 

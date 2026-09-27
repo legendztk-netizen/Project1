@@ -14,6 +14,7 @@ const sections: ReadonlyArray<{ title: string; items: readonly string[] }> = [
       "Start a request from your Order with Request Return or Report a Problem. A request opens a case for review; it does not authorize a return or approve a refund.",
       `Goods are accepted only under an issued Return Authorization and must arrive within ${LAUNCH_RETURN_POLICY.raArrivalCalendarDays} calendar days after it is issued. Packages sent without a Return Authorization are not accepted.`,
       "Approved convenience returns carry a 10% restocking fee on the discounted merchandise amount approved for return. You pay return shipping, and performed outbound DDP shipping, duties and import charges are not refunded. Applicable Sales Tax is adjusted separately.",
+      "The same terms apply when inspection shows that a reported problem was caused by the buyer, for example incorrect selection, installation damage or misuse.",
       "A customer-caused refund may deduct only disclosed, documented, non-refundable third-party costs, shown gross-to-net, with no administrative markup.",
     ],
   },
@@ -34,7 +35,7 @@ const sections: ReadonlyArray<{ title: string; items: readonly string[] }> = [
   {
     title: "Inspection and refunds",
     items: [
-      `Returned goods are inspected after receipt; we target a decision within ${LAUNCH_RETURN_POLICY.inspectionBusinessDays} US business days. Partial or declined decisions include a reason.`,
+      `Returned goods are inspected after receipt; we target a decision within ${LAUNCH_RETURN_POLICY.inspectionBusinessDays} US business days. Every decision includes a reason.`,
       `Approved refunds are initiated within ${LAUNCH_RETURN_POLICY.refundInitiationBusinessDays} US business days through the original payment channel where possible, to an account verified for the same buyer. We cannot promise the date your bank or PayPal posts the funds.`,
       "There are no cash or store-credit refunds.",
     ],

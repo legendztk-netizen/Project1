@@ -117,7 +117,7 @@ export interface SeededOrder {
 export async function seedAfterSalesOrder(
   db: D1Database,
   prefix: string,
-  options: { receivedCents?: number } = {},
+  options: { receivedCents?: number; refundTermsVersion?: string } = {},
 ): Promise<SeededOrder> {
   const p = prefix;
   const lines = [
@@ -258,6 +258,10 @@ export async function seedAfterSalesOrder(
       totalCents,
     },
     conditions: {
+      refund: {
+        version: options.refundTermsVersion ?? "pi-refund-2026-09-27-v2",
+        text: "Refund terms",
+      },
       madeToOrderAcknowledgements: [
         { lineId: `${p}-mto` },
         { lineId: `${p}-cut` },

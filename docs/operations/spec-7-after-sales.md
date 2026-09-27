@@ -10,9 +10,12 @@ appends its own record.
 
 ## Launch return policy
 
-There is one launch policy (`pi-refund-2026-09-27-v1` in new PIs, public page
-`/policies/returns`). No pre-launch Orders exist, so no earlier policy version
-is mapped.
+New PIs freeze refund terms `pi-refund-2026-09-27-v2` (public page
+`/policies/returns`). Version 2 adds customer terms for an "Other problem" that
+inspection shows the buyer caused. Orders whose PI accepted
+`pi-refund-2026-09-27-v1` keep seller terms for every problem report; the
+decision dialog offers customer responsibility for "Other problem" only on
+v2 Orders.
 
 | Rule                              | Value                                                                                            |
 | --------------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -25,7 +28,12 @@ is mapped.
 
 Admin records the Shipment delivery date as the US (ET) delivery date. Seller
 error, damage and Nonconforming Product reports are not limited by the 14-day
-window and never carry a restocking fee or payment-channel deduction.
+window and never carry a restocking fee or payment-channel deduction. For an
+"Other problem", Admin chooses the responsibility in the inspection decision:
+seller terms, or customer terms (10% restocking fee, performed DDP charges not
+refunded, documented third-party costs deductible) when inspection shows the
+buyer caused it (incorrect selection, installation damage, misuse). The
+decision's customer-visible reason must explain it.
 
 ## Permissions
 

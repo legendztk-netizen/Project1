@@ -34,7 +34,10 @@ describe("single launch return policy", () => {
     const conditions = conditionsForQuote({
       source: { lines: [] },
     } as unknown as QuoteRevisionSnapshot);
-    expect(conditions.refund.version).toBe("pi-refund-2026-09-27-v1");
+    expect(conditions.refund.version).toBe("pi-refund-2026-09-27-v2");
+    expect(conditions.refund.text).toContain(
+      "a reported problem was caused by the buyer",
+    );
     expect(conditions.refund.text).toContain("14 calendar days");
     expect(conditions.refund.text).toContain("10% restocking fee");
     expect(conditions.refund.text).not.toContain("No restocking fee");

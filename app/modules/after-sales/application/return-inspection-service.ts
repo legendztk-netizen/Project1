@@ -8,6 +8,7 @@ import {
   usd,
 } from "../domain/refund-calculation";
 import {
+  customerTermsAllowed,
   etDisplayDate,
   inspectionDeadline,
   isOnOrBefore,
@@ -610,14 +611,19 @@ export function createReturnInspectionService(
         });
       if (
         input.responsibility === "customer" &&
-        receipt.case_reason !== "convenience_return"
+        !customerTermsAllowed(
+          receipt.case_reason,
+          (await facts.read(input.orderId)).refundTermsVersion,
+        )
       )
         throw new Response(
-          "Customer-choice terms apply only to convenience-return cases",
+          receipt.case_reason === "other"
+            ? "This Order's accepted refund terms don't include customer terms for problem reports; resolve it as seller responsibility"
+            : "Customer terms apply only to convenience returns and customer-caused Other problems",
           { status: 400 },
         );
       if (input.responsibility === "customer" && input.remedy !== "refund")
-        throw new Response("A convenience return is resolved by refund", {
+        throw new Response("A customer-caused return is resolved by refund", {
           status: 400,
         });
       const receiptLines = (
