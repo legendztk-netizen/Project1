@@ -1,6 +1,6 @@
 # Spec 7 Ticket Review: Cancellation, Return Inspection, and Refund
 
-Review date: 2026-09-27. Status: **Approved and published as GitHub issues #102–#111. Implementation is stopped; code changes have been rolled back to the ticket-publication checkpoint at the user's request.**
+Review date: 2026-09-27. Status: **Approved, published as GitHub issues #102–#111 and implemented on branch `claude/spec7-after-sales` (one commit per ticket). Operator guide and local verification: [Spec 7 after-sales runbook](../operations/spec-7-after-sales.md).**
 
 ## Sources and Verified Facts
 

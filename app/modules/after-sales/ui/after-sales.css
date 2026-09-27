@@ -36,20 +36,22 @@
   font-weight: 700;
 }
 
-.after-sales-money {
+dl.after-sales-money {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 4px 16px;
   margin: 10px 0;
 }
 
-.after-sales-money dt {
+dl.after-sales-money dt {
   color: #5c6972;
+  overflow-wrap: anywhere;
 }
 
-.after-sales-money dd {
+dl.after-sales-money dd {
   margin: 0;
   text-align: right;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 

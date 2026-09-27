@@ -1,6 +1,6 @@
 # Spec 7: After-sales, Return Inspection, and Refund
 
-> Status: Ready. Spec 4B / Issue #6 and Spec 6 / Issue #8 are completed. Tickets: #102–#111.
+> Status: Implemented locally (tickets #102–#111). See docs/operations/spec-7-after-sales.md for the runbook and verification.
 > Spec 5 / Issue #7 is deferred and is not a first-release prerequisite.
 
 ## First-release Boundary

@@ -200,7 +200,7 @@ export async function readRefundAuthorizations(
              FROM (SELECT * FROM after_sales_refund_initiations
                WHERE authorization_id=a.id ORDER BY recorded_at,rowid) i) AS initiations_json
          FROM after_sales_refund_authorizations a WHERE ${clause.sql}
-         ORDER BY a.created_at,a.id`,
+         ORDER BY a.created_at,a.rowid`,
       )
       .bind(...clause.bindings)
       .all<RefundAuthorizationRow>()
