@@ -148,3 +148,13 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+.after-sales-address {
+  font-style: normal;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.after-sales-instructions {
+  white-space: pre-wrap;
+}

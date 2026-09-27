@@ -42,6 +42,8 @@ import {
   readCaseLines,
 } from "../../after-sales/ui/customer-cases";
 import { readPrivateReviewForm } from "../../quote-review/domain/private-review";
+import { createReturnAuthorizationService } from "../../after-sales/application/return-authorization-service";
+import { CustomerReturnAuthorizations } from "../../after-sales/ui/return-authorizations";
 import {
   CustomerCancellationAction,
   CustomerCancellationRequests,
@@ -65,6 +67,7 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
     shippingChanges,
     cancellations,
     cases,
+    returnAuthorizations,
   ] = await Promise.all([
     followOnQuotes(env).customerListForOrder(profileId, order.id),
     shipmentPlans(env).customerRead(profileId, order.id),
@@ -76,6 +79,7 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
     createOrderShippingChangeService(env.DB).customerRead(profileId, order.id),
     createCancellationService(env.DB).customerRead(profileId, order.id),
     createCaseService(env.DB).customerRead(profileId, order.id),
+    createReturnAuthorizationService(env.DB).customerRead(profileId, order.id),
   ]);
   return data(
     {
@@ -87,6 +91,7 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
       shippingChanges,
       cancellations,
       cases,
+      returnAuthorizations,
       commandId: crypto.randomUUID(),
     },
     { headers: headers() },
@@ -306,6 +311,7 @@ export default function ConfirmedOrderDetail({
     shippingChanges,
     cancellations,
     cases,
+    returnAuthorizations,
     commandId,
   } = loaderData;
   const actionData = useActionData<typeof action>();
@@ -403,6 +409,15 @@ export default function ConfirmedOrderDetail({
           error={
             actionData?.intent === "case-reply" ? actionData.error : undefined
           }
+          renderCaseDetails={(item) => (
+            <CustomerReturnAuthorizations
+              ras={returnAuthorizations.filter((ra) => ra.caseId === item.id)}
+              lineName={(lineId) =>
+                item.lines.find((line) => line.lineId === lineId)
+                  ?.displayName ?? lineId
+              }
+            />
+          )}
         />
         <CustomerSupportPath cancellations={cancellations} />
         <CustomerCancellationRequests
