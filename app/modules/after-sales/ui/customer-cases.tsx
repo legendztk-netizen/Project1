@@ -6,6 +6,7 @@ import { ShipmentActionDialog } from "../../shipment/ui/shipment-action-dialog";
 import type { CaseReason, CustomerCases } from "../application/case-service";
 import { etDisplayDate } from "../domain/return-policy";
 import "../../shipment/ui/order-shipping-changes.css";
+import { readScopedFields, scopedField } from "./scoped-fields";
 import "./after-sales.css";
 
 export const customerCaseReasonLabel: Record<CaseReason, string> = {
@@ -23,11 +24,12 @@ export function readCaseLines(form: FormData) {
     shipmentId: string;
     physicalQuantity: number;
   }> = [];
-  for (const [key, value] of form.entries()) {
-    if (!key.startsWith("caseQty:")) continue;
-    const [, lineId, shipmentId] = key.split(":");
+  for (const { lineId, shipmentId, value } of readScopedFields(
+    form,
+    "caseQty",
+  )) {
     const physicalQuantity = Number(value);
-    if (!String(value).trim() || physicalQuantity === 0) continue;
+    if (!value.trim() || physicalQuantity === 0 || !shipmentId) continue;
     lines.push({ lineId, shipmentId, physicalQuantity });
   }
   return lines;
@@ -139,7 +141,11 @@ export function CustomerCaseAction({
                       max={item.available}
                       step={1}
                       defaultValue={0}
-                      name={`caseQty:${item.lineId}:${item.shipmentId}`}
+                      name={scopedField(
+                        "caseQty",
+                        item.lineId,
+                        item.shipmentId,
+                      )}
                       aria-label={`Quantity of ${item.displayName} affected`}
                     />
                   </label>

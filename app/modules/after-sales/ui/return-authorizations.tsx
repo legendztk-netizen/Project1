@@ -4,6 +4,7 @@ import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
 import type { CaseView } from "../application/case-service";
 import type { ReturnAuthorizationView } from "../application/return-authorization-service";
 import { etDisplayDate } from "../domain/return-policy";
+import { readScopedFields, scopedField } from "./scoped-fields";
 import "./after-sales.css";
 
 type Ra = ReturnAuthorizationView & { reviewNote?: string | null };
@@ -167,7 +168,11 @@ export function AdminReturnAuthorizationPanel({
                         max={Math.max(0, remaining)}
                         step={1}
                         defaultValue={Math.max(0, remaining)}
-                        name={`raQty:${line.lineId}:${line.shipmentId}`}
+                        name={scopedField(
+                          "raQty",
+                          line.lineId,
+                          line.shipmentId,
+                        )}
                         aria-label={`${line.displayName} 授权数量`}
                       />
                     </label>
@@ -247,11 +252,9 @@ export function readRaLines(form: FormData) {
     shipmentId: string;
     physicalQuantity: number;
   }> = [];
-  for (const [key, value] of form.entries()) {
-    if (!key.startsWith("raQty:")) continue;
-    const [, lineId, shipmentId] = key.split(":");
+  for (const { lineId, shipmentId, value } of readScopedFields(form, "raQty")) {
     const physicalQuantity = Number(value);
-    if (physicalQuantity > 0)
+    if (physicalQuantity > 0 && shipmentId)
       lines.push({ lineId, shipmentId, physicalQuantity });
   }
   return lines;

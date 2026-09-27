@@ -6,6 +6,7 @@ import { ShipmentActionDialog } from "../../shipment/ui/shipment-action-dialog";
 import type { createCancellationService } from "../application/cancellation-service";
 import { RefundBreakdown, refundStatusLabel } from "./refund-breakdown";
 import "../../shipment/ui/order-shipping-changes.css";
+import { readScopedFields, scopedField } from "./scoped-fields";
 import "./after-sales.css";
 
 type CustomerCancellations = Awaited<
@@ -27,7 +28,7 @@ const outcomeLabel: Record<string, string> = {
 export const cancellationQuantityField = (
   lineId: string,
   shipmentId: string | null,
-) => `cancelQty:${lineId}:${shipmentId ?? ""}`;
+) => scopedField("cancelQty", lineId, shipmentId);
 
 export function readCancellationQuantities(form: FormData) {
   const quantities: Array<{
@@ -35,16 +36,13 @@ export function readCancellationQuantities(form: FormData) {
     shipmentId: string | null;
     physicalQuantity: number;
   }> = [];
-  for (const [key, value] of form.entries()) {
-    if (!key.startsWith("cancelQty:")) continue;
-    const [, lineId, shipmentId] = key.split(":");
+  for (const { lineId, shipmentId, value } of readScopedFields(
+    form,
+    "cancelQty",
+  )) {
     const physicalQuantity = Number(value);
-    if (!String(value).trim() || physicalQuantity === 0) continue;
-    quantities.push({
-      lineId,
-      shipmentId: shipmentId || null,
-      physicalQuantity,
-    });
+    if (!value.trim() || physicalQuantity === 0) continue;
+    quantities.push({ lineId, shipmentId, physicalQuantity });
   }
   return quantities;
 }

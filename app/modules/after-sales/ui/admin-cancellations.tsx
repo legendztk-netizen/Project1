@@ -4,6 +4,7 @@ import { Form } from "react-router";
 import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
 import type { CancellationRequestView } from "../application/cancellation-service";
 import "../../shipment/ui/order-shipping-changes.css";
+import { readScopedFields, scopedField } from "./scoped-fields";
 import "./after-sales.css";
 import { RefundBreakdown, refundStatusLabel } from "./refund-breakdown";
 
@@ -194,7 +195,7 @@ export function AdminCancellationDecisionForm({
                   max={line.handedOff ? 0 : line.physicalQuantity}
                   step={1}
                   defaultValue={line.handedOff ? 0 : line.physicalQuantity}
-                  name={`approve:${line.lineId}:${line.shipmentId ?? ""}`}
+                  name={scopedField("approve", line.lineId, line.shipmentId)}
                   aria-label={`${line.displayName} 批准取消数量`}
                 />
               </label>
@@ -255,14 +256,7 @@ export function readCancellationDecisions(form: FormData) {
     shipmentId: string | null;
     approvedQuantity: number;
   }> = [];
-  for (const [key, value] of form.entries()) {
-    if (!key.startsWith("approve:")) continue;
-    const [, lineId, shipmentId] = key.split(":");
-    decisions.push({
-      lineId,
-      shipmentId: shipmentId || null,
-      approvedQuantity: Number(value),
-    });
-  }
+  for (const { lineId, shipmentId, value } of readScopedFields(form, "approve"))
+    decisions.push({ lineId, shipmentId, approvedQuantity: Number(value) });
   return decisions;
 }

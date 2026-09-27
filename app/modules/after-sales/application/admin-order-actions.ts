@@ -43,7 +43,9 @@ const intents = new Set([
 ]);
 
 function refundTarget(value: string) {
-  const [kind, id] = value.split(":");
+  const separator = value.indexOf(":");
+  const kind = value.slice(0, separator);
+  const id = separator > 0 ? value.slice(separator + 1) : "";
   if ((kind !== "after_sales" && kind !== "shipping") || !id)
     throw new Response("请选择退款", { status: 400 });
   return { refundKind: kind as RefundKind, refundId: id };

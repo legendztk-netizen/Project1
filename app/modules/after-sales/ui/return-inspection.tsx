@@ -8,6 +8,7 @@ import type { ReceiptView } from "../application/return-inspection-service";
 import { etDisplayDate } from "../domain/return-policy";
 import { AdminEvidenceFiles } from "./admin-exceptional";
 import { RefundBreakdown, refundStatusLabel } from "./refund-breakdown";
+import { readScopedFields, scopedField } from "./scoped-fields";
 import "./after-sales.css";
 
 const conditionLabels = [
@@ -36,34 +37,33 @@ export function readReceiptLines(form: FormData) {
     shipmentId: string;
     physicalQuantity: number;
   }> = [];
-  for (const [key, value] of form.entries()) {
-    if (!key.startsWith("receiveQty:")) continue;
-    const [, lineId, shipmentId] = key.split(":");
+  for (const { lineId, shipmentId, value } of readScopedFields(
+    form,
+    "receiveQty",
+  )) {
     const physicalQuantity = Number(value);
-    if (physicalQuantity > 0)
+    if (physicalQuantity > 0 && shipmentId)
       lines.push({ lineId, shipmentId, physicalQuantity });
   }
   return lines;
 }
 
 export function readInspectionItems(form: FormData) {
-  const keys = new Set<string>();
-  for (const key of form.keys())
-    if (key.startsWith("inspectApprove:")) keys.add(key.slice(15));
-  return [...keys].map((scope) => {
-    const [lineId, shipmentId] = scope.split(":");
-    return {
+  return readScopedFields(form, "inspectApprove").map(
+    ({ lineId, shipmentId, value }) => ({
       lineId,
-      shipmentId,
-      approvedQuantity: Number(form.get(`inspectApprove:${scope}`)),
+      shipmentId: shipmentId ?? "",
+      approvedQuantity: Number(value),
       conditions: Object.fromEntries(
         conditionLabels.map(([key]) => [
           key,
-          String(form.get(`inspect:${key}:${scope}`) ?? ""),
+          String(
+            form.get(scopedField(`inspect-${key}`, lineId, shipmentId)) ?? "",
+          ),
         ]),
       ),
-    };
-  });
+    }),
+  );
 }
 
 export function beijingLocalToIso(value: string) {
@@ -151,7 +151,11 @@ export function AdminReturnReceipts({
                       max={line.remaining}
                       step={1}
                       defaultValue={0}
-                      name={`receiveQty:${line.lineId}:${line.shipmentId}`}
+                      name={scopedField(
+                        "receiveQty",
+                        line.lineId,
+                        line.shipmentId,
+                      )}
                       aria-label={`${name(line.lineId)} 实收数量`}
                     />
                   </label>
@@ -316,7 +320,11 @@ export function AdminReturnReceipts({
                           max={line.receivedQuantity}
                           step={1}
                           defaultValue={line.approvedQuantity}
-                          name={`reviseApprove:${line.lineId}:${line.shipmentId}`}
+                          name={scopedField(
+                            "reviseApprove",
+                            line.lineId,
+                            line.shipmentId,
+                          )}
                           aria-label={`${line.displayName} 修订后批准数量`}
                         />
                       </label>
@@ -357,7 +365,11 @@ export function AdminReturnReceipts({
                               max={line.physicalQuantity}
                               step={1}
                               defaultValue={line.physicalQuantity}
-                              name={`inspectApprove:${scope}`}
+                              name={scopedField(
+                                "inspectApprove",
+                                line.lineId,
+                                line.shipmentId,
+                              )}
                             />
                           </label>
                           <div className="shipping-change-fields">
@@ -365,7 +377,11 @@ export function AdminReturnReceipts({
                               <label key={key}>
                                 {label}
                                 <input
-                                  name={`inspect:${key}:${scope}`}
+                                  name={scopedField(
+                                    `inspect-${key}`,
+                                    line.lineId,
+                                    line.shipmentId,
+                                  )}
                                   required
                                 />
                               </label>
@@ -638,10 +654,11 @@ export function readRevisionItems(form: FormData) {
     shipmentId: string;
     approvedQuantity: number;
   }> = [];
-  for (const [key, value] of form.entries()) {
-    if (!key.startsWith("reviseApprove:")) continue;
-    const [, lineId, shipmentId] = key.split(":");
-    items.push({ lineId, shipmentId, approvedQuantity: Number(value) });
-  }
+  for (const { lineId, shipmentId, value } of readScopedFields(
+    form,
+    "reviseApprove",
+  ))
+    if (shipmentId)
+      items.push({ lineId, shipmentId, approvedQuantity: Number(value) });
   return items;
 }

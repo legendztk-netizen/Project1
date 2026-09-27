@@ -4,6 +4,7 @@ import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
 import type { AfterSalesFileView } from "../application/after-sales-files";
 import { productClassLabel } from "./admin-cancellations";
 import "../../shipment/ui/order-shipping-changes.css";
+import { scopedField } from "./scoped-fields";
 import "./after-sales.css";
 
 interface ExceptionalEligible {
@@ -65,7 +66,7 @@ export function AdminExceptionalOpenForm({
                   max={item.available}
                   step={1}
                   defaultValue={0}
-                  name={`cancelQty:${item.lineId}:${item.shipmentId ?? ""}`}
+                  name={scopedField("cancelQty", item.lineId, item.shipmentId)}
                   aria-label={`${item.displayName} 审核数量`}
                 />
               </label>

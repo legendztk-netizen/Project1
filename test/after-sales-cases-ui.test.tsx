@@ -189,3 +189,47 @@ it("renders the Case thread, reply form and undelivered guidance for customers a
   expect(text).toContain("（内部备注）");
   expect(text).toContain("运输损坏");
 });
+
+it("round-trips Spec 6 Shipment ids that contain colons in every scoped form", async () => {
+  const { scopedField } =
+    await import("../app/modules/after-sales/ui/scoped-fields");
+  const { readCancellationQuantities } =
+    await import("../app/modules/after-sales/ui/customer-cancellations");
+  const { readRaLines } =
+    await import("../app/modules/after-sales/ui/return-authorizations");
+  const { readInspectionItems, readReceiptLines, readRevisionItems } =
+    await import("../app/modules/after-sales/ui/return-inspection");
+  const { readCancellationDecisions } =
+    await import("../app/modules/after-sales/ui/admin-cancellations");
+  const lineId = "line:with:colons";
+  const shipmentId = "shipment:order-123:together";
+  const data = new FormData();
+  data.set(scopedField("caseQty", lineId, shipmentId), "2");
+  data.set(scopedField("cancelQty", lineId, shipmentId), "1");
+  data.set(scopedField("approve", lineId, shipmentId), "1");
+  data.set(scopedField("raQty", lineId, shipmentId), "2");
+  data.set(scopedField("receiveQty", lineId, shipmentId), "1");
+  data.set(scopedField("reviseApprove", lineId, shipmentId), "1");
+  data.set(scopedField("inspectApprove", lineId, shipmentId), "1");
+  data.set(scopedField("inspect-finish", lineId, shipmentId), "Clean");
+  const expected = { lineId, shipmentId };
+  expect(readCaseLines(data)).toEqual([{ ...expected, physicalQuantity: 2 }]);
+  expect(readCancellationQuantities(data)).toEqual([
+    { ...expected, physicalQuantity: 1 },
+  ]);
+  expect(readCancellationDecisions(data)).toEqual([
+    { ...expected, approvedQuantity: 1 },
+  ]);
+  expect(readRaLines(data)).toEqual([{ ...expected, physicalQuantity: 2 }]);
+  expect(readReceiptLines(data)).toEqual([
+    { ...expected, physicalQuantity: 1 },
+  ]);
+  expect(readRevisionItems(data)).toEqual([
+    { ...expected, approvedQuantity: 1 },
+  ]);
+  expect(readInspectionItems(data)[0]).toMatchObject({
+    ...expected,
+    approvedQuantity: 1,
+    conditions: { finish: "Clean" },
+  });
+});
