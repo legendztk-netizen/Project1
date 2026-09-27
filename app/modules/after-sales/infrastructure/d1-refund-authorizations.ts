@@ -32,6 +32,7 @@ export interface RefundAuthorizationRow {
   actor_id: string;
   created_at: string;
   initiated_cents?: number;
+  initiations_json?: string;
 }
 
 /** Physical units and merchandise already credited per line (effective only). */
@@ -192,7 +193,12 @@ export async function readRefundAuthorizations(
       .prepare(
         `SELECT a.*,
            coalesce((SELECT sum(i.amount_cents) FROM after_sales_refund_initiations i
-             WHERE i.authorization_id=a.id),0) AS initiated_cents
+             WHERE i.authorization_id=a.id),0) AS initiated_cents,
+           (SELECT json_group_array(json_object('id',i.id,'amountCents',i.amount_cents,
+               'channel',i.channel,'initiatedDateEt',i.initiated_date_et,
+               'externalReference',i.external_reference,'recordedAt',i.recorded_at))
+             FROM (SELECT * FROM after_sales_refund_initiations
+               WHERE authorization_id=a.id ORDER BY recorded_at,rowid) i) AS initiations_json
          FROM after_sales_refund_authorizations a WHERE ${clause.sql}
          ORDER BY a.created_at,a.id`,
       )
@@ -229,6 +235,18 @@ export function projectRefundAuthorization(
       row.service_fee_cents,
     refundCents: row.refund_cents,
     initiatedCents: initiated,
+    initiations: (
+      JSON.parse(row.initiations_json ?? "[]") as Array<{
+        id: string;
+        amountCents: number;
+        channel: "bank_transfer" | "paypal";
+        initiatedDateEt: string;
+        externalReference: string;
+        recordedAt: string;
+      }>
+    ).map(({ externalReference, ...initiation }) =>
+      audience === "admin" ? { ...initiation, externalReference } : initiation,
+    ),
     remainingCents:
       row.status === "superseded" ? 0 : row.refund_cents - initiated,
     approvedAt: row.approved_at,

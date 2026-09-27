@@ -60,7 +60,7 @@ function project(row: AdminNotificationRow): AdminNotification {
 const notificationSelect = `SELECT n.id, n.kind, n.source_id, n.created_at, r.read_at,
   COALESCE(q.reference_number, o.order_number) AS reference,
   COALESCE(qp.email_display, cp.email_display, xp.email_display, scp.email_display, rcp.email_display) AS customer_email,
-  c.kind AS change_kind, COALESCE(c.order_id, x.order_id, ra.order_id, sc.order_id, rc.order_id, rr.order_id) AS order_id
+  c.kind AS change_kind, COALESCE(c.order_id, x.order_id, ra.order_id, sr.order_id, sc.order_id, rc.order_id, rr.order_id) AS order_id
   FROM admin_notifications n
   LEFT JOIN admin_notification_reads r ON r.notification_id=n.id AND r.admin_id=?1
   LEFT JOIN customer_quote_requests q ON n.kind='rfq_submitted' AND q.id=n.source_id
@@ -75,7 +75,8 @@ const notificationSelect = `SELECT n.id, n.kind, n.source_id, n.created_at, r.re
   LEFT JOIN after_sales_cases rc ON rc.id=rm.case_id
   LEFT JOIN customer_profiles rcp ON rcp.id=rc.profile_id
   LEFT JOIN after_sales_return_receipts rr ON n.kind='return_inspection_overdue' AND rr.id=n.source_id
-  LEFT JOIN confirmed_orders o ON o.id=COALESCE(c.order_id, x.order_id, ra.order_id, sc.order_id, rc.order_id, rr.order_id)
+  LEFT JOIN order_shipping_change_refund_reservations sr ON n.kind='refund_initiation_overdue' AND sr.id=n.source_id
+  LEFT JOIN confirmed_orders o ON o.id=COALESCE(c.order_id, x.order_id, ra.order_id, sr.order_id, sc.order_id, rc.order_id, rr.order_id)
   LEFT JOIN customer_profiles cp ON cp.id=c.profile_id`;
 
 export function createD1AdminNotifications(database: D1Database) {

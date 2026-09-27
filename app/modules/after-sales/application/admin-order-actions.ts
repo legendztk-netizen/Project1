@@ -17,6 +17,10 @@ import { createCancellationService } from "./cancellation-service";
 import { createCaseService } from "./case-service";
 import { createReturnAuthorizationService } from "./return-authorization-service";
 import { createReturnInspectionService } from "./return-inspection-service";
+import {
+  createRefundInitiationService,
+  type RefundKind,
+} from "./refund-initiation-service";
 
 const intents = new Set([
   "cancellation-resolve",
@@ -30,7 +34,17 @@ const intents = new Set([
   "return-receive",
   "return-late-review",
   "return-decide",
+  "refund-destination-add",
+  "refund-destination-approve",
+  "refund-initiation-record",
 ]);
+
+function refundTarget(value: string) {
+  const [kind, id] = value.split(":");
+  if ((kind !== "after_sales" && kind !== "shipping") || !id)
+    throw new Response("请选择退款", { status: 400 });
+  return { refundKind: kind as RefundKind, refundId: id };
+}
 
 export function isAfterSalesAdminIntent(intent: string) {
   return intents.has(intent);
@@ -215,6 +229,49 @@ export async function runAfterSalesAdminAction(input: {
           commandId,
         });
         break;
+      case "refund-destination-add":
+        await createRefundInitiationService(db, options).adminAddDestination(
+          actor,
+          {
+            orderId,
+            channel: text(form, "channel") as "bank_transfer" | "paypal",
+            kind: text(form, "kind") as "original_channel" | "alternative",
+            label: text(form, "label"),
+            holderName: text(form, "holderName"),
+            institution: text(form, "institution"),
+            accountLast4: text(form, "accountLast4"),
+            samePurchasingContext: form.get("samePurchasingContext") === "on",
+            verificationEvidence: text(form, "verificationEvidence"),
+            commandId,
+          },
+        );
+        break;
+      case "refund-destination-approve":
+        await createRefundInitiationService(
+          db,
+          options,
+        ).ownerApproveDestination(actor, {
+          orderId,
+          destinationId: text(form, "destinationId"),
+          ...refundTarget(text(form, "refund")),
+          reason: text(form, "reason"),
+          commandId,
+        });
+        break;
+      case "refund-initiation-record":
+        await createRefundInitiationService(db, options).adminRecordInitiation(
+          actor,
+          {
+            orderId,
+            ...refundTarget(text(form, "refund")),
+            destinationId: text(form, "destinationId"),
+            amountCents: parseUsdCents(form.get("amountUsd"), "退款金额"),
+            initiatedDateEt: text(form, "initiatedDateEt"),
+            externalReference: text(form, "externalReference"),
+            commandId,
+          },
+        );
+        break;
       default:
         throw new Response("Invalid operation", { status: 400 });
     }
@@ -229,7 +286,7 @@ export async function runAfterSalesAdminAction(input: {
       status: error.status,
       error:
         error.status === 403
-          ? "当前账号没有售后审核权限，请联系 Owner 授权。"
+          ? `当前账号没有该操作权限。${detail}`
           : error.status === 409
             ? `记录或状态已变化，请刷新后核对。${detail}`
             : `请检查填写内容：${detail}`,

@@ -226,6 +226,7 @@ it("shows the gross-to-net breakdown and asks the customer to confirm a deductio
     grossCents: 5000,
     refundCents: 4850,
     initiatedCents: 0,
+    initiations: [],
     remainingCents: 4850,
     approvedAt: null,
     deadlineDateEt: null,

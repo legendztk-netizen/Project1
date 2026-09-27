@@ -871,8 +871,9 @@ _Avoid_: Customer posting date, automatic payout, inspection completion estimate
 The verified destination for an approved refund. PayPal refunds return through
 the original PayPal transaction when available; WorldFirst or bank payments
 return to a verified account belonging to the same Individual Customer or
-Organization Purchasing Context. An alternative account requires Owner or
-authorized Admin Subaccount review and a recorded reason. Cash and default store
+Organization Purchasing Context. An alternative account requires explicit
+Owner approval and a recorded reason, bound to that exact refund and destination
+version; a changed destination needs a new approval. Cash and default store
 credit are not launch refund methods.
 _Avoid_: Unverified third-party account, cash refund, automatic store credit
 

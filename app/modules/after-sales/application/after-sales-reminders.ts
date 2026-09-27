@@ -1,3 +1,5 @@
+import { refundInitiationDeadline } from "../domain/return-policy";
+
 /**
  * Internal-only overdue reminders. They never approve, decline or initiate
  * anything; repeated cron runs are idempotent through the notification key.
@@ -30,8 +32,32 @@ export async function recordAfterSalesOverdueReminders(
     )
     .bind(at, at)
     .run();
+  // Spec 6 shipping-change refunds keep their original reservation date.
+  const reservations = (
+    await db
+      .prepare(
+        `SELECT r.id,r.reserved_at FROM order_shipping_change_refund_reservations r
+         WHERE r.due_cents>coalesce((SELECT sum(i.amount_cents)
+           FROM order_shipping_change_refund_initiations i WHERE i.reservation_id=r.id),0)
+           AND NOT EXISTS(SELECT 1 FROM admin_notifications n
+             WHERE n.kind='refund_initiation_overdue' AND n.source_id=r.id)
+         LIMIT 200`,
+      )
+      .all<{ id: string; reserved_at: string }>()
+  ).results.filter((row) => refundInitiationDeadline(row.reserved_at).at < at);
+  if (reservations.length)
+    await db.batch(
+      reservations.map((row) =>
+        db
+          .prepare(
+            `INSERT OR IGNORE INTO admin_notifications(id,kind,source_id,created_at)
+             VALUES (?,'refund_initiation_overdue',?,?)`,
+          )
+          .bind(`shipping-refund-overdue:${row.id}`, row.id, at),
+      ),
+    );
   return {
-    refunds: refunds.meta.changes ?? 0,
+    refunds: (refunds.meta.changes ?? 0) + reservations.length,
     inspections: inspections.meta.changes ?? 0,
   };
 }

@@ -72,6 +72,9 @@ import { createReturnAuthorizationService } from "../../after-sales/application/
 import { AdminReturnAuthorizationPanel } from "../../after-sales/ui/return-authorizations";
 import { createReturnInspectionService } from "../../after-sales/application/return-inspection-service";
 import { AdminReturnReceipts } from "../../after-sales/ui/return-inspection";
+import { createRefundInitiationService } from "../../after-sales/application/refund-initiation-service";
+import { AdminOrderRefunds } from "../../after-sales/ui/admin-refunds";
+import { etDate } from "../../after-sales/domain/return-policy";
 
 export const headers = piPrivateHeaders;
 
@@ -135,6 +138,10 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
             adminIdentity,
             order.id,
           ),
+          createRefundInitiationService(env.DB).adminOrder(
+            adminIdentity,
+            order.id,
+          ),
         ]).then(
           ([
             requests,
@@ -144,7 +151,15 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
             ras,
             locations,
             receipts,
+            refunds,
           ]) => ({
+            refunds,
+            isOwner: adminIdentity.accountType === "owner",
+            canRefund: hasAfterSalesPermission(
+              adminIdentity,
+              "after_sales.refund",
+            ),
+            todayEt: etDate(new Date().toISOString()),
             requests,
             exceptionalEligible,
             files,
@@ -558,7 +573,7 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
     new URL(request.url).searchParams.get("returnTo"),
   );
   return redirect(
-    `/admin/orders/${encodeURIComponent(orderId)}?returnTo=${encodeURIComponent(returnTo)}${intent.startsWith("cancellation-") || intent.startsWith("after-sales-") || intent.startsWith("case-") || intent.startsWith("return-") ? "&tab=after-sales" : intent.startsWith("shipping-change-") ? "&tab=changes" : intent.startsWith("shipment-") || intent.startsWith("schedule-") || intent.startsWith("milestone-") || intent === "tracking-save" ? "&tab=shipments" : ""}`,
+    `/admin/orders/${encodeURIComponent(orderId)}?returnTo=${encodeURIComponent(returnTo)}${isAfterSalesAdminIntent(intent) ? "&tab=after-sales" : intent.startsWith("shipping-change-") ? "&tab=changes" : intent.startsWith("shipment-") || intent.startsWith("schedule-") || intent.startsWith("milestone-") || intent === "tracking-save" ? "&tab=shipments" : ""}`,
   );
 }
 
@@ -743,6 +758,9 @@ const eventLabels: Record<string, string> = {
   "order.return_received": "记录退货实际到货",
   "order.late_return_reviewed": "审核逾期到货",
   "order.return_decided": "发布退货检验决定",
+  "order.refund_destination_verified": "核实退款目的地",
+  "order.refund_destination_approved": "Owner 批准替代退款账户",
+  "order.refund_initiated": "记录线下已发起退款",
 };
 
 export default function ConfirmedOrderDetail({
@@ -1100,6 +1118,15 @@ export default function ConfirmedOrderDetail({
                       />
                     </>
                   )}
+                />
+                <h3>退款</h3>
+                <AdminOrderRefunds
+                  refunds={cancellations.refunds}
+                  isOwner={cancellations.isOwner}
+                  canRefund={cancellations.canRefund}
+                  commandId={commandId}
+                  busy={busy}
+                  todayEt={cancellations.todayEt}
                 />
                 <h3>取消申请</h3>
                 <AdminExceptionalOpenForm

@@ -109,10 +109,22 @@ export function RefundBreakdown({
       )}
       <dt className="after-sales-money-total">{text.net}</dt>
       <dd className="after-sales-money-total">{usd(refund.refundCents)}</dd>
+      {refund.initiations.map((initiation) => (
+        <div key={initiation.id} style={{ display: "contents" }}>
+          <dt>
+            {text.initiated} ·{" "}
+            {initiation.channel === "paypal"
+              ? "PayPal"
+              : language === "en"
+                ? "Bank transfer"
+                : "银行转账"}{" "}
+            · {initiation.initiatedDateEt} ET
+          </dt>
+          <dd>{usd(initiation.amountCents)}</dd>
+        </div>
+      ))}
       {refund.initiatedCents > 0 && (
         <>
-          <dt>{text.initiated}</dt>
-          <dd>{usd(refund.initiatedCents)}</dd>
           <dt>{text.remaining}</dt>
           <dd>{usd(refund.remainingCents)}</dd>
         </>

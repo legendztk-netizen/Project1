@@ -3,6 +3,8 @@ import { data, Link, type LoaderFunctionArgs } from "react-router";
 import { piPrivateHeaders } from "#workers/proforma-invoice";
 import { createCancellationService } from "../../after-sales/application/cancellation-service";
 import { createCaseService } from "../../after-sales/application/case-service";
+import { createRefundInitiationService } from "../../after-sales/application/refund-initiation-service";
+import { usd } from "../../after-sales/domain/refund-calculation";
 import { adminCaseReasonLabel } from "../../after-sales/ui/admin-cases";
 import { hasAfterSalesPermission } from "../../after-sales/domain/permissions";
 import { cancellationStatusLabel } from "../../after-sales/ui/admin-cancellations";
@@ -57,7 +59,11 @@ export async function loader({ context, request }: LoaderFunctionArgs) {
   );
   const caseStatus =
     url.searchParams.get("caseStatus") === "all" ? "all" : "open";
-  const [cancellations, cases] = await Promise.all([
+  const refundPage = Math.max(
+    1,
+    Math.floor(Number(url.searchParams.get("refundPage"))) || 1,
+  );
+  const [cancellations, cases, refunds] = await Promise.all([
     createCancellationService(env.DB).adminList(adminIdentity, {
       status,
       page,
@@ -66,6 +72,11 @@ export async function loader({ context, request }: LoaderFunctionArgs) {
       status: caseStatus,
       page: casePage,
     }),
+    hasAfterSalesPermission(adminIdentity, "after_sales.refund")
+      ? createRefundInitiationService(env.DB).adminDue(adminIdentity, {
+          page: refundPage,
+        })
+      : Promise.resolve(null),
   ]);
   return data(
     {
@@ -75,6 +86,7 @@ export async function loader({ context, request }: LoaderFunctionArgs) {
       cancellations,
       cases,
       caseStatus,
+      refunds,
     },
     { headers: piPrivateHeaders() },
   );
@@ -100,6 +112,80 @@ export default function AdminAfterSales({
           <p role="alert">当前账号没有售后审核权限，请联系 Owner 授权。</p>
         ) : (
           <>
+            {loaderData.refunds && (
+              <section aria-labelledby="after-sales-refunds">
+                <h2 id="after-sales-refunds">待发起退款</h2>
+                {loaderData.refunds.records.length ? (
+                  <table className="after-sales-table">
+                    <thead>
+                      <tr>
+                        <th>订单</th>
+                        <th>来源</th>
+                        <th>剩余金额</th>
+                        <th>批准时间</th>
+                        <th>发起期限</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {loaderData.refunds.records.map((record) => (
+                        <tr key={`${record.kind}:${record.id}`}>
+                          <td>
+                            <Link
+                              to={`/admin/orders/${encodeURIComponent(record.orderId)}?tab=after-sales`}
+                            >
+                              {record.orderNumber}
+                            </Link>
+                          </td>
+                          <td>
+                            {record.source === "cancellation"
+                              ? "取消"
+                              : record.source === "return"
+                                ? "退货检验"
+                                : record.source === "supplemental"
+                                  ? "补充退款"
+                                  : "发货变更"}
+                          </td>
+                          <td>{usd(record.remainingCents)}</td>
+                          <td>{formatPiDate(record.approvedAt, "admin")}</td>
+                          <td>
+                            {formatPiDate(record.deadlineAt, "admin")}
+                            {record.overdue && (
+                              <>
+                                {" "}
+                                <span className="after-sales-flag">已逾期</span>
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p>没有待发起的退款。</p>
+                )}
+                <nav className="after-sales-pagination" aria-label="退款分页">
+                  {loaderData.refunds.page > 1 && (
+                    <Link
+                      to={`/admin/after-sales?refundPage=${loaderData.refunds.page - 1}`}
+                    >
+                      上一页
+                    </Link>
+                  )}
+                  <span>
+                    第 {loaderData.refunds.page} /{" "}
+                    {loaderData.refunds.pageCount} 页，共{" "}
+                    {loaderData.refunds.total} 条
+                  </span>
+                  {loaderData.refunds.page < loaderData.refunds.pageCount && (
+                    <Link
+                      to={`/admin/after-sales?refundPage=${loaderData.refunds.page + 1}`}
+                    >
+                      下一页
+                    </Link>
+                  )}
+                </nav>
+              </section>
+            )}
             <section aria-labelledby="after-sales-cases">
               <h2 id="after-sales-cases">售后案件</h2>
               <nav className="orders-status-tabs" aria-label="售后案件筛选">
