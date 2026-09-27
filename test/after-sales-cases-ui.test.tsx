@@ -233,3 +233,51 @@ it("round-trips Spec 6 Shipment ids that contain colons in every scoped form", a
     conditions: { finish: "Clean" },
   });
 });
+
+it("hides the unused-item return reason when no delivered item qualifies", async () => {
+  const renderWith = async (claimable: Cases["claimable"]) => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/",
+          element: (
+            <CustomerCaseAction
+              cases={{ ...cases, claimable }}
+              commandId="command-9"
+            />
+          ),
+        },
+      ],
+      { initialEntries: ["/"] },
+    );
+    render(<RouterProvider router={router} />);
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Request Return or Report a Problem",
+      }),
+    );
+  };
+  await renderWith(cases.claimable.filter((item) => item.lineId !== "open"));
+  expect(
+    screen.queryByRole("radio", {
+      name: "Return an unused item (change of mind or wrong selection)",
+    }),
+  ).toBeNull();
+  expect(
+    (
+      screen.getByRole("radio", {
+        name: "Defective or not as specified",
+      }) as HTMLInputElement
+    ).checked,
+  ).toBe(true);
+  expect(document.body.textContent).toContain(
+    "Returning an unused item isn't available for these items",
+  );
+  cleanup();
+  await renderWith(cases.claimable);
+  expect(
+    screen.getByRole("radio", {
+      name: "Return an unused item (change of mind or wrong selection)",
+    }),
+  ).toBeTruthy();
+});

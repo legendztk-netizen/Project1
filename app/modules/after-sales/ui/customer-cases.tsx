@@ -55,6 +55,14 @@ export function CustomerCaseAction({
     if (!actionData?.error) setOpen(false);
   }, [navigation.state, actionData]);
   const claimable = cases.claimable.filter((item) => item.available > 0);
+  // Offer a convenience return only when some delivered item still qualifies.
+  const reasons = (Object.keys(customerCaseReasonLabel) as CaseReason[]).filter(
+    (reason) =>
+      reason !== "convenience_return" ||
+      claimable.some(
+        (item) => item.productClass === "standard" && item.convenienceOpen,
+      ),
+  );
   if (!claimable.length) return null;
   return (
     <>
@@ -91,19 +99,24 @@ export function CustomerCaseAction({
             <input type="hidden" name="commandId" value={commandId} />
             <fieldset>
               <legend>Reason</legend>
-              {(Object.keys(customerCaseReasonLabel) as CaseReason[]).map(
-                (reason) => (
-                  <label key={reason} className="shipping-change-choice">
-                    <input
-                      type="radio"
-                      name="reason"
-                      value={reason}
-                      required
-                      defaultChecked={reason === "nonconforming"}
-                    />
-                    {customerCaseReasonLabel[reason]}
-                  </label>
-                ),
+              {reasons.map((reason) => (
+                <label key={reason} className="shipping-change-choice">
+                  <input
+                    type="radio"
+                    name="reason"
+                    value={reason}
+                    required
+                    defaultChecked={reason === "nonconforming"}
+                  />
+                  {customerCaseReasonLabel[reason]}
+                </label>
+              ))}
+              {!reasons.includes("convenience_return") && (
+                <small>
+                  Returning an unused item isn&apos;t available for these items
+                  (made to order, cut to length, or past the 14-day window).
+                  Problems can still be reported.
+                </small>
               )}
             </fieldset>
             <fieldset>
