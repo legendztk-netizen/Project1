@@ -385,7 +385,7 @@ browser seam from blank draft to managed Quote List line.
 - Sticky navigation, Chat, validation messages and preview controls never cover
   one another at supported desktop and mobile widths.
 - Website navigation from a non-empty unfinished draft warns `Your selected
-  configuration will be lost when you leave.` It offers only Stay and Continue
+configuration will be lost when you leave.` It offers only Stay and Continue
   or Leave and Discard until Spec 3 registration is implemented.
 - Stay preserves the exact page draft; Leave and Discard clears only that
   in-page draft.

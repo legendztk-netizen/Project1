@@ -260,7 +260,7 @@ Standard Products, without login, checkout, RFQ submission, or account creation.
 - Re-adding the same stable Standard Product identity merges quantity; different
   SKUs remain separate lines.
 - Add and edit commands revalidate Published, Eligible, and `Available for
-  Quote` against the active Catalog Release and never silently substitute a SKU.
+Quote` against the active Catalog Release and never silently substitute a SKU.
 - Tampered or expired cookies do not expose another session and recover through
   a new anonymous session without a server error.
 

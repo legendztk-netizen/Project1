@@ -73,7 +73,7 @@
 | 09     | #43    | Explain RFQ Eligibility and Import Responsibility         | USD 100 minimum and customer-friendly Individual/Business DDP/DAP routing                                   | #37, #41      |
 | 10     | #44    | Submit an Immutable Individual RFQ                        | Atomic Individual RFQ snapshot, number, confirmation page and idempotency                                   | #40, #43      |
 | 11     | #45    | Submit an Immutable Business RFQ                          | Organization-owned RFQ with acting contact and DDP/DAP snapshot                                             | #44           |
-| 12     | #46    | Send One Idempotent RFQ Confirmation Email (Cancelled)    | Cancelled: RFQ success is confirmed only on the website                                                      | #45           |
+| 12     | #46    | Send One Idempotent RFQ Confirmation Email (Cancelled)    | Cancelled: RFQ success is confirmed only on the website                                                     | #45           |
 | 13     | #47    | Follow RFQs under My Quotes                               | Customer-owned RFQ list/detail and extension boundary for future PI states                                  | #45           |
 | 14     | #48    | Harden and Verify the Anonymous-to-RFQ Seam               | Full browser, ownership, security, accessibility and real-local-D1 verification                             | #36, #42, #47 |
 
