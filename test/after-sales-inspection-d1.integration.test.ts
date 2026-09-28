@@ -44,9 +44,9 @@ async function authorized(
   prefix: string,
   reason: string,
   lines: Array<[keyof SeededOrder["lines"], "first" | "second", number]>,
-  refundTermsVersion?: string,
+  charges?: NonNullable<Parameters<typeof seedAfterSalesOrder>[2]>["charges"],
 ) {
-  const order = await seedAfterSalesOrder(db, prefix, { refundTermsVersion });
+  const order = await seedAfterSalesOrder(db, prefix, { charges });
   await shipShipment(db, order.orderId, order.shipments.first, {
     handoffAt: "2026-09-05T02:00:00.000Z",
     deliveredDate: "2026-09-10",
@@ -233,24 +233,13 @@ it("requires a reason for every decision and keeps cumulative fees exact across 
     lines: [{ ...selected[0], physicalQuantity: 1 }],
     commandId: crypto.randomUUID(),
   });
-  // Full approval also tells the customer why.
-  await expect(
-    service.adminDecide(owner, {
-      orderId: order.orderId,
-      receiptId: first,
-      responsibility: "customer",
-      remedy: "refund",
-      items: [{ ...selected[0], approvedQuantity: 1, conditions: good }],
-      commandId: crypto.randomUUID(),
-    }),
-  ).rejects.toMatchObject({ status: 400 });
+  // Standard deductions are explained by the generated breakdown.
   await service.adminDecide(owner, {
     orderId: order.orderId,
     receiptId: first,
     responsibility: "customer",
     remedy: "refund",
-    items: [{ ...selected[0], approvedQuantity: 1, conditions: good }],
-    customerReason: "Inspection confirms the reported issue.",
+    items: [{ ...selected[0], approvedQuantity: 1, conditions: {} }],
     commandId: crypto.randomUUID(),
   });
   await expect(
@@ -305,19 +294,15 @@ it("requires a reason for every decision and keeps cumulative fees exact across 
   ]);
 });
 
-it("lets Admin apply customer terms to a buyer-caused Other problem only under v2 refund terms", async () => {
+it("lets Admin apply launch customer terms to a buyer-caused Other problem", async () => {
   const decide = async (
     prefix: string,
-    refundTermsVersion: string,
     responsibility: "customer" | "seller",
     extra: { logisticsCents?: number; logisticsNote?: string } = {},
   ) => {
-    const { order, raId, selected } = await authorized(
-      prefix,
-      "other",
-      [["standard", "first", 1]],
-      refundTermsVersion,
-    );
+    const { order, raId, selected } = await authorized(prefix, "other", [
+      ["standard", "first", 1],
+    ]);
     const service = inspection("2026-09-22T15:00:00.000Z");
     const receiptId = await service.adminRecordReceipt(owner, {
       orderId: order.orderId,
@@ -345,11 +330,7 @@ it("lets Admin apply customer terms to a buyer-caused Other problem only under v
     const [receipt] = await service.adminRead(owner, order.orderId);
     return { decisionId, receipt, order };
   };
-  const customer = await decide(
-    "i-other-2",
-    "pi-refund-2026-09-27-v2",
-    "customer",
-  );
+  const customer = await decide("i-other-2", "customer");
   const [refund] = customer.receipt.decision!.refunds;
   expect(refund).toMatchObject({ responsibility: "customer" });
   expect(refund.restockingFeeCents).toBe(
@@ -357,33 +338,16 @@ it("lets Admin apply customer terms to a buyer-caused Other problem only under v
   );
   // Customer terms never refund performed outbound DDP charges.
   await expect(
-    decide("i-other-3", "pi-refund-2026-09-27-v2", "customer", {
+    decide("i-other-3", "customer", {
       logisticsCents: 500,
       logisticsNote: "Outbound DDP",
     }),
   ).rejects.toMatchObject({ status: 400 });
-  // Orders that accepted the earlier terms keep seller terms.
-  await expect(
-    decide("i-other-4", "pi-refund-2026-09-27-v1", "customer"),
-  ).rejects.toMatchObject({ status: 400 });
-  const seller = await decide("i-other-5", "pi-refund-2026-09-27-v1", "seller");
+  const seller = await decide("i-other-5", "seller");
   expect(seller.receipt.decision!.refunds[0]).toMatchObject({
     responsibility: "seller",
     restockingFeeCents: 0,
   });
-  // The decision dialog offers customer terms only where they were accepted.
-  const [v1Case] = await createCaseService(db).adminRead(
-    owner,
-    seller.order.orderId,
-  );
-  const [v2Case] = await createCaseService(db).adminRead(
-    owner,
-    customer.order.orderId,
-  );
-  expect([v1Case.customerTermsAllowed, v2Case.customerTermsAllowed]).toEqual([
-    false,
-    true,
-  ]);
 });
 
 it("uses seller-funded remedies without deductions and records replacements without a payout", async () => {
@@ -600,4 +564,132 @@ it("keeps late arrivals in review and reminds once when inspection is overdue", 
       commandId: crypto.randomUUID(),
     }),
   ).rejects.toMatchObject({ status: 400 });
+});
+
+it("allows offline inspection and optional full-approval notes while keeping financial disclosure", async () => {
+  const { order, raId, selected } = await authorized(
+    "optional-inspection",
+    "damaged",
+    [["standard", "first", 1]],
+    { salesTax: 50 },
+  );
+  const service = inspection("2026-09-22T15:00:00.000Z");
+  const receiptId = await service.adminRecordReceipt(owner, {
+    orderId: order.orderId,
+    raId,
+    receivedAt: "2026-09-18T14:00:00.000Z",
+    source: "Intake",
+    lines: selected,
+    commandId: crypto.randomUUID(),
+  });
+  const input = {
+    orderId: order.orderId,
+    receiptId,
+    responsibility: "seller" as const,
+    remedy: "refund" as const,
+    items: [{ ...selected[0], approvedQuantity: 1 }],
+    logisticsCents: 50,
+    sellerLogisticsCents: 50,
+    taxCents: 50,
+    internalNote: "Offline-only quality notes",
+    commandId: crypto.randomUUID(),
+  };
+  const id = await service.adminDecide(owner, input);
+  expect(await service.adminDecide(owner, input)).toBe(id);
+  const [admin] = await service.adminRead(owner, order.orderId);
+  expect(admin.inspection?.[0].conditions).toEqual({});
+  expect(admin.decision).toMatchObject({
+    customerReason: null,
+    outcome: "approved",
+    financial: {
+      logisticsCents: 50,
+      logisticsNote: null,
+      sellerLogisticsCents: 50,
+      sellerLogisticsNote: null,
+      taxCents: 50,
+      taxNote: null,
+      restockingFeeCents: 0,
+    },
+  });
+  const [customer] = await service.customerRead("buyer", order.orderId);
+  expect(customer).not.toHaveProperty("inspection");
+  expect(customer.decision).not.toHaveProperty("internalNote");
+  expect(customer.decision?.financial.refundCents).toBe(
+    admin.decision?.financial.refundCents,
+  );
+  const body = await db
+    .prepare("SELECT body FROM after_sales_case_messages WHERE command_id=?")
+    .bind(`case-event:${input.commandId}`)
+    .first<string>("body");
+  expect(body).toContain("Refund approved:");
+  expect(body).toContain("It has not been sent yet");
+  expect(body).not.toContain("Offline-only");
+});
+
+it("requires evidence for extra deductions even when inspection notes are omitted", async () => {
+  const { order, raId, selected } = await authorized(
+    "optional-deduction",
+    "convenience_return",
+    [["standard", "first", 1]],
+  );
+  const service = inspection("2026-09-22T15:00:00.000Z");
+  const receiptId = await service.adminRecordReceipt(owner, {
+    orderId: order.orderId,
+    raId,
+    receivedAt: "2026-09-18T14:00:00.000Z",
+    source: "Intake",
+    lines: selected,
+    commandId: crypto.randomUUID(),
+  });
+  const input = {
+    orderId: order.orderId,
+    receiptId,
+    responsibility: "customer" as const,
+    remedy: "refund" as const,
+    items: [{ ...selected[0], approvedQuantity: 1 }],
+    thirdPartyCostCents: 10,
+    commandId: crypto.randomUUID(),
+  };
+  await expect(service.adminDecide(owner, input)).rejects.toMatchObject({
+    status: 400,
+  });
+  await service.adminDecide(owner, {
+    ...input,
+    thirdPartyCostEvidence: "Non-refundable bank fee receipt #1",
+  });
+  const [customer] = await service.customerRead("buyer", order.orderId);
+  expect(customer.decision?.financial.thirdPartyCostCents).toBe(10);
+  expect(customer.decision?.financial.restockingFeeCents).toBeGreaterThan(0);
+  expect(customer.decision?.refunds[0].status).toBe(
+    "awaiting_customer_confirmation",
+  );
+});
+
+it("uses approved products as replacement scope without requiring offline details", async () => {
+  const { order, raId, selected } = await authorized(
+    "optional-replacement",
+    "wrong_item",
+    [["standard", "first", 1]],
+  );
+  const service = inspection("2026-09-22T15:00:00.000Z");
+  const receiptId = await service.adminRecordReceipt(owner, {
+    orderId: order.orderId,
+    raId,
+    receivedAt: "2026-09-18T14:00:00.000Z",
+    source: "Intake",
+    lines: selected,
+    commandId: crypto.randomUUID(),
+  });
+  await service.adminDecide(owner, {
+    orderId: order.orderId,
+    receiptId,
+    responsibility: "seller",
+    remedy: "replacement",
+    items: [{ ...selected[0], approvedQuantity: 1 }],
+    commandId: crypto.randomUUID(),
+  });
+  const [customer] = await service.customerRead("buyer", order.orderId);
+  expect(customer.decision?.replacement?.scope).toContain("× 1");
+  expect(customer.decision?.replacement?.fulfillmentEvidence).toBe("");
+  expect(customer.decision?.refunds).toEqual([]);
 });

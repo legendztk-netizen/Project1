@@ -182,21 +182,11 @@ describe("single launch return policy", () => {
     });
   });
 
-  it("applies customer terms to an Other problem only under refund terms v2 or later", () => {
-    expect(customerTermsAllowed("convenience_return", null)).toBe(true);
-    expect(customerTermsAllowed("other", "pi-refund-2026-09-27-v1")).toBe(
-      false,
-    );
-    expect(customerTermsAllowed("other", "pi-refund-2026-09-27-v2")).toBe(true);
-    expect(customerTermsAllowed("other", "pi-refund-2026-09-27-v3")).toBe(true);
-    expect(customerTermsAllowed("other", "pi-refund-2026-10-05-v1")).toBe(true);
-    expect(customerTermsAllowed("other", "pi-refund-2026-09-20-v9")).toBe(
-      false,
-    );
-    expect(customerTermsAllowed("other", "unknown")).toBe(false);
-    expect(customerTermsAllowed("other", null)).toBe(false);
-    expect(customerTermsAllowed("damaged", "pi-refund-2026-09-27-v2")).toBe(
-      false,
-    );
+  it("applies customer terms only to convenience returns and buyer-caused Other problems", () => {
+    expect(customerTermsAllowed("convenience_return")).toBe(true);
+    expect(customerTermsAllowed("other")).toBe(true);
+    expect(customerTermsAllowed("damaged")).toBe(false);
+    expect(customerTermsAllowed("wrong_item")).toBe(false);
+    expect(customerTermsAllowed("nonconforming")).toBe(false);
   });
 });

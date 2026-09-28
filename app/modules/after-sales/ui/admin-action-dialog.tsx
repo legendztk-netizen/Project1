@@ -15,6 +15,7 @@ export function AdminActionDialog({
   primary = false,
   wide = false,
   children,
+  onOpen,
 }: {
   label: string;
   title?: string;
@@ -23,6 +24,7 @@ export function AdminActionDialog({
   primary?: boolean;
   wide?: boolean;
   children: ReactNode;
+  onOpen?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const actionData = useActionData<{ error?: string } | undefined>();
@@ -40,6 +42,7 @@ export function AdminActionDialog({
         type="button"
         className={`button ${primary ? "button-primary" : "button-secondary"}`}
         onClick={() => {
+          onOpen?.();
           actionAtOpen.current = actionData;
           setOpen(true);
         }}

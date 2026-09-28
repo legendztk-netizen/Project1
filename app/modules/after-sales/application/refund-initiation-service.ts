@@ -1,3 +1,8 @@
+import {
+  createRefundAccountService,
+  type RefundAccountProtector,
+} from "./refund-account-service";
+import { refundCaseCompletionStatements } from "../infrastructure/d1-refund-case-completion";
 import { Temporal } from "@js-temporal/polyfill";
 
 import type { AdminIdentity } from "#workers/admin-access";
@@ -46,7 +51,11 @@ export const channelLabel: Record<Channel, string> = {
 
 export function createRefundInitiationService(
   db: D1Database,
-  options: { now?: () => Date; auditIp?: string | null } = {},
+  options: {
+    now?: () => Date;
+    auditIp?: string | null;
+    protector?: RefundAccountProtector;
+  } = {},
 ) {
   const now = () => (options.now?.() ?? new Date()).toISOString();
   const facts = createD1OrderFacts(db);
@@ -110,8 +119,10 @@ export function createRefundInitiationService(
     return (
       await db
         .prepare(
-          `SELECT * FROM after_sales_refund_destinations WHERE order_id=?
-           ORDER BY verified_at,rowid`,
+          `SELECT d.* FROM after_sales_refund_destinations d WHERE order_id=?
+           AND NOT EXISTS(SELECT 1 FROM after_sales_customer_bank_accounts a WHERE a.id=d.id
+             AND a.version < (SELECT max(version) FROM after_sales_customer_bank_accounts WHERE order_id=a.order_id))
+           ORDER BY verified_at,d.rowid`,
         )
         .bind(orderId)
         .all<DestinationRow>()
@@ -221,6 +232,10 @@ export function createRefundInitiationService(
           receiptChannel(orderId),
         ]);
       return {
+        customerAccount: await createRefundAccountService(
+          db,
+          options,
+        ).adminRead(actor, orderId),
         receiptChannel: channel?.actual_channel ?? null,
         originalReference: channel?.external_reference ?? null,
         afterSales: authorizations.map((row) =>
@@ -470,6 +485,8 @@ export function createRefundInitiationService(
         refundKind: RefundKind;
         refundId: string;
         destinationId: string;
+        accountVerified?: boolean;
+        complete?: boolean;
         amountCents: number;
         initiatedDateEt: string;
         externalReference: string;
@@ -501,11 +518,39 @@ export function createRefundInitiationService(
         input.refundKind === "after_sales"
           ? "after_sales_refund_initiations"
           : "order_shipping_change_refund_initiations";
-      const replay = await db
-        .prepare(`SELECT id FROM ${table} WHERE command_id=?`)
-        .bind(commandId)
-        .first<{ id: string }>();
-      if (replay) return replay.id;
+      async function replayedInitiation() {
+        const row =
+          input.refundKind === "after_sales"
+            ? await db
+                .prepare(
+                  `SELECT id,order_id,authorization_id AS refund_id,destination_id,amount_cents,initiated_date_et,external_reference,actor_id
+              FROM after_sales_refund_initiations WHERE command_id=?`,
+                )
+                .bind(commandId)
+                .first<Record<string, unknown>>()
+            : await db
+                .prepare(
+                  `SELECT i.id,d.order_id,i.reservation_id AS refund_id,d.destination_id,i.amount_cents,d.initiated_date_et,i.external_reference,i.actor_id
+              FROM order_shipping_change_refund_initiations i JOIN order_shipping_change_refund_initiation_details d ON d.initiation_id=i.id
+              WHERE i.command_id=?`,
+                )
+                .bind(commandId)
+                .first<Record<string, unknown>>();
+        if (!row) return null;
+        if (
+          row.order_id !== input.orderId ||
+          row.refund_id !== input.refundId ||
+          row.destination_id !== input.destinationId ||
+          row.amount_cents !== input.amountCents ||
+          row.initiated_date_et !== input.initiatedDateEt ||
+          row.external_reference !== externalReference ||
+          row.actor_id !== actor.id
+        )
+          throw conflict();
+        return String(row.id);
+      }
+      const replay = await replayedInitiation();
+      if (replay) return replay;
       const destination = await db
         .prepare(
           `SELECT * FROM after_sales_refund_destinations WHERE id=? AND order_id=?`,
@@ -513,7 +558,27 @@ export function createRefundInitiationService(
         .bind(input.destinationId, input.orderId)
         .first<DestinationRow>();
       if (!destination)
-        throw new Response("Choose a verified destination", { status: 400 });
+        throw new Response("请选择已登记并核实的退款账号。", { status: 400 });
+      if (destination.kind === "alternative") {
+        const approval = await db
+          .prepare(
+            `SELECT id FROM after_sales_destination_approvals WHERE destination_id=? AND refund_kind=? AND refund_id=?`,
+          )
+          .bind(destination.id, input.refundKind, input.refundId)
+          .first("id");
+        if (!approval)
+          throw new Response(
+            "此退款账号的渠道变更或替代账号使用尚未获批。请先由 Owner 在“Owner 批准替代账户”中批准此账号用于这笔退款，再记录退款完成。勾选已核对账号不能代替该批准。",
+            { status: 400 },
+          );
+      }
+      if (
+        (input.complete || destination.verified_by.startsWith("customer:")) &&
+        !input.accountVerified
+      )
+        throw new Response("请核对客户提交的退款账号并确认已线下汇款。", {
+          status: 400,
+        });
       const orderFacts = await facts.read(input.orderId);
       let approvedAt: string;
       // Return and revision refunds belong to a Case; label the message.
@@ -631,6 +696,19 @@ export function createRefundInitiationService(
                   input.initiatedDateEt,
                 ),
             ];
+      if (input.complete) {
+        const remainingSql =
+          input.refundKind === "after_sales"
+            ? `SELECT refund_cents - coalesce((SELECT sum(amount_cents) FROM after_sales_refund_initiations WHERE authorization_id=a.id),0) FROM after_sales_refund_authorizations a WHERE id=? AND order_id=?`
+            : `SELECT due_cents - coalesce((SELECT sum(amount_cents) FROM order_shipping_change_refund_initiations WHERE reservation_id=r.id),0) FROM order_shipping_change_refund_reservations r WHERE id=? AND order_id=?`;
+        statements.unshift(
+          db
+            .prepare(
+              `INSERT INTO after_sales_batch_assertions(failed) SELECT 1 WHERE coalesce((${remainingSql}),-1) != ?`,
+            )
+            .bind(input.refundId, input.orderId, input.amountCents),
+        );
+      }
       statements.push(
         db
           .prepare(
@@ -667,14 +745,22 @@ export function createRefundInitiationService(
           caseId,
         })),
       );
+      if (caseId)
+        statements.push(
+          ...refundCaseCompletionStatements(db, {
+            caseId,
+            orderId: input.orderId,
+            actorId: actor.id,
+            initiationId: id,
+            commandId,
+            timestamp,
+          }),
+        );
       try {
         await db.batch(statements);
       } catch (error) {
-        const concurrent = await db
-          .prepare(`SELECT id FROM ${table} WHERE command_id=?`)
-          .bind(commandId)
-          .first<{ id: string }>();
-        if (concurrent) return concurrent.id;
+        const concurrent = await replayedInitiation();
+        if (concurrent) return concurrent;
         const message = error instanceof Error ? error.message : "";
         if (/exceeds|required|funds|approved|entitlement|hold/i.test(message))
           throw new Response(message.replace(/^.*?: /, ""), { status: 409 });

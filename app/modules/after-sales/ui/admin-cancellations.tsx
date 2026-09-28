@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { usd } from "../domain/refund-calculation";
+import { useState, type ReactNode } from "react";
 import { Form } from "react-router";
 
 import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
@@ -152,45 +153,112 @@ export function AdminCancellationRequests({
   );
 }
 
-export function AdminCancellationDecisionForm({
-  request,
-  commandId,
-  busy,
-  intent = "cancellation-resolve",
-  children,
-}: {
+interface DecisionFormProps {
   request: CancellationRequestView;
   commandId: string;
   busy: boolean;
   intent?: string;
   children?: ReactNode;
-}) {
-  if (request.status !== "pending_review") return null;
+}
+
+export function AdminCancellationDecisionForm(props: DecisionFormProps) {
+  if (props.request.status !== "pending_review") return null;
   return (
     <AdminActionDialog label="审核并作出取消决定" wide primary>
-      <Form method="post" className="shipping-change-form">
-        <input type="hidden" name="intent" value={intent} />
-        <input type="hidden" name="requestId" value={request.id} />
-        <input type="hidden" name="expectedVersion" value={request.version} />
-        <input type="hidden" name="commandId" value={commandId} />
-        <fieldset>
-          <legend>逐行批准数量（其余数量拒绝并恢复履约）</legend>
-          <div className="after-sales-quantity-list">
-            {request.lines.map((line) => (
-              <label
-                key={`${line.lineId}:${line.shipmentId ?? ""}`}
-                className="after-sales-quantity-row"
-              >
-                <span>
-                  <strong>{line.displayName}</strong>
-                  <small>
-                    {line.shipmentName ?? "未分配批次"} · 申请{" "}
-                    {line.physicalQuantity}
-                    {line.handedOff ? " · 已交接，只能拒绝" : ""}
-                  </small>
-                </span>
+      <CancellationDecisionFields {...props} />
+    </AdminActionDialog>
+  );
+}
+
+function CancellationDecisionFields({
+  request,
+  commandId,
+  busy,
+  intent = "cancellation-resolve",
+  children,
+}: DecisionFormProps) {
+  const [amounts, setAmounts] = useState({
+    logistics: 0,
+    tax: 0,
+    thirdParty: 0,
+  });
+  const [responsibility, setResponsibility] = useState(
+    request.kind === "exceptional" ? "" : "customer",
+  );
+  const [approved, setApproved] = useState(
+    request.lines.reduce(
+      (sum, line) => sum + (line.handedOff ? 0 : line.physicalQuantity),
+      0,
+    ),
+  );
+  const requested = request.lines.reduce(
+    (sum, line) => sum + line.physicalQuantity,
+    0,
+  );
+  const feeStep = request.kind === "exceptional" ? "03" : "02";
+  return (
+    <Form
+      method="post"
+      className="shipping-change-form cancellation-decision-form"
+      onChange={(event) => {
+        const form = new FormData(event.currentTarget);
+        setResponsibility(String(form.get("responsibility") ?? "customer"));
+        setAmounts({
+          logistics: Number(form.get("logisticsUsd") || 0),
+          tax: Number(form.get("taxUsd") || 0),
+          thirdParty: Number(
+            event.currentTarget.querySelector<HTMLInputElement>(
+              '[name="thirdPartyUsd"]',
+            )?.value || 0,
+          ),
+        });
+        setApproved(
+          request.lines.reduce(
+            (sum, line) =>
+              sum +
+              Number(
+                form.get(
+                  scopedField("approve", line.lineId, line.shipmentId),
+                ) || 0,
+              ),
+            0,
+          ),
+        );
+      }}
+    >
+      <input type="hidden" name="intent" value={intent} />
+      <input type="hidden" name="requestId" value={request.id} />
+      <input type="hidden" name="expectedVersion" value={request.version} />
+      <input type="hidden" name="commandId" value={commandId} />
+      <p className="cancellation-form-intro">
+        核实数量与工厂情况后填写处理说明。标有 * 的项目为必填。
+      </p>
+      <fieldset className="cancellation-form-section">
+        <legend>
+          <span className="cancellation-step">01</span>取消数量
+        </legend>
+        <p className="cancellation-help">
+          填写批准取消的数量；剩余数量将被拒绝取消并恢复履约。全部拒绝请填 0。
+        </p>
+        <div className="after-sales-quantity-list">
+          {request.lines.map((line) => (
+            <label
+              key={`${line.lineId}:${line.shipmentId ?? ""}`}
+              className="after-sales-quantity-row"
+            >
+              <span>
+                <strong>{line.displayName}</strong>
+                <small>
+                  {line.shipmentName ?? "未分配批次"} · 申请{" "}
+                  {line.physicalQuantity}
+                  {line.handedOff ? " · 已交接，只能拒绝" : ""}
+                </small>
+              </span>
+              <span className="cancellation-quantity-input">
+                <small>批准数量 *</small>
                 <input
                   type="number"
+                  required
                   min={0}
                   max={line.handedOff ? 0 : line.physicalQuantity}
                   step={1}
@@ -198,70 +266,172 @@ export function AdminCancellationDecisionForm({
                   name={scopedField("approve", line.lineId, line.shipmentId)}
                   aria-label={`${line.displayName} 批准取消数量`}
                 />
-              </label>
-            ))}
-          </div>
-        </fieldset>
-        {children}
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      {children}
+      <fieldset className="cancellation-form-section">
+        <legend>
+          <span className="cancellation-step">{feeStep}</span>责任与费用
+        </legend>
+        <p className="cancellation-help">
+          商品退款按批准数量自动计算。以下仅填写额外退回或扣除的费用，无费用请留空或填
+          0。
+        </p>
         {request.kind === "exceptional" && (
-          <label>
-            责任
+          <label className="cancellation-responsibility">
+            责任归属 *
             <select name="responsibility" required defaultValue="">
               <option value="" disabled>
-                请根据核实的事实选择
+                请选择责任归属
               </option>
-              <option value="customer">
-                客户要求取消（可扣有凭证的第三方费用）
-              </option>
-              <option value="seller">
-                卖方原因（如配置或生产错误，不扣任何费用）
-              </option>
+              <option value="customer">客户要求取消</option>
+              <option value="seller">卖方原因</option>
             </select>
+            <small>
+              {responsibility === "seller"
+                ? "卖方原因不扣除第三方费用。"
+                : "客户要求取消时，仅可扣除有凭证、不可退的第三方费用，无加价，需客户确认。"}
+            </small>
           </label>
         )}
-        <div className="shipping-change-fields">
-          <label>
-            可退回物流费用（USD）
-            <input name="logisticsUsd" inputMode="decimal" placeholder="0.00" />
-          </label>
-          <label>
-            物流核算说明（内部，客户不可见；按剩余履约重新核算，勿按原运费比例分摊）
-            <input name="logisticsNote" />
-          </label>
-          <label>
-            销售税调整（USD）
-            <input name="taxUsd" inputMode="decimal" placeholder="0.00" />
-          </label>
-          <label>
-            税务依据（内部，客户不可见；已接受的税务处理）
-            <input name="taxNote" />
-          </label>
-          <label>
-            已发生且不可退的第三方费用（USD）
-            <input
-              name="thirdPartyUsd"
-              inputMode="decimal"
-              placeholder="0.00"
-            />
-          </label>
-          <label>
-            第三方费用凭证说明（客户可见，无加价，需客户确认；卖方原因不得扣费）
-            <input name="thirdPartyEvidence" />
-          </label>
+        <div className="cancellation-fee-grid">
+          <div className="cancellation-fee-card">
+            <label>
+              可退回物流费用（USD）
+              <input
+                name="logisticsUsd"
+                type="number"
+                min="0"
+                step="0.01"
+                max={request.refundLimits.logisticsCents / 100}
+                inputMode="decimal"
+                placeholder="0.00"
+              />
+              <small>
+                剩余可退物流费用上限：{usd(request.refundLimits.logisticsCents)}
+              </small>
+            </label>
+            <label>
+              物流核算说明{amounts.logistics > 0 ? " *" : "（选填）"}
+              <input
+                name="logisticsNote"
+                required={amounts.logistics > 0}
+                placeholder="内部记录，客户不可见"
+              />
+            </label>
+            <p className="cancellation-help">
+              按剩余履约重新核算，不按原运费比例分摊。上限已扣除已有退款和变更抵扣。
+            </p>
+          </div>
+          <div className="cancellation-fee-card">
+            <label>
+              销售税调整（USD）
+              <input
+                name="taxUsd"
+                type="number"
+                min="0"
+                step="0.01"
+                max={request.refundLimits.taxCents / 100}
+                inputMode="decimal"
+                placeholder="0.00"
+              />
+              <small>
+                剩余可退销售税上限：{usd(request.refundLimits.taxCents)}
+              </small>
+            </label>
+            <label>
+              税务依据{amounts.tax > 0 ? " *" : "（选填）"}
+              <input
+                name="taxNote"
+                required={amounts.tax > 0}
+                placeholder="内部记录，客户不可见"
+              />
+            </label>
+            <p className="cancellation-help">
+              按已接受的税务处理填写；未收取销售税请留空或填 0。
+            </p>
+          </div>
         </div>
+        <fieldset
+          className="cancellation-deduction"
+          disabled={responsibility === "seller"}
+        >
+          <legend>
+            第三方费用扣除{" "}
+            <span className="cancellation-optional">无费用可跳过</span>
+          </legend>
+          <div className="shipping-change-fields">
+            <label>
+              不可退第三方费用（USD）
+              <input
+                name="thirdPartyUsd"
+                disabled={responsibility === "seller"}
+                type="number"
+                min="0"
+                step="0.01"
+                inputMode="decimal"
+                placeholder="0.00"
+              />
+            </label>
+            <label>
+              费用凭证说明
+              {amounts.thirdParty > 0 && responsibility !== "seller"
+                ? " *"
+                : "（选填）"}
+              <input
+                name="thirdPartyEvidence"
+                disabled={responsibility === "seller"}
+                required={amounts.thirdParty > 0 && responsibility !== "seller"}
+                placeholder="向客户说明扣费项目及依据"
+              />
+            </label>
+          </div>
+          <p className="cancellation-help">
+            {responsibility === "seller"
+              ? "已选择卖方原因，此项不适用，不会扣费。"
+              : "仅填写已发生且不可退的实际费用。说明对客户可见。"}
+          </p>
+        </fieldset>
+      </fieldset>
+      <fieldset className="cancellation-form-section">
+        <legend>
+          <span className="cancellation-step">
+            {request.kind === "exceptional" ? "04" : "03"}
+          </span>
+          处理说明
+        </legend>
         <label>
-          处理原因（客户可见，批准或驳回均必填）
-          <textarea name="customerReason" required rows={3} />
+          处理原因 * <span className="cancellation-visibility">客户可见</span>
+          <textarea
+            name="customerReason"
+            required
+            rows={3}
+            placeholder="说明批准或拒绝的原因，以及客户需要了解的费用。"
+          />
         </label>
-        <label>
-          内部备注（客户不可见）
-          <textarea name="internalNote" rows={2} />
-        </label>
-        <p>不收取取消手续费或任何加价；原 PI 与订单保持不变。</p>
+        <details className="cancellation-optional-details">
+          <summary>添加内部备注（选填，客户不可见）</summary>
+          <label>
+            内部备注
+            <textarea name="internalNote" rows={2} />
+          </label>
+        </details>
+      </fieldset>
+      <footer className="cancellation-form-footer">
+        <div>
+          <strong aria-live="polite">
+            批准 {Number.isFinite(approved) ? approved : 0} / {requested}
+            ，其余拒绝
+          </strong>
+          <small>保存后决定不可修改；不收取取消手续费。</small>
+        </div>
         <button className="button button-primary" disabled={busy}>
-          保存不可更改的取消决定
+          {busy ? "正在保存…" : "保存取消决定"}
         </button>
-      </Form>
-    </AdminActionDialog>
+      </footer>
+    </Form>
   );
 }

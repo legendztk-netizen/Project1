@@ -1,4 +1,5 @@
 import { inspectionConditionKeys } from "./return-inspection-service";
+import { factoryStatuses } from "../domain/factory-status";
 
 /**
  * Form field names scoped to an Order line and Shipment. Identifiers are
@@ -92,14 +93,18 @@ export function readCancellationDecisions(form: FormData) {
 
 export function readFactoryEvidence(form: FormData) {
   if (!form.has("factoryStatus")) return undefined;
+  const status = factoryStatuses.find(
+    (item) => item.value === form.get("factoryStatus"),
+  );
+  if (!status) throw new Response("请选择工厂状态。", { status: 400 });
   return {
-    status: String(form.get("factoryStatus") ?? ""),
+    status: status.label,
     source: String(form.get("factorySource") ?? ""),
     reviewedAt: beijingLocalToIso(String(form.get("factoryReviewedAt") ?? "")),
     supportReference: String(form.get("factorySupportReference") ?? ""),
     attachmentIds: form.getAll("factoryAttachmentId").map(String),
     externalIdentifiers: String(form.get("factoryExternalIdentifiers") ?? ""),
-    precut: form.get("factoryPrecut") === "on" ? true : null,
+    precut: status.precut,
   };
 }
 

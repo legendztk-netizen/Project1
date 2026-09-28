@@ -879,15 +879,30 @@ post the funds within that period. The website records amount, channel,
 initiation date, and external reference but does not move money.
 _Avoid_: Customer posting date, automatic payout, inspection completion estimate
 
-**Refund Destination**:
-The verified destination for an approved refund. PayPal refunds return through
+**Refund Account**:
+The account used to receive an approved refund. PayPal refunds return through
 the original PayPal transaction when available; WorldFirst or bank payments
 return to a verified account belonging to the same Individual Customer or
-Organization Purchasing Context. An alternative account requires explicit
+Organization Purchasing Context. Once a refund is approved and payable,
+the customer can provide a bank account or PayPal email from the Order. Selecting
+a different channel from the original payment requires Owner approval for that refund. Account Provided means the
+customer has submitted the details, not that a payment has occurred or the bank
+has independently verified ownership. Operations checks the account before
+remitting funds. A corrected account replaces the account for unpaid refunds
+without changing earlier remittance records. An alternative account requires explicit
 Owner approval and a recorded reason, bound to that exact refund and destination
 version; a changed destination needs a new approval. Cash and default store
 credit are not launch refund methods.
 _Avoid_: Unverified third-party account, cash refund, automatic store credit
+
+**Refund Completed**:
+The seller has recorded the full approved refund as remitted outside the
+website, including its account, amount, date and transaction reference. It does
+not assert that the customer's bank has credited the funds. The related
+After-sales Case closes when all claimed returns have been received and
+decided, all refunds have been fully remitted and no unresolved replacement or
+refund hold remains. A partial remittance does not close the Case.
+_Avoid_: Refund approval, bank receipt confirmation, automatic bank transfer
 
 **Convenience Return Condition**:
 The condition required for a customer-choice return: unused, uninstalled,
@@ -895,6 +910,8 @@ undamaged, complete with supplied accessories, and in original packaging where
 reasonably applicable. Inspection includes threads, sealing surfaces, finish,
 and evidence of installation or fluid exposure. Failure to meet the condition
 may reduce or eliminate the approved merchandise refund.
+Detailed inspection notes are optional internal records; Operations may assess
+the physical condition offline before recording the decision.
 _Avoid_: RA issuance, seller-error defect, automatic full refund
 
 **Return Inspection Gate**:
@@ -918,9 +935,11 @@ _Avoid_: Refund initiation deadline, automatic approval, carrier delivery estima
 **Return Inspection Decision Notification**:
 The email and matching Personal Center event sent when Operations records an
 `Approved`, `Partially Approved`, or `Declined` return inspection decision. A
-partial or declined decision requires a customer-visible reason; a partial
-approval also shows the returned merchandise amount, restocking fee, tax and
-other approved adjustments, and final refund amount.
+partial or declined decision requires a customer-visible reason. Every refund
+shows the returned merchandise amount, restocking fee, tax and other approved
+adjustments, and final refund amount. A full approval does not require an
+additional written explanation; standard deductions are disclosed in the
+breakdown, and any third-party deduction requires supporting evidence.
 _Avoid_: Internal note only, unexplained refund amount, inspection photo dump
 
 **Return Inspection Evidence**:

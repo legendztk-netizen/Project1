@@ -5,7 +5,10 @@ import { createCancellationService } from "../../after-sales/application/cancell
 import { createCaseService } from "../../after-sales/application/case-service";
 import { createRefundInitiationService } from "../../after-sales/application/refund-initiation-service";
 import { usd } from "../../after-sales/domain/refund-calculation";
-import { adminCaseReasonLabel } from "../../after-sales/ui/admin-cases";
+import {
+  adminCaseReasonLabel,
+  adminCaseStatusLabel,
+} from "../../after-sales/ui/admin-cases";
 import { hasAfterSalesPermission } from "../../after-sales/domain/permissions";
 import { cancellationStatusLabel } from "../../after-sales/ui/admin-cancellations";
 import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
@@ -57,8 +60,11 @@ export async function loader({ context, request }: LoaderFunctionArgs) {
     1,
     Math.floor(Number(url.searchParams.get("casePage"))) || 1,
   );
+  const requestedCaseStatus = url.searchParams.get("caseStatus");
   const caseStatus =
-    url.searchParams.get("caseStatus") === "all" ? "all" : "open";
+    requestedCaseStatus === "all" || requestedCaseStatus === "closed"
+      ? requestedCaseStatus
+      : "open";
   const refundPage = Math.max(
     1,
     Math.floor(Number(url.searchParams.get("refundPage"))) || 1,
@@ -131,7 +137,7 @@ export default function AdminAfterSales({
                         <tr key={`${record.kind}:${record.id}`}>
                           <td>
                             <Link
-                              to={`/admin/orders/${encodeURIComponent(record.orderId)}?tab=after-sales`}
+                              to={`/admin/orders/${encodeURIComponent(record.orderId)}?tab=after-sales&afterSalesTab=refunds`}
                             >
                               {record.orderNumber}
                             </Link>
@@ -200,6 +206,7 @@ export default function AdminAfterSales({
                 {(
                   [
                     ["open", "处理中"],
+                    ["closed", "已关闭"],
                     ["all", "全部"],
                   ] as const
                 ).map(([id, label]) => (
@@ -222,6 +229,7 @@ export default function AdminAfterSales({
                       <th>案件</th>
                       <th>订单</th>
                       <th>原因</th>
+                      <th>状态</th>
                       <th>最近客户消息</th>
                       <th>更新时间</th>
                     </tr>
@@ -231,13 +239,20 @@ export default function AdminAfterSales({
                       <tr key={record.id}>
                         <td>
                           <Link
-                            to={`/admin/orders/${encodeURIComponent(record.orderId)}?tab=after-sales`}
+                            to={`/admin/orders/${encodeURIComponent(record.orderId)}?tab=after-sales&afterSalesTab=cases`}
                           >
                             {record.caseNumber}
                           </Link>
                         </td>
                         <td>{record.orderNumber}</td>
                         <td>{adminCaseReasonLabel[record.reason]}</td>
+                        <td>
+                          <span
+                            className={`after-sales-status after-sales-status-${record.status}`}
+                          >
+                            {adminCaseStatusLabel[record.status]}
+                          </span>
+                        </td>
                         <td>
                           <Link
                             to={`/admin/messages/${encodeURIComponent(record.requestId)}?case=${encodeURIComponent(record.id)}`}
@@ -277,8 +292,8 @@ export default function AdminAfterSales({
               </nav>
             </section>
             <section aria-labelledby="after-sales-cancellations">
-              <h2 id="after-sales-cancellations">取消申请</h2>
-              <nav className="orders-status-tabs" aria-label="取消申请筛选">
+              <h2 id="after-sales-cancellations">订单取消申请</h2>
+              <nav className="orders-status-tabs" aria-label="订单取消申请筛选">
                 {cancellationFilters.map((filter) => (
                   <Link
                     key={filter.id}
@@ -308,7 +323,7 @@ export default function AdminAfterSales({
                       <tr key={record.id}>
                         <td>
                           <Link
-                            to={`/admin/orders/${encodeURIComponent(record.orderId)}?tab=after-sales`}
+                            to={`/admin/orders/${encodeURIComponent(record.orderId)}?tab=after-sales&afterSalesTab=cancellations`}
                           >
                             {record.orderNumber}
                           </Link>
@@ -336,7 +351,7 @@ export default function AdminAfterSales({
                   </tbody>
                 </table>
               ) : (
-                <p>没有符合条件的取消申请。</p>
+                <p>没有符合条件的订单取消申请。</p>
               )}
               <nav className="after-sales-pagination" aria-label="分页">
                 {loaderData.cancellations.page > 1 && (

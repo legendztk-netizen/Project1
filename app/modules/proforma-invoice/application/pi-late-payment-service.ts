@@ -1,5 +1,8 @@
 import type { AdminIdentity } from "#workers/admin-access";
-import { effectiveQuoteAgreementSql } from "../infrastructure/accepted-agreement-sql";
+import {
+  effectiveQuoteAgreementSql,
+  factoryReviewSatisfiedSql,
+} from "../infrastructure/accepted-agreement-sql";
 import { dueDateInstant } from "../domain/pi-payment-terms";
 import { piSha256 } from "../domain/proforma-invoice";
 import { orderCreationStatements } from "../infrastructure/d1-order-creation";
@@ -344,10 +347,7 @@ export function createPiLatePaymentService(
             AND a.quote_revision_id=p.quote_revision_id
             AND ${effectiveQuoteAgreementSql("p")}
             AND NOT EXISTS(SELECT 1 FROM confirmed_orders WHERE request_id=p.request_id)
-            AND (NOT EXISTS(SELECT 1 FROM json_each(p.snapshot_json,'$.lines') line
-              WHERE json_extract(line.value,'$.madeToOrder')=1)
-              OR EXISTS(SELECT 1 FROM quote_revisions q WHERE q.id=p.quote_revision_id
-                AND json_extract(q.snapshot_json,'$.factoryReviewConfirmed')=1))
+            AND ${factoryReviewSatisfiedSql("p")}
           ))`,
           )
           .bind(
@@ -399,9 +399,7 @@ export function createPiLatePaymentService(
               AND pay.amount_received_cents+pay.allocated_in_cents-pay.allocated_out_cents-pay.refunded_cents>=pay.total_due_cents AND pay.total_due_cents>0
               AND pay.actual_channel IS NOT NULL AND (pay.due_at<? OR pay.late_review_required=1)
               AND ${effectiveQuoteAgreementSql("p")}
-              AND (NOT EXISTS(SELECT 1 FROM json_each(p.snapshot_json,'$.lines') line
-                 WHERE json_extract(line.value,'$.madeToOrder')=1)
-                 OR json_extract(q.snapshot_json,'$.factoryReviewConfirmed')=1)
+              AND ${factoryReviewSatisfiedSql("p")}
               AND EXISTS(SELECT 1 FROM pi_late_payment_reviews WHERE id=? AND decision='same_terms_approved')`,
                 )
                 .bind(

@@ -6,6 +6,7 @@ import { productClassLabel } from "./admin-cancellations";
 import "../../shipment/ui/order-shipping-changes.css";
 import { scopedField } from "../application/parse-after-sales-forms";
 import { AdminActionDialog } from "./admin-action-dialog";
+import { factoryStatuses } from "../domain/factory-status";
 import "./after-sales.css";
 
 interface ExceptionalEligible {
@@ -101,35 +102,52 @@ export function FactoryEvidenceFields({
   hasCutHose: boolean;
 }) {
   return (
-    <fieldset>
-      <legend>工厂实际信息（必填；网站没有生产记录不代表未开工）</legend>
+    <fieldset className="cancellation-form-section">
+      <legend>
+        <span className="cancellation-step">02</span>工厂核实
+      </legend>
+      <p className="cancellation-help">
+        按工厂实际情况填写，网站没有生产记录不代表未开工。
+      </p>
       <div className="shipping-change-fields">
         <label>
-          实际工厂状态
-          <input name="factoryStatus" required />
+          实际工厂状态 *
+          <select name="factoryStatus" required defaultValue="">
+            <option value="" disabled>
+              请选择已核实的工厂状态
+            </option>
+            {factoryStatuses.map((status) => (
+              <option key={status.value} value={status.value}>
+                {status.label}
+              </option>
+            ))}
+          </select>
+          {hasCutHose && (
+            <small>
+              批准的软管数量必须均尚未切割。已切割或尚未核实时，批准数量请填 0。
+            </small>
+          )}
         </label>
         <label>
-          信息来源（人员 / 渠道）
-          <input name="factorySource" required />
+          信息来源 *
+          <input
+            name="factorySource"
+            required
+            placeholder="例如：生产负责人 / 电话确认"
+          />
         </label>
         <label>
-          核实时间（北京时间）
+          核实时间（北京时间）*
           <input name="factoryReviewedAt" type="datetime-local" required />
         </label>
         <label>
-          客服联系记录编号
+          客服联系记录编号 *
           <input name="factorySupportReference" required />
         </label>
         <label>
-          外部标识（工厂单号等，可选）
+          工厂单号 / 外部标识（选填）
           <input name="factoryExternalIdentifiers" />
         </label>
-        {hasCutHose && (
-          <label className="shipping-change-choice">
-            <input type="checkbox" name="factoryPrecut" />
-            已有书面记录确认软管尚未切割（批准按长度订购软管取消的必要条件）
-          </label>
-        )}
       </div>
       {files.length > 0 && (
         <div>

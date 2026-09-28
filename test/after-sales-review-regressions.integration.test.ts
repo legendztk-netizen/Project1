@@ -212,7 +212,7 @@ it("rejects logistics already refunded by Spec 6", async () => {
       logisticsNote: "All original freight and duty refunded",
       commandId: crypto.randomUUID(),
     }),
-  ).rejects.toMatchObject({ status: 409 });
+  ).rejects.toMatchObject({ status: 400 });
   // The failed decision rolls back; the remaining original logistics is valid.
   await cancellations.adminResolve(owner, {
     orderId: order.orderId,

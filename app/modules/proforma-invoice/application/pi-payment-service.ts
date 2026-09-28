@@ -6,6 +6,7 @@ import { quoteNotificationOutboxStatement } from "../../quote-notifications/infr
 import { orderCreationStatements } from "../infrastructure/d1-order-creation";
 import {
   effectiveQuoteAgreementSql,
+  factoryReviewSatisfiedSql,
   retainedAgreementSql,
   unspecifiedPaymentDeadlineSql,
 } from "../infrastructure/accepted-agreement-sql";
@@ -42,6 +43,7 @@ export interface PiPaymentAccount {
   agreement_retained: number;
   deadline_unspecified: number;
   effective_agreement: number;
+  factory_review_satisfied: number;
 }
 
 export interface UpdateReceivedAmount {
@@ -138,6 +140,7 @@ function projection(row: PiPaymentAccount) {
     termKind: row.term_kind,
     acceptedAgreementRetained: row.agreement_retained === 1,
     paymentDeadlineUnspecified: row.deadline_unspecified === 1,
+    factoryReviewRequired: row.factory_review_satisfied !== 1,
     quoteReviewRequired: row.effective_agreement !== 1,
     acceptedAt: row.accepted_at,
     current: row.current_pi_id === row.pi_id,
@@ -163,6 +166,7 @@ export function createPiPaymentService(
     ${retainedAgreementSql("p")} AS agreement_retained,
     ${unspecifiedPaymentDeadlineSql("p")} AS deadline_unspecified,
     ${effectiveQuoteAgreementSql("p")} AS effective_agreement,
+    ${factoryReviewSatisfiedSql("p")} AS factory_review_satisfied,
     COALESCE(NULLIF(json_extract(p.snapshot_json,'$.buyer.legalName'),''),
       NULLIF(json_extract(p.snapshot_json,'$.buyer.contactName'),''),
       (SELECT profile.email_display FROM customer_profiles profile
@@ -773,6 +777,11 @@ export function createPiPaymentService(
         return { confirmed: true as const, order: await confirmedOrder(piId) };
       }
       const before = await account(piId);
+      if (before.factory_review_satisfied !== 1)
+        throw new Response(
+          "该报价仍有需要工厂审核的规格变更或总成配置，请先完成技术审核。",
+          { status: 409 },
+        );
       if (
         before.version !== input.expectedVersion ||
         before.current_pi_id !== piId ||
@@ -903,9 +912,7 @@ export function createPiPaymentService(
              AND a.confirmation_valid=1
              AND NOT EXISTS(SELECT 1 FROM pi_payment_disputes WHERE pi_id=p.id AND active=1)
              AND ${effectiveQuoteAgreementSql("p")}
-             AND (NOT EXISTS(SELECT 1 FROM json_each(p.snapshot_json,'$.lines') line
-               WHERE json_extract(line.value,'$.madeToOrder')=1)
-               OR json_extract(q.snapshot_json,'$.factoryReviewConfirmed')=1)
+             AND ${factoryReviewSatisfiedSql("p")}
              AND ((EXISTS(SELECT 1 FROM pi_acceptances WHERE pi_id=p.id)
                AND (a.due_at>=? OR ${unspecifiedPaymentDeadlineSql("p")}))
                OR (NOT EXISTS(SELECT 1 FROM pi_acceptances WHERE pi_id=p.id)

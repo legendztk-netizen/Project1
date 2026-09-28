@@ -219,7 +219,12 @@ it("requires Owner approval bound to the exact refund for an alternative destina
       externalReference: "WIRE-ALT",
       commandId: crypto.randomUUID(),
     });
-  await expect(record(alternative)).rejects.toMatchObject({ status: 409 });
+  const error = await record(alternative).catch((error: unknown) => error);
+  expect(error).toBeInstanceOf(Response);
+  if (!(error instanceof Response))
+    throw new Error("Expected approval validation error");
+  expect(error.status).toBe(400);
+  expect(await error.text()).toContain("Owner 批准替代账户");
   await expect(
     refunds().ownerApproveDestination(refunder, {
       orderId: order.orderId,
@@ -241,7 +246,7 @@ it("requires Owner approval bound to the exact refund for an alternative destina
   await record(alternative);
   // A changed destination is a new record that needs its own approval.
   const changed = await destination(order, "alternative");
-  await expect(record(changed)).rejects.toMatchObject({ status: 409 });
+  await expect(record(changed)).rejects.toMatchObject({ status: 400 });
   await expect(
     refunds().adminAddDestination(refunder, {
       orderId: order.orderId,

@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Form } from "react-router";
+import { Check, X } from "lucide-react";
+import { AdminActionDialog } from "../../after-sales/ui/admin-action-dialog";
 import type { ProformaInvoiceSnapshot } from "../../proforma-invoice/domain/proforma-invoice";
 import type { createOrderShippingChangeService } from "../application/order-shipping-change-service";
 import { splitShipmentIdForChange } from "../domain/order-shipping-change";
@@ -115,12 +117,24 @@ export function AdminOrderShippingChanges({
                   ? "收货地址变更"
                   : "发货计划变更"}
               </h3>
-              <strong>{label[change.status] ?? change.status}</strong>
+              <strong className="shipping-change-status">
+                {label[change.status] ?? change.status}
+              </strong>
             </div>
-            <p>客户请求：{change.requested.note}</p>
+            <div className="shipping-change-request-summary">
+              <span>客户请求</span>
+              <p>{change.requested.note}</p>
+            </div>
             <p>
               涉及批次：
-              {change.shipments.map((item) => item.shipmentId).join(" · ")}
+              {change.shipments
+                .map(
+                  (item) =>
+                    shipments.find(
+                      (shipment) => shipment.id === item.shipmentId,
+                    )?.displayName ?? "原发货批次",
+                )
+                .join(" · ")}
             </p>
             {current && (
               <div className="shipping-change-proposal">
@@ -150,8 +164,14 @@ export function AdminOrderShippingChanges({
                 </p>
                 {current.after.shipments.map((item) => (
                   <p key={item.shipmentId}>
-                    {item.shipmentId} · {item.destination.addressLine1},{" "}
-                    {item.destination.city} ·{item.incoterm} {item.namedPlace} ·{" "}
+                    {shipments.find(
+                      (shipment) => shipment.id === item.shipmentId,
+                    )?.displayName ??
+                      (item.shipmentId === splitShipmentId
+                        ? "新增发货批次"
+                        : "原发货批次")}{" "}
+                    · {item.destination.addressLine1}, {item.destination.city} ·
+                    {item.incoterm} {item.namedPlace} ·{" "}
                     {item.carrierName || item.transportMethod}
                     {item.readyDate ? ` · 预计可发货 ${item.readyDate}` : ""}
                   </p>
@@ -190,272 +210,141 @@ export function AdminOrderShippingChanges({
                 )}
               </div>
             )}
-            {["pending_review", "proposed", "accepted"].includes(
-              change.status,
-            ) && (
-              <details>
-                <summary>{current ? "修订变更提案" : "审核并提出变更"}</summary>
-                <Form method="post" className="shipping-change-form">
-                  <input
-                    type="hidden"
-                    name="intent"
-                    value="shipping-change-propose"
-                  />
-                  <input type="hidden" name="requestId" value={change.id} />
-                  <input
-                    type="hidden"
-                    name="expectedVersion"
-                    value={change.version}
-                  />
-                  <input type="hidden" name="commandId" value={commandId} />
-                  {change.shipments.map((affected) => {
-                    const shipment = shipments.find(
-                      (item) => item.id === affected.shipmentId,
-                    );
-                    if (!shipment)
-                      return (
-                        <p key={affected.shipmentId}>
-                          批次已变化，请先核对订单。
-                        </p>
+            <div className="shipping-change-review-actions">
+              {["pending_review", "proposed", "accepted"].includes(
+                change.status,
+              ) && (
+                <AdminActionDialog
+                  label={current ? "修订变更方案" : "同意申请"}
+                  title={current ? "修订变更方案" : "审核并提出变更"}
+                  description="请核对地址、发货安排和费用。提交后发送方案供客户确认，客户接受后仍需在本页使变更生效。"
+                  icon={<Check size={18} aria-hidden="true" />}
+                  primary
+                  wide
+                  onOpen={() =>
+                    setSplitSelections((previous) => ({
+                      ...previous,
+                      [change.id]: !!proposedSplit,
+                    }))
+                  }
+                >
+                  <Form method="post" className="shipping-change-form">
+                    <input
+                      type="hidden"
+                      name="intent"
+                      value="shipping-change-propose"
+                    />
+                    <input type="hidden" name="requestId" value={change.id} />
+                    <input
+                      type="hidden"
+                      name="expectedVersion"
+                      value={change.version}
+                    />
+                    <input type="hidden" name="commandId" value={commandId} />
+                    {change.shipments.map((affected) => {
+                      const shipment = shipments.find(
+                        (item) => item.id === affected.shipmentId,
                       );
-                    const previous = current?.after.shipments.find(
-                      (item) => item.shipmentId === affected.shipmentId,
-                    );
-                    const destination =
-                      previous?.destination ||
-                      ("destination" in change.requested &&
-                        change.requested.destination) ||
-                      shipment.destination;
-                    return (
-                      <fieldset
-                        key={shipment.id}
-                        className="shipping-change-admin-shipment"
-                      >
-                        <legend>
-                          {shipment.displayName} · 当前版本 {shipment.version}
-                        </legend>
-                        <div className="shipping-change-fields">
-                          <label>
-                            收件人
-                            <input
-                              name={field(shipment.id, "recipientName")}
-                              required
-                              defaultValue={destination.recipientName}
-                            />
-                          </label>
-                          <label>
-                            地址
-                            <input
-                              name={field(shipment.id, "addressLine1")}
-                              required
-                              defaultValue={destination.addressLine1}
-                            />
-                          </label>
-                          <label>
-                            地址第二行
-                            <input
-                              name={field(shipment.id, "addressLine2")}
-                              defaultValue={destination.addressLine2 ?? ""}
-                            />
-                          </label>
-                          <label>
-                            城市
-                            <input
-                              name={field(shipment.id, "city")}
-                              required
-                              defaultValue={destination.city}
-                            />
-                          </label>
-                          <label>
-                            州/省
-                            <input
-                              name={field(shipment.id, "stateProvince")}
-                              required
-                              defaultValue={destination.stateProvince}
-                            />
-                          </label>
-                          <label>
-                            邮编
-                            <input
-                              name={field(shipment.id, "postalCode")}
-                              required
-                              defaultValue={destination.postalCode}
-                            />
-                          </label>
-                          <label>
-                            国家代码
-                            <input
-                              name={field(shipment.id, "countryCode")}
-                              required
-                              maxLength={2}
-                              defaultValue={destination.countryCode}
-                            />
-                          </label>
-                          <label>
-                            收件电话
-                            <input
-                              name={field(shipment.id, "recipientPhone")}
-                              defaultValue={destination.recipientPhone ?? ""}
-                            />
-                          </label>
-                          <label>
-                            收件邮箱
-                            <input
-                              name={field(shipment.id, "recipientEmail")}
-                              defaultValue={destination.recipientEmail ?? ""}
-                            />
-                          </label>
-                          <label>
-                            承运商
-                            <input
-                              name={field(shipment.id, "carrierName")}
-                              defaultValue={
-                                previous?.carrierName ??
-                                shipment.carrierName ??
-                                ""
-                              }
-                            />
-                          </label>
-                          <label>
-                            服务级别
-                            <input
-                              name={field(shipment.id, "serviceName")}
-                              defaultValue={
-                                previous?.serviceName ??
-                                shipment.serviceName ??
-                                ""
-                              }
-                            />
-                          </label>
-                          <label>
-                            运输方式
-                            <input
-                              name={field(shipment.id, "transportMethod")}
-                              required
-                              defaultValue={
-                                previous?.transportMethod ??
-                                shipment.transportMethod
-                              }
-                            />
-                          </label>
-                          <label>
-                            贸易条款
-                            <select
-                              name={field(shipment.id, "incoterm")}
-                              defaultValue={
-                                previous?.incoterm ?? shipment.incoterm
-                              }
-                            >
-                              <option>DDP</option>
-                              <option>DAP</option>
-                            </select>
-                          </label>
-                          <label>
-                            指定地点
-                            <input
-                              name={field(shipment.id, "namedPlace")}
-                              required
-                              defaultValue={
-                                previous?.namedPlace ?? shipment.namedPlace
-                              }
-                            />
-                          </label>
-                          <label>
-                            目的地税费责任
-                            <select
-                              name={field(
-                                shipment.id,
-                                "destinationTaxTreatment",
-                              )}
-                              defaultValue={
-                                previous?.destinationTaxTreatment ??
-                                shipment.destinationTaxTreatment ??
-                                "As accepted in PI"
-                              }
-                            >
-                              <option value="As accepted in PI">按原 PI</option>
-                              <option value="Seller pays import taxes">
-                                卖方承担进口税费
-                              </option>
-                              <option value="Buyer pays import taxes">
-                                买方承担进口税费
-                              </option>
-                            </select>
-                          </label>
-                          <label>
-                            预计可发货日期
-                            <input
-                              type="date"
-                              name={field(shipment.id, "readyDate")}
-                              defaultValue={
-                                previous?.readyDate ?? shipment.readyDate ?? ""
-                              }
-                            />
-                          </label>
-                        </div>
-                        <h4>该批次分配</h4>
-                        <div className="shipping-change-fields">
-                          {affectedLines.map((lineId) => (
-                            <label key={lineId}>
-                              {shipments
-                                .flatMap((item) => item.allocations)
-                                .find(
-                                  (allocation) => allocation.lineId === lineId,
-                                )?.displayName ?? lineId}
-                              <input
-                                type="number"
-                                min="0"
-                                step="1"
-                                required
-                                name={field(
-                                  shipment.id,
-                                  `allocation:${lineId}`,
-                                )}
-                                defaultValue={
-                                  previous?.allocations.find(
-                                    (item) => item.lineId === lineId,
-                                  )?.physicalQuantity ??
-                                  shipment.allocations.find(
-                                    (item) => item.lineId === lineId,
-                                  )?.physicalQuantity ??
-                                  0
-                                }
-                              />
-                            </label>
-                          ))}
-                        </div>
-                      </fieldset>
-                    );
-                  })}
-                  {change.kind === "shipping_plan" && sourceShipment && (
-                    <>
-                      <label className="shipping-change-split-toggle">
-                        <input
-                          type="checkbox"
-                          name="createSplitShipment"
-                          checked={splitEnabled}
-                          onChange={(event) =>
-                            setSplitSelections((previous) => ({
-                              ...previous,
-                              [change.id]: event.target.checked,
-                            }))
-                          }
-                        />
-                        新增分批发货批次
-                      </label>
-                      {splitEnabled && (
-                        <fieldset className="shipping-change-admin-shipment">
+                      if (!shipment)
+                        return (
+                          <p key={affected.shipmentId}>
+                            批次已变化，请先核对订单。
+                          </p>
+                        );
+                      const previous = current?.after.shipments.find(
+                        (item) => item.shipmentId === affected.shipmentId,
+                      );
+                      const destination =
+                        previous?.destination ||
+                        ("destination" in change.requested &&
+                          change.requested.destination) ||
+                        shipment.destination;
+                      return (
+                        <fieldset
+                          key={shipment.id}
+                          className="shipping-change-admin-shipment"
+                        >
                           <legend>
-                            新增批次（收货地址沿用第一个涉及批次）
+                            {shipment.displayName} · 当前版本 {shipment.version}
                           </legend>
                           <div className="shipping-change-fields">
                             <label>
+                              收件人
+                              <input
+                                name={field(shipment.id, "recipientName")}
+                                required
+                                defaultValue={destination.recipientName}
+                              />
+                            </label>
+                            <label>
+                              地址
+                              <input
+                                name={field(shipment.id, "addressLine1")}
+                                required
+                                defaultValue={destination.addressLine1}
+                              />
+                            </label>
+                            <label>
+                              地址第二行
+                              <input
+                                name={field(shipment.id, "addressLine2")}
+                                defaultValue={destination.addressLine2 ?? ""}
+                              />
+                            </label>
+                            <label>
+                              城市
+                              <input
+                                name={field(shipment.id, "city")}
+                                required
+                                defaultValue={destination.city}
+                              />
+                            </label>
+                            <label>
+                              州/省
+                              <input
+                                name={field(shipment.id, "stateProvince")}
+                                required
+                                defaultValue={destination.stateProvince}
+                              />
+                            </label>
+                            <label>
+                              邮编
+                              <input
+                                name={field(shipment.id, "postalCode")}
+                                required
+                                defaultValue={destination.postalCode}
+                              />
+                            </label>
+                            <label>
+                              国家代码
+                              <input
+                                name={field(shipment.id, "countryCode")}
+                                required
+                                maxLength={2}
+                                defaultValue={destination.countryCode}
+                              />
+                            </label>
+                            <label>
+                              收件电话
+                              <input
+                                name={field(shipment.id, "recipientPhone")}
+                                defaultValue={destination.recipientPhone ?? ""}
+                              />
+                            </label>
+                            <label>
+                              收件邮箱
+                              <input
+                                name={field(shipment.id, "recipientEmail")}
+                                defaultValue={destination.recipientEmail ?? ""}
+                              />
+                            </label>
+                            <label>
                               承运商
                               <input
-                                name={field(splitShipmentId, "carrierName")}
+                                name={field(shipment.id, "carrierName")}
                                 defaultValue={
-                                  proposedSplit?.carrierName ??
-                                  sourceShipment.carrierName ??
+                                  previous?.carrierName ??
+                                  shipment.carrierName ??
                                   ""
                                 }
                               />
@@ -463,10 +352,10 @@ export function AdminOrderShippingChanges({
                             <label>
                               服务级别
                               <input
-                                name={field(splitShipmentId, "serviceName")}
+                                name={field(shipment.id, "serviceName")}
                                 defaultValue={
-                                  proposedSplit?.serviceName ??
-                                  sourceShipment.serviceName ??
+                                  previous?.serviceName ??
+                                  shipment.serviceName ??
                                   ""
                                 }
                               />
@@ -474,21 +363,20 @@ export function AdminOrderShippingChanges({
                             <label>
                               运输方式
                               <input
-                                name={field(splitShipmentId, "transportMethod")}
+                                name={field(shipment.id, "transportMethod")}
                                 required
                                 defaultValue={
-                                  proposedSplit?.transportMethod ??
-                                  sourceShipment.transportMethod
+                                  previous?.transportMethod ??
+                                  shipment.transportMethod
                                 }
                               />
                             </label>
                             <label>
                               贸易条款
                               <select
-                                name={field(splitShipmentId, "incoterm")}
+                                name={field(shipment.id, "incoterm")}
                                 defaultValue={
-                                  proposedSplit?.incoterm ??
-                                  sourceShipment.incoterm
+                                  previous?.incoterm ?? shipment.incoterm
                                 }
                               >
                                 <option>DDP</option>
@@ -498,11 +386,10 @@ export function AdminOrderShippingChanges({
                             <label>
                               指定地点
                               <input
-                                name={field(splitShipmentId, "namedPlace")}
+                                name={field(shipment.id, "namedPlace")}
                                 required
                                 defaultValue={
-                                  proposedSplit?.namedPlace ??
-                                  sourceShipment.namedPlace
+                                  previous?.namedPlace ?? shipment.namedPlace
                                 }
                               />
                             </label>
@@ -510,12 +397,12 @@ export function AdminOrderShippingChanges({
                               目的地税费责任
                               <select
                                 name={field(
-                                  splitShipmentId,
+                                  shipment.id,
                                   "destinationTaxTreatment",
                                 )}
                                 defaultValue={
-                                  proposedSplit?.destinationTaxTreatment ??
-                                  sourceShipment.destinationTaxTreatment ??
+                                  previous?.destinationTaxTreatment ??
+                                  shipment.destinationTaxTreatment ??
                                   "As accepted in PI"
                                 }
                               >
@@ -534,127 +421,287 @@ export function AdminOrderShippingChanges({
                               预计可发货日期
                               <input
                                 type="date"
-                                name={field(splitShipmentId, "readyDate")}
+                                name={field(shipment.id, "readyDate")}
                                 defaultValue={
-                                  proposedSplit?.readyDate ??
-                                  sourceShipment.readyDate ??
+                                  previous?.readyDate ??
+                                  shipment.readyDate ??
                                   ""
                                 }
                               />
                             </label>
                           </div>
-                          <h4>新增批次分配</h4>
+                          <h4>该批次分配</h4>
                           <div className="shipping-change-fields">
                             {affectedLines.map((lineId) => (
                               <label key={lineId}>
                                 {shipments
                                   .flatMap((item) => item.allocations)
-                                  .find((item) => item.lineId === lineId)
-                                  ?.displayName ?? lineId}
+                                  .find(
+                                    (allocation) =>
+                                      allocation.lineId === lineId,
+                                  )?.displayName ?? lineId}
                                 <input
                                   type="number"
                                   min="0"
                                   step="1"
                                   required
                                   name={field(
-                                    splitShipmentId,
+                                    shipment.id,
                                     `allocation:${lineId}`,
                                   )}
                                   defaultValue={
-                                    proposedSplit?.allocations.find(
+                                    previous?.allocations.find(
                                       (item) => item.lineId === lineId,
-                                    )?.physicalQuantity ?? 0
+                                    )?.physicalQuantity ??
+                                    shipment.allocations.find(
+                                      (item) => item.lineId === lineId,
+                                    )?.physicalQuantity ??
+                                    0
                                   }
                                 />
                               </label>
                             ))}
                           </div>
                         </fieldset>
-                      )}
-                    </>
-                  )}
-                  <div className="shipping-change-fields">
+                      );
+                    })}
+                    {change.kind === "shipping_plan" && sourceShipment && (
+                      <>
+                        <label className="shipping-change-split-toggle">
+                          <input
+                            type="checkbox"
+                            name="createSplitShipment"
+                            checked={splitEnabled}
+                            onChange={(event) =>
+                              setSplitSelections((previous) => ({
+                                ...previous,
+                                [change.id]: event.target.checked,
+                              }))
+                            }
+                          />
+                          新增分批发货批次
+                        </label>
+                        {splitEnabled && (
+                          <fieldset className="shipping-change-admin-shipment">
+                            <legend>
+                              新增批次（收货地址沿用第一个涉及批次）
+                            </legend>
+                            <div className="shipping-change-fields">
+                              <label>
+                                承运商
+                                <input
+                                  name={field(splitShipmentId, "carrierName")}
+                                  defaultValue={
+                                    proposedSplit?.carrierName ??
+                                    sourceShipment.carrierName ??
+                                    ""
+                                  }
+                                />
+                              </label>
+                              <label>
+                                服务级别
+                                <input
+                                  name={field(splitShipmentId, "serviceName")}
+                                  defaultValue={
+                                    proposedSplit?.serviceName ??
+                                    sourceShipment.serviceName ??
+                                    ""
+                                  }
+                                />
+                              </label>
+                              <label>
+                                运输方式
+                                <input
+                                  name={field(
+                                    splitShipmentId,
+                                    "transportMethod",
+                                  )}
+                                  required
+                                  defaultValue={
+                                    proposedSplit?.transportMethod ??
+                                    sourceShipment.transportMethod
+                                  }
+                                />
+                              </label>
+                              <label>
+                                贸易条款
+                                <select
+                                  name={field(splitShipmentId, "incoterm")}
+                                  defaultValue={
+                                    proposedSplit?.incoterm ??
+                                    sourceShipment.incoterm
+                                  }
+                                >
+                                  <option>DDP</option>
+                                  <option>DAP</option>
+                                </select>
+                              </label>
+                              <label>
+                                指定地点
+                                <input
+                                  name={field(splitShipmentId, "namedPlace")}
+                                  required
+                                  defaultValue={
+                                    proposedSplit?.namedPlace ??
+                                    sourceShipment.namedPlace
+                                  }
+                                />
+                              </label>
+                              <label>
+                                目的地税费责任
+                                <select
+                                  name={field(
+                                    splitShipmentId,
+                                    "destinationTaxTreatment",
+                                  )}
+                                  defaultValue={
+                                    proposedSplit?.destinationTaxTreatment ??
+                                    sourceShipment.destinationTaxTreatment ??
+                                    "As accepted in PI"
+                                  }
+                                >
+                                  <option value="As accepted in PI">
+                                    按原 PI
+                                  </option>
+                                  <option value="Seller pays import taxes">
+                                    卖方承担进口税费
+                                  </option>
+                                  <option value="Buyer pays import taxes">
+                                    买方承担进口税费
+                                  </option>
+                                </select>
+                              </label>
+                              <label>
+                                预计可发货日期
+                                <input
+                                  type="date"
+                                  name={field(splitShipmentId, "readyDate")}
+                                  defaultValue={
+                                    proposedSplit?.readyDate ??
+                                    sourceShipment.readyDate ??
+                                    ""
+                                  }
+                                />
+                              </label>
+                            </div>
+                            <h4>新增批次分配</h4>
+                            <div className="shipping-change-fields">
+                              {affectedLines.map((lineId) => (
+                                <label key={lineId}>
+                                  {shipments
+                                    .flatMap((item) => item.allocations)
+                                    .find((item) => item.lineId === lineId)
+                                    ?.displayName ?? lineId}
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    required
+                                    name={field(
+                                      splitShipmentId,
+                                      `allocation:${lineId}`,
+                                    )}
+                                    defaultValue={
+                                      proposedSplit?.allocations.find(
+                                        (item) => item.lineId === lineId,
+                                      )?.physicalQuantity ?? 0
+                                    }
+                                  />
+                                </label>
+                              ))}
+                            </div>
+                          </fieldset>
+                        )}
+                      </>
+                    )}
+                    <div className="shipping-change-fields">
+                      <label>
+                        USD 调整金额（负数为退款）
+                        <input
+                          type="number"
+                          step="0.01"
+                          required
+                          name="adjustmentUsd"
+                          defaultValue={(
+                            (current?.adjustmentCents ?? 0) / 100
+                          ).toFixed(2)}
+                        />
+                      </label>
+                      <label>
+                        退款中退回的 Sales Tax（USD）
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          name="taxCreditUsd"
+                          defaultValue={(
+                            (current?.after.creditAllocation?.taxCents ?? 0) /
+                            100
+                          ).toFixed(2)}
+                        />
+                        <small>
+                          退款总额减去 Sales Tax
+                          后，余额计为原物流费用退款；无税款退款填 0。
+                        </small>
+                      </label>
+                      <label>
+                        提案到期（北京时间）
+                        <input
+                          type="datetime-local"
+                          required
+                          name="expiresLocal"
+                          defaultValue={expiry}
+                        />
+                      </label>
+                    </div>
                     <label>
-                      USD 调整金额（负数为退款）
-                      <input
-                        type="number"
-                        step="0.01"
+                      审核原因
+                      <textarea
+                        name="reason"
                         required
-                        name="adjustmentUsd"
-                        defaultValue={(
-                          (current?.adjustmentCents ?? 0) / 100
-                        ).toFixed(2)}
+                        rows={3}
+                        defaultValue={current?.reason ?? ""}
                       />
                     </label>
-                    <label>
-                      退款中退回的 Sales Tax（USD）
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        name="taxCreditUsd"
-                        defaultValue={(
-                          (current?.after.creditAllocation?.taxCents ?? 0) / 100
-                        ).toFixed(2)}
-                      />
-                      <small>
-                        退款总额减去 Sales Tax
-                        后，余额计为原物流费用退款；无税款退款填 0。
-                      </small>
-                    </label>
-                    <label>
-                      提案到期（北京时间）
-                      <input
-                        type="datetime-local"
-                        required
-                        name="expiresLocal"
-                        defaultValue={expiry}
-                      />
-                    </label>
-                  </div>
-                  <label>
-                    审核原因
-                    <textarea
-                      name="reason"
-                      required
-                      rows={3}
-                      defaultValue={current?.reason ?? ""}
+                    <button className="button button-primary" disabled={busy}>
+                      发送变更方案供客户确认
+                    </button>
+                  </Form>
+                </AdminActionDialog>
+              )}
+              {["pending_review", "proposed", "accepted"].includes(
+                change.status,
+              ) && (
+                <AdminActionDialog
+                  label="拒绝申请"
+                  title="拒绝变更申请"
+                  description="请说明拒绝原因，客户可以看到这条说明。"
+                  icon={<X size={18} aria-hidden="true" />}
+                >
+                  <Form method="post" className="shipping-change-form">
+                    <input
+                      type="hidden"
+                      name="intent"
+                      value="shipping-change-decline"
                     />
-                  </label>
-                  <button className="button button-primary" disabled={busy}>
-                    发布变更确认
-                  </button>
-                </Form>
-              </details>
-            )}
-            {["pending_review", "proposed", "accepted"].includes(
-              change.status,
-            ) && (
-              <details>
-                <summary>拒绝申请</summary>
-                <Form method="post" className="shipping-change-form">
-                  <input
-                    type="hidden"
-                    name="intent"
-                    value="shipping-change-decline"
-                  />
-                  <input type="hidden" name="requestId" value={change.id} />
-                  <input
-                    type="hidden"
-                    name="expectedVersion"
-                    value={change.version}
-                  />
-                  <input type="hidden" name="commandId" value={commandId} />
-                  <label>
-                    拒绝原因
-                    <textarea name="reason" required rows={2} />
-                  </label>
-                  <button className="button button-secondary" disabled={busy}>
-                    确认拒绝
-                  </button>
-                </Form>
-              </details>
-            )}
+                    <input type="hidden" name="requestId" value={change.id} />
+                    <input
+                      type="hidden"
+                      name="expectedVersion"
+                      value={change.version}
+                    />
+                    <input type="hidden" name="commandId" value={commandId} />
+                    <label>
+                      拒绝原因
+                      <textarea name="reason" required rows={2} />
+                    </label>
+                    <button className="button button-secondary" disabled={busy}>
+                      确认拒绝
+                    </button>
+                  </Form>
+                </AdminActionDialog>
+              )}
+            </div>
           </section>
         );
       })}
@@ -665,7 +712,11 @@ export function AdminOrderShippingChanges({
         )
         .map((item) => (
           <section key={item.shipmentId} className="shipping-change-record">
-            <h3>{item.shipmentId} · 变更后备妥复核</h3>
+            <h3>
+              {shipments.find((shipment) => shipment.id === item.shipmentId)
+                ?.displayName ?? "发货批次"}{" "}
+              · 变更后备妥复核
+            </h3>
             <Form method="post" className="shipping-change-form">
               <input
                 type="hidden"

@@ -145,6 +145,36 @@ export function createCancellationService(
   const now = () => (options.now?.() ?? new Date()).toISOString();
   const facts = createD1OrderFacts(db);
 
+  async function refundLimits(order: OrderFacts) {
+    const credited = await db
+      .prepare(
+        `SELECT coalesce(sum(logistics_cents),0) AS logistics,coalesce(sum(tax_cents),0) AS tax FROM (
+      SELECT logistics_cents,tax_cents FROM after_sales_effective_refund_authorizations WHERE order_id=?
+      UNION ALL SELECT logistics_cents,tax_cents FROM order_shipping_change_credit_components WHERE order_id=?)`,
+      )
+      .bind(order.orderId, order.orderId)
+      .first<{ logistics: number; tax: number }>();
+    return {
+      logisticsCents: Math.max(
+        0,
+        (order.charges.freight ?? 0) +
+          (order.charges.insurance ?? 0) +
+          (order.charges.dutiesImport ?? 0) -
+          (credited?.logistics ?? 0),
+      ),
+      taxCents: Math.max(
+        0,
+        (order.charges.salesTax ?? 0) - (credited?.tax ?? 0),
+      ),
+    };
+  }
+  function creditLimitError(kind: "logistics" | "tax", limit: number) {
+    return new Response(
+      `${kind === "logistics" ? "可退回物流费用" : "销售税调整"}超过剩余可退上限 ${usd(limit)}。此项仅退回原订单已收取且尚未退还的费用；未收取时请留空或填 0。`,
+      { status: 400 },
+    );
+  }
+
   async function requestRows(where: string, ...bindings: unknown[]) {
     return (
       await db
@@ -530,7 +560,11 @@ export function createCancellationService(
         "WHERE order_id=? ORDER BY created_at DESC,id DESC",
         orderId,
       );
-      return project(orderFacts, rows, "admin");
+      const limits = await refundLimits(orderFacts);
+      return (await project(orderFacts, rows, "admin")).map((request) => ({
+        ...request,
+        refundLimits: limits,
+      }));
     },
 
     async adminList(
@@ -1019,8 +1053,8 @@ export function createCancellationService(
         factoryEvidence?.precut !== true
       )
         throw new Response(
-          "Cut-hose cancellation requires documented pre-cut factory facts",
-          { status: 409 },
+          "只有工厂状态为“已确认未开始生产（软管尚未切割）”时，才能批准软管取消。若已切割或尚未核实，请将软管批准数量设为 0。",
+          { status: 400 },
         );
       for (const item of approvedLines) {
         const shipment = orderFacts.shipments.find(
@@ -1107,6 +1141,11 @@ export function createCancellationService(
         throw new Response("A declined request has no refund components", {
           status: 400,
         });
+      const limits = await refundLimits(orderFacts);
+      if (refund.logisticsCents > limits.logisticsCents)
+        throw creditLimitError("logistics", limits.logisticsCents);
+      if (refund.taxCents > limits.taxCents)
+        throw creditLimitError("tax", limits.taxCents);
       if (refund.logisticsCents > 0 && !logisticsNote)
         throw new Response("Explain the recoverable logistics amount", {
           status: 400,
@@ -1397,6 +1436,20 @@ export function createCancellationService(
         if (concurrent?.command_hash === commandHash) return concurrent.id;
         if (error instanceof Response) throw error;
         const message = error instanceof Error ? error.message : "";
+        if (
+          message.includes(
+            "Logistics credits exceed original logistics charges",
+          )
+        )
+          throw creditLimitError(
+            "logistics",
+            (await refundLimits(orderFacts)).logisticsCents,
+          );
+        if (message.includes("Tax credits exceed original Sales Tax"))
+          throw creditLimitError(
+            "tax",
+            (await refundLimits(orderFacts)).taxCents,
+          );
         if (/funds|exceed|Payment review/i.test(message))
           throw new Response(message.replace(/^.*?: /, ""), { status: 409 });
         throw cancellationConflict();

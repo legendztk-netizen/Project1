@@ -49,7 +49,9 @@ export function refundStatusLabel(
       ? "Unpaid part paused while we review the revised decision with you"
       : "修订待复核：未发起部分已暂停，不能发起退款";
   if (refund.initiatedCents >= refund.refundCents)
-    return language === "en" ? "Refund initiated" : "已发起退款";
+    return language === "en"
+      ? "Refund sent — bank processing may take longer"
+      : "已汇款，退款完成";
   if (refund.initiatedCents > 0)
     return language === "en" ? "Refund partly initiated" : "部分已发起退款";
   if (refund.status === "awaiting_customer_confirmation")

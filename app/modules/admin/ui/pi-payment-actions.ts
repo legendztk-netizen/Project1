@@ -77,13 +77,15 @@ export function paymentActionReasons(
               ? "请先核对客户接受的 PI，并确认以该协议为准。"
               : p.quoteReviewRequired
                 ? "已发布新的报价，请先核对是否保留客户已接受的 PI。"
-                : late.overdue
-                  ? "请先延期或完成逾期商业复核。"
-                  : p.balanceCents > 0
-                    ? "到账金额尚未达到应付总额。"
-                    : !p.actualChannel
-                      ? "请先登记实际到账渠道。"
-                      : undefined,
+                : p.factoryReviewRequired
+                  ? "该报价有未完成工厂审核的规格变更或总成配置。"
+                  : late.overdue
+                    ? "请先延期或完成逾期商业复核。"
+                    : p.balanceCents > 0
+                      ? "到账金额尚未达到应付总额。"
+                      : !p.actualChannel
+                        ? "请先登记实际到账渠道。"
+                        : undefined,
     extend: !p.current
       ? "仅当前 PI 可延期。"
       : p.orderId

@@ -18,6 +18,11 @@ export const adminCaseReasonLabel: Record<CaseReason, string> = {
   other: "其他问题",
 };
 
+export const adminCaseStatusLabel: Record<CaseView["status"], string> = {
+  open: "处理中",
+  closed: "已关闭",
+};
+
 export function AdminCases({
   cases,
   orderId,
@@ -66,7 +71,7 @@ export function AdminCases({
               <span
                 className={`after-sales-status after-sales-status-${item.status}`}
               >
-                {item.status === "open" ? "处理中" : "已关闭"}
+                {adminCaseStatusLabel[item.status]}
               </span>
             </header>
             <div className="after-sales-case-actions">

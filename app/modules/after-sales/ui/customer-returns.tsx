@@ -73,7 +73,10 @@ export function customerCaseNextStep(
   );
   if (awaitingReturn && item.status === "open")
     return `Please send the items back so they arrive by 11:59 PM ET on ${etDisplayDate(awaitingReturn.arrivalDeadlineDateEt)}. See the return instructions below.`;
-  if (item.status === "closed") return "This case is closed.";
+  if (item.status === "closed")
+    return refunds.length
+      ? "Your refund has been sent and this case is closed. Your bank may take additional time to credit the funds."
+      : "This case is closed.";
   if (refunds.length) return "Your refund has been initiated.";
   return "We're reviewing your report and will reply in Messages with next steps.";
 }

@@ -1,7 +1,6 @@
 import type { AdminIdentity } from "#workers/admin-access";
 import { requireAfterSalesPermission } from "../domain/permissions";
 import {
-  customerTermsAllowed,
   convenienceReturnCutoffForDate,
   isOnOrBefore,
   LAUNCH_RETURN_POLICY,
@@ -194,10 +193,6 @@ export function createCaseService(
       caseNumber: row.case_number,
       orderId: row.order_id,
       reason: row.reason,
-      customerTermsAllowed: customerTermsAllowed(
-        row.reason,
-        orderFacts.refundTermsVersion,
-      ),
       description: row.description,
       policyVersion: row.policy_version,
       status: row.status,
@@ -325,7 +320,7 @@ export function createCaseService(
             case_number: string;
             order_id: string;
             reason: CaseReason;
-            status: string;
+            status: CaseRow["status"];
             created_at: string;
             updated_at: string;
             order_number: string;

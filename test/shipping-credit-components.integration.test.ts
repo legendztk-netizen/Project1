@@ -141,7 +141,7 @@ it("allows an address-change tax credit with no logistics charge and prevents du
   });
   await applyTaxCredit(order, 600);
   const refund = await cancellation(order);
-  await expect(refund(500)).rejects.toMatchObject({ status: 409 });
+  await expect(refund(500)).rejects.toMatchObject({ status: 400 });
   await refund(400);
   expect(
     await fixture.db

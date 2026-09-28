@@ -1,7 +1,10 @@
 import { Form } from "react-router";
 
 import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
-import { RESTOCKING_FEE_PERCENT } from "../domain/return-policy";
+import {
+  InspectionDecisionForm,
+  conditionLabels,
+} from "./inspection-decision-form";
 import type { AfterSalesFileView } from "../application/after-sales-files";
 import type { CaseView } from "../application/case-service";
 import type { ReturnAuthorizationView } from "../application/return-authorization-service";
@@ -11,15 +14,6 @@ import { RefundBreakdown, refundStatusLabel } from "./refund-breakdown";
 import { scopedField } from "../application/parse-after-sales-forms";
 import { AdminActionDialog, EventAttachmentField } from "./admin-action-dialog";
 import "./after-sales.css";
-
-const conditionLabels = [
-  ["interfaces", "接口 / 螺纹"],
-  ["sealingSurfaces", "密封面"],
-  ["finish", "表面处理"],
-  ["packaging", "包装与配件"],
-  ["installationEvidence", "安装痕迹"],
-  ["fluidExposure", "接触流体痕迹"],
-] as const;
 
 const outcomeZh: Record<string, string> = {
   approved: "批准",
@@ -230,8 +224,10 @@ export function AdminReturnReceipts({
               {receipt.decision.replacement && (
                 <p>
                   更换范围：{receipt.decision.replacement.scope} · 费用：
-                  {receipt.decision.replacement.costs} · 履约证据：
-                  {receipt.decision.replacement.fulfillmentEvidence}
+                  {receipt.decision.replacement.costs}
+                  {receipt.decision.replacement.fulfillmentEvidence
+                    ? ` · 履约证据：${receipt.decision.replacement.fulfillmentEvidence}`
+                    : ""}
                 </p>
               )}
               {receipt.inspection?.map((row) => (
@@ -239,6 +235,7 @@ export function AdminReturnReceipts({
                   {name(row.lineId)}：检验 {row.inspectedQuantity}，批准{" "}
                   {row.approvedQuantity}；
                   {conditionLabels
+                    .filter(([key]) => row.conditions[key])
                     .map(([key, label]) => `${label}：${row.conditions[key]}`)
                     .join("；")}
                 </p>
@@ -342,173 +339,18 @@ export function AdminReturnReceipts({
             (receipt.timeliness === "timely" || receipt.lateReviewed) && (
               <div className="after-sales-case-actions">
                 <AdminActionDialog
-                  label="检验并决定退款"
-                  title="记录检验并发布决定"
+                  label="检验并退款"
+                  title="检验并退款"
+                  description="确认线下检验结果并批准退款或更换。此操作不会打款；退款批准后，仍需在退款区记录实际发起。"
                   primary
                   wide
                 >
-                  <Form
-                    method="post"
-                    encType="multipart/form-data"
-                    className="shipping-change-form"
-                  >
-                    <input type="hidden" name="intent" value="return-decide" />
-                    <input type="hidden" name="caseId" value={item.id} />
-                    <input type="hidden" name="receiptId" value={receipt.id} />
-                    <input type="hidden" name="commandId" value={commandId} />
-                    {receipt.lines.map((line) => {
-                      const scope = `${line.lineId}:${line.shipmentId}`;
-                      return (
-                        <fieldset key={scope}>
-                          <legend>
-                            {name(line.lineId)} · 实收 {line.physicalQuantity}
-                          </legend>
-                          <label>
-                            批准数量
-                            <input
-                              type="number"
-                              min={0}
-                              max={line.physicalQuantity}
-                              step={1}
-                              defaultValue={line.physicalQuantity}
-                              name={scopedField(
-                                "inspectApprove",
-                                line.lineId,
-                                line.shipmentId,
-                              )}
-                            />
-                          </label>
-                          <div className="shipping-change-fields">
-                            {conditionLabels.map(([key, label]) => (
-                              <label key={key}>
-                                {label}
-                                <input
-                                  name={scopedField(
-                                    `inspect-${key}`,
-                                    line.lineId,
-                                    line.shipmentId,
-                                  )}
-                                  required
-                                />
-                              </label>
-                            ))}
-                          </div>
-                        </fieldset>
-                      );
-                    })}
-                    <div className="shipping-change-fields">
-                      <label>
-                        责任
-                        <select
-                          name="responsibility"
-                          required
-                          defaultValue={
-                            item.reason === "convenience_return"
-                              ? "customer"
-                              : item.reason === "other" &&
-                                  item.customerTermsAllowed
-                                ? ""
-                                : "seller"
-                          }
-                        >
-                          {item.reason === "other" &&
-                            item.customerTermsAllowed && (
-                              <option value="" disabled>
-                                请根据检验结果选择责任方
-                              </option>
-                            )}
-                          {item.customerTermsAllowed && (
-                            <option value="customer">
-                              {item.reason === "convenience_return"
-                                ? "客户选择退货"
-                                : "客户原因"}
-                              （扣 {RESTOCKING_FEE_PERCENT}%
-                              退货手续费，不退已履行的 DDP
-                              费用，可扣有凭证的第三方费用）
-                            </option>
-                          )}
-                          {item.reason !== "convenience_return" && (
-                            <option value="seller">
-                              卖方责任（错发 / 损坏 / 不合格等，无扣费）
-                            </option>
-                          )}
-                        </select>
-                        {item.reason === "other" &&
-                          !item.customerTermsAllowed && (
-                            <small>
-                              该订单接受的 PI
-                              退款条款未约定“其他问题”的客户责任扣费，只能按卖方责任处理。
-                            </small>
-                          )}
-                      </label>
-                      <label>
-                        补救方式
-                        <select name="remedy" defaultValue="refund">
-                          <option value="refund">退款</option>
-                          <option value="replacement">卖方承担的更换</option>
-                        </select>
-                      </label>
-                      <label>
-                        退回原物流费用（USD，仅卖方责任）
-                        <input name="logisticsUsd" inputMode="decimal" />
-                      </label>
-                      <label>
-                        物流说明（内部）
-                        <input name="logisticsNote" />
-                      </label>
-                      <label>
-                        卖方承担的退货 / 更换物流（USD）
-                        <input name="sellerLogisticsUsd" inputMode="decimal" />
-                      </label>
-                      <label>
-                        卖方物流说明（内部）
-                        <input name="sellerLogisticsNote" />
-                      </label>
-                      <label>
-                        销售税调整（USD）
-                        <input name="taxUsd" inputMode="decimal" />
-                      </label>
-                      <label>
-                        税务依据（内部）
-                        <input name="taxNote" />
-                      </label>
-                      <label>
-                        第三方费用（USD，仅客户原因）
-                        <input name="thirdPartyUsd" inputMode="decimal" />
-                      </label>
-                      <label>
-                        第三方费用凭证
-                        <input name="thirdPartyEvidence" />
-                      </label>
-                      <label>
-                        更换范围（选择更换时必填）
-                        <input name="replacementScope" />
-                      </label>
-                      <label>
-                        更换费用（卖方承担）
-                        <input name="replacementCosts" />
-                      </label>
-                      <label>
-                        更换履约证据
-                        <input name="replacementEvidence" />
-                      </label>
-                    </div>
-                    <label>
-                      处理原因（客户可见，批准、部分批准或驳回均必填）
-                      <textarea name="customerReason" required rows={3} />
-                    </label>
-                    <label>
-                      内部备注
-                      <textarea name="internalNote" rows={2} />
-                    </label>
-                    <EventAttachmentField />
-                    <p>
-                      此处附件随决定对客户可见；检验照片请在收货记录的证据文件中上传，默认仅内部可见。
-                    </p>
-                    <button className="button button-primary" disabled={busy}>
-                      发布检验决定
-                    </button>
-                  </Form>
+                  <InspectionDecisionForm
+                    item={item}
+                    receipt={receipt}
+                    commandId={commandId}
+                    busy={busy}
+                  />
                 </AdminActionDialog>
               </div>
             )

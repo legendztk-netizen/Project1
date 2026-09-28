@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { createAfterSalesFiles } from "../app/modules/after-sales/application/after-sales-files";
+import { readFactoryEvidence } from "../app/modules/after-sales/application/parse-after-sales-forms";
 import { createCancellationService } from "../app/modules/after-sales/application/cancellation-service";
 import {
   fixtureClock,
@@ -60,6 +61,15 @@ const evidence = {
   externalIdentifiers: "WO-7781",
   precut: null as boolean | null,
 };
+
+function selectedFactoryStatus(status: string) {
+  const form = new FormData();
+  form.set("factoryStatus", status);
+  form.set("factorySource", evidence.source);
+  form.set("factoryReviewedAt", evidence.reviewedAt);
+  form.set("factorySupportReference", evidence.supportReference);
+  return readFactoryEvidence(form)!;
+}
 
 it("opens a Support review for made-to-order quantities only and exposes no customer cancel action", async () => {
   const order = await seedAfterSalesOrder(db, "e1");
@@ -146,14 +156,21 @@ it("requires documented factory facts and pre-cut evidence, then reverses the fu
       factoryEvidence: { ...evidence, reviewedAt: "2027-01-01T00:00:00Z" },
     }),
   ).rejects.toMatchObject({ status: 400 });
-  // Missing pre-cut confirmation never implies the hose is uncut.
-  await expect(
-    service().adminResolve(owner, {
-      ...base,
-      commandId: crypto.randomUUID(),
-      factoryEvidence: evidence,
-    }),
-  ).rejects.toMatchObject({ status: 409 });
+  // A status selection is sufficient; no separate pre-cut checkbox is required.
+  for (const status of ["unknown", "in_production", "completed"]) {
+    const error = await service()
+      .adminResolve(owner, {
+        ...base,
+        commandId: crypto.randomUUID(),
+        factoryEvidence: selectedFactoryStatus(status),
+      })
+      .catch((error: Response) => error);
+    expect(error).toBeInstanceOf(Response);
+    if (!(error instanceof Response))
+      throw new Error("Expected a validation response");
+    expect(error.status).toBe(400);
+    expect(await error.text()).toContain("软管批准数量设为 0");
+  }
   const files = createAfterSalesFiles(db, bucket, {
     now: () => new Date(fixtureClock),
   });
@@ -167,7 +184,10 @@ it("requires documented factory facts and pre-cut evidence, then reverses the fu
   await service().adminResolve(owner, {
     ...base,
     commandId: crypto.randomUUID(),
-    factoryEvidence: { ...evidence, precut: true, attachmentIds: [fileId] },
+    factoryEvidence: {
+      ...selectedFactoryStatus("not_started"),
+      attachmentIds: [fileId],
+    },
   });
   const [admin] = await service().adminRead(owner, order.orderId);
   expect(admin.resolution).toMatchObject({
@@ -403,4 +423,29 @@ it("records a seller-caused assembly cancellation with no deductions", async () 
       commandId: crypto.randomUUID(),
     }),
   ).rejects.toMatchObject({ status: 400 });
+});
+
+it("allows declining cut hose when the factory status is not confirmed uncut", async () => {
+  const order = await seedAfterSalesOrder(db, "e-status-decline");
+  const requestId = await open(order, [
+    [order.lines.cutHose, order.shipments.second, 1],
+  ]);
+  await service().adminResolve(owner, {
+    orderId: order.orderId,
+    requestId,
+    expectedVersion: 1,
+    commandId: crypto.randomUUID(),
+    decisions: [
+      {
+        lineId: order.lines.cutHose,
+        shipmentId: order.shipments.second,
+        approvedQuantity: 0,
+      },
+    ],
+    customerReason: "The hose has already been cut.",
+    factoryEvidence: selectedFactoryStatus("in_production"),
+  });
+  const [request] = await service().adminRead(owner, order.orderId);
+  expect(request.resolution?.outcome).toBe("declined");
+  expect(request.resolution?.refunds).toEqual([]);
 });

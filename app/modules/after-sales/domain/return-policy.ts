@@ -6,8 +6,7 @@ import {
   US_BANK_CALENDAR_VERSION,
 } from "../../proforma-invoice/domain/pi-payment-terms";
 
-// The launch return policy (Spec 7 / ADR-0024). Version 2 adds customer
-// terms for problem reports that inspection shows the buyer caused.
+// The launch return policy (Spec 7 / ADR-0024).
 export const LAUNCH_RETURN_POLICY = Object.freeze({
   version: "return-policy-2026-09-27-v2",
   requestWindowCalendarDays: 14,
@@ -24,37 +23,12 @@ export const RETURN_POLICY_PATH = "/policies/returns";
 export const RESTOCKING_FEE_PERCENT =
   LAUNCH_RETURN_POLICY.restockingFeeBasisPoints / 100;
 
-// PI refund terms from this version on disclose customer terms for an "Other
-// problem" the buyer caused. Earlier accepted terms only disclose them for
-// convenience returns, so those Orders keep seller terms for every problem.
-const CUSTOMER_CAUSED_PROBLEM_TERMS_FROM = { date: "2026-09-27", revision: 2 };
-
-function refundTermsOnOrAfter(
-  version: string | null,
-  from: { date: string; revision: number },
-) {
-  const match = /^pi-refund-(\d{4}-\d{2}-\d{2})-v(\d+)$/.exec(version ?? "");
-  if (!match) return false;
-  const [, date, revision] = match;
-  return (
-    date > from.date ||
-    (date === from.date && Number(revision) >= from.revision)
-  );
-}
-
 /**
  * Whether Admin may resolve a Case under customer terms (restocking fee, no
  * refund of performed DDP charges, documented third-party deductions).
  */
-export function customerTermsAllowed(
-  reason: string,
-  refundTermsVersion: string | null,
-) {
-  if (reason === "convenience_return") return true;
-  return (
-    reason === "other" &&
-    refundTermsOnOrAfter(refundTermsVersion, CUSTOMER_CAUSED_PROBLEM_TERMS_FROM)
-  );
+export function customerTermsAllowed(reason: string) {
+  return reason === "convenience_return" || reason === "other";
 }
 
 const zone = "America/New_York";

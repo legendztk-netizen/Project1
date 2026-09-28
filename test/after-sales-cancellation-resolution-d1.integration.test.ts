@@ -388,7 +388,7 @@ it("rejects refund authorization without verified funds or beyond component ceil
       logisticsCents: 4501,
       logisticsNote: "Too much",
     }),
-  ).rejects.toMatchObject({ status: 409 });
+  ).rejects.toMatchObject({ status: 400 });
   await expect(
     service().adminResolve(owner, {
       ...base,
@@ -396,7 +396,7 @@ it("rejects refund authorization without verified funds or beyond component ceil
       taxCents: 1,
       taxNote: "No tax was collected",
     }),
-  ).rejects.toMatchObject({ status: 409 });
+  ).rejects.toMatchObject({ status: 400 });
   await db
     .prepare(
       "INSERT INTO order_release_guards(order_id,held,updated_at) VALUES (?,1,?)",
@@ -453,4 +453,103 @@ it("records one internal reminder when an approved refund is not initiated in ti
       .bind(order.orderId)
       .first("count"),
   ).toBe(1);
+});
+
+it("explains zero original logistics and tax limits without resolving the cancellation", async () => {
+  const order = await seedAfterSalesOrder(db, "zero-credit-limit", {
+    charges: { freight: 0, insurance: 0, dutiesImport: 0, salesTax: 0 },
+  });
+  const requestId = await request(order, [
+    [order.lines.standard, order.shipments.first, 1],
+  ]);
+  const decision = {
+    orderId: order.orderId,
+    requestId,
+    expectedVersion: 1,
+    commandId: crypto.randomUUID(),
+    decisions: [
+      {
+        lineId: order.lines.standard,
+        shipmentId: order.shipments.first,
+        approvedQuantity: 1,
+      },
+    ],
+    customerReason: "Cancel unshipped item",
+    logisticsNote: "Test",
+    taxNote: "Test",
+  };
+  expect(
+    (await service().adminRead(owner, order.orderId))[0].refundLimits,
+  ).toEqual({ logisticsCents: 0, taxCents: 0 });
+  for (const extra of [{ logisticsCents: 100 }, { taxCents: 100 }]) {
+    const error = await service()
+      .adminResolve(reviewer, { ...decision, ...extra })
+      .catch((error) => error);
+    expect(error).toBeInstanceOf(Response);
+    expect(error.status).toBe(400);
+    expect(await error.text()).toContain("超过剩余可退上限 USD 0.00");
+    expect((await service().adminRead(owner, order.orderId))[0].status).toBe(
+      "pending_review",
+    );
+  }
+  await service().adminResolve(reviewer, decision);
+  expect((await service().adminRead(owner, order.orderId))[0].status).toBe(
+    "resolved",
+  );
+});
+it("reduces displayed and server-side limits by prior authorized logistics and tax refunds", async () => {
+  const order = await seedAfterSalesOrder(db, "remaining-credit-limit", {
+    charges: {
+      freight: 1000,
+      insurance: 200,
+      dutiesImport: 300,
+      salesTax: 400,
+    },
+  });
+  async function cancel(
+    lineId: string,
+    logisticsCents: number,
+    taxCents: number,
+  ) {
+    const requestId = await request(order, [
+      [lineId, order.shipments.first, 1],
+    ]);
+    return {
+      orderId: order.orderId,
+      requestId,
+      expectedVersion: 1,
+      commandId: crypto.randomUUID(),
+      decisions: [
+        { lineId, shipmentId: order.shipments.first, approvedQuantity: 1 },
+      ],
+      customerReason: "Cancel unshipped item",
+      logisticsCents,
+      logisticsNote: "Recoverable logistics",
+      taxCents,
+      taxNote: "Refund original tax",
+    };
+  }
+  await service().adminResolve(
+    reviewer,
+    await cancel(order.lines.standard, 1000, 250),
+  );
+  const second = await cancel(order.lines.standardSecond, 501, 151);
+  const pending = (await service().adminRead(owner, order.orderId)).find(
+    (r) => r.id === second.requestId,
+  )!;
+  expect(pending.refundLimits).toEqual({ logisticsCents: 500, taxCents: 150 });
+  await expect(service().adminResolve(reviewer, second)).rejects.toMatchObject({
+    status: 400,
+  });
+  await expect(
+    service().adminResolve(reviewer, { ...second, logisticsCents: 500 }),
+  ).rejects.toMatchObject({ status: 400 });
+  await service().adminResolve(reviewer, {
+    ...second,
+    logisticsCents: 500,
+    taxCents: 150,
+  });
+  expect(
+    (await service().adminRead(owner, order.orderId))[0].refundLimits,
+  ).toEqual({ logisticsCents: 0, taxCents: 0 });
 });

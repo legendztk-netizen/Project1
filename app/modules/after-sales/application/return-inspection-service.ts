@@ -38,9 +38,8 @@ export const inspectionConditionKeys = [
   "installationEvidence",
   "fluidExposure",
 ] as const;
-export type InspectionConditions = Record<
-  (typeof inspectionConditionKeys)[number],
-  string
+export type InspectionConditions = Partial<
+  Record<(typeof inspectionConditionKeys)[number], string>
 >;
 
 export interface ReturnDecisionLine {
@@ -541,7 +540,7 @@ export function createReturnInspectionService(
           lineId: string;
           shipmentId: string;
           approvedQuantity: number;
-          conditions: Partial<InspectionConditions>;
+          conditions?: InspectionConditions;
         }>;
         customerReason?: string;
         internalNote?: string;
@@ -604,15 +603,10 @@ export function createReturnInspectionService(
         });
       if (
         input.responsibility === "customer" &&
-        !customerTermsAllowed(
-          receipt.case_reason,
-          (await facts.read(input.orderId)).refundTermsVersion,
-        )
+        !customerTermsAllowed(receipt.case_reason)
       )
         throw new Response(
-          receipt.case_reason === "other"
-            ? "This Order's accepted refund terms don't include customer terms for problem reports; resolve it as seller responsibility"
-            : "Customer terms apply only to convenience returns and customer-caused Other problems",
+          "Customer terms apply only to convenience returns and customer-caused Other problems",
           { status: 400 },
         );
       // The customer chose to return an unused item; a defect found during
@@ -667,10 +661,12 @@ export function createReturnInspectionService(
         )
           throw new Response("Invalid approved quantity", { status: 400 });
         const conditions = Object.fromEntries(
-          inspectionConditionKeys.map((key) => [
-            key,
-            afterSalesText(item.conditions?.[key], `Inspection: ${key}`, 1000),
-          ]),
+          inspectionConditionKeys.flatMap((key) => {
+            const value = item.conditions?.[key];
+            return value?.trim()
+              ? [[key, afterSalesText(value, `Inspection: ${key}`, 1000)]]
+              : [];
+          }),
         ) as InspectionConditions;
         const orderLine = orderFacts.lines.find(
           (candidate) => candidate.lineId === line.line_id,
@@ -719,11 +715,13 @@ export function createReturnInspectionService(
         input.customerReason,
         "Customer-visible reason",
       );
-      // Every outcome, including full approval, tells the customer why.
-      if (!customerReason)
-        throw new Response("A decision needs a customer-visible reason", {
-          status: 400,
-        });
+      if (outcome !== "approved" && !customerReason)
+        throw new Response(
+          "A partial or declined decision needs a customer-visible reason",
+          {
+            status: 400,
+          },
+        );
       const merchandiseCents = inspected.reduce(
         (sum, item) => sum + item.merchandiseCents,
         0,
@@ -785,31 +783,30 @@ export function createReturnInspectionService(
         input.thirdPartyCostEvidence,
         "Third-party cost evidence",
       );
-      if (refund.logisticsCents && !logisticsNote)
-        throw new Response("Explain the logistics refund", { status: 400 });
-      if (refund.sellerLogisticsCents && !sellerLogisticsNote)
-        throw new Response("Explain the seller-funded logistics", {
-          status: 400,
-        });
-      if (refund.taxCents && !taxNote)
-        throw new Response("Record the accepted tax basis", { status: 400 });
       if (refund.thirdPartyCostCents && !thirdPartyCostEvidence)
         throw new Response("Document the third-party cost", { status: 400 });
       const replacement =
         input.remedy === "replacement" && anyApproved
           ? {
-              scope: afterSalesText(
-                input.replacement?.scope,
-                "Replacement scope",
-              ),
-              costs: afterSalesText(
-                input.replacement?.costs,
-                "Seller-funded replacement costs",
-              ),
-              fulfillmentEvidence: afterSalesText(
-                input.replacement?.fulfillmentEvidence,
-                "Replacement fulfillment evidence",
-              ),
+              scope:
+                note(input.replacement?.scope, "Replacement scope") ??
+                inspected
+                  .filter((item) => item.approved > 0)
+                  .map(
+                    (item) =>
+                      `${item.orderLine.displayName} × ${item.approved}`,
+                  )
+                  .join("; "),
+              costs:
+                note(
+                  input.replacement?.costs,
+                  "Seller-funded replacement costs",
+                ) ?? "Seller-funded replacement",
+              fulfillmentEvidence:
+                note(
+                  input.replacement?.fulfillmentEvidence,
+                  "Replacement fulfillment evidence",
+                ) ?? "",
             }
           : null;
       const remedy = !anyApproved ? "none" : input.remedy;

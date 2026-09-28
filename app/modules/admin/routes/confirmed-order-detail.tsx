@@ -1,5 +1,8 @@
+import { refundAccountProtector } from "#workers/refund-accounts";
 import { parseUsdCents } from "../../after-sales/domain/refund-calculation";
-import { useRef, useState } from "react";
+import { useRef } from "react";
+import { AdminAfterSalesTabs } from "../../after-sales/ui/admin-after-sales-tabs";
+import { adminAfterSalesTab } from "../../after-sales/application/admin-after-sales-navigation";
 import { Temporal } from "@js-temporal/polyfill";
 import {
   ArrowLeft,
@@ -145,10 +148,9 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
             adminIdentity,
             order.id,
           ),
-          createRefundInitiationService(env.DB).adminOrder(
-            adminIdentity,
-            order.id,
-          ),
+          createRefundInitiationService(env.DB, {
+            protector: await refundAccountProtector(env),
+          }).adminOrder(adminIdentity, order.id),
         ]).then(
           ([
             requests,
@@ -584,7 +586,7 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
     new URL(request.url).searchParams.get("returnTo"),
   );
   return redirect(
-    `/admin/orders/${encodeURIComponent(orderId)}?returnTo=${encodeURIComponent(returnTo)}${isAfterSalesAdminIntent(intent) ? "&tab=after-sales" : intent.startsWith("shipping-change-") ? "&tab=changes" : intent.startsWith("shipment-") || intent.startsWith("schedule-") || intent.startsWith("milestone-") || intent === "tracking-save" ? "&tab=shipments" : ""}`,
+    `/admin/orders/${encodeURIComponent(orderId)}?returnTo=${encodeURIComponent(returnTo)}${isAfterSalesAdminIntent(intent) ? `&tab=after-sales&afterSalesTab=${adminAfterSalesTab(new URL(request.url).searchParams.get("afterSalesTab"))}` : intent.startsWith("shipping-change-") ? "&tab=changes" : intent.startsWith("shipment-") || intent.startsWith("schedule-") || intent.startsWith("milestone-") || intent === "tracking-save" ? "&tab=shipments" : ""}`,
   );
 }
 
@@ -769,7 +771,9 @@ const eventLabels: Record<string, string> = {
   "order.return_received": "记录退货实际到货",
   "order.late_return_reviewed": "审核逾期到货",
   "order.return_decided": "发布退货检验决定",
-  "order.refund_destination_verified": "核实退款目的地",
+  "order.refund_destination_verified": "核实退款账号",
+  "order.refund_account_provided": "客户提供退款账号",
+  "order.case_refund_completed": "退款完成并结束售后案件",
   "order.refund_destination_approved": "Owner 批准替代退款账户",
   "order.refund_initiated": "记录线下已发起退款",
   "order.return_decision_revised": "追加检验决定修订",
@@ -796,12 +800,20 @@ export default function ConfirmedOrderDetail({
     returnTo,
   } = loaderData;
   const actionData = useActionData<typeof action>();
-  const [searchParams] = useSearchParams();
-  const [tab, setTab] = useState<Tab>(
-    tabs.some((item) => item.id === searchParams.get("tab"))
-      ? (searchParams.get("tab") as Tab)
-      : "products",
-  );
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab: Tab = tabs.some((item) => item.id === searchParams.get("tab"))
+    ? (searchParams.get("tab") as Tab)
+    : "products";
+  function setTab(nextTab: Tab) {
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.set("tab", nextTab);
+        return next;
+      },
+      { preventScrollReset: true },
+    );
+  }
   const dialog = useRef<HTMLDialogElement>(null);
   const navigation = useNavigation();
   const busy = navigation.state !== "idle";
@@ -1103,98 +1115,123 @@ export default function ConfirmedOrderDetail({
                     {actionData.error}
                   </p>
                 )}
-                <h3>售后案件</h3>
-                <AdminCases
-                  cases={cancellations.cases}
-                  orderId={order.id}
-                  requestId={order.requestId}
-                  files={cancellations.files}
-                  commandId={commandId}
-                  busy={busy}
-                  renderActions={(item) => (
-                    <>
-                      <AdminCaseDecisionActions
-                        item={item}
-                        ras={cancellations.ras}
-                        locations={cancellations.locations}
-                        commandId={commandId}
-                        busy={busy}
-                      />
-                      <AdminReceiptRecordActions
-                        item={item}
-                        ras={cancellations.ras}
-                        receipts={cancellations.receipts}
-                        commandId={commandId}
-                        busy={busy}
-                      />
-                    </>
-                  )}
-                  renderDetails={(item) => (
-                    <>
-                      <AdminReturnAuthorizationList
-                        item={item}
-                        ras={cancellations.ras}
-                      />
-                      <AdminReturnReceipts
-                        item={item}
-                        receipts={cancellations.receipts}
-                        files={cancellations.files}
-                        orderId={order.id}
-                        commandId={commandId}
-                        busy={busy}
-                      />
-                    </>
-                  )}
-                />
-                <h3>退款</h3>
-                <AdminOrderRefunds
-                  refunds={cancellations.refunds}
-                  isOwner={cancellations.isOwner}
-                  canRefund={cancellations.canRefund}
-                  commandId={commandId}
-                  busy={busy}
-                  todayEt={cancellations.todayEt}
-                />
-                <h3>取消申请</h3>
-                <AdminExceptionalOpenForm
-                  eligible={cancellations.exceptionalEligible}
-                  commandId={commandId}
-                  busy={busy}
-                />
-                <AdminCancellationRequests
-                  requests={cancellations.requests}
-                  renderActions={(item) => (
-                    <>
-                      {item.kind === "exceptional" && (
-                        <AdminEvidenceFiles
+                <AdminAfterSalesTabs
+                  counts={{
+                    cases: cancellations.cases.length,
+                    refunds:
+                      cancellations.refunds.afterSales.filter(
+                        (refund) => refund.status !== "superseded",
+                      ).length + cancellations.refunds.shipping.length,
+                    cancellations: cancellations.requests.length,
+                  }}
+                  panels={{
+                    cases: (
+                      <>
+                        <h3>售后案件</h3>
+                        <AdminCases
+                          cases={cancellations.cases}
                           orderId={order.id}
-                          scopeKind="cancellation"
-                          scopeId={item.id}
+                          requestId={order.requestId}
                           files={cancellations.files}
                           commandId={commandId}
                           busy={busy}
+                          renderActions={(item) => (
+                            <>
+                              <AdminCaseDecisionActions
+                                item={item}
+                                ras={cancellations.ras}
+                                locations={cancellations.locations}
+                                commandId={commandId}
+                                busy={busy}
+                              />
+                              <AdminReceiptRecordActions
+                                item={item}
+                                ras={cancellations.ras}
+                                receipts={cancellations.receipts}
+                                commandId={commandId}
+                                busy={busy}
+                              />
+                            </>
+                          )}
+                          renderDetails={(item) => (
+                            <>
+                              <AdminReturnAuthorizationList
+                                item={item}
+                                ras={cancellations.ras}
+                              />
+                              <AdminReturnReceipts
+                                item={item}
+                                receipts={cancellations.receipts}
+                                files={cancellations.files}
+                                orderId={order.id}
+                                commandId={commandId}
+                                busy={busy}
+                              />
+                            </>
+                          )}
                         />
-                      )}
-                      <AdminCancellationDecisionForm
-                        request={item}
-                        commandId={commandId}
-                        busy={busy}
-                      >
-                        {item.kind === "exceptional" && (
-                          <FactoryEvidenceFields
-                            files={cancellations.files.filter(
-                              (file) =>
-                                file.scopeKind === "cancellation" &&
-                                file.scopeId === item.id,
-                            )}
-                            hasCutHose={item.lines.some(
-                              (line) => line.productClass === "cut_hose",
-                            )}
-                          />
-                        )}
-                      </AdminCancellationDecisionForm>
-                    </>
-                  )}
+                      </>
+                    ),
+                    refunds: (
+                      <>
+                        <h3>退款</h3>
+                        <AdminOrderRefunds
+                          refunds={cancellations.refunds}
+                          isOwner={cancellations.isOwner}
+                          canRefund={cancellations.canRefund}
+                          commandId={commandId}
+                          busy={busy}
+                          todayEt={cancellations.todayEt}
+                        />
+                      </>
+                    ),
+                    cancellations: (
+                      <>
+                        <h3>订单取消申请</h3>
+                        <AdminExceptionalOpenForm
+                          eligible={cancellations.exceptionalEligible}
+                          commandId={commandId}
+                          busy={busy}
+                        />
+                        <AdminCancellationRequests
+                          requests={cancellations.requests}
+                          renderActions={(item) => (
+                            <>
+                              {item.kind === "exceptional" && (
+                                <AdminEvidenceFiles
+                                  orderId={order.id}
+                                  scopeKind="cancellation"
+                                  scopeId={item.id}
+                                  files={cancellations.files}
+                                  commandId={commandId}
+                                  busy={busy}
+                                />
+                              )}
+                              <AdminCancellationDecisionForm
+                                request={item}
+                                commandId={commandId}
+                                busy={busy}
+                              >
+                                {item.kind === "exceptional" && (
+                                  <FactoryEvidenceFields
+                                    files={cancellations.files.filter(
+                                      (file) =>
+                                        file.scopeKind === "cancellation" &&
+                                        file.scopeId === item.id,
+                                    )}
+                                    hasCutHose={item.lines.some(
+                                      (line) =>
+                                        line.productClass === "cut_hose",
+                                    )}
+                                  />
+                                )}
+                              </AdminCancellationDecisionForm>
+                            </>
+                          )}
+                        />
+                      </>
+                    ),
+                  }}
                 />
               </>
             ) : (

@@ -119,10 +119,10 @@ export async function seedAfterSalesOrder(
   prefix: string,
   options: {
     receivedCents?: number;
+    actualChannel?: "bank_transfer" | "paypal";
     charges?: Partial<
       Record<"freight" | "insurance" | "dutiesImport" | "salesTax", number>
     >;
-    refundTermsVersion?: string;
     // Leave every line unallocated (no Shipment plan quantities yet).
     unallocated?: boolean;
     // The PI acknowledged the standard-shaped second line as made to order.
@@ -271,7 +271,7 @@ export async function seedAfterSalesOrder(
     },
     conditions: {
       refund: {
-        version: options.refundTermsVersion ?? "pi-refund-2026-09-27-v2",
+        version: "pi-refund-2026-09-27-v2",
         text: "Refund terms",
       },
       madeToOrderAcknowledgements: [
@@ -385,7 +385,7 @@ export async function seedAfterSalesOrder(
         `INSERT INTO pi_payment_confirmations
          (id,command_id,command_hash,pi_id,confirmed_cents,currency,actual_channel,
           external_reference,actor_id,confirmed_at)
-         VALUES (?,?,?,?,?,'USD','bank_transfer',?,'test',?)`,
+         VALUES (?,?,?,?,?,'USD',?,?,'test',?)`,
       )
       .bind(
         `${p}-confirmation`,
@@ -393,6 +393,7 @@ export async function seedAfterSalesOrder(
         hash,
         `${p}-pi`,
         totalCents,
+        options.actualChannel ?? "bank_transfer",
         `ref-${p}`,
         fixtureClock,
       ),
@@ -402,7 +403,7 @@ export async function seedAfterSalesOrder(
          (pi_id,request_id,purchasing_context_id,currency,total_due_cents,
           term_kind,amount_received_cents,actual_channel,ever_received,
           instruction_channel,instruction_id,instruction_version,created_at,updated_at)
-         VALUES (?,?,'buyer-context','USD',?,'legacy_review',?,'bank_transfer',1,
+         VALUES (?,?,'buyer-context','USD',?,'legacy_review',?,?,1,
            'bank_transfer','after-sales-payment',1,?,?)`,
       )
       .bind(
@@ -410,6 +411,7 @@ export async function seedAfterSalesOrder(
         `${p}-request`,
         totalCents,
         options.receivedCents ?? totalCents,
+        options.actualChannel ?? "bank_transfer",
         fixtureClock,
         fixtureClock,
       ),

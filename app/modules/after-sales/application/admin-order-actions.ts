@@ -230,10 +230,8 @@ export async function runAfterSalesAdminAction(input: {
         await createReturnInspectionService(db, options).adminDecide(actor, {
           orderId,
           receiptId: text(form, "receiptId"),
-          responsibility:
-            form.get("responsibility") === "customer" ? "customer" : "seller",
-          remedy:
-            form.get("remedy") === "replacement" ? "replacement" : "refund",
+          responsibility: text(form, "responsibility") as "customer" | "seller",
+          remedy: text(form, "remedy") as "replacement" | "refund",
           items: readInspectionItems(form),
           customerReason: text(form, "customerReason"),
           internalNote: text(form, "internalNote"),
@@ -308,6 +306,8 @@ export async function runAfterSalesAdminAction(input: {
             orderId,
             ...refundTarget(text(form, "refund")),
             destinationId: text(form, "destinationId"),
+            accountVerified: form.get("accountVerified") === "on",
+            complete: form.get("complete") === "true",
             amountCents: parseUsdCents(form.get("amountUsd"), "退款金额"),
             initiatedDateEt: text(form, "initiatedDateEt"),
             externalReference: text(form, "externalReference"),

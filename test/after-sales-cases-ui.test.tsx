@@ -16,6 +16,7 @@ import {
   scopedField,
 } from "../app/modules/after-sales/application/parse-after-sales-forms";
 import { AdminCases } from "../app/modules/after-sales/ui/admin-cases";
+import { InspectionDecisionForm } from "../app/modules/after-sales/ui/inspection-decision-form";
 import { AdminReturnReceipts } from "../app/modules/after-sales/ui/return-inspection";
 import {
   CustomerReturnsTab,
@@ -76,7 +77,6 @@ const cases: Cases = {
       caseNumber: "AS-ORDER-1-1",
       orderId: "order-1",
       reason: "damaged",
-      customerTermsAllowed: false,
       description: "Carton crushed",
       policyVersion: "return-policy-2026-09-27-launch",
       status: "open",
@@ -359,10 +359,9 @@ it("hides the unused-item return reason when no delivered item qualifies", async
   ).toBeTruthy();
 });
 
-it("offers customer responsibility for an Other problem only when the Order's terms allow it", async () => {
+it("offers both responsibility choices for Other problems and seller terms for damaged items", async () => {
   const item = {
     ...cases.cases[0],
-    reason: "other",
     events: [],
   } as unknown as Parameters<typeof AdminReturnReceipts>[0]["item"];
   const receipt = {
@@ -383,14 +382,14 @@ it("offers customer responsibility for an Other problem only when the Order's te
     inspection: null,
     decision: null,
   } as unknown as Parameters<typeof AdminReturnReceipts>[0]["receipts"][number];
-  const options = async (customerTermsAllowed: boolean) => {
+  const options = async (reason: "other" | "damaged") => {
     const router = createMemoryRouter(
       [
         {
           path: "/",
           element: (
             <AdminReturnReceipts
-              item={{ ...item, customerTermsAllowed }}
+              item={{ ...item, reason }}
               receipts={[receipt]}
               files={[]}
               orderId="order-1"
@@ -403,29 +402,79 @@ it("offers customer responsibility for an Other problem only when the Order's te
       { initialEntries: ["/"] },
     );
     render(<RouterProvider router={router} />);
-    fireEvent.click(
-      await screen.findByRole("button", { name: "检验并决定退款" }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "检验并退款" }));
     const select = document.querySelector(
       'select[name="responsibility"]',
     ) as unknown as { value: string; options: ArrayLike<{ value: string }> };
     const result = {
       value: select.value,
       options: Array.from(select.options, (option) => option.value),
-      note: document.body.textContent?.includes("只能按卖方责任处理"),
     };
     cleanup();
     return result;
   };
   // Admin must choose explicitly; nothing defaults to customer terms.
-  expect(await options(true)).toEqual({
+  expect(await options("other")).toEqual({
     value: "",
     options: ["", "customer", "seller"],
-    note: false,
   });
-  expect(await options(false)).toEqual({
+  expect(await options("damaged")).toEqual({
     value: "seller",
     options: ["seller"],
-    note: true,
   });
+});
+
+it("keeps offline inspection optional and requests explanations only for reduced quantities or extra deductions", async () => {
+  const item = {
+    ...cases.cases[0],
+    reason: "other",
+  } as unknown as Parameters<typeof InspectionDecisionForm>[0]["item"];
+  const receipt = {
+    id: "receipt-optional",
+    lines: [{ lineId: "open", shipmentId: "s1", physicalQuantity: 2 }],
+  } as Parameters<typeof InspectionDecisionForm>[0]["receipt"];
+  const router = createMemoryRouter([
+    {
+      path: "/",
+      element: (
+        <InspectionDecisionForm
+          item={item}
+          receipt={receipt}
+          commandId="optional"
+          busy={false}
+        />
+      ),
+    },
+  ]);
+  render(<RouterProvider router={router} />);
+  const form = document.querySelector("form")!;
+  const field = (name: string) =>
+    form.elements.namedItem(name) as HTMLInputElement;
+  expect(field("responsibility").required).toBe(true);
+  fireEvent.change(field("responsibility"), { target: { value: "seller" } });
+  expect(form.querySelector('[name="thirdPartyUsd"]')).toBeNull();
+  expect(field("customerReason").required).toBe(false);
+  expect(field(scopedField("inspect-finish", "open", "s1")).required).toBe(
+    false,
+  );
+  expect(form.checkValidity()).toBe(true);
+  fireEvent.change(field(scopedField("inspectApprove", "open", "s1")), {
+    target: { value: "1" },
+  });
+  expect(field("customerReason").required).toBe(true);
+  expect(form.checkValidity()).toBe(false);
+  fireEvent.change(field(scopedField("inspectApprove", "open", "s1")), {
+    target: { value: "2" },
+  });
+  fireEvent.change(field("responsibility"), { target: { value: "customer" } });
+  expect(form.querySelector('[name="logisticsUsd"]')).toBeNull();
+  expect(field("thirdPartyEvidence").required).toBe(false);
+  fireEvent.change(field("thirdPartyUsd"), { target: { value: "3.50" } });
+  expect(field("thirdPartyEvidence").required).toBe(true);
+  expect(form.checkValidity()).toBe(false);
+  fireEvent.change(field("responsibility"), { target: { value: "seller" } });
+  expect(new FormData(form).has("thirdPartyUsd")).toBe(false);
+  fireEvent.change(field("remedy"), { target: { value: "replacement" } });
+  expect(field("replacementScope").required).toBe(false);
+  expect(form.checkValidity()).toBe(true);
 });

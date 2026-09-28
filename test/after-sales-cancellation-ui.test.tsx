@@ -18,8 +18,15 @@ import {
   CustomerCancellationAction,
   CustomerCancellationRequests,
 } from "../app/modules/after-sales/ui/customer-cancellations";
-import { readCancellationQuantities } from "../app/modules/after-sales/application/parse-after-sales-forms";
-import { AdminCancellationRequests } from "../app/modules/after-sales/ui/admin-cancellations";
+import { FactoryEvidenceFields } from "../app/modules/after-sales/ui/admin-exceptional";
+import {
+  readCancellationQuantities,
+  readFactoryEvidence,
+} from "../app/modules/after-sales/application/parse-after-sales-forms";
+import {
+  AdminCancellationRequests,
+  AdminCancellationDecisionForm,
+} from "../app/modules/after-sales/ui/admin-cancellations";
 
 afterEach(cleanup);
 
@@ -184,6 +191,7 @@ it("labels Admin cancellation holds and handoff conflicts in Chinese", async () 
             requests={[
               {
                 ...cancellations.requests[0],
+                refundLimits: { logisticsCents: 0, taxCents: 0 },
                 handoffConflict: true,
                 events: [
                   {
@@ -304,4 +312,171 @@ it("shows the gross-to-net breakdown and asks the customer to confirm a deductio
   expect(text).toContain("USD 48.50");
   expect(text).not.toContain("Refund initiated");
   expect(screen.queryByRole("button", { name: "Withdraw request" })).toBe(null);
+});
+
+it.each([0, 500])(
+  "shows the remaining logistics limit of %s cents and rejects a larger amount",
+  async (logisticsCents) => {
+    render(
+      <RouterProvider
+        router={createMemoryRouter([
+          {
+            path: "/",
+            element: (
+              <AdminCancellationDecisionForm
+                request={{
+                  ...cancellations.requests[0],
+                  refundLimits: { logisticsCents, taxCents: 0 },
+                }}
+                commandId="limit-test"
+                busy={false}
+              />
+            ),
+          },
+        ])}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "审核并作出取消决定" }));
+    const input = screen.getByRole("spinbutton", {
+      name: /可退回物流费用/,
+    }) as HTMLInputElement;
+    expect(input.max).toBe(String(logisticsCents / 100));
+    expect(document.body.textContent).toContain(
+      `剩余可退物流费用上限：USD ${(logisticsCents / 100).toFixed(2)}`,
+    );
+    fireEvent.change(input, {
+      target: { value: String((logisticsCents + 1) / 100) },
+    });
+    expect(input.validity.rangeOverflow).toBe(true);
+    fireEvent.change(input, {
+      target: { value: String(logisticsCents / 100) },
+    });
+    expect(input.validity.rangeOverflow).toBe(false);
+    expect(input.step).toBe("0.01");
+    expect(
+      (
+        screen.getByRole("spinbutton", {
+          name: /销售税调整/,
+        }) as HTMLInputElement
+      ).max,
+    ).toBe("0");
+  },
+);
+
+it.each([
+  ["not_started", true],
+  ["in_production", false],
+  ["completed", false],
+  ["unknown", null],
+] as const)(
+  "records the selected factory status %s without a separate confirmation checkbox",
+  (status, precut) => {
+    const { container } = render(
+      <form>
+        <FactoryEvidenceFields files={[]} hasCutHose />
+      </form>,
+    );
+    const select = screen.getByRole("combobox", {
+      name: /实际工厂状态/,
+    });
+    expect(select.getAttribute("required")).not.toBeNull();
+    expect(container.querySelector('[name="factoryPrecut"]')).toBeNull();
+    fireEvent.change(select, { target: { value: status } });
+    const parsed = readFactoryEvidence(
+      new FormData(container.querySelector("form")!),
+    );
+    expect(parsed?.precut).toBe(precut);
+    expect(parsed?.status).toBe(
+      container.querySelector("select")!.selectedOptions[0].textContent,
+    );
+  },
+);
+
+it("rejects an empty or arbitrary factory status even with the removed checkbox submitted", () => {
+  for (const status of ["", "ok"]) {
+    const form = new FormData();
+    form.set("factoryStatus", status);
+    form.set("factoryPrecut", "on");
+    expect(() => readFactoryEvidence(form)).toThrow();
+  }
+});
+
+it("requires fee explanations only for positive amounts and excludes deductions for seller responsibility", () => {
+  const { container } = render(
+    <RouterProvider
+      router={createMemoryRouter([
+        {
+          path: "/",
+          element: (
+            <AdminCancellationDecisionForm
+              request={{
+                ...cancellations.requests[0],
+                kind: "exceptional",
+                refundLimits: { logisticsCents: 500, taxCents: 500 },
+              }}
+              commandId="fee-interaction"
+              busy={false}
+            />
+          ),
+        },
+      ])}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "审核并作出取消决定" }));
+  const logistics = screen.getByRole("spinbutton", { name: /可退回物流费用/ });
+  const note = screen.getByRole("textbox", { name: /物流核算说明/ });
+  expect(note.hasAttribute("required")).toBe(false);
+  fireEvent.change(logistics, { target: { value: "1" } });
+  expect(note.hasAttribute("required")).toBe(true);
+  fireEvent.change(logistics, { target: { value: "0" } });
+  expect(note.hasAttribute("required")).toBe(false);
+  const responsibility = screen.getByRole("combobox", { name: /责任归属/ });
+  fireEvent.change(responsibility, { target: { value: "customer" } });
+  fireEvent.change(
+    screen.getByRole("spinbutton", { name: /不可退第三方费用/ }),
+    { target: { value: "2" } },
+  );
+  const evidence = screen.getByRole("textbox", { name: /费用凭证说明/ });
+  expect(evidence.hasAttribute("required")).toBe(true);
+  fireEvent.change(responsibility, { target: { value: "seller" } });
+  expect(
+    new FormData(container.querySelector("form")!).has("thirdPartyUsd"),
+  ).toBe(false);
+  expect(evidence.hasAttribute("required")).toBe(false);
+  fireEvent.change(responsibility, { target: { value: "customer" } });
+  expect(
+    new FormData(container.querySelector("form")!).get("thirdPartyUsd"),
+  ).toBe("2");
+  expect(evidence.hasAttribute("required")).toBe(true);
+});
+
+it("updates the quantity summary and resets it when an edited dialog is discarded and reopened", () => {
+  render(
+    <RouterProvider
+      router={createMemoryRouter([
+        {
+          path: "/",
+          element: (
+            <AdminCancellationDecisionForm
+              request={{
+                ...cancellations.requests[0],
+                refundLimits: { logisticsCents: 0, taxCents: 0 },
+              }}
+              commandId="summary-interaction"
+              busy={false}
+            />
+          ),
+        },
+      ])}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "审核并作出取消决定" }));
+  fireEvent.change(screen.getByRole("spinbutton", { name: /批准取消数量/ }), {
+    target: { value: "0" },
+  });
+  expect(screen.getByText("批准 0 / 1，其余拒绝")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+  fireEvent.click(screen.getByRole("button", { name: "放弃" }));
+  fireEvent.click(screen.getByRole("button", { name: "审核并作出取消决定" }));
+  expect(screen.getByText("批准 1 / 1，其余拒绝")).toBeTruthy();
 });

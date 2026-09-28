@@ -1,3 +1,9 @@
+import { refundAccountProtector } from "#workers/refund-accounts";
+import { createRefundAccountService } from "../../after-sales/application/refund-account-service";
+import {
+  CustomerRefundAccountAction,
+  CustomerRefundAccountStatus,
+} from "../../after-sales/ui/customer-refund-account";
 import { ArrowLeft, MessagesSquare } from "lucide-react";
 import {
   data,
@@ -73,6 +79,7 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
     returnAuthorizations,
     returnReceipts,
     shippingRefunds,
+    refundAccount,
   ] = await Promise.all([
     followOnQuotes(env).customerListForOrder(profileId, order.id),
     shipmentPlans(env).customerRead(profileId, order.id),
@@ -90,6 +97,9 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
       profileId,
       order.id,
     ),
+    createRefundAccountService(env.DB, {
+      protector: await refundAccountProtector(env),
+    }).customerRead(profileId, order.id),
   ]);
   const hasReturns =
     cases.cases.length > 0 || cancellations.requests.length > 0;
@@ -111,6 +121,7 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
       returnAuthorizations,
       returnReceipts,
       shippingRefunds,
+      refundAccount,
       commandId: crypto.randomUUID(),
     },
     { headers: headers() },
@@ -131,6 +142,47 @@ export async function action({ context, request, params }: ActionFunctionArgs) {
   const commandId = String(form.get("commandId") ?? "");
   const intent = String(form.get("intent") ?? "follow-on");
   const returnsHref = `/account/orders/${encodeURIComponent(orderId)}?tab=returns`;
+  if (intent === "refund-account-submit") {
+    try {
+      const value = (key: string) => String(form.get(key) ?? "");
+      await createRefundAccountService(env.DB, {
+        protector: await refundAccountProtector(env),
+        auditIp: request.headers.get("cf-connecting-ip") ?? "local",
+      }).customerSubmit(profileId, {
+        orderId,
+        expectedVersion: Number(form.get("expectedVersion")),
+        commandId,
+        samePurchasingContext: form.get("samePurchasingContext") === "on",
+        details:
+          value("channel") === "paypal"
+            ? {
+                channel: "paypal",
+                holderName: value("holderName"),
+                paypalEmail: value("paypalEmail"),
+              }
+            : {
+                channel: value("channel") as "bank_transfer",
+                holderName: value("holderName"),
+                bankName: value("bankName"),
+                bankCountry: value("bankCountry"),
+                accountNumber: value("accountNumber"),
+                routingCode: value("routingCode"),
+                swiftCode: value("swiftCode"),
+                accountType: value("accountType"),
+                holderAddress: value("holderAddress"),
+                bankAddress: value("bankAddress"),
+              },
+      });
+    } catch (error) {
+      if (!(error instanceof Response) || ![400, 409].includes(error.status))
+        throw error;
+      return data(
+        { intent, error: await error.text() },
+        { status: error.status, headers: headers() },
+      );
+    }
+    return redirect(returnsHref, { headers: headers() });
+  }
   if (intent === "case-open") {
     const auditIp = request.headers.get("cf-connecting-ip") ?? "local";
     const file = form.get("file");
@@ -328,6 +380,7 @@ export default function ConfirmedOrderDetail({
     returnAuthorizations,
     returnReceipts,
     shippingRefunds,
+    refundAccount,
     commandId,
   } = loaderData;
   const actionData = useActionData<typeof action>();
@@ -367,6 +420,15 @@ export default function ConfirmedOrderDetail({
           </strong>
         </header>
         <div className="customer-order-actions">
+          <CustomerRefundAccountAction
+            account={refundAccount}
+            commandId={commandId}
+            actionData={
+              actionData?.intent === "refund-account-submit"
+                ? actionData
+                : undefined
+            }
+          />
           <Link
             className="button button-secondary"
             to={`/account/messages/${encodeURIComponent(order.requestId)}`}
@@ -401,6 +463,7 @@ export default function ConfirmedOrderDetail({
             }
           />
         </div>
+        <CustomerRefundAccountStatus account={refundAccount} />
         {hasReturns && (
           <nav className="customer-quote-tabs" aria-label="Order sections">
             <Link
