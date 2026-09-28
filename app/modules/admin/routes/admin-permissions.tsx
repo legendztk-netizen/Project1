@@ -95,6 +95,13 @@ export default function AdminPermissions({
             <CircleAlert size={17} /> {actionData.formError}
           </p>
         ) : null}
+        {!loaderData.accounts.some(
+          (account) => account.accountType === "subaccount",
+        ) ? (
+          <p role="status">
+            还没有子账号。子账号创建后会出现在这里，由 Owner 逐项授予权限。
+          </p>
+        ) : null}
         <section className="commercial-settings-grid">
           {loaderData.accounts.map((account) => {
             const editable =
