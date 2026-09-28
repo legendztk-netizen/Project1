@@ -474,6 +474,23 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(admin).not.toContain('href="#"');
     expect(admin).toContain("owner@local.invalid");
     expect(admin).toContain("local-development");
+    expect(admin).toContain('href="/admin/after-sales"');
+    const afterSalesResponse = await fetch(`${origin}/admin/after-sales`);
+    const afterSales = await afterSalesResponse.text();
+    expect(afterSalesResponse.status).toBe(200);
+    expect(afterSales).toContain("取消申请");
+    expect(afterSales).toContain('data-surface="admin"');
+    expect(admin).toContain('href="/admin/messages"');
+    const messagesResponse = await fetch(`${origin}/admin/messages`);
+    const messages = await messagesResponse.text();
+    expect(messagesResponse.status).toBe(200);
+    expect(messages).toContain("消息管理");
+    expect(messages).toContain("待回复");
+    const unread = await fetch(`${origin}/admin/notifications/unread-count`);
+    expect(await unread.json()).toMatchObject({
+      unread: expect.any(Number),
+      messages: expect.any(Number),
+    });
   });
 
   it("versions Admin-only seller identity and payment instructions", async () => {
@@ -4974,6 +4991,13 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(available).not.toMatch(/product-quote-command[^>]*disabled/);
     expect(available).toContain("14 calendar days");
     expect(available).toContain("10% restocking fee");
+    expect(available).toContain('href="/policies/returns"');
+    const policyResponse = await fetch(`${origin}/policies/returns`);
+    const policy = await policyResponse.text();
+    expect(policyResponse.status).toBe(200);
+    expect(policy).toContain("Returns and Refunds");
+    expect(policy).toContain("11:59 PM ET on day 14");
+    expect(policy).not.toContain("No restocking fee");
 
     const lengthBasedAdd = new FormData();
     lengthBasedAdd.set("intent", "add");

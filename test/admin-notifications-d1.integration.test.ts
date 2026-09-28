@@ -169,3 +169,28 @@ it("tracks read state per admin and ignores unknown or repeated ids", async () =
   );
   expect(await notifications.unreadCount("owner")).toBe(0);
 });
+
+it("opens a Case where it is worked and a legacy Case reply in Messages", async () => {
+  await run(`
+    INSERT INTO after_sales_cases (id,case_number,order_id,profile_id,reason,description,
+      policy_version,status,submission_command_id,submission_hash,created_at,updated_at)
+    VALUES ('notice-case','AS-NOTICE-1','notice-order','buyer','wrong_item','Wrong part',
+      'return-policy-2026-09-27-v2','open','notice-case-command','${hash}',
+      '2026-09-26T01:00:00.000Z','2026-09-26T01:00:00.000Z');
+    INSERT INTO after_sales_case_messages (id,case_id,author_role,author_id,visibility,
+      kind,body,created_at,command_id,command_hash)
+    VALUES ('notice-reply','notice-case','customer','buyer','customer','message',
+      'Photo attached','2026-09-26T02:00:00.000Z','notice-reply-command','${hash}')`);
+  const { notifications } = await createD1AdminNotifications(db).list("owner", {
+    filter: "all",
+    page: 1,
+  });
+  expect(
+    notifications.find((item) => item.id === "after-sales-case:notice-case")
+      ?.target,
+  ).toBe("/admin/orders/notice-order?tab=after-sales");
+  expect(
+    notifications.find((item) => item.id === "after-sales-reply:notice-reply")
+      ?.target,
+  ).toBe("/admin/messages/ordered-request");
+});

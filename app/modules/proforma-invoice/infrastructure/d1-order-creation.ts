@@ -4,6 +4,7 @@ import { shipmentInitializationStatements } from "../../shipment/infrastructure/
 import { shipmentReadyScheduleInitializationStatement } from "../../shipment/infrastructure/d1-ready-schedule-initialization";
 import {
   effectiveQuoteAgreementSql,
+  factoryReviewSatisfiedSql,
   unspecifiedPaymentDeadlineSql,
 } from "./accepted-agreement-sql";
 
@@ -60,9 +61,7 @@ export async function orderCreationStatements(
          AND a.document_version=p.document_version AND a.snapshot_hash=p.snapshot_hash
          AND a.quote_revision_id=p.quote_revision_id
          AND ${effectiveQuoteAgreementSql("p")}
-         AND (NOT EXISTS(SELECT 1 FROM json_each(p.snapshot_json,'$.lines') line
-           WHERE json_extract(line.value,'$.madeToOrder')=1)
-           OR json_extract(q.snapshot_json,'$.factoryReviewConfirmed')=1)
+         AND ${factoryReviewSatisfiedSql("p")}
        ON CONFLICT(request_id) DO NOTHING`,
       )
       .bind(orderId, input.now, input.piId, input.now),

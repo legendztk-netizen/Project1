@@ -29,6 +29,7 @@ describe("AccountDetailNavigation", () => {
       "Saved Configurations",
       "My Quotes",
       "Orders",
+      "Messages",
       "Addresses",
       "Account Security",
       "Profile / Company",
@@ -55,7 +56,7 @@ describe("AccountDetailNavigation", () => {
     const links = within(
       screen.getByRole("navigation", { name: "Account details" }),
     ).getAllByRole("link");
-    expect(links).toHaveLength(8);
+    expect(links).toHaveLength(9);
     for (const link of links) {
       expect(link.tabIndex).toBe(0);
       link.focus();

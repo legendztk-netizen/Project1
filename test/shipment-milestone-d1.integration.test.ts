@@ -63,6 +63,9 @@ beforeAll(async () => {
       incoterm: "DDP",
       namedPlace: "Portland",
       taxTreatment: "Not Collected",
+      // Shipping-change tests below credit unused original freight. Record
+      // that charged component so the shared refund entitlement is explicit.
+      charges: { freight: 500, insurance: 0, dutiesImport: 0 },
     },
   });
   const orderHash = await piSha256(new TextEncoder().encode(orderSnapshot));

@@ -90,7 +90,9 @@ export default function QuoteNotifications({
                 className="quote-message quote-message-admin"
               >
                 <header>
-                  <Link to={`/admin/quotes/${row.request_id}/conversation`}>
+                  <Link
+                    to={`/admin/messages/${encodeURIComponent(row.request_id)}`}
+                  >
                     查看客户会话
                   </Link>
                   <strong>{states[row.state]}</strong>

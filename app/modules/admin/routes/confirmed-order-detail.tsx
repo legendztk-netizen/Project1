@@ -1,4 +1,8 @@
-import { useRef, useState } from "react";
+import { refundAccountProtector } from "#workers/refund-accounts";
+import { parseUsdCents } from "../../after-sales/domain/refund-calculation";
+import { useRef } from "react";
+import { AdminAfterSalesTabs } from "../../after-sales/ui/admin-after-sales-tabs";
+import { adminAfterSalesTab } from "../../after-sales/application/admin-after-sales-navigation";
 import { Temporal } from "@js-temporal/polyfill";
 import {
   ArrowLeft,
@@ -50,6 +54,37 @@ import { createShipmentMilestoneService } from "../../shipment/application/shipm
 import { createOrderShippingChangeService } from "../../shipment/application/order-shipping-change-service";
 import { AdminOrderShippingChanges } from "../../shipment/ui/admin-order-shipping-changes";
 import { splitShipmentIdForChange } from "../../shipment/domain/order-shipping-change";
+import { createCancellationService } from "../../after-sales/application/cancellation-service";
+import { hasAfterSalesPermission } from "../../after-sales/domain/permissions";
+import {
+  AdminCancellationDecisionForm,
+  AdminCancellationRequests,
+} from "../../after-sales/ui/admin-cancellations";
+import {
+  isAfterSalesAdminIntent,
+  runAfterSalesAdminAction,
+} from "../../after-sales/application/admin-order-actions";
+import { createAfterSalesFiles } from "../../after-sales/application/after-sales-files";
+import {
+  AdminEvidenceFiles,
+  AdminExceptionalOpenForm,
+  FactoryEvidenceFields,
+} from "../../after-sales/ui/admin-exceptional";
+import { createCaseService } from "../../after-sales/application/case-service";
+import { AdminCases } from "../../after-sales/ui/admin-cases";
+import { createReturnAuthorizationService } from "../../after-sales/application/return-authorization-service";
+import {
+  AdminCaseDecisionActions,
+  AdminReturnAuthorizationList,
+} from "../../after-sales/ui/return-authorizations";
+import { createReturnInspectionService } from "../../after-sales/application/return-inspection-service";
+import {
+  AdminReceiptRecordActions,
+  AdminReturnReceipts,
+} from "../../after-sales/ui/return-inspection";
+import { createRefundInitiationService } from "../../after-sales/application/refund-initiation-service";
+import { AdminOrderRefunds } from "../../after-sales/ui/admin-refunds";
+import { etDate } from "../../after-sales/domain/return-policy";
 
 export const headers = piPrivateHeaders;
 
@@ -79,6 +114,7 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
     readySchedules,
     milestones,
     shippingChanges,
+    cancellations,
   ] = await Promise.all([
     followOnQuotes(env).adminListForOrder(adminIdentity, order.id),
     confirmedOrders(env).adminActivity(adminIdentity, order.id),
@@ -89,6 +125,60 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
     ),
     createShipmentMilestoneService(env.DB).adminRead(adminIdentity, order.id),
     createOrderShippingChangeService(env.DB).adminRead(adminIdentity, order.id),
+    hasAfterSalesPermission(adminIdentity, "after_sales.review")
+      ? Promise.all([
+          createCancellationService(env.DB).adminRead(adminIdentity, order.id),
+          createCancellationService(env.DB).adminExceptionalEligible(
+            adminIdentity,
+            order.id,
+          ),
+          createAfterSalesFiles(env.DB, env.PRIVATE_FILES).adminList(
+            adminIdentity,
+            order.id,
+          ),
+          createCaseService(env.DB).adminRead(adminIdentity, order.id),
+          createReturnAuthorizationService(env.DB).adminRead(
+            adminIdentity,
+            order.id,
+          ),
+          createReturnAuthorizationService(env.DB).adminLocations(
+            adminIdentity,
+          ),
+          createReturnInspectionService(env.DB).adminRead(
+            adminIdentity,
+            order.id,
+          ),
+          createRefundInitiationService(env.DB, {
+            protector: await refundAccountProtector(env),
+          }).adminOrder(adminIdentity, order.id),
+        ]).then(
+          ([
+            requests,
+            exceptionalEligible,
+            files,
+            cases,
+            ras,
+            locations,
+            receipts,
+            refunds,
+          ]) => ({
+            refunds,
+            isOwner: adminIdentity.accountType === "owner",
+            canRefund: hasAfterSalesPermission(
+              adminIdentity,
+              "after_sales.refund",
+            ),
+            todayEt: etDate(new Date().toISOString()),
+            requests,
+            exceptionalEligible,
+            files,
+            cases,
+            ras,
+            locations,
+            receipts,
+          }),
+        )
+      : Promise.resolve(null),
   ]);
   return data(
     {
@@ -99,6 +189,7 @@ export async function loader({ context, params, request }: LoaderFunctionArgs) {
       readySchedules,
       milestones,
       shippingChanges,
+      cancellations,
       milestoneCommands: Object.fromEntries(
         milestones.map((item) => [
           item.shipmentId,
@@ -135,7 +226,7 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
   requireReviewMutation(request);
   const orderId = piRouteId(params.orderId);
   await confirmedOrders(env).adminRead(adminIdentity, orderId);
-  const form = await readPrivateReviewForm(request);
+  const form = await readPrivateReviewForm(request, { maxFiles: 5 });
   const intent = String(form.get("intent") ?? "");
   if (intent === "follow-on") {
     await followOnQuotes(env).adminCreate(
@@ -424,6 +515,10 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
           expectedVersion,
           shipments: affected,
           adjustmentCents: cents,
+          taxCreditCents: parseUsdCents(
+            form.get("taxCreditUsd"),
+            "退回的 Sales Tax",
+          ),
           reason: String(form.get("reason") ?? ""),
           expiresAt,
           commandId,
@@ -474,12 +569,24 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
         { status: error instanceof Response ? error.status : 400 },
       );
     }
+  } else if (isAfterSalesAdminIntent(intent)) {
+    const failure = await runAfterSalesAdminAction({
+      db: env.DB,
+      bucket: env.PRIVATE_FILES,
+      actor: adminIdentity,
+      orderId,
+      intent,
+      form,
+      auditIp: request.headers.get("cf-connecting-ip") ?? "local",
+    });
+    if (failure)
+      return data({ error: failure.error }, { status: failure.status });
   } else throw new Response("Invalid operation", { status: 400 });
   const returnTo = safeReturnTo(
     new URL(request.url).searchParams.get("returnTo"),
   );
   return redirect(
-    `/admin/orders/${encodeURIComponent(orderId)}?returnTo=${encodeURIComponent(returnTo)}${intent.startsWith("shipping-change-") ? "&tab=changes" : intent.startsWith("shipment-") || intent.startsWith("schedule-") || intent.startsWith("milestone-") || intent === "tracking-save" ? "&tab=shipments" : ""}`,
+    `/admin/orders/${encodeURIComponent(orderId)}?returnTo=${encodeURIComponent(returnTo)}${isAfterSalesAdminIntent(intent) ? `&tab=after-sales&afterSalesTab=${adminAfterSalesTab(new URL(request.url).searchParams.get("afterSalesTab"))}` : intent.startsWith("shipping-change-") ? "&tab=changes" : intent.startsWith("shipment-") || intent.startsWith("schedule-") || intent.startsWith("milestone-") || intent === "tracking-save" ? "&tab=shipments" : ""}`,
   );
 }
 
@@ -634,6 +741,7 @@ const tabs = [
   { id: "products", label: "商品与金额" },
   { id: "shipments", label: "发货批次" },
   { id: "changes", label: "变更申请" },
+  { id: "after-sales", label: "取消与售后" },
   { id: "delivery", label: "客户与交付" },
   { id: "payment", label: "付款与协议" },
   { id: "history", label: "操作记录" },
@@ -649,6 +757,26 @@ const eventLabels: Record<string, string> = {
   "order.shipping_change_requested": "客户申请发货变更",
   "order.shipping_change_proposed": "已发布发货变更提案",
   "order.shipping_change_effective": "客户接受的发货变更已生效",
+  "order.cancellation_requested": "客户提交取消申请",
+  "order.cancellation_withdrawn": "客户撤回取消申请",
+  "order.cancellation_resolved": "已作出取消决定",
+  "order.refund_customer_confirmed": "客户确认退款金额",
+  "order.refund_customer_disputed": "客户对退款金额提出异议",
+  "order.exceptional_cancellation_opened": "记录客服特殊取消审核",
+  "order.after_sales_file_added": "添加售后私密附件",
+  "order.after_sales_file_shared": "向客户共享售后附件",
+  "order.after_sales_case_opened": "客户提交售后案件",
+  "order.return_authorization_issued": "签发退货授权（RA）",
+  "order.return_declined": "告知客户不予退货授权",
+  "order.return_received": "记录退货实际到货",
+  "order.late_return_reviewed": "审核逾期到货",
+  "order.return_decided": "发布退货检验决定",
+  "order.refund_destination_verified": "核实退款账号",
+  "order.refund_account_provided": "客户提供退款账号",
+  "order.case_refund_completed": "退款完成并结束售后案件",
+  "order.refund_destination_approved": "Owner 批准替代退款账户",
+  "order.refund_initiated": "记录线下已发起退款",
+  "order.return_decision_revised": "追加检验决定修订",
 };
 
 export default function ConfirmedOrderDetail({
@@ -664,6 +792,7 @@ export default function ConfirmedOrderDetail({
     readySchedules,
     milestones,
     shippingChanges,
+    cancellations,
     milestoneCommands,
     trackingCommands,
     scheduleCommandIds,
@@ -671,12 +800,20 @@ export default function ConfirmedOrderDetail({
     returnTo,
   } = loaderData;
   const actionData = useActionData<typeof action>();
-  const [searchParams] = useSearchParams();
-  const [tab, setTab] = useState<Tab>(
-    tabs.some((item) => item.id === searchParams.get("tab"))
-      ? (searchParams.get("tab") as Tab)
-      : "products",
-  );
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab: Tab = tabs.some((item) => item.id === searchParams.get("tab"))
+    ? (searchParams.get("tab") as Tab)
+    : "products";
+  function setTab(nextTab: Tab) {
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.set("tab", nextTab);
+        return next;
+      },
+      { preventScrollReset: true },
+    );
+  }
   const dialog = useRef<HTMLDialogElement>(null);
   const navigation = useNavigation();
   const busy = navigation.state !== "idle";
@@ -961,6 +1098,145 @@ export default function ConfirmedOrderDetail({
               busy={busy}
               error={actionData?.error}
             />
+          </section>
+        )}
+        {tab === "after-sales" && (
+          <section
+            id="order-panel-after-sales"
+            role="tabpanel"
+            aria-labelledby="order-tab-after-sales"
+            className="order-panel"
+          >
+            <h2>取消与售后</h2>
+            {cancellations ? (
+              <>
+                {actionData?.error && (
+                  <p className="shipping-change-error" role="alert">
+                    {actionData.error}
+                  </p>
+                )}
+                <AdminAfterSalesTabs
+                  counts={{
+                    cases: cancellations.cases.length,
+                    refunds:
+                      cancellations.refunds.afterSales.filter(
+                        (refund) => refund.status !== "superseded",
+                      ).length + cancellations.refunds.shipping.length,
+                    cancellations: cancellations.requests.length,
+                  }}
+                  panels={{
+                    cases: (
+                      <>
+                        <h3>售后案件</h3>
+                        <AdminCases
+                          cases={cancellations.cases}
+                          orderId={order.id}
+                          requestId={order.requestId}
+                          files={cancellations.files}
+                          commandId={commandId}
+                          busy={busy}
+                          renderActions={(item) => (
+                            <>
+                              <AdminCaseDecisionActions
+                                item={item}
+                                ras={cancellations.ras}
+                                locations={cancellations.locations}
+                                commandId={commandId}
+                                busy={busy}
+                              />
+                              <AdminReceiptRecordActions
+                                item={item}
+                                ras={cancellations.ras}
+                                receipts={cancellations.receipts}
+                                commandId={commandId}
+                                busy={busy}
+                              />
+                            </>
+                          )}
+                          renderDetails={(item) => (
+                            <>
+                              <AdminReturnAuthorizationList
+                                item={item}
+                                ras={cancellations.ras}
+                              />
+                              <AdminReturnReceipts
+                                item={item}
+                                receipts={cancellations.receipts}
+                                files={cancellations.files}
+                                orderId={order.id}
+                                commandId={commandId}
+                                busy={busy}
+                              />
+                            </>
+                          )}
+                        />
+                      </>
+                    ),
+                    refunds: (
+                      <>
+                        <h3>退款</h3>
+                        <AdminOrderRefunds
+                          refunds={cancellations.refunds}
+                          isOwner={cancellations.isOwner}
+                          canRefund={cancellations.canRefund}
+                          commandId={commandId}
+                          busy={busy}
+                          todayEt={cancellations.todayEt}
+                        />
+                      </>
+                    ),
+                    cancellations: (
+                      <>
+                        <h3>订单取消申请</h3>
+                        <AdminExceptionalOpenForm
+                          eligible={cancellations.exceptionalEligible}
+                          commandId={commandId}
+                          busy={busy}
+                        />
+                        <AdminCancellationRequests
+                          requests={cancellations.requests}
+                          renderActions={(item) => (
+                            <>
+                              {item.kind === "exceptional" && (
+                                <AdminEvidenceFiles
+                                  orderId={order.id}
+                                  scopeKind="cancellation"
+                                  scopeId={item.id}
+                                  files={cancellations.files}
+                                  commandId={commandId}
+                                  busy={busy}
+                                />
+                              )}
+                              <AdminCancellationDecisionForm
+                                request={item}
+                                commandId={commandId}
+                                busy={busy}
+                              >
+                                {item.kind === "exceptional" && (
+                                  <FactoryEvidenceFields
+                                    files={cancellations.files.filter(
+                                      (file) =>
+                                        file.scopeKind === "cancellation" &&
+                                        file.scopeId === item.id,
+                                    )}
+                                    hasCutHose={item.lines.some(
+                                      (line) =>
+                                        line.productClass === "cut_hose",
+                                    )}
+                                  />
+                                )}
+                              </AdminCancellationDecisionForm>
+                            </>
+                          )}
+                        />
+                      </>
+                    ),
+                  }}
+                />
+              </>
+            ) : (
+              <p>当前账号没有售后审核权限，请联系 Owner 授权。</p>
+            )}
           </section>
         )}
         {tab === "payment" && (

@@ -65,6 +65,7 @@ describe("AccountWorkspace", () => {
       "Saved Configurations",
       "My Quotes",
       "Orders",
+      "Messages",
       "Addresses",
       "Account Security",
       "Profile / Company",

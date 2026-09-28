@@ -1,0 +1,390 @@
+import { data, Link, type LoaderFunctionArgs } from "react-router";
+
+import { piPrivateHeaders } from "#workers/proforma-invoice";
+import { createCancellationService } from "../../after-sales/application/cancellation-service";
+import { createCaseService } from "../../after-sales/application/case-service";
+import { createRefundInitiationService } from "../../after-sales/application/refund-initiation-service";
+import { usd } from "../../after-sales/domain/refund-calculation";
+import {
+  adminCaseReasonLabel,
+  adminCaseStatusLabel,
+} from "../../after-sales/ui/admin-cases";
+import { hasAfterSalesPermission } from "../../after-sales/domain/permissions";
+import { cancellationStatusLabel } from "../../after-sales/ui/admin-cancellations";
+import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
+import { requireAdminRequestContext } from "../infrastructure/admin-request-context";
+import { AdminNavigation } from "../ui/admin-navigation";
+import "../ui/confirmed-orders.css";
+import "../../after-sales/ui/after-sales.css";
+
+export const headers = piPrivateHeaders;
+
+export function meta() {
+  return [{ title: "取消与售后 | 管理后台" }];
+}
+
+const cancellationFilters = [
+  { id: "pending_review", label: "待审核" },
+  { id: "resolved", label: "已决定" },
+  { id: "withdrawn", label: "已撤回" },
+  { id: "all", label: "全部" },
+] as const;
+type CancellationFilter = (typeof cancellationFilters)[number]["id"];
+
+function listUrl(status: string, page: number) {
+  const params = new URLSearchParams();
+  params.set("status", status);
+  if (page > 1) params.set("page", String(page));
+  return `/admin/after-sales?${params}`;
+}
+
+export async function loader({ context, request }: LoaderFunctionArgs) {
+  const { env, adminIdentity } = requireAdminRequestContext(context);
+  const url = new URL(request.url);
+  const requested = url.searchParams.get("status");
+  const status: CancellationFilter = cancellationFilters.some(
+    (item) => item.id === requested,
+  )
+    ? (requested as CancellationFilter)
+    : "pending_review";
+  const page = Math.max(
+    1,
+    Math.floor(Number(url.searchParams.get("page"))) || 1,
+  );
+  if (!hasAfterSalesPermission(adminIdentity, "after_sales.review"))
+    return data(
+      { allowed: false as const, status, page },
+      { headers: piPrivateHeaders() },
+    );
+  const casePage = Math.max(
+    1,
+    Math.floor(Number(url.searchParams.get("casePage"))) || 1,
+  );
+  const requestedCaseStatus = url.searchParams.get("caseStatus");
+  const caseStatus =
+    requestedCaseStatus === "all" || requestedCaseStatus === "closed"
+      ? requestedCaseStatus
+      : "open";
+  const refundPage = Math.max(
+    1,
+    Math.floor(Number(url.searchParams.get("refundPage"))) || 1,
+  );
+  const [cancellations, cases, refunds] = await Promise.all([
+    createCancellationService(env.DB).adminList(adminIdentity, {
+      status,
+      page,
+    }),
+    createCaseService(env.DB).adminList(adminIdentity, {
+      status: caseStatus,
+      page: casePage,
+    }),
+    hasAfterSalesPermission(adminIdentity, "after_sales.refund")
+      ? createRefundInitiationService(env.DB).adminDue(adminIdentity, {
+          page: refundPage,
+        })
+      : Promise.resolve(null),
+  ]);
+  return data(
+    {
+      allowed: true as const,
+      status,
+      page,
+      cancellations,
+      cases,
+      caseStatus,
+      refunds,
+    },
+    { headers: piPrivateHeaders() },
+  );
+}
+
+export default function AdminAfterSales({
+  loaderData,
+}: {
+  loaderData: Awaited<ReturnType<typeof loader>>["data"];
+}) {
+  return (
+    <div className="admin-shell" data-surface="admin">
+      <AdminNavigation active="after-sales" />
+      <main className="admin-main private-review-page orders-workspace">
+        <header className="orders-page-heading">
+          <h1>取消与售后</h1>
+          <p>
+            审核售后案件与发货前取消申请。每条记录均关联原订单、订单行、批次和实际数量；原
+            PI 与订单保持不变。
+          </p>
+        </header>
+        {!loaderData.allowed ? (
+          <p role="alert">当前账号没有售后审核权限，请联系 Owner 授权。</p>
+        ) : (
+          <>
+            {loaderData.refunds && (
+              <section aria-labelledby="after-sales-refunds">
+                <h2 id="after-sales-refunds">待发起退款</h2>
+                {loaderData.refunds.records.length ? (
+                  <table className="after-sales-table">
+                    <thead>
+                      <tr>
+                        <th>订单</th>
+                        <th>来源</th>
+                        <th>剩余金额</th>
+                        <th>批准时间</th>
+                        <th>发起期限</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {loaderData.refunds.records.map((record) => (
+                        <tr key={`${record.kind}:${record.id}`}>
+                          <td>
+                            <Link
+                              to={`/admin/orders/${encodeURIComponent(record.orderId)}?tab=after-sales&afterSalesTab=refunds`}
+                            >
+                              {record.orderNumber}
+                            </Link>
+                          </td>
+                          <td>
+                            {record.source === "cancellation"
+                              ? "取消"
+                              : record.source === "return"
+                                ? "退货检验"
+                                : record.source === "supplemental"
+                                  ? "补充退款"
+                                  : "发货变更"}
+                          </td>
+                          <td>{usd(record.remainingCents)}</td>
+                          <td>{formatPiDate(record.approvedAt, "admin")}</td>
+                          <td>
+                            {formatPiDate(record.deadlineAt, "admin")}
+                            {record.overdue && (
+                              <>
+                                {" "}
+                                <span className="after-sales-flag">已逾期</span>
+                              </>
+                            )}
+                            {record.onHold && (
+                              <>
+                                {" "}
+                                <span className="after-sales-flag">
+                                  修订待复核，暂停发起
+                                </span>
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p>没有待发起的退款。</p>
+                )}
+                <nav className="after-sales-pagination" aria-label="退款分页">
+                  {loaderData.refunds.page > 1 && (
+                    <Link
+                      to={`/admin/after-sales?refundPage=${loaderData.refunds.page - 1}`}
+                    >
+                      上一页
+                    </Link>
+                  )}
+                  <span>
+                    第 {loaderData.refunds.page} /{" "}
+                    {loaderData.refunds.pageCount} 页，共{" "}
+                    {loaderData.refunds.total} 条
+                  </span>
+                  {loaderData.refunds.page < loaderData.refunds.pageCount && (
+                    <Link
+                      to={`/admin/after-sales?refundPage=${loaderData.refunds.page + 1}`}
+                    >
+                      下一页
+                    </Link>
+                  )}
+                </nav>
+              </section>
+            )}
+            <section aria-labelledby="after-sales-cases">
+              <h2 id="after-sales-cases">售后案件</h2>
+              <nav className="orders-status-tabs" aria-label="售后案件筛选">
+                {(
+                  [
+                    ["open", "处理中"],
+                    ["closed", "已关闭"],
+                    ["all", "全部"],
+                  ] as const
+                ).map(([id, label]) => (
+                  <Link
+                    key={id}
+                    to={`/admin/after-sales?caseStatus=${id}`}
+                    aria-current={
+                      loaderData.caseStatus === id ? "page" : undefined
+                    }
+                    className={loaderData.caseStatus === id ? "active" : ""}
+                  >
+                    {label}
+                  </Link>
+                ))}
+              </nav>
+              {loaderData.cases.records.length ? (
+                <table className="after-sales-table">
+                  <thead>
+                    <tr>
+                      <th>案件</th>
+                      <th>订单</th>
+                      <th>原因</th>
+                      <th>状态</th>
+                      <th>最近客户消息</th>
+                      <th>更新时间</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loaderData.cases.records.map((record) => (
+                      <tr key={record.id}>
+                        <td>
+                          <Link
+                            to={`/admin/orders/${encodeURIComponent(record.orderId)}?tab=after-sales&afterSalesTab=cases`}
+                          >
+                            {record.caseNumber}
+                          </Link>
+                        </td>
+                        <td>{record.orderNumber}</td>
+                        <td>{adminCaseReasonLabel[record.reason]}</td>
+                        <td>
+                          <span
+                            className={`after-sales-status after-sales-status-${record.status}`}
+                          >
+                            {adminCaseStatusLabel[record.status]}
+                          </span>
+                        </td>
+                        <td>
+                          <Link
+                            to={`/admin/messages/${encodeURIComponent(record.requestId)}?case=${encodeURIComponent(record.id)}`}
+                          >
+                            {record.lastCustomerAt
+                              ? formatPiDate(record.lastCustomerAt, "admin")
+                              : "查看对话"}
+                          </Link>
+                        </td>
+                        <td>{formatPiDate(record.updatedAt, "admin")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p>没有符合条件的售后案件。</p>
+              )}
+              <nav className="after-sales-pagination" aria-label="案件分页">
+                {loaderData.cases.page > 1 && (
+                  <Link
+                    to={`/admin/after-sales?caseStatus=${loaderData.caseStatus}&casePage=${loaderData.cases.page - 1}`}
+                  >
+                    上一页
+                  </Link>
+                )}
+                <span>
+                  第 {loaderData.cases.page} / {loaderData.cases.pageCount}{" "}
+                  页，共 {loaderData.cases.total} 条
+                </span>
+                {loaderData.cases.page < loaderData.cases.pageCount && (
+                  <Link
+                    to={`/admin/after-sales?caseStatus=${loaderData.caseStatus}&casePage=${loaderData.cases.page + 1}`}
+                  >
+                    下一页
+                  </Link>
+                )}
+              </nav>
+            </section>
+            <section aria-labelledby="after-sales-cancellations">
+              <h2 id="after-sales-cancellations">订单取消申请</h2>
+              <nav className="orders-status-tabs" aria-label="订单取消申请筛选">
+                {cancellationFilters.map((filter) => (
+                  <Link
+                    key={filter.id}
+                    to={listUrl(filter.id, 1)}
+                    aria-current={
+                      loaderData.status === filter.id ? "page" : undefined
+                    }
+                    className={loaderData.status === filter.id ? "active" : ""}
+                  >
+                    {filter.label}
+                  </Link>
+                ))}
+              </nav>
+              {loaderData.cancellations.records.length ? (
+                <table className="after-sales-table">
+                  <thead>
+                    <tr>
+                      <th>订单</th>
+                      <th>类型</th>
+                      <th>数量</th>
+                      <th>状态</th>
+                      <th>提交时间</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loaderData.cancellations.records.map((record) => (
+                      <tr key={record.id}>
+                        <td>
+                          <Link
+                            to={`/admin/orders/${encodeURIComponent(record.orderId)}?tab=after-sales&afterSalesTab=cancellations`}
+                          >
+                            {record.orderNumber}
+                          </Link>
+                        </td>
+                        <td>
+                          {record.kind === "standard"
+                            ? "标准品取消"
+                            : "特殊取消"}
+                          {record.origin === "support" ? "（客服）" : ""}
+                        </td>
+                        <td>{record.physicalQuantity}</td>
+                        <td>
+                          {cancellationStatusLabel[record.status] ??
+                            record.status}
+                          {record.handoffConflict && (
+                            <>
+                              {" "}
+                              <span className="after-sales-flag">交接冲突</span>
+                            </>
+                          )}
+                        </td>
+                        <td>{formatPiDate(record.createdAt, "admin")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p>没有符合条件的订单取消申请。</p>
+              )}
+              <nav className="after-sales-pagination" aria-label="分页">
+                {loaderData.cancellations.page > 1 && (
+                  <Link
+                    to={listUrl(
+                      loaderData.status,
+                      loaderData.cancellations.page - 1,
+                    )}
+                  >
+                    上一页
+                  </Link>
+                )}
+                <span>
+                  第 {loaderData.cancellations.page} /{" "}
+                  {loaderData.cancellations.pageCount} 页，共{" "}
+                  {loaderData.cancellations.total} 条
+                </span>
+                {loaderData.cancellations.page <
+                  loaderData.cancellations.pageCount && (
+                  <Link
+                    to={listUrl(
+                      loaderData.status,
+                      loaderData.cancellations.page + 1,
+                    )}
+                  >
+                    下一页
+                  </Link>
+                )}
+              </nav>
+            </section>
+          </>
+        )}
+      </main>
+    </div>
+  );
+}

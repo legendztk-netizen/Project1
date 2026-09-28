@@ -393,13 +393,29 @@ export function createShipmentMilestoneService(
       ORDER BY effective.effective_at DESC,effective.id DESC LIMIT 1)`;
     const quotedAllocations = `coalesce(json_extract(${effectiveTerms},'$.allocations'),
       json_extract(s.accepted_terms_json,'$.allocations'))`;
+    // Approved Spec 7 cancellations reduce the quoted batch quantity. Only
+    // cancellations decided after the batch's latest effective change count,
+    // because an applied change already snapshots the then-current quantities.
+    const latestChangeAt = `coalesce((SELECT max(effective.effective_at)
+      FROM order_shipping_change_effective effective,
+        json_each(effective.after_json,'$.shipments') revised
+      WHERE effective.order_id=s.order_id
+        AND json_extract(revised.value,'$.shipmentId')=s.id),'')`;
+    const cancelledAfterQuote = (lineExpression: string) => `coalesce((SELECT
+        sum(cancelled.physical_quantity) FROM order_cancelled_quantities cancelled
+        JOIN order_cancellation_resolutions resolution
+          ON resolution.id=cancelled.resolution_id
+        WHERE cancelled.shipment_id=s.id AND cancelled.line_id=${lineExpression}
+          AND resolution.decided_at>${latestChangeAt}),0)`;
+    const quotedRemaining = `json_extract(quoted.value,'$.physicalQuantity')-${cancelledAfterQuote("json_extract(quoted.value,'$.lineId')")}`;
     const allocated = `EXISTS(SELECT 1 FROM order_shipment_allocations a WHERE a.shipment_id=s.id)
          AND NOT EXISTS(SELECT 1 FROM json_each(${quotedAllocations}) quoted
            WHERE coalesce((SELECT sum(a.physical_quantity) FROM order_shipment_allocations a
              WHERE a.shipment_id=s.id AND a.line_id=json_extract(quoted.value,'$.lineId')),0)
-             != json_extract(quoted.value,'$.physicalQuantity'))
+             != ${quotedRemaining})
          AND (${quotedAllocations} IS NULL OR
-           (SELECT count(*) FROM json_each(${quotedAllocations}))=
+           (SELECT count(*) FROM json_each(${quotedAllocations}) quoted
+             WHERE ${quotedRemaining}>0)=
            (SELECT count(*) FROM order_shipment_allocations a WHERE a.shipment_id=s.id))
          AND (${quotedAllocations} IS NOT NULL OR
            (s.group_key='together' AND NOT EXISTS(
@@ -408,7 +424,9 @@ export function createShipmentMilestoneService(
                  WHERE a.shipment_id=s.id AND a.line_id=l.line_id),0)
                != CASE WHEN l.line_kind='length_based_hose'
                  THEN json_extract(l.snapshot_json,'$.lengthOrder.pieceCount')
-                 ELSE json_extract(l.snapshot_json,'$.quantity') END)))`;
+                 ELSE json_extract(l.snapshot_json,'$.quantity') END
+                 -coalesce((SELECT sum(c.physical_quantity) FROM order_cancelled_quantities c
+                   WHERE c.order_id=l.order_id AND c.line_id=l.line_id),0))))`;
     try {
       await db.batch([
         db

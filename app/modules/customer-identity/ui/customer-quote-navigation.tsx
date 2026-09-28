@@ -11,10 +11,10 @@ export function CustomerQuoteNavigation({ requestId }: { requestId: string }) {
           Overview
         </span>
       </NavLink>
-      <NavLink to={`${base}/conversation`}>
+      <NavLink to={`/account/messages/${encodeURIComponent(requestId)}`}>
         <span>
           <MessagesSquare aria-hidden="true" size={18} />
-          Quote conversation
+          Messages
         </span>
       </NavLink>
       <NavLink to={`${base}/pi`}>

@@ -31,14 +31,14 @@ export const customerOrderStages = [
 ] as const;
 export type CustomerOrderStage = (typeof customerOrderStages)[number];
 
-function shipmentCountSql(condition?: string) {
+export function shipmentCountSql(condition?: string) {
   return `(SELECT count(*) FROM order_shipments shipment WHERE shipment.order_id=o.id${condition ? ` AND ${condition}` : ""})`;
 }
 
 // Order fulfillment stage shared by the customer and Admin order lists. A
 // shipment waiting for re-verification after an accepted change is not shown
 // as ready, matching the Order detail timeline.
-const orderStageSql = `CASE
+export const orderStageSql = `CASE
   WHEN ${shipmentCountSql()}>0
     AND ${shipmentCountSql("shipment.status='delivered'")}=${shipmentCountSql()}
     THEN 'delivered'

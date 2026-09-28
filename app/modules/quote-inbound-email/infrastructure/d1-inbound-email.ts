@@ -53,6 +53,27 @@ export interface InboundAppendCommand {
 }
 
 // Owns one complete D1 transaction: do not execute these statements independently.
+/**
+ * An email reply to an After-sales Case notification continues under that
+ * Case in Messages: the new message inherits the Case of the message whose
+ * notification carried the reply token. Other replies stay unlabelled.
+ */
+export function inboundCaseTopicStatement(
+  database: D1Database,
+  input: { messageId: string; tokenHash: string },
+) {
+  return database
+    .prepare(
+      `INSERT INTO message_case_topics(message_id,case_id)
+       SELECT ?,topic.case_id FROM quote_notification_reply_tokens t
+       JOIN quote_notification_outbox o ON o.id=t.notification_id
+       JOIN message_case_topics topic ON topic.message_id=o.message_id
+       WHERE t.token_hash=?
+         AND EXISTS(SELECT 1 FROM quote_conversation_messages WHERE id=?)`,
+    )
+    .bind(input.messageId, input.tokenHash, input.messageId);
+}
+
 export function quoteInboundAppendStatements(
   database: D1Database,
   command: InboundAppendCommand,
@@ -123,6 +144,10 @@ export function quoteInboundAppendStatements(
         ),
     );
   statements.push(
+    inboundCaseTopicStatement(database, {
+      messageId: c.messageId,
+      tokenHash: c.tokenHash,
+    }),
     database
       .prepare(
         `INSERT INTO quote_inbound_email_content(content_key,content_hash,receipt_id,request_id,profile_id,message_id,created_at)

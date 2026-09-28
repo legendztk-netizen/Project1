@@ -41,7 +41,7 @@ export function customerQuoteNextStep(quote: CustomerQuoteProjection): {
   const pi = { to: `${base}/pi`, primary: true };
   const conversation = {
     label: "Open conversation",
-    to: `${base}/conversation`,
+    to: `/account/messages/${encodeURIComponent(quote.id)}`,
     primary: false,
   };
   switch (quote.progress.code) {

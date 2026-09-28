@@ -1,6 +1,7 @@
 import type { AdminIdentity } from "#workers/admin-access";
 import {
   effectiveQuoteAgreementSql,
+  factoryReviewSatisfiedSql,
   unspecifiedPaymentDeadlineSql,
 } from "../infrastructure/accepted-agreement-sql";
 import { piSha256 } from "../domain/proforma-invoice";
@@ -323,9 +324,7 @@ export function createPiFundResolutionService(
                 AND a.document_version=p.document_version AND a.snapshot_hash=p.snapshot_hash
                 AND a.quote_revision_id=p.quote_revision_id)
               AND ${effectiveQuoteAgreementSql("p")}
-              AND (NOT EXISTS(SELECT 1 FROM json_each(p.snapshot_json,'$.lines') line
-                WHERE json_extract(line.value,'$.madeToOrder')=1)
-                OR json_extract(q.snapshot_json,'$.factoryReviewConfirmed')=1)
+              AND ${factoryReviewSatisfiedSql("p")}
               AND EXISTS(SELECT 1 FROM pi_fund_resolutions WHERE id=?)
             ON CONFLICT(pi_id) DO NOTHING`,
             )

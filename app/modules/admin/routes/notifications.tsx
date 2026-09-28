@@ -95,8 +95,18 @@ export async function action({ context, request }: ActionFunctionArgs) {
   throw new Response("Unknown notification action", { status: 400 });
 }
 
+const afterSalesTitles: Partial<Record<AdminNotification["kind"], string>> = {
+  cancellation_requested: "客户提交了取消申请",
+  after_sales_case_opened: "客户提交了退货或问题报告",
+  after_sales_customer_reply: "售后案件有客户新回复",
+  return_inspection_overdue: "退货检验已超过 5 个美国工作日",
+  refund_initiation_overdue: "已批准退款超过 10 个美国工作日未发起",
+};
+
 function notificationTitle(notification: AdminNotification) {
   if (notification.kind === "rfq_submitted") return "新 RFQ 待审核";
+  const afterSales = afterSalesTitles[notification.kind];
+  if (afterSales) return afterSales;
   return notification.changeKind === "delivery_address"
     ? "客户提交了收货地址变更申请"
     : "客户提交了发货计划变更申请";
@@ -139,8 +149,8 @@ export default function AdminNotifications({
         <header className="orders-page-heading">
           <h1>通知</h1>
           <p>
-            客户提交的 RFQ
-            和订单变更申请会在这里提醒。点击消息查看详情并自动标为已读。
+            客户提交的
+            RFQ、订单变更、取消与售后申请及内部逾期提醒会在这里显示。点击消息查看详情并自动标为已读。
           </p>
         </header>
         <nav className="orders-status-tabs" aria-label="通知筛选">

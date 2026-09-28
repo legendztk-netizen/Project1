@@ -9,6 +9,7 @@ import {
 
 import type { Route } from "./+types/root";
 import { createCustomerIdentityService } from "./modules/customer-identity/application/customer-identity-service";
+import { createD1MessageCenter } from "./modules/message-center/infrastructure/d1-message-center";
 import "./styles/app.css";
 import { cloudflareContext } from "#workers/context";
 
@@ -16,6 +17,7 @@ export interface RootLoaderData {
   customer: {
     email: string;
     id: string;
+    unreadMessages?: number;
   } | null;
 }
 
@@ -25,9 +27,17 @@ export async function loader({
 }: Route.LoaderArgs): Promise<RootLoaderData> {
   const { env } = context.get(cloudflareContext);
   const profile = await createCustomerIdentityService(env).readSession(request);
+  // Advisory badge only: a read failure must never block the storefront.
+  const unreadMessages = profile
+    ? await createD1MessageCenter(env.DB)
+        .customerUnread(profile.id)
+        .catch(() => 0)
+    : 0;
 
   return {
-    customer: profile ? { email: profile.email, id: profile.id } : null,
+    customer: profile
+      ? { email: profile.email, id: profile.id, unreadMessages }
+      : null,
   };
 }
 

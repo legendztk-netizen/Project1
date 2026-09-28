@@ -56,5 +56,20 @@ describe("StorefrontHeader", () => {
     expect(screen.queryByRole("link", { name: "Register" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Sign In" })).toBeNull();
     expect(screen.queryByRole("link", { name: /^Quote List$/u })).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "Messages" }).getAttribute("href"),
+    ).toBe("/account/messages");
+  });
+
+  it("shows the unread Messages count for a signed-in customer", async () => {
+    renderHeader({
+      email: "buyer@example.com",
+      id: "customer-1",
+      unreadMessages: 3,
+    });
+
+    const link = await screen.findByRole("link", { name: /Messages/u });
+    expect(link.getAttribute("href")).toBe("/account/messages");
+    expect(screen.getByLabelText("3 unread").textContent).toBe("3");
   });
 });

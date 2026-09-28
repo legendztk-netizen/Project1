@@ -204,7 +204,7 @@ export function MarkDeliveredForm({
       <input type="hidden" name="intent" value="milestone-deliver" />
       <input type="hidden" name="commandId" value={commandId} />
       <label>
-        实际送达日期
+        实际送达日期（美东日期，退货申请窗口以此为第 0 天）
         <input type="date" name="actualDate" required />
       </label>
       <label>

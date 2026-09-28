@@ -4,7 +4,7 @@ import {
   AdminShipmentDocumentsWorkspace,
   type AdminShipmentDocumentsData,
 } from "./admin-shipment-documents-workspace";
-import { ShipmentActionDialog } from "./shipment-action-dialog";
+import { ActionDialog } from "../../shared/ui/action-dialog";
 
 type ActionResult =
   | { saved: true; tab: "packing" | "files" }
@@ -48,7 +48,7 @@ export function AdminShipmentDocumentsDialog({
       ? action.data
       : undefined;
   return (
-    <ShipmentActionDialog
+    <ActionDialog
       title={title}
       wide
       resetKey={saves}
@@ -70,6 +70,6 @@ export function AdminShipmentDocumentsDialog({
       ) : (
         <p role="status">正在加载装箱与文件…</p>
       )}
-    </ShipmentActionDialog>
+    </ActionDialog>
   );
 }

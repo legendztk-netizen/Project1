@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Form, useNavigation } from "react-router";
 import { MapPin, Truck } from "lucide-react";
-import { ShipmentActionDialog } from "./shipment-action-dialog";
+import { ActionDialog } from "../../shared/ui/action-dialog";
 import type { ProformaInvoiceSnapshot } from "../../proforma-invoice/domain/proforma-invoice";
 import type { createOrderShippingChangeService } from "../application/order-shipping-change-service";
 import "./order-shipping-changes.css";
@@ -83,7 +83,7 @@ export function CustomerShippingChangeActions({
   const eligible = eligibleShipments(shipments);
   if (!eligible.length) return null;
   return (
-    <div className="customer-order-actions">
+    <>
       {(["delivery_address", "shipping_plan"] as const).map((option) => (
         <button
           key={option}
@@ -103,7 +103,7 @@ export function CustomerShippingChangeActions({
         </button>
       ))}
       {kind && (
-        <ShipmentActionDialog
+        <ActionDialog
           key={kind}
           language="en"
           title={kindCopy[kind].title}
@@ -222,9 +222,9 @@ export function CustomerShippingChangeActions({
               Submit change request
             </button>
           </Form>
-        </ShipmentActionDialog>
+        </ActionDialog>
       )}
-    </div>
+    </>
   );
 }
 
@@ -356,6 +356,17 @@ export function CustomerOrderShippingChanges({
                       </section>
                     );
                   })}
+                  {current.adjustmentCents < 0 && (
+                    <p>
+                      Credit breakdown: original logistics{" "}
+                      {money(
+                        current.after.creditAllocation?.logisticsCents ??
+                          -current.adjustmentCents,
+                      )}
+                      {"; Sales Tax "}
+                      {money(current.after.creditAllocation?.taxCents ?? 0)}.
+                    </p>
+                  )}
                   {current.adjustmentCents > 0 && (
                     <p>
                       The seller handles any additional payment offline.

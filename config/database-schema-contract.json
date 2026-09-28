@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 115,
+  "schemaVersion": 129,
   "migrations": [
     "0000_initial_catalog_release.sql",
     "0001_add_admin_identities.sql",
@@ -115,6 +115,20 @@
     "0111_order_change_refund_and_hold_guards.sql",
     "0112_scoped_quantity_holds.sql",
     "0113_authorized_credit_fund_resolution_guard.sql",
-    "0114_admin_notifications.sql"
+    "0114_admin_notifications.sql",
+    "0115_order_cancellation_requests.sql",
+    "0116_cancellation_resolutions_and_refund_authorizations.sql",
+    "0117_after_sales_private_files.sql",
+    "0118_after_sales_cases.sql",
+    "0119_return_authorizations.sql",
+    "0120_return_receipts_and_inspection.sql",
+    "0121_refund_destinations_and_initiation.sql",
+    "0122_decision_revisions_and_supplemental_refunds.sql",
+    "0123_message_center.sql",
+    "0124_after_sales_review_fixes.sql",
+    "0125_spec7_review_regressions.sql",
+    "0126_shipping_credit_components.sql",
+    "0127_customer_refund_accounts.sql",
+    "0128_customer_paypal_accounts.sql"
   ]
 }
