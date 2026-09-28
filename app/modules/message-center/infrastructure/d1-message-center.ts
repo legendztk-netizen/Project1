@@ -18,12 +18,12 @@ const lastMessage = `last AS (
   FROM quote_conversation_messages m)`;
 
 function unreadSql(role: "customer" | "admin") {
-  // Messages written by the other side after this reader last opened the thread.
+  // Only messages actually returned to this reader count as read.
   const from = role === "customer" ? "admin" : "customer";
   return `(SELECT count(*) FROM quote_conversation_messages unread
     WHERE unread.request_id=request.id AND unread.author_role='${from}'
-      AND unread.created_at > coalesce((SELECT r.last_read_at FROM message_thread_reads r
-        WHERE r.request_id=request.id AND r.reader_role='${role}' AND r.reader_id=?),''))`;
+      AND NOT EXISTS(SELECT 1 FROM message_reads r
+        WHERE r.message_id=unread.id AND r.reader_role='${role}' AND r.reader_id=?))`;
 }
 
 interface ThreadRow {
@@ -119,8 +119,8 @@ export function createD1MessageCenter(database: D1Database) {
            JOIN customer_quote_requests request ON request.id=m.request_id
            ${ownedQuoteRequestWhere}
              AND m.author_role='admin'
-             AND m.created_at > coalesce((SELECT r.last_read_at FROM message_thread_reads r
-               WHERE r.request_id=m.request_id AND r.reader_role='customer' AND r.reader_id=?),'')`,
+             AND NOT EXISTS(SELECT 1 FROM message_reads r
+               WHERE r.message_id=m.id AND r.reader_role='customer' AND r.reader_id=?)`,
         )
         .bind(profileId, profileId, profileId, profileId)
         .first<{ count: number }>();
@@ -182,8 +182,8 @@ export function createD1MessageCenter(database: D1Database) {
         .prepare(
           `SELECT count(DISTINCT m.request_id) AS count FROM quote_conversation_messages m
            WHERE m.author_role='customer'
-             AND m.created_at > coalesce((SELECT r.last_read_at FROM message_thread_reads r
-               WHERE r.request_id=m.request_id AND r.reader_role='admin' AND r.reader_id=?),'')`,
+             AND NOT EXISTS(SELECT 1 FROM message_reads r
+               WHERE r.message_id=m.id AND r.reader_role='admin' AND r.reader_id=?)`,
         )
         .bind(adminId)
         .first<{ count: number }>();
@@ -315,6 +315,7 @@ export function createD1MessageCenter(database: D1Database) {
       createdAt: string;
       commandId: string;
       commandHash: string;
+      auditIp: string | null;
     }) {
       await database.batch([
         database
@@ -343,7 +344,12 @@ export function createD1MessageCenter(database: D1Database) {
             `message-note:${input.id}`,
             input.requestId,
             input.adminId,
-            JSON.stringify({ noteId: input.id, caseId: input.caseId }),
+            JSON.stringify({
+              noteId: input.id,
+              caseId: input.caseId,
+              commandId: input.commandId,
+              ipAddress: input.auditIp,
+            }),
             input.createdAt,
           ),
       ]);
@@ -362,17 +368,21 @@ export function createD1MessageCenter(database: D1Database) {
       requestId: string;
       role: "customer" | "admin";
       readerId: string;
-      at: string;
+      messageIds: string[];
     }) {
-      await database
-        .prepare(
-          `INSERT INTO message_thread_reads(request_id,reader_role,reader_id,last_read_at)
-           VALUES(?,?,?,?)
-           ON CONFLICT(request_id,reader_role,reader_id)
-           DO UPDATE SET last_read_at=max(last_read_at,excluded.last_read_at)`,
-        )
-        .bind(input.requestId, input.role, input.readerId, input.at)
-        .run();
+      // Each page is bounded by the conversation service. A late insertion,
+      // even with an older timestamp, is absent from this observed ID set.
+      if (!input.messageIds.length) return;
+      await database.batch(
+        input.messageIds.map((id) =>
+          database
+            .prepare(
+              `INSERT OR IGNORE INTO message_reads(message_id,reader_role,reader_id)
+         SELECT id,?,? FROM quote_conversation_messages WHERE id=? AND request_id=?`,
+            )
+            .bind(input.role, input.readerId, id, input.requestId),
+        ),
+      );
     },
   };
 }

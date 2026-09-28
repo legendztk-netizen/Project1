@@ -223,7 +223,7 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
   requireReviewMutation(request);
   const orderId = piRouteId(params.orderId);
   await confirmedOrders(env).adminRead(adminIdentity, orderId);
-  const form = await readPrivateReviewForm(request);
+  const form = await readPrivateReviewForm(request, { maxFiles: 5 });
   const intent = String(form.get("intent") ?? "");
   if (intent === "follow-on") {
     await followOnQuotes(env).adminCreate(

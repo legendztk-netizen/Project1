@@ -25,6 +25,7 @@ export interface RefundAuthorizationRow {
   supersedes_id: string | null;
   previous_authorization_id: string | null;
   approved_at: string | null;
+  commitment_json?: string | null;
   deadline_date_et: string | null;
   deadline_at: string | null;
   calendar_version: string | null;
@@ -44,28 +45,35 @@ export interface RefundCommitment {
   calendarVersion: string;
 }
 
+/** A carried commitment survives renewed confirmation or a dispute. */
+export function authorizationCommitment(
+  row: RefundAuthorizationRow,
+): RefundCommitment | null {
+  if (row.commitment_json)
+    return JSON.parse(row.commitment_json) as RefundCommitment;
+  return row.approved_at &&
+    row.deadline_date_et &&
+    row.deadline_at &&
+    row.calendar_version
+    ? {
+        approvedAt: row.approved_at,
+        deadlineDateEt: row.deadline_date_et,
+        deadlineAt: row.deadline_at,
+        calendarVersion: row.calendar_version,
+      }
+    : null;
+}
+
 /** The earliest approved commitment among authorizations being replaced. */
 export function earliestCommitment(
   rows: RefundAuthorizationRow[],
 ): RefundCommitment | null {
-  const approved = rows
-    .filter(
-      (row) =>
-        row.approved_at &&
-        row.deadline_date_et &&
-        row.deadline_at &&
-        row.calendar_version,
-    )
-    .sort((a, b) => a.deadline_at!.localeCompare(b.deadline_at!));
-  const first = approved[0];
-  return first
-    ? {
-        approvedAt: first.approved_at!,
-        deadlineDateEt: first.deadline_date_et!,
-        deadlineAt: first.deadline_at!,
-        calendarVersion: first.calendar_version!,
-      }
-    : null;
+  return (
+    rows
+      .map(authorizationCommitment)
+      .filter((value): value is RefundCommitment => value !== null)
+      .sort((a, b) => a.deadlineAt.localeCompare(b.deadlineAt))[0] ?? null
+  );
 }
 
 /** Physical units and merchandise already credited per line (effective only). */
@@ -164,6 +172,16 @@ export function refundAuthorizationStatements(
   const approvedAt = !deadline
     ? null
     : (input.commitment?.approvedAt ?? input.timestamp);
+  const commitment =
+    input.commitment ??
+    (deadline && approvedAt
+      ? {
+          approvedAt,
+          deadlineDateEt: deadline.dateEt,
+          deadlineAt: deadline.at,
+          calendarVersion: deadline.calendarVersion,
+        }
+      : null);
   const statements: D1PreparedStatement[] = [
     db
       .prepare(
@@ -173,8 +191,8 @@ export function refundAuthorizationStatements(
           restocking_fee_cents,third_party_cost_cents,refund_cents,
           third_party_cost_evidence,status,supersedes_id,previous_authorization_id,
           approved_at,deadline_date_et,deadline_at,calendar_version,actor_id,
-          created_at,command_id)
-         SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE ${input.guard.sql}`,
+          created_at,command_id,commitment_json)
+         SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE ${input.guard.sql}`,
       )
       .bind(
         input.id,
@@ -201,6 +219,7 @@ export function refundAuthorizationStatements(
         input.actorId,
         input.timestamp,
         `refund-authorization:${input.commandId}`,
+        commitment ? JSON.stringify(commitment) : null,
         ...input.guard.bindings,
       ),
   ];

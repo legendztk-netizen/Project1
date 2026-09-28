@@ -32,19 +32,19 @@ export function createMessageCenter(
   const repository = createD1MessageCenter(database);
   const now = () => (options.now?.() ?? new Date()).toISOString();
 
-  // Only what the reader has actually seen counts as read: the newest message
-  // on the latest page, never the wall clock, so a message that arrives while
-  // the page renders stays unread.
+  // Persist only the messages returned on this page, including history pages.
   async function markSeen(
     requestId: string,
     role: "customer" | "admin",
     readerId: string,
-    messages: Array<{ createdAt: string }>,
-    before: string | undefined,
+    messages: Array<{ id: string }>,
   ) {
-    const newest = messages.at(-1)?.createdAt;
-    if (before || !newest) return;
-    await repository.markRead({ requestId, role, readerId, at: newest });
+    await repository.markRead({
+      requestId,
+      role,
+      readerId,
+      messageIds: messages.map((message) => message.id),
+    });
   }
 
   return {
@@ -60,13 +60,7 @@ export function createMessageCenter(
         async thread(requestId: string, before?: string) {
           const messages = await conversation.list(requestId, { before });
           const context = await repository.context(requestId);
-          await markSeen(
-            requestId,
-            "customer",
-            profileId,
-            messages.messages,
-            before,
-          );
+          await markSeen(requestId, "customer", profileId, messages.messages);
           return {
             messages,
             context: { ...context, customerEmail: null },
@@ -100,13 +94,7 @@ export function createMessageCenter(
             repository.context(requestId),
             repository.notes(requestId),
           ]);
-          await markSeen(
-            requestId,
-            "admin",
-            identity.id,
-            messages.messages,
-            before,
-          );
+          await markSeen(requestId, "admin", identity.id, messages.messages);
           return { messages, context, notes };
         },
         send: conversation.send,
@@ -161,6 +149,7 @@ export function createMessageCenter(
               createdAt: now(),
               commandId,
               commandHash,
+              auditIp: input.request.headers.get("cf-connecting-ip"),
             });
           } catch (error) {
             const concurrent = await replay();

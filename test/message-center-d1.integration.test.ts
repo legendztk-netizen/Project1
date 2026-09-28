@@ -270,3 +270,32 @@ it("files a customer's email reply to a Case notification under the same Case", 
     thread.messages.messages.find((message) => message.id === "m9-email"),
   ).toMatchObject({ topic: { caseId } });
 });
+
+it("audits internal notes with the request command and IP without exposing note contents", async () => {
+  const { order } = await orderWithCase("note-audit");
+  const center = createMessageCenter(db, bucket);
+  const commandId = crypto.randomUUID();
+  const request = post();
+  request.headers.set("cf-connecting-ip", "192.0.2.15");
+  const input = {
+    request,
+    requestId: order.requestId,
+    body: "Private factory details",
+    commandId,
+  };
+  const id = await center.admin(owner).addNote(input);
+  expect(await center.admin(owner).addNote(input)).toBe(id);
+  const audit = await db
+    .prepare("SELECT payload_json FROM admin_audit_events WHERE id=?")
+    .bind(`message-note:${id}`)
+    .first<string>("payload_json");
+  expect(JSON.parse(audit!)).toEqual({
+    noteId: id,
+    caseId: null,
+    commandId,
+    ipAddress: "192.0.2.15",
+  });
+  expect(
+    JSON.stringify(await center.customer("buyer").thread(order.requestId)),
+  ).not.toContain(input.body);
+});

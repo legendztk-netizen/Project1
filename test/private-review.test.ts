@@ -89,3 +89,47 @@ it("requires approved MIME and matching file signature, sanitizes filenames", as
     validateEvidence(new File([], "empty.pdf", { type: "application/pdf" })),
   ).rejects.toMatchObject({ status: 400 });
 });
+
+it("allows five decision attachments while enforcing aggregate bytes and preserving the single-file default", async () => {
+  const form = new FormData();
+  for (let i = 0; i < 5; i++)
+    form.append(
+      "attachment",
+      new File(["%PDF-1.4"], `${i}.pdf`, { type: "application/pdf" }),
+    );
+  const request = () =>
+    new Request("https://admin.test/order", { method: "POST", body: form });
+  expect(
+    (await readPrivateReviewForm(request(), { maxFiles: 5 })).getAll(
+      "attachment",
+    ),
+  ).toHaveLength(5);
+  await expect(readPrivateReviewForm(request())).rejects.toMatchObject({
+    status: 400,
+  });
+  form.append("attachment", new File(["%PDF-1.4"], "sixth.pdf"));
+  await expect(
+    readPrivateReviewForm(request(), { maxFiles: 5 }),
+  ).rejects.toMatchObject({ status: 400 });
+  const large = new FormData();
+  large.append(
+    "attachment",
+    new File([new Uint8Array(6 * 1024 * 1024)], "a.pdf"),
+  );
+  large.append(
+    "attachment",
+    new File([new Uint8Array(5 * 1024 * 1024)], "b.pdf"),
+  );
+  const encoded = new Response(large);
+  const bytes = await encoded.arrayBuffer();
+  await expect(
+    readPrivateReviewForm(
+      new Request("https://admin.test/order", {
+        method: "POST",
+        body: bytes,
+        headers: { "Content-Type": encoded.headers.get("Content-Type")! },
+      }),
+      { maxFiles: 5 },
+    ),
+  ).rejects.toMatchObject({ status: 413 });
+});

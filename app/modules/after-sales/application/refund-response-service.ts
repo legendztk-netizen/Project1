@@ -5,7 +5,10 @@ import {
 import { usd } from "../domain/refund-calculation";
 import { customerMessageStatements } from "../infrastructure/d1-customer-messages";
 import { createD1OrderFacts } from "../infrastructure/d1-order-facts";
-import { readRefundAuthorizations } from "../infrastructure/d1-refund-authorizations";
+import {
+  readRefundAuthorizations,
+  authorizationCommitment,
+} from "../infrastructure/d1-refund-authorizations";
 import { afterSalesCommandId, afterSalesText } from "./after-sales-command";
 
 const conflict = () =>
@@ -72,10 +75,27 @@ export function createRefundResponseService(
       )
         throw conflict();
       const timestamp = now();
+      const priorCommitment = authorizationCommitment(authorization);
       const deadline =
         input.response === "confirm"
-          ? refundInitiationDeadline(timestamp)
+          ? priorCommitment
+            ? {
+                dateEt: priorCommitment.deadlineDateEt,
+                at: priorCommitment.deadlineAt,
+                calendarVersion: priorCommitment.calendarVersion,
+              }
+            : refundInitiationDeadline(timestamp)
           : null;
+      const commitment =
+        priorCommitment ??
+        (deadline
+          ? {
+              approvedAt: timestamp,
+              deadlineDateEt: deadline.dateEt,
+              deadlineAt: deadline.at,
+              calendarVersion: deadline.calendarVersion,
+            }
+          : null);
       const orderFacts = await facts.read(orderId);
       const statements: D1PreparedStatement[] = [
         db
@@ -83,17 +103,18 @@ export function createRefundResponseService(
             `UPDATE after_sales_refund_authorizations
            SET status=?,version=version+1,approved_at=?,deadline_date_et=?,
              deadline_at=?,calendar_version=?,customer_response_at=?,
-             customer_response_by=?
+             customer_response_by=?,commitment_json=coalesce(commitment_json,?)
            WHERE id=? AND order_id=? AND version=?`,
           )
           .bind(
             input.response === "confirm" ? "approved" : "disputed",
-            deadline ? timestamp : null,
+            deadline ? (commitment?.approvedAt ?? timestamp) : null,
             deadline?.dateEt ?? null,
             deadline?.at ?? null,
             deadline?.calendarVersion ?? null,
             timestamp,
             profileId,
+            commitment ? JSON.stringify(commitment) : null,
             authorization.id,
             orderId,
             input.expectedVersion,

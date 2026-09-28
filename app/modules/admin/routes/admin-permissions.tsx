@@ -8,6 +8,7 @@ import {
 } from "../domain/admin-permissions";
 import { requireAdminRequestContext } from "../infrastructure/admin-request-context";
 import { createD1AdminPermissions } from "../infrastructure/d1-admin-permissions";
+import { requireReviewMutation } from "../../quote-review/domain/private-review";
 import { AdminNavigation } from "../ui/admin-navigation";
 
 export function meta() {
@@ -35,6 +36,7 @@ export async function action({ context, request }: Route.ActionArgs) {
   const { adminIdentity, env } = requireAdminRequestContext(context);
   if (adminIdentity.accountType !== "owner")
     throw new Response("只有 Owner 可以管理账号权限", { status: 403 });
+  requireReviewMutation(request);
   const form = await request.formData();
   const permissions = form.getAll("permission").filter(isAdminPermission);
   try {
@@ -42,12 +44,13 @@ export async function action({ context, request }: Route.ActionArgs) {
       ownerId: adminIdentity.id,
       adminId: String(form.get("adminId") ?? ""),
       permissions,
-      commandId: String(form.get("commandId") ?? "") || crypto.randomUUID(),
+      commandId: String(form.get("commandId") ?? ""),
+      expectedVersion: Number(form.get("expectedVersion") ?? NaN),
       timestamp: new Date().toISOString(),
       auditIp: request.headers.get("cf-connecting-ip") ?? "local",
     });
   } catch (error) {
-    if (error instanceof Response && error.status === 404)
+    if (error instanceof Response && [400, 404, 409].includes(error.status))
       return { formError: await error.text() };
     throw error;
   }
@@ -128,6 +131,11 @@ export default function AdminPermissions({
                 ) : (
                   <Form method="post" className="commercial-settings-form">
                     <input type="hidden" name="adminId" value={account.id} />
+                    <input
+                      type="hidden"
+                      name="expectedVersion"
+                      value={account.version}
+                    />
                     <input
                       type="hidden"
                       name="commandId"

@@ -247,6 +247,7 @@ export function createDecisionRevisionService(
           )
           .reduce((sum, credit) => sum + credit.physical_quantity, 0);
       const refunding = decision.remedy !== "replacement";
+      const revisedQuantities = new Map<string, number>();
       const newLines: ReturnDecisionLine[] = current.lines.map((line) => {
         const item = input.items.find(
           (candidate) =>
@@ -263,6 +264,11 @@ export function createDecisionRevisionService(
         const orderLine = orderFacts.lines.find(
           (candidate) => candidate.lineId === line.lineId,
         )!;
+        const precedingQuantity = revisedQuantities.get(line.lineId) ?? 0;
+        revisedQuantities.set(
+          line.lineId,
+          precedingQuantity + item.approvedQuantity,
+        );
         return {
           ...line,
           approvedQuantity: item.approvedQuantity,
@@ -271,7 +277,7 @@ export function createDecisionRevisionService(
             ? cumulativeLineAmount(
                 orderLine.lineTotalCents,
                 orderLine.physicalQuantity,
-                creditedQuantity(line.lineId, false),
+                creditedQuantity(line.lineId, false) + precedingQuantity,
                 item.approvedQuantity,
               )
             : 0,
@@ -417,12 +423,26 @@ export function createDecisionRevisionService(
       const unpaid = effectiveChain.filter(
         (row) => (row.initiated_cents ?? 0) === 0,
       );
+      // Decisions retain Shipment detail, but financial credits are per Order line.
+      const lineTotals = new Map<
+        string,
+        { lineId: string; physicalQuantity: number; merchandiseCents: number }
+      >();
+      for (const line of newLines) {
+        const total = lineTotals.get(line.lineId) ?? {
+          lineId: line.lineId,
+          physicalQuantity: 0,
+          merchandiseCents: 0,
+        };
+        total.physicalQuantity += refunding ? line.approvedQuantity : 0;
+        total.merchandiseCents += refunding ? line.merchandiseCents : 0;
+        lineTotals.set(line.lineId, total);
+      }
       const unchanged =
         componentKeys.every((key) => target[key] === existing[key]) &&
-        newLines.every(
+        [...lineTotals.values()].every(
           (line) =>
-            creditedQuantity(line.lineId, true) ===
-            (refunding ? line.approvedQuantity : 0),
+            creditedQuantity(line.lineId, true) === line.physicalQuantity,
         );
       const sum = (rows: RefundAuthorizationRow[]) =>
         Object.fromEntries(
@@ -439,38 +459,35 @@ export function createDecisionRevisionService(
         value.serviceFeeCents -
         value.restockingFeeCents -
         value.thirdPartyCostCents;
-      // Credits for the part of the target not already paid by `rows`.
       const creditsBeyond = (rows: RefundAuthorizationRow[]) => {
         const ids = new Set(rows.map((row) => row.id));
-        const credited = (lineId: string) =>
-          otherCredits.filter(
-            (credit) =>
-              credit.line_id === lineId && ids.has(credit.authorization_id),
-          );
-        return newLines
-          .map((line) => ({
-            lineId: line.lineId,
-            physicalQuantity: refunding
-              ? Math.max(
-                  0,
-                  line.approvedQuantity -
-                    credited(line.lineId).reduce(
-                      (total, credit) => total + credit.physical_quantity,
-                      0,
-                    ),
-                )
-              : 0,
-            merchandiseCents: refunding
-              ? Math.max(
-                  0,
-                  line.merchandiseCents -
-                    credited(line.lineId).reduce(
-                      (total, credit) => total + credit.merchandise_cents,
-                      0,
-                    ),
-                )
-              : 0,
-          }))
+        return [...lineTotals.values()]
+          .map((line) => {
+            const credited = otherCredits.filter(
+              (credit) =>
+                credit.line_id === line.lineId &&
+                ids.has(credit.authorization_id),
+            );
+            return {
+              lineId: line.lineId,
+              physicalQuantity: Math.max(
+                0,
+                line.physicalQuantity -
+                  credited.reduce(
+                    (sum, credit) => sum + credit.physical_quantity,
+                    0,
+                  ),
+              ),
+              merchandiseCents: Math.max(
+                0,
+                line.merchandiseCents -
+                  credited.reduce(
+                    (sum, credit) => sum + credit.merchandise_cents,
+                    0,
+                  ),
+              ),
+            };
+          })
           .filter(
             (credit) =>
               credit.physicalQuantity > 0 || credit.merchandiseCents > 0,

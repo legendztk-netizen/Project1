@@ -52,6 +52,7 @@ it("grants no after-sales permission to a subaccount until the Owner chooses it,
     commandId: "11111111-1111-4111-8111-111111111111",
     timestamp: fixtureClock,
     auditIp: "local",
+    expectedVersion: 0,
   };
   await permissions().setSubaccountPermissions(grant);
   // A replayed save changes nothing and writes no second audit event.
@@ -64,6 +65,7 @@ it("grants no after-sales permission to a subaccount until the Owner chooses it,
   await permissions().setSubaccountPermissions({
     ...grant,
     permissions: ["after_sales.review"],
+    expectedVersion: 1,
     commandId: "22222222-2222-4222-8222-222222222222",
   });
   expect(await staffPermissions()).toEqual(["after_sales.review"]);
@@ -86,7 +88,7 @@ it("grants no after-sales permission to a subaccount until the Owner chooses it,
   expect(audits).toMatchObject([
     {
       actor: "perm-owner",
-      granted: ["after_sales.review", "after_sales.refund"],
+      granted: ["after_sales.refund", "after_sales.review"],
       revoked: [],
     },
     { actor: "perm-owner", granted: [], revoked: ["after_sales.refund"] },
@@ -102,6 +104,62 @@ it("refuses to edit the Owner or an unknown account through the subaccount comma
       commandId: "33333333-3333-4333-8333-333333333333",
       timestamp: fixtureClock,
       auditIp: null,
+      expectedVersion: 0,
     }),
   ).rejects.toMatchObject({ status: 404 });
+});
+
+it("rejects concurrent and stale replacements without merging grants or writing a false audit", async () => {
+  const account = (await permissions().list()).find(
+    (item) => item.id === "perm-staff",
+  )!;
+  const base = {
+    ownerId: "perm-owner",
+    adminId: "perm-staff",
+    expectedVersion: account.version,
+    timestamp: fixtureClock,
+    auditIp: "192.0.2.10",
+  };
+  const results = await Promise.allSettled([
+    permissions().setSubaccountPermissions({
+      ...base,
+      permissions: ["after_sales.review"],
+      commandId: crypto.randomUUID(),
+    }),
+    permissions().setSubaccountPermissions({
+      ...base,
+      permissions: ["after_sales.refund"],
+      commandId: crypto.randomUUID(),
+    }),
+  ]);
+  expect(
+    results.filter((result) => result.status === "fulfilled"),
+  ).toHaveLength(1);
+  expect(results.find((result) => result.status === "rejected")).toMatchObject({
+    reason: { status: 409 },
+  });
+  const final = (await permissions().list()).find(
+    (item) => item.id === "perm-staff",
+  )!;
+  expect(final.version).toBe(account.version + 1);
+  expect(final.permissions).toHaveLength(1);
+  const audits = (
+    await db
+      .prepare(
+        `SELECT payload_json FROM admin_audit_events
+    WHERE event_type='admin.permissions_changed' AND entity_id='perm-staff'`,
+      )
+      .all<{ payload_json: string }>()
+  ).results;
+  const audit = audits
+    .map((row) => JSON.parse(row.payload_json))
+    .find((row) => row.expectedVersion === account.version);
+  expect(audit.after).toEqual(final.permissions);
+  await expect(
+    permissions().setSubaccountPermissions({
+      ...base,
+      permissions: [],
+      commandId: crypto.randomUUID(),
+    }),
+  ).rejects.toMatchObject({ status: 409 });
 });
