@@ -243,7 +243,7 @@ export function ThreadContextCard({
           </dl>
           {context.cases.length > 0 && (
             <>
-              <h3>{zh ? "售后案件" : "Returns and problem reports"}</h3>
+              <h3>{zh ? "售后案件" : "After-sales Cases"}</h3>
               <ul className="message-context-cases">
                 {context.cases.map((item) => (
                   <li key={item.id}>

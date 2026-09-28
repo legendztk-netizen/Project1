@@ -32,7 +32,7 @@ import type {
 } from "../domain/customer-account";
 import { COUNTRY_CODES } from "../domain/customer-account";
 import { US_STATES, usStateCode } from "../domain/us-states";
-import { ShipmentActionDialog } from "../../shipment/ui/shipment-action-dialog";
+import { ActionDialog } from "../../shared/ui/action-dialog";
 import { requireTrustedAuthPost } from "../application/trusted-auth-request";
 import {
   isAccountDetailView,
@@ -653,7 +653,7 @@ function AddressesDetail({
         </div>
       )}
       {dialog ? (
-        <ShipmentActionDialog
+        <ActionDialog
           error={
             actionData !== actionAtOpen.current ? actionData?.error : undefined
           }
@@ -686,7 +686,7 @@ function AddressesDetail({
               </button>
             </div>
           </Form>
-        </ShipmentActionDialog>
+        </ActionDialog>
       ) : null}
     </section>
   );

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useActionData, useNavigation } from "react-router";
 
-import { ShipmentActionDialog } from "../../shipment/ui/shipment-action-dialog";
+import { ActionDialog } from "../../shared/ui/action-dialog";
 
 /**
  * An after-sales Admin action shown as a button; its form opens in a modal
@@ -48,7 +48,7 @@ export function AdminActionDialog({
         {label}
       </button>
       {open && (
-        <ShipmentActionDialog
+        <ActionDialog
           title={title ?? label}
           description={description}
           wide={wide}
@@ -61,7 +61,7 @@ export function AdminActionDialog({
           }}
         >
           {children}
-        </ShipmentActionDialog>
+        </ActionDialog>
       )}
     </>
   );

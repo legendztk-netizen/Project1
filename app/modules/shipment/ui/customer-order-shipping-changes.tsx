@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Form, useNavigation } from "react-router";
 import { MapPin, Truck } from "lucide-react";
-import { ShipmentActionDialog } from "./shipment-action-dialog";
+import { ActionDialog } from "../../shared/ui/action-dialog";
 import type { ProformaInvoiceSnapshot } from "../../proforma-invoice/domain/proforma-invoice";
 import type { createOrderShippingChangeService } from "../application/order-shipping-change-service";
 import "./order-shipping-changes.css";
@@ -103,7 +103,7 @@ export function CustomerShippingChangeActions({
         </button>
       ))}
       {kind && (
-        <ShipmentActionDialog
+        <ActionDialog
           key={kind}
           language="en"
           title={kindCopy[kind].title}
@@ -222,7 +222,7 @@ export function CustomerShippingChangeActions({
               Submit change request
             </button>
           </Form>
-        </ShipmentActionDialog>
+        </ActionDialog>
       )}
     </>
   );

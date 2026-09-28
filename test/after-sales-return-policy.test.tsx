@@ -7,6 +7,8 @@ import { createMemoryRouter, Outlet, RouterProvider } from "react-router";
 import {
   businessDayDeadline,
   convenienceReturnCutoff,
+  convenienceReturnCutoffForDate,
+  customerTermsAllowed,
   convenienceReturnOpen,
   inspectionDeadline,
   LAUNCH_RETURN_POLICY,
@@ -140,5 +142,61 @@ describe("single launch return policy", () => {
     expect(text).toContain("10% restocking fee");
     expect(text).toContain("not eligible for convenience return");
     expect(text).not.toMatch(/Plano|Haggard|\d{5}(-\d{4})?\b/);
+  });
+
+  it("keeps request, RA arrival and inspection deadlines exact on both 2026 DST switch dates", () => {
+    // Spring forward (8 Mar): 01:30 EST is still 8 Mar ET; day 30 closes in EDT.
+    expect(raArrivalDeadline("2026-03-08T06:30:00.000Z")).toEqual({
+      dateEt: "2026-04-07",
+      at: "2026-04-08T03:59:00.000Z",
+    });
+    expect(convenienceReturnCutoffForDate("2026-02-25")).toEqual({
+      dateEt: "2026-03-11",
+      at: "2026-03-12T03:59:00.000Z",
+    });
+    // Fall back (1 Nov): 01:30 EDT on 1 Nov is day 0; the cutoff is in EST.
+    expect(raArrivalDeadline("2026-11-01T05:30:00.000Z")).toEqual({
+      dateEt: "2026-12-01",
+      at: "2026-12-02T04:59:00.000Z",
+    });
+    expect(convenienceReturnCutoffForDate("2026-10-20")).toEqual({
+      dateEt: "2026-11-03",
+      at: "2026-11-04T04:59:00.000Z",
+    });
+    expect(
+      convenienceReturnOpen(
+        "2026-10-20T16:00:00.000Z",
+        "2026-11-04T04:59:00.000Z",
+      ),
+    ).toBe(true);
+    expect(
+      convenienceReturnOpen(
+        "2026-10-20T16:00:00.000Z",
+        "2026-11-04T05:00:00.000Z",
+      ),
+    ).toBe(false);
+    // Five business days across the fall-back weekend.
+    expect(inspectionDeadline("2026-10-29T15:00:00.000Z")).toMatchObject({
+      dateEt: "2026-11-05",
+      at: "2026-11-06T04:59:00.000Z",
+    });
+  });
+
+  it("applies customer terms to an Other problem only under refund terms v2 or later", () => {
+    expect(customerTermsAllowed("convenience_return", null)).toBe(true);
+    expect(customerTermsAllowed("other", "pi-refund-2026-09-27-v1")).toBe(
+      false,
+    );
+    expect(customerTermsAllowed("other", "pi-refund-2026-09-27-v2")).toBe(true);
+    expect(customerTermsAllowed("other", "pi-refund-2026-09-27-v3")).toBe(true);
+    expect(customerTermsAllowed("other", "pi-refund-2026-10-05-v1")).toBe(true);
+    expect(customerTermsAllowed("other", "pi-refund-2026-09-20-v9")).toBe(
+      false,
+    );
+    expect(customerTermsAllowed("other", "unknown")).toBe(false);
+    expect(customerTermsAllowed("other", null)).toBe(false);
+    expect(customerTermsAllowed("damaged", "pi-refund-2026-09-27-v2")).toBe(
+      false,
+    );
   });
 });

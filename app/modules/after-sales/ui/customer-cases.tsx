@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Form, useNavigation } from "react-router";
 import { LifeBuoy } from "lucide-react";
 
-import { ShipmentActionDialog } from "../../shipment/ui/shipment-action-dialog";
+import { ActionDialog } from "../../shared/ui/action-dialog";
 import type { CaseReason, CustomerCases } from "../application/case-service";
 import { etDisplayDate } from "../domain/return-policy";
 import "../../shipment/ui/order-shipping-changes.css";
@@ -61,7 +61,7 @@ export function CustomerCaseAction({
         Request Return or Report a Problem
       </button>
       {open && (
-        <ShipmentActionDialog
+        <ActionDialog
           language="en"
           title="Request Return or Report a Problem"
           description="Tell us which delivered items are affected. This opens a case for review; it does not authorize a return or approve a refund. Please don't send anything back until we issue a Return Authorization."
@@ -168,7 +168,7 @@ export function CustomerCaseAction({
               Submit
             </button>
           </Form>
-        </ShipmentActionDialog>
+        </ActionDialog>
       )}
     </>
   );

@@ -127,6 +127,8 @@ export async function runAfterSalesAdminAction(input: {
           ),
           thirdPartyCostEvidence: text(form, "thirdPartyEvidence"),
           factoryEvidence: readFactoryEvidence(form),
+          responsibility:
+            form.get("responsibility") === "seller" ? "seller" : "customer",
         });
         break;
       case "cancellation-open-exceptional":

@@ -6,7 +6,7 @@ import {
   ChinaCalendarSummary,
   type ChinaCalendarData,
 } from "./admin-china-calendar-form";
-import { ShipmentActionDialog } from "./shipment-action-dialog";
+import { ActionDialog } from "../../shared/ui/action-dialog";
 
 const calendarPath = "/admin/china-calendar";
 
@@ -38,7 +38,7 @@ export function AdminChinaCalendarDialog({ onClose }: { onClose: () => void }) {
       : undefined;
   const data = calendar.data;
   return (
-    <ShipmentActionDialog
+    <ActionDialog
       title="中国履约日历"
       wide
       resetKey={published}
@@ -73,6 +73,6 @@ export function AdminChinaCalendarDialog({ onClose }: { onClose: () => void }) {
       ) : (
         <p role="status">正在加载中国履约日历…</p>
       )}
-    </ShipmentActionDialog>
+    </ActionDialog>
   );
 }

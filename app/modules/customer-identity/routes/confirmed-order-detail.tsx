@@ -42,6 +42,8 @@ import {
   readCaseLines,
 } from "../../after-sales/application/parse-after-sales-forms";
 import { CustomerReturnsTab } from "../../after-sales/ui/customer-returns";
+import { CustomerShippingRefunds } from "../../after-sales/ui/customer-shipping-refunds";
+import { createRefundInitiationService } from "../../after-sales/application/refund-initiation-service";
 import { readPrivateReviewForm } from "../../quote-review/domain/private-review";
 import { createReturnAuthorizationService } from "../../after-sales/application/return-authorization-service";
 import { createReturnInspectionService } from "../../after-sales/application/return-inspection-service";
@@ -69,6 +71,7 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
     cases,
     returnAuthorizations,
     returnReceipts,
+    shippingRefunds,
   ] = await Promise.all([
     followOnQuotes(env).customerListForOrder(profileId, order.id),
     shipmentPlans(env).customerRead(profileId, order.id),
@@ -82,6 +85,10 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
     createCaseService(env.DB).customerRead(profileId, order.id),
     createReturnAuthorizationService(env.DB).customerRead(profileId, order.id),
     createReturnInspectionService(env.DB).customerRead(profileId, order.id),
+    createRefundInitiationService(env.DB).customerShippingRefunds(
+      profileId,
+      order.id,
+    ),
   ]);
   const hasReturns =
     cases.cases.length > 0 || cancellations.requests.length > 0;
@@ -102,6 +109,7 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
       cases,
       returnAuthorizations,
       returnReceipts,
+      shippingRefunds,
       commandId: crypto.randomUUID(),
     },
     { headers: headers() },
@@ -316,6 +324,7 @@ export default function ConfirmedOrderDetail({
     cases,
     returnAuthorizations,
     returnReceipts,
+    shippingRefunds,
     commandId,
   } = loaderData;
   const actionData = useActionData<typeof action>();
@@ -410,9 +419,9 @@ export default function ConfirmedOrderDetail({
             >
               <span
                 className="customer-quote-tab-label"
-                data-label="Returns and problem reports"
+                data-label="After-sales Cases"
               >
-                <span>Returns and problem reports</span>
+                <span>After-sales Cases</span>
               </span>
               <span className="customer-quote-tab-count">
                 {cases.cases.length + cancellations.requests.length}
@@ -422,7 +431,7 @@ export default function ConfirmedOrderDetail({
         )}
         {tab === "returns" ? (
           <section className="customer-quote-section after-sales-returns-panel">
-            <h2>Returns and problem reports</h2>
+            <h2>After-sales Cases</h2>
             {actionData?.error &&
               (actionData.intent === "cancellation-withdraw" ||
                 actionData.intent?.startsWith("refund-")) && (
@@ -470,6 +479,7 @@ export default function ConfirmedOrderDetail({
                   : undefined
               }
             />
+            <CustomerShippingRefunds refunds={shippingRefunds} />
             <CustomerSupportPath cancellations={cancellations} />
             <section className="customer-quote-section customer-order-details">
               <div className="customer-order-section-heading">

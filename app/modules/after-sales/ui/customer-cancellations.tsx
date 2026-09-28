@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Form, useNavigation } from "react-router";
 import { XCircle } from "lucide-react";
 
-import { ShipmentActionDialog } from "../../shipment/ui/shipment-action-dialog";
+import { ActionDialog } from "../../shared/ui/action-dialog";
 import type { createCancellationService } from "../application/cancellation-service";
 import {
   CustomerRefundResponse,
@@ -10,10 +10,7 @@ import {
   refundStatusLabel,
 } from "./refund-breakdown";
 import "../../shipment/ui/order-shipping-changes.css";
-import {
-  cancellationQuantityField,
-  scopedField,
-} from "../application/parse-after-sales-forms";
+import { cancellationQuantityField } from "../application/parse-after-sales-forms";
 import "./after-sales.css";
 
 type CustomerCancellations = Awaited<
@@ -66,7 +63,7 @@ export function CustomerCancellationAction({
         Request cancellation
       </button>
       {open && (
-        <ShipmentActionDialog
+        <ActionDialog
           language="en"
           title="Request cancellation"
           description="Choose unshipped standard products to cancel. The selected quantities are held while the seller reviews your request; other items keep moving. Made-to-order products and cut hose need Support review."
@@ -126,7 +123,7 @@ export function CustomerCancellationAction({
               Submit cancellation request
             </button>
           </Form>
-        </ShipmentActionDialog>
+        </ActionDialog>
       )}
     </>
   );

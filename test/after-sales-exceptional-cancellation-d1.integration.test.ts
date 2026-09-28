@@ -330,3 +330,77 @@ it("scopes evidence files to their review and Order", async () => {
     }),
   ).rejects.toMatchObject({ status: 400 });
 });
+
+it("records a seller-caused assembly cancellation with no deductions", async () => {
+  const order = await seedAfterSalesOrder(db, "e9");
+  const requestId = await open(order, [
+    [order.lines.assembly, order.shipments.second, 1],
+  ]);
+  const decision = {
+    orderId: order.orderId,
+    requestId,
+    expectedVersion: 1,
+    decisions: [
+      {
+        lineId: order.lines.assembly,
+        shipmentId: order.shipments.second,
+        approvedQuantity: 1,
+      },
+    ],
+    customerReason: "Our configuration check missed the wrong port size.",
+    factoryEvidence: evidence,
+    responsibility: "seller" as const,
+  };
+  await expect(
+    service().adminResolve(owner, {
+      ...decision,
+      thirdPartyCostCents: 200,
+      thirdPartyCostEvidence: "Bank fee",
+      commandId: crypto.randomUUID(),
+    }),
+  ).rejects.toMatchObject({ status: 400 });
+  await service().adminResolve(owner, {
+    ...decision,
+    commandId: crypto.randomUUID(),
+  });
+  const [request] = await service().adminRead(owner, order.orderId);
+  expect(request.resolution?.financial).toMatchObject({
+    responsibility: "seller",
+    thirdPartyCostCents: 0,
+  });
+  expect(request.resolution?.refunds[0]).toMatchObject({
+    responsibility: "seller",
+    status: "approved",
+  });
+  // A standard cancellation is always the customer's request.
+  const standard = await seedAfterSalesOrder(db, "e8");
+  const standardRequest = await service().customerSubmit("buyer", {
+    orderId: standard.orderId,
+    reason: "Changed plan",
+    quantities: [
+      {
+        lineId: standard.lines.standard,
+        shipmentId: standard.shipments.first,
+        physicalQuantity: 1,
+      },
+    ],
+    commandId: crypto.randomUUID(),
+  });
+  await expect(
+    service().adminResolve(owner, {
+      orderId: standard.orderId,
+      requestId: standardRequest,
+      expectedVersion: 1,
+      decisions: [
+        {
+          lineId: standard.lines.standard,
+          shipmentId: standard.shipments.first,
+          approvedQuantity: 1,
+        },
+      ],
+      customerReason: "Approved",
+      responsibility: "seller",
+      commandId: crypto.randomUUID(),
+    }),
+  ).rejects.toMatchObject({ status: 400 });
+});

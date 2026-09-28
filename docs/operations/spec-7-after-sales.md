@@ -89,7 +89,7 @@ pnpm exec wrangler d1 execute hydraulic-hose-rfq-local --local --command \
    facts; the Cutting & Labeling Fee is then reversed in full. Corrections use
    a new Follow-on Quote, PI, payment and Order.
 5. **Cases.** Delivered quantities open one Case per report. The customer sees
-   it under **Returns and problem reports** in the Order with the next step,
+   it under **After-sales Cases** in the Order with the next step,
    return instructions, refund amount and status, and the operation record.
    Discuss it in 消息管理 (**客户对话** on the Case card opens it).
 6. **RA.** Choose a maintained Return Location and write the packing

@@ -203,13 +203,29 @@ export function AdminCancellationDecisionForm({
           </div>
         </fieldset>
         {children}
+        {request.kind === "exceptional" && (
+          <label>
+            责任
+            <select name="responsibility" required defaultValue="">
+              <option value="" disabled>
+                请根据核实的事实选择
+              </option>
+              <option value="customer">
+                客户要求取消（可扣有凭证的第三方费用）
+              </option>
+              <option value="seller">
+                卖方原因（如配置或生产错误，不扣任何费用）
+              </option>
+            </select>
+          </label>
+        )}
         <div className="shipping-change-fields">
           <label>
             可退回物流费用（USD）
             <input name="logisticsUsd" inputMode="decimal" placeholder="0.00" />
           </label>
           <label>
-            物流核算说明（按剩余履约重新核算，勿按原运费比例分摊）
+            物流核算说明（内部，客户不可见；按剩余履约重新核算，勿按原运费比例分摊）
             <input name="logisticsNote" />
           </label>
           <label>
@@ -217,7 +233,7 @@ export function AdminCancellationDecisionForm({
             <input name="taxUsd" inputMode="decimal" placeholder="0.00" />
           </label>
           <label>
-            税务依据（已接受的税务处理）
+            税务依据（内部，客户不可见；已接受的税务处理）
             <input name="taxNote" />
           </label>
           <label>
@@ -229,7 +245,7 @@ export function AdminCancellationDecisionForm({
             />
           </label>
           <label>
-            第三方费用凭证说明（无加价，需客户确认）
+            第三方费用凭证说明（客户可见，无加价，需客户确认；卖方原因不得扣费）
             <input name="thirdPartyEvidence" />
           </label>
         </div>

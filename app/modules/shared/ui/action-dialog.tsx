@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigation } from "react-router";
 import { X } from "lucide-react";
-import "./shipment-documents.css";
+import "./action-dialog.css";
 
 const copy = {
   zh: {
@@ -18,7 +18,10 @@ const copy = {
   },
 } as const;
 
-export function ShipmentActionDialog({
+/**
+ * A modal form dialog that guards unsaved input and keeps focus order.
+ */
+export function ActionDialog({
   title,
   description,
   language = "zh",
@@ -69,8 +72,8 @@ export function ShipmentActionDialog({
   return (
     <dialog
       ref={ref}
-      className={`shipment-action-dialog${wide ? " shipment-action-dialog-wide" : ""}`}
-      aria-labelledby="shipment-action-dialog-title"
+      className={`action-dialog${wide ? " action-dialog-wide" : ""}`}
+      aria-labelledby="action-dialog-title"
       onCancel={(event) => {
         event.preventDefault();
         close();
@@ -81,11 +84,11 @@ export function ShipmentActionDialog({
       onChangeCapture={() => setDirty(true)}
       onSubmitCapture={onSubmitted}
     >
-      <header className="shipment-action-dialog-header">
-        <h2 id="shipment-action-dialog-title">{title}</h2>
+      <header className="action-dialog-header">
+        <h2 id="action-dialog-title">{title}</h2>
         <button
           type="button"
-          className="shipment-action-dialog-close"
+          className="action-dialog-close"
           title={text.close}
           aria-label={text.close}
           disabled={busy}
@@ -94,12 +97,12 @@ export function ShipmentActionDialog({
           <X size={20} aria-hidden="true" />
         </button>
       </header>
-      <div className="shipment-action-dialog-body">
+      <div className="action-dialog-body">
         {description && <p>{description}</p>}
         {discard && (
-          <div className="shipment-dialog-notice" role="alert">
+          <div className="action-dialog-notice" role="alert">
             <p>{text.unsaved}</p>
-            <div className="shipment-inline-actions">
+            <div className="action-dialog-notice-actions">
               <button
                 type="button"
                 className="button button-secondary"
@@ -118,7 +121,7 @@ export function ShipmentActionDialog({
           </div>
         )}
         {error && (
-          <p className="shipment-action-dialog-error" role="alert">
+          <p className="action-dialog-error" role="alert">
             {error}
           </p>
         )}

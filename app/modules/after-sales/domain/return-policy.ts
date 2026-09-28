@@ -24,10 +24,23 @@ export const RETURN_POLICY_PATH = "/policies/returns";
 export const RESTOCKING_FEE_PERCENT =
   LAUNCH_RETURN_POLICY.restockingFeeBasisPoints / 100;
 
-// PI refund terms that disclose customer terms for an "Other problem" the
-// buyer caused. Earlier accepted terms only disclose them for convenience
-// returns, so those Orders keep seller terms for every problem report.
-const CUSTOMER_CAUSED_PROBLEM_TERMS = new Set(["pi-refund-2026-09-27-v2"]);
+// PI refund terms from this version on disclose customer terms for an "Other
+// problem" the buyer caused. Earlier accepted terms only disclose them for
+// convenience returns, so those Orders keep seller terms for every problem.
+const CUSTOMER_CAUSED_PROBLEM_TERMS_FROM = { date: "2026-09-27", revision: 2 };
+
+function refundTermsOnOrAfter(
+  version: string | null,
+  from: { date: string; revision: number },
+) {
+  const match = /^pi-refund-(\d{4}-\d{2}-\d{2})-v(\d+)$/.exec(version ?? "");
+  if (!match) return false;
+  const [, date, revision] = match;
+  return (
+    date > from.date ||
+    (date === from.date && Number(revision) >= from.revision)
+  );
+}
 
 /**
  * Whether Admin may resolve a Case under customer terms (restocking fee, no
@@ -40,8 +53,7 @@ export function customerTermsAllowed(
   if (reason === "convenience_return") return true;
   return (
     reason === "other" &&
-    refundTermsVersion !== null &&
-    CUSTOMER_CAUSED_PROBLEM_TERMS.has(refundTermsVersion)
+    refundTermsOnOrAfter(refundTermsVersion, CUSTOMER_CAUSED_PROBLEM_TERMS_FROM)
   );
 }
 

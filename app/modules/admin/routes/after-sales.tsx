@@ -155,6 +155,14 @@ export default function AdminAfterSales({
                                 <span className="after-sales-flag">已逾期</span>
                               </>
                             )}
+                            {record.onHold && (
+                              <>
+                                {" "}
+                                <span className="after-sales-flag">
+                                  修订待复核，暂停发起
+                                </span>
+                              </>
+                            )}
                           </td>
                         </tr>
                       ))}

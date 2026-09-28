@@ -42,7 +42,10 @@ export function AdminOrderRefunds({
         initiatedCents: refund.initiatedCents,
         remainingCents: refund.remainingCents,
         deadlineAt: refund.deadlineAt,
-        payableNow: refund.status === "approved" && refund.remainingCents > 0,
+        payableNow:
+          refund.status === "approved" &&
+          refund.remainingCents > 0 &&
+          !refund.onHold,
         initiations: refund.initiations,
       })),
     ...refunds.shipping.map((refund) => ({

@@ -57,9 +57,9 @@ describe("catalog hose-end media", () => {
         "hose-series:601R1",
       ),
     ).toContain("/media/catalog/");
-    expect(publicCatalogMainImageUrl("uploaded-v2", null)).toBe(
-      "/media/catalog/uploaded-v2/storefront",
-    );
+    expect(
+      publicCatalogMainImageUrl("uploaded-v2", null),
+    ).toBe("/media/catalog/uploaded-v2/storefront");
     expect(
       publicCatalogMainImageUrl(
         "approved-v1:catalog-source:ferrule",

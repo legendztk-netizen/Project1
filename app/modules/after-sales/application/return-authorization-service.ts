@@ -310,9 +310,9 @@ export function createReturnAuthorizationService(
         caseId: caseRow.id,
         orderId: input.orderId,
         actorId: actor.id,
-        body: `Return Authorization ${raNumber} issued for inspection. The return address and packing instructions are shown under Returns and problem reports in your Order. The goods must arrive by 11:59 PM ET on ${etDisplayDate(deadline.dateEt)}. Shipping them before that date is not enough. Inspection comes before any refund decision.`,
+        body: `Return Authorization ${raNumber} issued for inspection. The Return Location and packing instructions are shown under After-sales Cases in your Order. The goods must arrive by 11:59 PM ET on ${etDisplayDate(deadline.dateEt)}. Shipping them before that date is not enough. Inspection comes before any refund decision.`,
         commandId,
-        email: `Return Authorization ${raNumber} was issued for Order case ${caseRow.case_number}. Open Returns and problem reports in your Order to see the return address and packing instructions. The goods must arrive by 11:59 PM ET on ${etDisplayDate(deadline.dateEt)}. An RA authorizes return for inspection; it is not a refund approval.`,
+        email: `Return Authorization ${raNumber} was issued for After-sales Case ${caseRow.case_number}. Open After-sales Cases in your Order to see the Return Location and packing instructions. The goods must arrive by 11:59 PM ET on ${etDisplayDate(deadline.dateEt)}. An RA authorizes return for inspection; it is not a refund approval.`,
         timestamp,
         guard: {
           sql: "EXISTS(SELECT 1 FROM after_sales_return_authorizations WHERE id=?)",

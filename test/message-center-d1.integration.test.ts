@@ -4,6 +4,7 @@ import { createAfterSalesFiles } from "../app/modules/after-sales/application/af
 import { createCaseService } from "../app/modules/after-sales/application/case-service";
 import { createReturnAuthorizationService } from "../app/modules/after-sales/application/return-authorization-service";
 import { createMessageCenter } from "../app/modules/message-center/application/message-center-service";
+import { inboundCaseTopicStatement } from "../app/modules/quote-inbound-email/infrastructure/d1-inbound-email";
 import {
   owner,
   reviewer,
@@ -223,4 +224,49 @@ it("files after-sales notifications under their Case and attaches shared files t
       commandId: crypto.randomUUID(),
     }),
   ).rejects.toThrow(/same Case/);
+});
+
+it("files a customer's email reply to a Case notification under the same Case", async () => {
+  const { order, caseId } = await orderWithCase("m9");
+  const commandId = crypto.randomUUID();
+  await createReturnAuthorizationService(db, {
+    now: () => new Date("2026-09-22T12:00:00.000Z"),
+  }).adminDeclineReturn(reviewer, {
+    orderId: order.orderId,
+    caseId,
+    expectedVersion: await caseVersion(db, caseId),
+    reason: "The photos show the correct part number.",
+    commandId,
+  });
+  const notification = await db
+    .prepare(
+      `SELECT o.id FROM quote_notification_outbox o WHERE o.message_id=?`,
+    )
+    .bind(`case-event-email:${commandId}`)
+    .first<{ id: string }>("id");
+  const tokenHash = "b".repeat(64);
+  await db.batch([
+    db
+      .prepare(
+        `INSERT INTO quote_notification_reply_tokens
+         (token_hash,notification_id,request_id,profile_id,recipient_email,created_at,expires_at)
+         VALUES (?,?,?,'buyer','buyer@example.test',0,9999999999999)`,
+      )
+      .bind(tokenHash, notification, order.requestId),
+    db
+      .prepare(
+        `INSERT INTO quote_conversation_messages
+         (id,request_id,author_role,author_id,body,created_at,command_id,payload_hash,source,delivery_state)
+         VALUES ('m9-email',?,'customer','buyer','It is the wrong part','2026-09-23T12:00:00.000Z',
+           'inbound-email/m9','h','email','available')`,
+      )
+      .bind(order.requestId),
+    inboundCaseTopicStatement(db, { messageId: "m9-email", tokenHash }),
+  ]);
+  const thread = await createMessageCenter(db, bucket)
+    .admin(owner)
+    .thread(order.requestId);
+  expect(
+    thread.messages.messages.find((message) => message.id === "m9-email"),
+  ).toMatchObject({ topic: { caseId } });
 });

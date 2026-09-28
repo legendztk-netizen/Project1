@@ -26,7 +26,7 @@ import {
   TrackingForm,
   type AdminMilestone,
 } from "./admin-shipment-milestones";
-import { ShipmentActionDialog } from "./shipment-action-dialog";
+import { ActionDialog } from "../../shared/ui/action-dialog";
 import { AdminShipmentDocumentsDialog } from "./admin-shipment-documents-dialog";
 import { AdminChinaCalendarDialog } from "./admin-china-calendar-dialog";
 import { completedStage, formatPhysicalQuantity } from "./shipment-display";
@@ -403,7 +403,7 @@ export function AdminShipmentCards({
         />
       )}
       {panel && panelItem && (
-        <ShipmentActionDialog
+        <ActionDialog
           key={`${panel.kind}:${panel.shipmentId}:${panel.trackingId ?? ""}`}
           title={`${panelTitles[panel.kind]} · ${panelItem.displayName}`}
           description={panelDescriptions[panel.kind]}
@@ -462,7 +462,7 @@ export function AdminShipmentCards({
               disabled={busy}
             />
           )}
-        </ShipmentActionDialog>
+        </ActionDialog>
       )}
     </div>
   );

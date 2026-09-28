@@ -1,0 +1,98 @@
+/* Modal action dialog shared by Admin and customer pages. */
+.action-dialog {
+  width: min(600px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid #b7c2c9;
+  border-radius: 6px;
+}
+
+.action-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.action-dialog::backdrop {
+  background: #18212766;
+}
+
+.action-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.action-dialog-header h2 {
+  margin: 0;
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+
+.action-dialog-close {
+  display: inline-grid;
+  flex: 0 0 36px;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  color: var(--ink);
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.action-dialog-close:hover {
+  background: #eef2f4;
+}
+
+.action-dialog-body {
+  overflow-y: auto;
+  padding: 4px 20px 20px;
+}
+
+.action-dialog-body > p {
+  color: var(--muted);
+}
+
+.action-dialog-error {
+  padding: 10px 12px;
+  color: #8a1f17;
+  background: #fdeeec;
+  border-left: 3px solid #c0392b;
+}
+
+.action-dialog .shipping-change-form {
+  padding-bottom: 0;
+}
+
+.action-dialog .shipping-change-form .button {
+  justify-self: start;
+}
+
+.action-dialog-wide {
+  width: min(960px, calc(100% - 32px));
+}
+
+.action-dialog-notice {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 12px 14px;
+  background: #fff6e8;
+  border-left: 3px solid #b97616;
+}
+
+.action-dialog-notice p {
+  margin: 0;
+}
+
+.action-dialog-notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}

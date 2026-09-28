@@ -453,7 +453,7 @@ export function AdminReturnReceipts({
                         <input name="logisticsUsd" inputMode="decimal" />
                       </label>
                       <label>
-                        物流说明
+                        物流说明（内部）
                         <input name="logisticsNote" />
                       </label>
                       <label>
@@ -461,7 +461,7 @@ export function AdminReturnReceipts({
                         <input name="sellerLogisticsUsd" inputMode="decimal" />
                       </label>
                       <label>
-                        卖方物流说明
+                        卖方物流说明（内部）
                         <input name="sellerLogisticsNote" />
                       </label>
                       <label>
@@ -469,7 +469,7 @@ export function AdminReturnReceipts({
                         <input name="taxUsd" inputMode="decimal" />
                       </label>
                       <label>
-                        税务依据
+                        税务依据（内部）
                         <input name="taxNote" />
                       </label>
                       <label>

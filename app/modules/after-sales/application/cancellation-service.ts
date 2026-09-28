@@ -105,6 +105,7 @@ export interface ResolutionFinancial {
   thirdPartyCostEvidence: string | null;
   grossCents: number;
   refundCents: number;
+  responsibility?: "customer" | "seller";
 }
 
 export interface FactoryEvidence {
@@ -136,6 +137,8 @@ export interface CancellationDecisionInput {
   thirdPartyCostCents?: number;
   thirdPartyCostEvidence?: string;
   factoryEvidence?: FactoryEvidence;
+  // Exceptional reviews only: a seller-caused cancellation deducts nothing.
+  responsibility?: "customer" | "seller";
 }
 
 export function createCancellationService(
@@ -975,6 +978,22 @@ export function createCancellationService(
         throw new Response("Factory review applies only to Support cases", {
           status: 400,
         });
+      // A customer asked for a standard cancellation; an exceptional review
+      // records who caused it from the documented facts.
+      const responsibility =
+        request.kind === "exceptional" && input.responsibility === "seller"
+          ? "seller"
+          : "customer";
+      if (request.kind === "standard" && input.responsibility === "seller")
+        throw new Response(
+          "Seller responsibility applies only to Support cases",
+          { status: 400 },
+        );
+      if (responsibility === "seller" && (input.thirdPartyCostCents ?? 0) > 0)
+        throw new Response(
+          "Seller-caused cancellations deduct no third-party or payment-channel costs",
+          { status: 400 },
+        );
       if (view.lines.length !== input.decisions.length)
         throw new Response("Decide each requested quantity", { status: 400 });
       const prior = await priorLineCredits(db, request.order_id);
@@ -1118,6 +1137,7 @@ export function createCancellationService(
         thirdPartyCostEvidence,
         grossCents: refund.grossCents,
         refundCents: refund.refundCents,
+        responsibility,
       };
       const resolutionId = crypto.randomUUID();
       const authorizationId =
@@ -1281,7 +1301,7 @@ export function createCancellationService(
           orderId: request.order_id,
           sourceKind: "cancellation",
           sourceId: resolutionId,
-          responsibility: "customer",
+          responsibility,
           refund,
           thirdPartyCostEvidence,
           lineCredits: [...merchandiseByLine].map(([lineId, value]) => ({
