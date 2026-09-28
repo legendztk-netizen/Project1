@@ -15,7 +15,9 @@ New PIs freeze refund terms `pi-refund-2026-09-27-v2` (public page
 inspection shows the buyer caused. Orders whose PI accepted
 `pi-refund-2026-09-27-v1` keep seller terms for every problem report; the
 decision dialog offers customer responsibility for "Other problem" only on
-v2 Orders.
+Orders with refund terms v2 or later. New Cases record return policy
+`return-policy-2026-09-27-v2` (renamed from `-launch` when the "Other problem"
+customer terms were added; the windows and fee are unchanged).
 
 | Rule                              | Value                                                                                            |
 | --------------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -38,13 +40,11 @@ decision's customer-visible reason must explain it.
 ## Permissions
 
 The Owner has every after-sales permission. Admin Subaccounts receive none by
-default; grant them explicitly (there is no UI yet):
-
-```sh
-pnpm exec wrangler d1 execute hydraulic-hose-rfq-local --local --command \
-  "INSERT INTO admin_identity_permissions(admin_id,permission,granted_by,granted_at)
-   VALUES ('<subaccount id>','after_sales.review','<owner id>',CURRENT_TIMESTAMP)"
-```
+default. The Owner grants or removes them in **Admin > 账号权限**
+(`/admin/settings/permissions`); every change is audited as
+`admin.permissions_changed`. At launch, grant the second staff account both
+permissions (ADR-0047). A subaccount can open the page to see its own
+permissions but cannot change them.
 
 | Permission           | Allows                                                                                  |
 | -------------------- | --------------------------------------------------------------------------------------- |
@@ -85,13 +85,20 @@ pnpm exec wrangler d1 execute hydraulic-hose-rfq-local --local --command \
    reference; it holds the physical quantities (cut hose by piece count). The
    decision requires actual factory status, source and review time; website
    production records are not required and their absence never proves work
-   has not started. Cut hose can be approved only with documented pre-cut
-   facts; the Cutting & Labeling Fee is then reversed in full. Corrections use
-   a new Follow-on Quote, PI, payment and Order.
+   has not started. Choose the responsibility: a customer-requested
+   cancellation may deduct documented third-party costs; a seller-caused one
+   (for example a configuration error on our side) deducts nothing. Cut hose
+   can be approved only with documented pre-cut facts; the Cutting & Labeling
+   Fee is then reversed for the cancelled pieces (the PI's fee split evenly
+   per cut piece, so cancelling every piece reverses all of it). Corrections
+   use a new Follow-on Quote, PI, payment and Order.
 5. **Cases.** Delivered quantities open one Case per report. The customer sees
    it under **After-sales Cases** in the Order with the next step,
    return instructions, refund amount and status, and the operation record.
-   Discuss it in 消息管理 (**客户对话** on the Case card opens it).
+   Discuss it in 消息管理 (**客户对话** on the Case card opens it). A
+   customer's email reply to a Case notification is filed under the same Case.
+   Closing a Case releases the units that were never received, so the
+   customer can report them again; received units stay with the closed Case.
 6. **RA.** Choose a maintained Return Location and write the packing
    instructions; both are frozen in the RA and shown only to the customer in
    that Case. Later location edits do not change issued RAs. Decline a return
@@ -102,7 +109,8 @@ pnpm exec wrangler d1 execute hydraulic-hose-rfq-local --local --command \
    authorization; the Case stays open and nothing is refunded or declined
    automatically. To reauthorize, issue a new RA, link the expired one and
    record the renewed review. Quantities already received or still authorized
-   cannot be authorized twice.
+   cannot be authorized twice, and receipts on the expired RA and its
+   reauthorization together can never exceed the Case claim.
 8. **Receipt reconciliation.** Record the actual arrival time (Beijing time
    in the form), the evidence source and each package. A receipt entered later
    keeps its actual arrival time and its recording time. Arrival after the RA
@@ -112,7 +120,10 @@ pnpm exec wrangler d1 execute hydraulic-hose-rfq-local --local --command \
 9. **Inspection and decision.** Record interfaces/threads, sealing surfaces,
    finish, packaging/accessories, installation evidence and fluid exposure for
    every received unit. Every decision, including a full approval, needs a
-   customer-visible reason. Inspection photos are Internal until explicitly shared with a
+   customer-visible reason. A convenience return is always resolved under
+   customer terms; if inspection finds a defect, ask the customer to report it
+   as a problem so it gets its own seller-terms decision. Logistics, seller
+   logistics and tax notes are internal and never shown to the customer. Inspection photos are Internal until explicitly shared with a
    reason. Seller-caused replacements record scope, costs and fulfilment
    evidence and create no payout.
 10. **Refund initiation.** Verify the destination first: the original receipt
@@ -121,12 +132,20 @@ pnpm exec wrangler d1 execute hydraulic-hose-rfq-local --local --command \
     website, then record the actual amount, ET date, channel and external
     reference. Partial initiations are allowed up to the authorized amount.
     Spec 6 shipping-change refunds appear in the same queue with their original
-    reservation date.
+    reservation date; customers see them, with initiation dates and channels,
+    on the Order page. A refund flagged **修订待复核，暂停发起** is on hold and
+    cannot be initiated (see step 11).
 11. **Decision corrections.** Append a revision in the same Case; never edit a
     decision. Before any initiation the revised amount replaces the
-    uninitiated authorization. After initiation, an increase becomes a
-    Supplemental Refund with its own deadline; a reduction is flagged for
-    review and leaves recorded payouts untouched (no automatic clawback).
+    uninitiated authorization but keeps the original approval date and
+    10-business-day deadline; an unchanged revision appends nothing. After
+    initiation, an increase becomes a Supplemental Refund with its own
+    deadline. A reduction that stays above what was already sent supersedes
+    only the unpaid authorizations. A reduction that would claw money back,
+    or that touches a partly sent refund, is flagged: recorded payouts stay
+    untouched and every unpaid remainder is put on a Refund Hold. Agree the
+    amounts with the customer in Messages, then append another revision; any
+    revision that is not flagged releases the hold.
 
 ## Recovery
 
@@ -148,16 +167,21 @@ pnpm exec wrangler d1 execute hydraulic-hose-rfq-local --local --command \
 1. Run the pre-migration inventory from the Spec 6 runbook, plus:
    `SELECT count(*) FROM admin_notifications; SELECT count(*) FROM
 order_shipping_change_refund_reservations;` and record the results.
-2. Apply migrations `0115`–`0123` with `pnpm migrate` (or the target
+2. Apply migrations `0115`–`0124` with `pnpm migrate` (or the target
    environment command) and verify with `pnpm migrate:verify` (schema version
-   124). `0123` adds Messages read state, Admin internal notes, Case labels
+   125). `0123` adds Messages read state, Admin internal notes, Case labels
    on messages and decision attachments; existing conversations are kept and
-   show as unread once for each Admin. The upgrade keeps Admin notifications and read receipts, keeps Spec 6
+   show as unread once for each Admin. `0124` adds the review guards
+   (Case-level receipt cap, closed-Case release, PI made-to-order
+   acknowledgements in the cancellation guard, Refund Holds, batch
+   assertions for concurrent Shipment edits) and moves any Case replies
+   written before Messages into Messages with their Case label (Admin-only
+   replies become internal notes). The upgrade keeps Admin notifications and read receipts, keeps Spec 6
    shipping credits counted once and creates no after-sales records.
 3. Confirm at least one complete maintained Return Location exists (label,
    multi-line address, phone).
-4. Grant `after_sales.review` / `after_sales.refund` to the intended
-   subaccounts.
+4. In **账号权限**, grant `after_sales.review` / `after_sales.refund` to the
+   intended subaccounts.
 5. Confirm the hourly cron is enabled so overdue inspection and refund
    reminders are recorded.
 6. Outstanding external checks (not verifiable locally): real email delivery

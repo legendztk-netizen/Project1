@@ -138,8 +138,10 @@ _Avoid_: Shared login, job title, customer owner, Factory Batch Access
 
 **Admin Subaccount**:
 An independently authenticated Admin Backoffice identity whose permissions are
-selected individually by the Owner Account. At launch, the second staff account
-has every Owner capability except creating or managing Admin Subaccounts.
+selected individually by the Owner Account in 账号权限. A new Admin Permission is
+never granted implicitly; at launch the Owner grants the second staff account
+every Admin Permission, which gives it every Owner capability except creating
+or managing Admin Subaccounts and Owner-only approvals.
 _Avoid_: Shared Owner credentials, fixed staff role, customer subaccount
 
 **Admin Permission**:
@@ -934,8 +936,19 @@ An audited change by an Owner or authorized Admin Subaccount to a return
 inspection decision after further discussion in the same After-sales Case. It
 does not create a separate appeal workflow. If a prior refund was already
 initiated, any additional approved amount becomes a Supplemental Refund and
-never overwrites the original refund record.
+never overwrites the original refund record. Before any initiation, the revised
+refund keeps the original approval deadline. A reduction that stays above what
+was already initiated replaces only unpaid authorizations; one that would claw
+back money or split a partly initiated refund is flagged and places a Refund
+Hold on every unpaid remainder.
 _Avoid_: New appeal case, edited refund history, customer-controlled decision
+
+**Refund Hold**:
+A pause on the unpaid remainder of an approved refund after a flagged
+Inspection Decision Revision. A held refund cannot be initiated; a later
+revision of the same decision releases the hold. Amounts already initiated are
+never reversed by the website.
+_Avoid_: Clawback, cancelled refund, edited approval
 
 **Supplemental Refund**:
 An additional externally initiated refund linked to an earlier refund and the

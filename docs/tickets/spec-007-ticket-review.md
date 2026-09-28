@@ -19,7 +19,7 @@ Review date: 2026-09-27. Status: **Approved, published as GitHub issues #102–#
 4. **Separate money from physical quantity.** Returned quantities belong to original Order lines and their applicable Shipments. Cut hose uses physical piece counts and each piece's length; financial calculations use the original discounted USD transaction snapshots. Total footage cannot replace piece counts, and current SKU classification or price cannot replace the frozen purchase facts used for eligibility.
 5. **Count each refund entitlement once.** Extend Spec 6's effective-obligation contract when cancellation first creates an authorized credit/reservation; inspection approval reuses that contract. Shipping-change refunds, cancellations, returns, excess-fund allocations and supplemental refunds share entitlement limits and actual-funds constraints. Positive shipping adjustments remain offline and cannot be treated as system-verified funds.
 6. **Separate late factual recording from authorization.** Actual handoff or receipt may be recorded later, retaining the actual time, recording time, source and any conflict. Late recording cannot bypass a hold or arrival deadline. Inspect partial receipts by quantity; unreceived quantities cannot receive physical-return refund approval. RA expiration ends only the authorization, preserves the original Case, and requires renewed review before reauthorization.
-7. **Replacements and disagreements.** Record the approved scope, seller-funded costs and fulfillment evidence for a seller-responsible replacement in the original Case. Do not mark a refund as executed or fabricate new Order/factory records. Changes to the customer's original configuration still require a new Follow-on Quote. Disagreements continue in the original Case Conversation without a separate appeal system.
+7. **Replacements and disagreements.** Record the approved scope, seller-funded costs and fulfillment evidence for a seller-responsible replacement in the original Case. Do not mark a refund as executed or fabricate new Order/factory records. Changes to the customer's original configuration still require a new Follow-on Quote. Disagreements continue in Messages, labelled with the original Case (conversation moved there on 2026-09-27), without a separate appeal system.
 
 ## Shared Acceptance Requirements
 
@@ -73,3 +73,30 @@ The approved local ticket sources remain in the [ticket directory](../../.scratc
 - Multiple Return Locations and immutable address snapshots, purchased SKUs subsequently hidden from the catalog, cut-hose physical piece counts, private inspection evidence, seller-responsible costs and Spec 6 refund integration all have explicit acceptance criteria.
 - The user removed legacy-policy compatibility from scope and accepted the 14-day boundary as reasonable. Tickets 01, 05, 07 and 10 now use a single launch policy with an explicit ET cutoff. No historical-policy fallback or dual-version test matrix remains. The user subsequently approved publication of the revised breakdown. The latest user instruction is to stop at publication with blocking relationships established.
 - This review checked source material, code and ticket structure only. This ticket review is not implementation acceptance, and Spec 7 is not claimed to be implemented.
+
+## Post-implementation Review (2026-09-28)
+
+A two-axis review (coding standards and Spec/ticket conformance) of the branch
+after #102–#111 and the four follow-up changes found defects that were fixed on
+the same branch; see the [runbook](../operations/spec-7-after-sales.md) and
+migration `0124`. Decisions recorded during the fixes:
+
+- **Refund terms selector (supersedes Ticket 01's "no legacy policy selector"
+  line for one rule).** On 2026-09-27 the user added customer terms for an
+  "Other problem" the buyer caused. They depend on the accepted PI refund
+  terms: `pi-refund-2026-09-27-v2` or later. v1 Orders keep seller terms. No
+  other historical-policy logic exists.
+- **Admin permissions.** New permissions are never granted implicitly; the
+  Owner grants them in 账号权限 with an audit event. This satisfies both the
+  shared requirement and ADR-0047 (the launch staff account receives every
+  permission by an explicit grant).
+- **Withdrawal scope.** "Its authorized customer" is read as any customer
+  authorized for the Order's Purchasing Context, matching the shared
+  "Authorize by Purchasing Context" rule; no change.
+- **Cutting and Labeling Fee reversal.** The PI records one Order-level fee,
+  so a pre-cut cancellation reverses it per cancelled piece; cancelling every
+  piece reverses all of it.
+- **Flagged revisions.** A reduction that would claw back money or split a
+  partly initiated refund is flagged and puts a Refund Hold on the unpaid
+  remainder until a later revision; recorded payouts are never edited.
+- **Convenience returns** are always resolved under customer terms.

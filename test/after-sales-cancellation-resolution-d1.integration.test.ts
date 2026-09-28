@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { createCancellationService } from "../app/modules/after-sales/application/cancellation-service";
+import { createRefundResponseService } from "../app/modules/after-sales/application/refund-response-service";
 import { recordAfterSalesOverdueReminders } from "../app/modules/after-sales/application/after-sales-reminders";
 import { cumulativeLineAmount } from "../app/modules/after-sales/domain/refund-calculation";
 import { createShipmentMilestoneService } from "../app/modules/shipment/application/shipment-milestone-service";
@@ -29,6 +30,8 @@ afterAll(async () => {
 
 const service = (now = fixtureClock) =>
   createCancellationService(db, { now: () => new Date(now) });
+const responses = (now = fixtureClock) =>
+  createRefundResponseService(db, { now: () => new Date(now) });
 
 async function request(
   order: SeededOrder,
@@ -302,13 +305,10 @@ it("requires customer confirmation before a deduction becomes an approved refund
     commandId: crypto.randomUUID(),
   };
   await expect(
-    service().customerRespondToRefund("other", confirm),
+    responses().customerRespond("other", confirm),
   ).rejects.toMatchObject({ status: 404 });
-  await service("2026-09-28T15:00:00.000Z").customerRespondToRefund(
-    "buyer",
-    confirm,
-  );
-  await service().customerRespondToRefund("buyer", confirm);
+  await responses("2026-09-28T15:00:00.000Z").customerRespond("buyer", confirm);
+  await responses().customerRespond("buyer", confirm);
   [view] = (await service().customerRead("buyer", order.orderId)).requests;
   expect(view.resolution!.refunds[0]).toMatchObject({
     status: "approved",
@@ -316,7 +316,7 @@ it("requires customer confirmation before a deduction becomes an approved refund
     deadlineDateEt: "2026-10-13",
   });
   await expect(
-    service().customerRespondToRefund("buyer", {
+    responses().customerRespond("buyer", {
       ...confirm,
       response: "dispute",
       note: "Too high",
@@ -348,7 +348,7 @@ it("keeps a disputed deduction visibly unresolved", async () => {
   });
   const [view] = (await service().customerRead("buyer", order.orderId))
     .requests;
-  await service().customerRespondToRefund("buyer", {
+  await responses().customerRespond("buyer", {
     orderId: order.orderId,
     authorizationId: view.resolution!.refunds[0].id,
     expectedVersion: 1,

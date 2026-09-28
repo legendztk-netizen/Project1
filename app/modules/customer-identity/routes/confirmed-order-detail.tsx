@@ -44,6 +44,7 @@ import {
 import { CustomerReturnsTab } from "../../after-sales/ui/customer-returns";
 import { CustomerShippingRefunds } from "../../after-sales/ui/customer-shipping-refunds";
 import { createRefundInitiationService } from "../../after-sales/application/refund-initiation-service";
+import { createRefundResponseService } from "../../after-sales/application/refund-response-service";
 import { readPrivateReviewForm } from "../../quote-review/domain/private-review";
 import { createReturnAuthorizationService } from "../../after-sales/application/return-authorization-service";
 import { createReturnInspectionService } from "../../after-sales/application/return-inspection-service";
@@ -183,7 +184,9 @@ export async function action({ context, request, params }: ActionFunctionArgs) {
           commandId,
         });
       else if (intent === "refund-confirm" || intent === "refund-dispute")
-        await cancellations.customerRespondToRefund(profileId, {
+        await createRefundResponseService(env.DB, {
+          auditIp: request.headers.get("cf-connecting-ip") ?? "local",
+        }).customerRespond(profileId, {
           orderId,
           authorizationId: String(form.get("authorizationId") ?? ""),
           expectedVersion: Number(form.get("expectedVersion")),

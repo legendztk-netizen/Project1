@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { recordAfterSalesOverdueReminders } from "../app/modules/after-sales/application/after-sales-reminders";
 import { createCancellationService } from "../app/modules/after-sales/application/cancellation-service";
+import { createPiPaymentCorrectionService } from "../app/modules/proforma-invoice/application/pi-payment-correction-service";
 import { createRefundInitiationService } from "../app/modules/after-sales/application/refund-initiation-service";
 import {
   fixtureClock,
@@ -374,4 +375,83 @@ it("refuses initiation when verified original funds are not available", async ()
       commandId: crypto.randomUUID(),
     }),
   ).rejects.toMatchObject({ status: 409 });
+});
+
+it("recovers a payment review after lawful refunds without reporting a false underpayment", async () => {
+  const corrections = createPiPaymentCorrectionService(db, {
+    now: () => new Date("2026-09-29T12:00:00.000Z"),
+  });
+  const review = async (
+    order: SeededOrder,
+    correctedCents: number,
+    label: string,
+  ) => {
+    const before = await corrections.read(owner, order.piId);
+    await corrections.correct(owner, {
+      piId: order.piId,
+      commandId: crypto.randomUUID(),
+      expectedVersion: before.version,
+      correctedAmount: (correctedCents / 100).toFixed(2),
+      reason: `Bank reversal notice ${label}`,
+    });
+    const during = await corrections.read(owner, order.piId);
+    const correctionId = String(
+      (during.disputes as Array<{ correction_id: string }>)[0].correction_id,
+    );
+    return () =>
+      corrections.resolve(owner, {
+        piId: order.piId,
+        commandId: crypto.randomUUID(),
+        correctionId,
+        expectedVersion: during.version,
+        reason: "Owner verified the funds",
+        verificationReference: `BANK-${label}`,
+      });
+  };
+
+  const { order, authorizationId } = await approvedCancellation("f9");
+  const destinationId = await destination(order);
+  const initiate = (amountCents: number) =>
+    refunds().adminRecordInitiation(refunder, {
+      orderId: order.orderId,
+      refundKind: "after_sales",
+      refundId: authorizationId,
+      destinationId,
+      amountCents,
+      initiatedDateEt: "2026-09-28",
+      externalReference: `WIRE-${crypto.randomUUID().slice(0, 6)}`,
+      commandId: crypto.randomUUID(),
+    });
+  await initiate(1000);
+  // The full payment is re-verified while part of the refund is sent.
+  const resolve = await review(order, order.totalCents, "OK");
+  await expect(initiate(100)).rejects.toMatchObject({ status: 409 });
+  await resolve();
+  expect((await corrections.read(owner, order.piId)).confirmationValid).toBe(
+    true,
+  );
+  // The rest of the lawful refund can be sent again after recovery.
+  await initiate(4000);
+
+  // A genuine shortfall still blocks recovery.
+  const short = await approvedCancellation("f10");
+  const blocked = await review(
+    short.order,
+    short.order.totalCents - 1,
+    "SHORT",
+  );
+  await expect(blocked()).rejects.toMatchObject({ status: 409 });
+});
+
+it("shows refund projections only to the Order's Purchasing Context", async () => {
+  const { order } = await approvedCancellation("f11");
+  await expect(
+    refunds().customerShippingRefunds("other", order.orderId),
+  ).rejects.toMatchObject({ status: 404 });
+  await expect(
+    createCancellationService(db).customerRead("other", order.orderId),
+  ).rejects.toMatchObject({ status: 404 });
+  expect(
+    await refunds().customerShippingRefunds("buyer", order.orderId),
+  ).toEqual([]);
 });
