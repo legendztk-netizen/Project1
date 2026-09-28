@@ -128,6 +128,17 @@ export function AdminOrderShippingChanges({
                 <p>
                   {current.reason} · 调整 {money(current.adjustmentCents)}
                 </p>
+                {current.adjustmentCents < 0 && (
+                  <p>
+                    退款构成：原物流费用{" "}
+                    {money(
+                      current.after.creditAllocation?.logisticsCents ??
+                        -current.adjustmentCents,
+                    )}
+                    {" · "}Sales Tax{" "}
+                    {money(current.after.creditAllocation?.taxCents ?? 0)}
+                  </p>
+                )}
                 <p>
                   到期：
                   {new Date(current.expiresAt).toLocaleString("zh-CN", {
@@ -574,6 +585,22 @@ export function AdminOrderShippingChanges({
                           (current?.adjustmentCents ?? 0) / 100
                         ).toFixed(2)}
                       />
+                    </label>
+                    <label>
+                      退款中退回的 Sales Tax（USD）
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        name="taxCreditUsd"
+                        defaultValue={(
+                          (current?.after.creditAllocation?.taxCents ?? 0) / 100
+                        ).toFixed(2)}
+                      />
+                      <small>
+                        退款总额减去 Sales Tax
+                        后，余额计为原物流费用退款；无税款退款填 0。
+                      </small>
                     </label>
                     <label>
                       提案到期（北京时间）

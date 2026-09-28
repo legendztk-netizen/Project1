@@ -1,3 +1,4 @@
+import { parseUsdCents } from "../../after-sales/domain/refund-calculation";
 import { useRef, useState } from "react";
 import { Temporal } from "@js-temporal/polyfill";
 import {
@@ -512,6 +513,10 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
           expectedVersion,
           shipments: affected,
           adjustmentCents: cents,
+          taxCreditCents: parseUsdCents(
+            form.get("taxCreditUsd"),
+            "退回的 Sales Tax",
+          ),
           reason: String(form.get("reason") ?? ""),
           expiresAt,
           commandId,

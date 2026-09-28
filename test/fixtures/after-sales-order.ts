@@ -119,6 +119,9 @@ export async function seedAfterSalesOrder(
   prefix: string,
   options: {
     receivedCents?: number;
+    charges?: Partial<
+      Record<"freight" | "insurance" | "dutiesImport" | "salesTax", number>
+    >;
     refundTermsVersion?: string;
     // Leave every line unallocated (no Shipment plan quantities yet).
     unallocated?: boolean;
@@ -239,8 +242,10 @@ export async function seedAfterSalesOrder(
     cuttingLabeling: 800,
     assemblyService: 0,
     protectionService: 0,
+    ...options.charges,
   };
-  const totalCents = 25700 + 3000 + 1500 + 800;
+  const totalCents =
+    25700 + Object.values(charges).reduce((sum, cents) => sum + cents, 0);
   const orderSnapshot = JSON.stringify({
     destination: {
       recipientName: "Test Buyer",

@@ -356,6 +356,17 @@ export function CustomerOrderShippingChanges({
                       </section>
                     );
                   })}
+                  {current.adjustmentCents < 0 && (
+                    <p>
+                      Credit breakdown: original logistics{" "}
+                      {money(
+                        current.after.creditAllocation?.logisticsCents ??
+                          -current.adjustmentCents,
+                      )}
+                      {"; Sales Tax "}
+                      {money(current.after.creditAllocation?.taxCents ?? 0)}.
+                    </p>
+                  )}
                   {current.adjustmentCents > 0 && (
                     <p>
                       The seller handles any additional payment offline.

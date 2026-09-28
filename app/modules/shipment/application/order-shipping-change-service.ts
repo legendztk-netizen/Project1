@@ -1,3 +1,7 @@
+import {
+  shippingCreditAllocation,
+  type ShippingCreditAllocation,
+} from "../domain/order-shipping-change";
 import type { AdminIdentity } from "#workers/admin-access";
 import { ownedQuoteRequestWhere } from "../../quote-request/infrastructure/d1-quote-request-repository";
 import type { ProformaInvoiceSnapshot } from "../../proforma-invoice/domain/proforma-invoice";
@@ -298,6 +302,7 @@ export function createOrderShippingChangeService(
             shipments: ProposedShipment[];
           },
           after: JSON.parse(proposal.after_json) as {
+            creditAllocation?: ShippingCreditAllocation;
             shipments: ProposedShipment[];
           },
           adjustmentCents: proposal.adjustment_cents,
@@ -831,6 +836,7 @@ export function createOrderShippingChangeService(
         expectedVersion: number;
         shipments: unknown[];
         adjustmentCents: number;
+        taxCreditCents?: number;
         reason: string;
         expiresAt: string;
         commandId: string;
@@ -845,6 +851,10 @@ export function createOrderShippingChangeService(
         Math.abs(input.adjustmentCents) > 100_000_000
       )
         throw new Response("Invalid USD adjustment", { status: 400 });
+      const creditAllocation = shippingCreditAllocation(
+        input.adjustmentCents,
+        input.taxCreditCents,
+      );
       const expiresAt = new Date(input.expiresAt);
       if (Number.isNaN(expiresAt.getTime()) || expiresAt <= new Date(now()))
         throw new Response("A future expiry is required", { status: 400 });
@@ -964,7 +974,7 @@ export function createOrderShippingChangeService(
             .bind(requestId)
             .first<{ next: number }>()
         )?.next ?? 1;
-      const after = { shipments: afterShipments };
+      const after = { shipments: afterShipments, creditAllocation };
       const proposalHash = await hash(
         JSON.stringify({
           requestId,
