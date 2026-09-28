@@ -228,6 +228,7 @@ it("shows the gross-to-net breakdown and asks the customer to confirm a deductio
     initiatedCents: 0,
     initiations: [],
     remainingCents: 4850,
+    onHold: false,
     approvedAt: null,
     deadlineDateEt: null,
     deadlineAt: null,

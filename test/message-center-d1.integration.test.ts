@@ -11,6 +11,7 @@ import {
   shipShipment,
   startAfterSalesDatabase,
   type SeededOrder,
+  caseVersion,
 } from "./fixtures/after-sales-order";
 
 let db: D1Database;
@@ -176,6 +177,7 @@ it("files after-sales notifications under their Case and attaches shared files t
   }).adminDeclineReturn(reviewer, {
     orderId: order.orderId,
     caseId,
+    expectedVersion: await caseVersion(db, caseId),
     reason: "The photos show the correct part number.",
     commandId,
   });

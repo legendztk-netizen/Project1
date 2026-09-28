@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 
+import { recordAfterSalesOverdueReminders } from "../app/modules/after-sales/application/after-sales-reminders";
 import { createCancellationService } from "../app/modules/after-sales/application/cancellation-service";
 import { createCaseService } from "../app/modules/after-sales/application/case-service";
 import { createReturnAuthorizationService } from "../app/modules/after-sales/application/return-authorization-service";
@@ -12,6 +13,7 @@ import {
   shipShipment,
   startAfterSalesDatabase,
   type SeededOrder,
+  caseVersion,
 } from "./fixtures/after-sales-order";
 
 let db: D1Database;
@@ -238,23 +240,26 @@ const issueRa = (
   quantity: number,
   previous?: string,
 ) =>
-  createReturnAuthorizationService(db, at(now)).adminIssue(reviewer, {
-    orderId: order.orderId,
-    caseId,
-    locationId: "reno-returns",
-    instructions: "Write the RA number on the box.",
-    lines: [
-      {
-        lineId: order.lines.standard,
-        shipmentId: order.shipments.first,
-        physicalQuantity: quantity,
-      },
-    ],
-    ...(previous
-      ? { previousRaId: previous, reviewNote: "Customer asked again" }
-      : {}),
-    commandId: crypto.randomUUID(),
-  });
+  caseVersion(db, caseId).then((expectedVersion) =>
+    createReturnAuthorizationService(db, at(now)).adminIssue(reviewer, {
+      orderId: order.orderId,
+      caseId,
+      expectedVersion,
+      locationId: "reno-returns",
+      instructions: "Write the RA number on the box.",
+      lines: [
+        {
+          lineId: order.lines.standard,
+          shipmentId: order.shipments.first,
+          physicalQuantity: quantity,
+        },
+      ],
+      ...(previous
+        ? { previousRaId: previous, reviewNote: "Customer asked again" }
+        : {}),
+      commandId: crypto.randomUUID(),
+    }),
+  );
 
 const receive = (
   order: SeededOrder,
@@ -385,4 +390,31 @@ it("keeps received units of a closed Case claimed", async () => {
         item.shipmentId === order.shipments.first,
     )?.available,
   ).toBe(1);
+});
+
+it("reminds every overdue refund even when the backlog exceeds one batch", async () => {
+  const overdue = async () =>
+    (
+      await db
+        .prepare(
+          `SELECT a.id,EXISTS(SELECT 1 FROM admin_notifications n
+             WHERE n.id='refund-overdue:'||a.id) AS reminded
+           FROM after_sales_refund_authorizations a WHERE a.status='approved'`,
+        )
+        .all<{ id: string; reminded: number }>()
+    ).results;
+  expect((await overdue()).length).toBeGreaterThan(2);
+  const first = await recordAfterSalesOverdueReminders(
+    db,
+    new Date("2026-12-01T12:00:00.000Z"),
+    { batchSize: 1 },
+  );
+  expect((await overdue()).every((row) => row.reminded === 1)).toBe(true);
+  expect(first.refunds).toBe((await overdue()).length);
+  const again = await recordAfterSalesOverdueReminders(
+    db,
+    new Date("2026-12-02T12:00:00.000Z"),
+    { batchSize: 1 },
+  );
+  expect(again.refunds).toBe(0);
 });

@@ -12,10 +12,12 @@ import {
   etDisplayDate,
   inspectionDeadline,
   isOnOrBefore,
+  RESTOCKING_FEE_PERCENT,
 } from "../domain/return-policy";
 import { caseEventStatements } from "../infrastructure/d1-case-events";
 import { createD1OrderFacts } from "../infrastructure/d1-order-facts";
 import {
+  priorCustomerMerchandise as priorCustomerMerchandiseOf,
   priorLineCredits,
   projectRefundAuthorization,
   readRefundAuthorizations,
@@ -466,34 +468,66 @@ export function createReturnInspectionService(
 
     async adminReviewLateArrival(
       actor: AdminIdentity,
-      input: { orderId: string; receiptId: string; note: string },
+      input: {
+        orderId: string;
+        receiptId: string;
+        note: string;
+        commandId: string;
+      },
     ) {
       requireAfterSalesPermission(actor, "after_sales.review");
+      const commandId = afterSalesCommandId(input.commandId);
       const reviewNote = afterSalesText(input.note, "Late arrival review");
+      const auditId = `late-return-review:${input.receiptId}`;
+      const replay = await db
+        .prepare(`SELECT payload_json FROM admin_audit_events WHERE id=?`)
+        .bind(auditId)
+        .first<{ payload_json: string }>();
+      if (replay) {
+        if (
+          (JSON.parse(replay.payload_json) as { commandId?: string })
+            .commandId === commandId
+        )
+          return;
+        throw conflict();
+      }
       const timestamp = now();
-      const result = await db
-        .prepare(
-          `UPDATE after_sales_return_receipts
-           SET late_review_note=?,late_reviewed_by=?,late_reviewed_at=?
-           WHERE id=? AND order_id=? AND timeliness='late' AND late_reviewed_at IS NULL`,
-        )
-        .bind(reviewNote, actor.id, timestamp, input.receiptId, input.orderId)
-        .run();
-      if (result.meta.changes !== 1) throw conflict();
-      await db
-        .prepare(
-          `INSERT INTO admin_audit_events
-           (id,event_type,entity_type,entity_id,actor_id,payload_json,occurred_at)
-           VALUES (?,'order.late_return_reviewed','confirmed_order',?,?,?,?)`,
-        )
-        .bind(
-          `late-return-review:${input.receiptId}`,
-          input.orderId,
-          actor.id,
-          JSON.stringify({ receiptId: input.receiptId, note: reviewNote }),
-          timestamp,
-        )
-        .run();
+      // The review and its audit commit together or not at all.
+      const [update] = await db.batch([
+        db
+          .prepare(
+            `UPDATE after_sales_return_receipts
+             SET late_review_note=?,late_reviewed_by=?,late_reviewed_at=?
+             WHERE id=? AND order_id=? AND timeliness='late' AND late_reviewed_at IS NULL`,
+          )
+          .bind(
+            reviewNote,
+            actor.id,
+            timestamp,
+            input.receiptId,
+            input.orderId,
+          ),
+        db
+          .prepare(
+            `INSERT INTO admin_audit_events
+             (id,event_type,entity_type,entity_id,actor_id,payload_json,occurred_at)
+             SELECT ?,'order.late_return_reviewed','confirmed_order',?,?,?,?
+             WHERE changes()=1`,
+          )
+          .bind(
+            auditId,
+            input.orderId,
+            actor.id,
+            JSON.stringify({
+              receiptId: input.receiptId,
+              note: reviewNote,
+              commandId,
+              ipAddress: options.auditIp ?? null,
+            }),
+            timestamp,
+          ),
+      ]);
+      if (update.meta.changes !== 1) throw conflict();
     },
 
     async adminDecide(
@@ -579,6 +613,16 @@ export function createReturnInspectionService(
           receipt.case_reason === "other"
             ? "This Order's accepted refund terms don't include customer terms for problem reports; resolve it as seller responsibility"
             : "Customer terms apply only to convenience returns and customer-caused Other problems",
+          { status: 400 },
+        );
+      // The customer chose to return an unused item; a defect found during
+      // inspection is reported as its own problem Case.
+      if (
+        input.responsibility === "seller" &&
+        receipt.case_reason === "convenience_return"
+      )
+        throw new Response(
+          "A convenience return is resolved under customer terms",
           { status: 400 },
         );
       if (input.responsibility === "customer" && input.remedy !== "refund")
@@ -694,16 +738,9 @@ export function createReturnInspectionService(
         throw new Response("Seller-funded remedies have no deductions", {
           status: 400,
         });
-      const priorCustomerMerchandise = (
-        await readRefundAuthorizations(db, { orderId: input.orderId })
-      )
-        .filter(
-          (refund) =>
-            refund.source_kind === "return" &&
-            refund.responsibility === "customer" &&
-            refund.status !== "superseded",
-        )
-        .reduce((sum, refund) => sum + refund.merchandise_cents, 0);
+      const priorCustomerMerchandise = priorCustomerMerchandiseOf(
+        await readRefundAuthorizations(db, { orderId: input.orderId }),
+      );
       const cutLines = orderFacts.lines.filter(
         (line) => line.productClass === "cut_hose",
       );
@@ -885,7 +922,7 @@ export function createReturnInspectionService(
       const breakdown = [
         `merchandise ${usd(refund.merchandiseCents)}`,
         refund.restockingFeeCents
-          ? `restocking fee (10%) -${usd(refund.restockingFeeCents)}`
+          ? `restocking fee (${RESTOCKING_FEE_PERCENT}%) -${usd(refund.restockingFeeCents)}`
           : "",
         refund.logisticsCents ? `logistics ${usd(refund.logisticsCents)}` : "",
         refund.sellerLogisticsCents

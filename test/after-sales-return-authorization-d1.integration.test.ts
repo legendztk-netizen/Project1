@@ -10,6 +10,7 @@ import {
   startAfterSalesDatabase,
   unprivileged,
   type SeededOrder,
+  caseVersion,
 } from "./fixtures/after-sales-order";
 
 let db: D1Database;
@@ -68,21 +69,24 @@ const issue = (
   now: string,
   extra: Partial<Parameters<ReturnType<typeof ra>["adminIssue"]>[1]> = {},
 ) =>
-  ra(now).adminIssue(reviewer, {
-    orderId: order.orderId,
-    caseId,
-    locationId: "reno-returns",
-    instructions: "Pack in original box; write the RA number on the label.",
-    lines: [
-      {
-        lineId: order.lines.standard,
-        shipmentId: order.shipments.first,
-        physicalQuantity: 2,
-      },
-    ],
-    commandId: crypto.randomUUID(),
-    ...extra,
-  });
+  caseVersion(db, caseId).then((expectedVersion) =>
+    ra(now).adminIssue(reviewer, {
+      orderId: order.orderId,
+      caseId,
+      expectedVersion,
+      locationId: "reno-returns",
+      instructions: "Pack in original box; write the RA number on the label.",
+      lines: [
+        {
+          lineId: order.lines.standard,
+          shipmentId: order.shipments.first,
+          physicalQuantity: 2,
+        },
+      ],
+      commandId: crypto.randomUUID(),
+      ...extra,
+    }),
+  );
 
 it("freezes the selected location and discloses it only to the authorized customer after issuance", async () => {
   const { order, caseId } = await caseFor("a1");
@@ -100,6 +104,7 @@ it("freezes the selected location and discloses it only to the authorized custom
     ra("2026-09-12T12:00:00.000Z").adminIssue(unprivileged, {
       orderId: order.orderId,
       caseId,
+      expectedVersion: await caseVersion(db, caseId),
       locationId: "reno-returns",
       instructions: "x",
       lines: [
@@ -113,12 +118,16 @@ it("freezes the selected location and discloses it only to the authorized custom
     }),
   ).rejects.toMatchObject({ status: 403 });
   const command = crypto.randomUUID();
+  // A retried form carries the version the page was rendered with.
+  const expectedVersion = await caseVersion(db, caseId);
   const raId = await issue(order, caseId, "2026-10-10T14:00:00.000Z", {
     commandId: command,
+    expectedVersion,
   });
   expect(
     await issue(order, caseId, "2026-10-10T14:00:00.000Z", {
       commandId: command,
+      expectedVersion,
     }),
   ).toBe(raId);
   // Later location edits do not change the issued RA.
@@ -226,6 +235,7 @@ it("declines or closes with customer-visible outcomes in the Case", async () => 
   const decline = {
     orderId: order.orderId,
     caseId,
+    expectedVersion: await caseVersion(db, caseId),
     reason: "The photos show the fitting was installed.",
     commandId: crypto.randomUUID(),
   };
@@ -250,5 +260,35 @@ it("declines or closes with customer-visible outcomes in the Case", async () => 
   expect(closed.cases[0].status).toBe("closed");
   await expect(
     issue(order, caseId, "2026-09-14T12:00:00.000Z"),
+  ).rejects.toMatchObject({ status: 409 });
+});
+
+it("rejects RA issue and decline made from a stale Case version", async () => {
+  const { order, caseId } = await caseFor("a9");
+  const current = await caseVersion(db, caseId);
+  await expect(
+    issue(order, caseId, "2026-09-13T12:00:00.000Z", {
+      expectedVersion: current + 1,
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  await expect(
+    ra("2026-09-13T12:00:00.000Z").adminDeclineReturn(reviewer, {
+      orderId: order.orderId,
+      caseId,
+      expectedVersion: current - 1,
+      reason: "Out of date page",
+      commandId: crypto.randomUUID(),
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  await issue(order, caseId, "2026-09-13T12:00:00.000Z");
+  // Issuing moved the Case forward, so the page's old version is stale.
+  await expect(
+    ra("2026-09-13T12:00:00.000Z").adminDeclineReturn(reviewer, {
+      orderId: order.orderId,
+      caseId,
+      expectedVersion: current,
+      reason: "Too late",
+      commandId: crypto.randomUUID(),
+    }),
   ).rejects.toMatchObject({ status: 409 });
 });

@@ -14,6 +14,7 @@ import {
   seedAfterSalesOrder,
   shipShipment,
   startAfterSalesDatabase,
+  caseVersion,
 } from "./fixtures/after-sales-order";
 
 let db: D1Database;
@@ -236,6 +237,7 @@ it("runs a mixed Order from cancellation through supplemental refund while conse
   const raA = await ras.adminIssue(reviewer, {
     orderId: order.orderId,
     caseId: convenience,
+    expectedVersion: await caseVersion(db, convenience),
     locationId: "plano-returns",
     instructions: "Original bags.",
     lines: returnLines,
@@ -309,6 +311,7 @@ it("runs a mixed Order from cancellation through supplemental refund while conse
   ).adminIssue(reviewer, {
     orderId: order.orderId,
     caseId: defect,
+    expectedVersion: await caseVersion(db, defect),
     locationId: "plano-returns",
     instructions: "Cap both ends.",
     lines: [

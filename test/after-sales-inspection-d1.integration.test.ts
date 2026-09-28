@@ -12,6 +12,7 @@ import {
   startAfterSalesDatabase,
   unprivileged,
   type SeededOrder,
+  caseVersion,
 } from "./fixtures/after-sales-order";
 
 let db: D1Database;
@@ -73,6 +74,7 @@ async function authorized(
   }).adminIssue(owner, {
     orderId: order.orderId,
     caseId,
+    expectedVersion: await caseVersion(db, caseId),
     locationId: "plano-returns",
     instructions: "Original packaging; RA number on label.",
     lines: selected,
@@ -153,6 +155,18 @@ it("gates refunds on receipt and complete inspection, then applies the 10% conve
       logisticsCents: 500,
       logisticsNote: "Try to refund DDP",
       customerReason: "Inspection confirms the reported issue.",
+      commandId: crypto.randomUUID(),
+    }),
+  ).rejects.toMatchObject({ status: 400 });
+  // A convenience return is never resolved under seller terms.
+  await expect(
+    inspection("2026-09-21T15:00:00.000Z").adminDecide(owner, {
+      orderId: order.orderId,
+      receiptId,
+      responsibility: "seller",
+      remedy: "refund",
+      items: [{ ...selected[0], approvedQuantity: 1, conditions: good }],
+      customerReason: "Waive the fee",
       commandId: crypto.randomUUID(),
     }),
   ).rejects.toMatchObject({ status: 400 });
@@ -537,11 +551,29 @@ it("keeps late arrivals in review and reminds once when inspection is overdue", 
       .bind(late)
       .first("count"),
   ).toBe(1);
-  await service.adminReviewLateArrival(owner, {
+  const review = {
     orderId: order.orderId,
     receiptId: late,
     note: "Carrier delay documented; accept for inspection",
-  });
+    commandId: crypto.randomUUID(),
+  };
+  await service.adminReviewLateArrival(owner, review);
+  // A retried review is a no-op; a different review of the same receipt loses.
+  await service.adminReviewLateArrival(owner, review);
+  await expect(
+    service.adminReviewLateArrival(owner, {
+      ...review,
+      commandId: crypto.randomUUID(),
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  expect(
+    await db
+      .prepare(
+        "SELECT count(*) AS count FROM admin_audit_events WHERE event_type='order.late_return_reviewed' AND entity_id=?",
+      )
+      .bind(order.orderId)
+      .first("count"),
+  ).toBe(1);
   await service.adminDecide(owner, {
     orderId: order.orderId,
     receiptId: late,

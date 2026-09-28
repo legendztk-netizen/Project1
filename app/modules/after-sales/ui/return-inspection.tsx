@@ -1,6 +1,7 @@
 import { Form } from "react-router";
 
 import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
+import { RESTOCKING_FEE_PERCENT } from "../domain/return-policy";
 import type { AfterSalesFileView } from "../application/after-sales-files";
 import type { CaseView } from "../application/case-service";
 import type { ReturnAuthorizationView } from "../application/return-authorization-service";
@@ -195,6 +196,7 @@ export function AdminReturnReceipts({
                     value="return-late-review"
                   />
                   <input type="hidden" name="receiptId" value={receipt.id} />
+                  <input type="hidden" name="commandId" value={commandId} />
                   <label>
                     逾期到货审核记录（接受检验的依据）
                     <textarea name="note" required rows={3} />
@@ -420,13 +422,16 @@ export function AdminReturnReceipts({
                               {item.reason === "convenience_return"
                                 ? "客户选择退货"
                                 : "客户原因"}
-                              （扣 10% 退货手续费，不退已履行的 DDP
+                              （扣 {RESTOCKING_FEE_PERCENT}%
+                              退货手续费，不退已履行的 DDP
                               费用，可扣有凭证的第三方费用）
                             </option>
                           )}
-                          <option value="seller">
-                            卖方责任（错发 / 损坏 / 不合格等，无扣费）
-                          </option>
+                          {item.reason !== "convenience_return" && (
+                            <option value="seller">
+                              卖方责任（错发 / 损坏 / 不合格等，无扣费）
+                            </option>
+                          )}
                         </select>
                         {item.reason === "other" &&
                           !item.customerTermsAllowed && (

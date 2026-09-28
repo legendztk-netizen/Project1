@@ -191,6 +191,7 @@ export function AdminCaseDecisionActions({
           >
             <input type="hidden" name="intent" value="case-issue-ra" />
             <input type="hidden" name="caseId" value={item.id} />
+            <input type="hidden" name="expectedVersion" value={item.version} />
             <input type="hidden" name="commandId" value={commandId} />
             <label>
               退货地点（仅向获授权客户显示冻结后的地址）
@@ -285,6 +286,7 @@ export function AdminCaseDecisionActions({
         >
           <input type="hidden" name="intent" value="case-decline-return" />
           <input type="hidden" name="caseId" value={item.id} />
+          <input type="hidden" name="expectedVersion" value={item.version} />
           <input type="hidden" name="commandId" value={commandId} />
           <label>
             不予授权的原因（客户可见，必填）

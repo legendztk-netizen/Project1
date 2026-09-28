@@ -137,7 +137,9 @@ export function createRefundInitiationService(
             `SELECT a.id,a.order_id,o.order_number,a.source_kind,a.refund_cents,
                a.approved_at,a.deadline_date_et,a.deadline_at,
                coalesce((SELECT sum(i.amount_cents) FROM after_sales_refund_initiations i
-                 WHERE i.authorization_id=a.id),0) AS initiated_cents
+                 WHERE i.authorization_id=a.id),0) AS initiated_cents,
+               EXISTS(SELECT 1 FROM after_sales_refund_holds h
+                 WHERE h.authorization_id=a.id AND h.released_at IS NULL) AS on_hold
              FROM after_sales_refund_authorizations a
              JOIN confirmed_orders o ON o.id=a.order_id
              WHERE a.status='approved' ORDER BY a.deadline_at,a.id`,
@@ -152,6 +154,7 @@ export function createRefundInitiationService(
             deadline_date_et: string;
             deadline_at: string;
             initiated_cents: number;
+            on_hold: number;
           }>()
       ).results
         .filter((row) => row.refund_cents > row.initiated_cents)
@@ -167,12 +170,14 @@ export function createRefundInitiationService(
           approvedAt: row.approved_at,
           deadlineDateEt: row.deadline_date_et,
           deadlineAt: row.deadline_at,
+          onHold: row.on_hold === 1,
         }));
       const shipping = (await shippingRefunds("WHERE 1=1"))
         .filter((row) => row.remainingCents > 0)
         .map(({ initiations: _initiations, ...row }) => ({
           ...row,
           source: "shipping_change",
+          onHold: false,
         }));
       const all = [...afterSales, ...shipping].sort((a, b) =>
         a.deadlineAt.localeCompare(b.deadlineAt),
@@ -511,6 +516,8 @@ export function createRefundInitiationService(
         throw new Response("Choose a verified destination", { status: 400 });
       const orderFacts = await facts.read(input.orderId);
       let approvedAt: string;
+      // Return and revision refunds belong to a Case; label the message.
+      let caseId: string | undefined;
       if (input.refundKind === "after_sales") {
         const [authorization] = await readRefundAuthorizations(db, {
           ids: [input.refundId],
@@ -522,6 +529,17 @@ export function createRefundInitiationService(
             status: 409,
           });
         approvedAt = authorization.approved_at;
+        caseId =
+          (
+            await db
+              .prepare(
+                `SELECT case_id FROM after_sales_return_decisions WHERE id=?
+                 UNION ALL
+                 SELECT case_id FROM after_sales_decision_revisions WHERE id=?`,
+              )
+              .bind(authorization.source_id, authorization.source_id)
+              .first<{ case_id: string }>()
+          )?.case_id ?? undefined;
       } else {
         const [reservation] = await shippingRefunds(
           "WHERE r.id=? AND r.order_id=?",
@@ -646,6 +664,7 @@ export function createRefundInitiationService(
           body: `Refund initiated for Order ${orderFacts.orderNumber}: ${usd(input.amountCents)} via ${channelLabel[destination.channel]} on ${etDisplayDate(input.initiatedDateEt)} (ET). The website records this step; it doesn't move money, and we can't promise when your bank or PayPal will post the funds.`,
           timestamp,
           guard,
+          caseId,
         })),
       );
       try {
@@ -657,7 +676,7 @@ export function createRefundInitiationService(
           .first<{ id: string }>();
         if (concurrent) return concurrent.id;
         const message = error instanceof Error ? error.message : "";
-        if (/exceeds|required|funds|approved|entitlement/i.test(message))
+        if (/exceeds|required|funds|approved|entitlement|hold/i.test(message))
           throw new Response(message.replace(/^.*?: /, ""), { status: 409 });
         throw conflict();
       }

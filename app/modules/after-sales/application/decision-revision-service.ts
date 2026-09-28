@@ -11,9 +11,14 @@ import { etDisplayDate } from "../domain/return-policy";
 import { caseEventStatements } from "../infrastructure/d1-case-events";
 import { createD1OrderFacts } from "../infrastructure/d1-order-facts";
 import {
+  earliestCommitment,
+  priorCustomerMerchandise as priorCustomerMerchandiseOf,
   readRefundAuthorizations,
   refundAuthorizationStatements,
+  refundHoldStatements,
+  releaseRefundHoldStatements,
   type RefundAuthorizationRow,
+  type RefundCommitment,
 } from "../infrastructure/d1-refund-authorizations";
 import {
   afterSalesCommandId,
@@ -241,14 +246,6 @@ export function createDecisionRevisionService(
               chainIds.has(credit.authorization_id) === inChain,
           )
           .reduce((sum, credit) => sum + credit.physical_quantity, 0);
-      const creditedMerchandise = (lineId: string) =>
-        otherCredits
-          .filter(
-            (credit) =>
-              credit.line_id === lineId &&
-              chainIds.has(credit.authorization_id),
-          )
-          .reduce((sum, credit) => sum + credit.merchandise_cents, 0);
       const refunding = decision.remedy !== "replacement";
       const newLines: ReturnDecisionLine[] = current.lines.map((line) => {
         const item = input.items.find(
@@ -299,16 +296,10 @@ export function createDecisionRevisionService(
         0,
       );
       const customer = decision.responsibility === "customer";
-      const priorCustomerMerchandise = all
-        .filter(
-          (row) =>
-            !chainIds.has(row.id) &&
-            row.status !== "superseded" &&
-            row.responsibility === "customer" &&
-            (row.source_kind === "return" ||
-              row.source_kind === "supplemental"),
-        )
-        .reduce((sum, row) => sum + row.merchandise_cents, 0);
+      const priorCustomerMerchandise = priorCustomerMerchandiseOf(
+        all,
+        chainIds,
+      );
       const cutLines = orderFacts.lines.filter(
         (line) => line.productClass === "cut_hose",
       );
@@ -388,10 +379,8 @@ export function createDecisionRevisionService(
       }> = [];
       const statements: D1PreparedStatement[] = [];
       const newAuthorizationId = crypto.randomUUID();
-      if (initiatedCents === 0) {
-        effect =
-          target.refundCents > 0 || authorizedCents > 0 ? "replaced" : "none";
-        for (const row of effectiveChain)
+      const supersede = (rows: RefundAuthorizationRow[]) => {
+        for (const row of rows)
           statements.push(
             db
               .prepare(
@@ -416,48 +405,141 @@ export function createDecisionRevisionService(
                 ...guard.bindings,
               ),
           );
+      };
+      const remaining = (row: RefundAuthorizationRow) =>
+        row.refund_cents - (row.initiated_cents ?? 0);
+      const paid = effectiveChain.filter(
+        (row) => (row.initiated_cents ?? 0) > 0 && remaining(row) === 0,
+      );
+      const partlyPaid = effectiveChain.filter(
+        (row) => (row.initiated_cents ?? 0) > 0 && remaining(row) > 0,
+      );
+      const unpaid = effectiveChain.filter(
+        (row) => (row.initiated_cents ?? 0) === 0,
+      );
+      const unchanged =
+        componentKeys.every((key) => target[key] === existing[key]) &&
+        newLines.every(
+          (line) =>
+            creditedQuantity(line.lineId, true) ===
+            (refunding ? line.approvedQuantity : 0),
+        );
+      const sum = (rows: RefundAuthorizationRow[]) =>
+        Object.fromEntries(
+          componentKeys.map((key) => [
+            key,
+            rows.reduce((total, row) => total + rowComponents(row)[key], 0),
+          ]),
+        ) as Record<(typeof componentKeys)[number], number>;
+      const netOf = (value: Record<(typeof componentKeys)[number], number>) =>
+        value.merchandiseCents +
+        value.logisticsCents +
+        value.sellerLogisticsCents +
+        value.taxCents +
+        value.serviceFeeCents -
+        value.restockingFeeCents -
+        value.thirdPartyCostCents;
+      // Credits for the part of the target not already paid by `rows`.
+      const creditsBeyond = (rows: RefundAuthorizationRow[]) => {
+        const ids = new Set(rows.map((row) => row.id));
+        const credited = (lineId: string) =>
+          otherCredits.filter(
+            (credit) =>
+              credit.line_id === lineId && ids.has(credit.authorization_id),
+          );
+        return newLines
+          .map((line) => ({
+            lineId: line.lineId,
+            physicalQuantity: refunding
+              ? Math.max(
+                  0,
+                  line.approvedQuantity -
+                    credited(line.lineId).reduce(
+                      (total, credit) => total + credit.physical_quantity,
+                      0,
+                    ),
+                )
+              : 0,
+            merchandiseCents: refunding
+              ? Math.max(
+                  0,
+                  line.merchandiseCents -
+                    credited(line.lineId).reduce(
+                      (total, credit) => total + credit.merchandise_cents,
+                      0,
+                    ),
+                )
+              : 0,
+          }))
+          .filter(
+            (credit) =>
+              credit.physicalQuantity > 0 || credit.merchandiseCents > 0,
+          );
+      };
+      let commitment: RefundCommitment | null = null;
+      let holdIds: string[] = [];
+      const increase = target.refundCents - authorizedCents;
+      const diff = Object.fromEntries(
+        componentKeys.map((key) => [key, target[key] - existing[key]]),
+      ) as Record<(typeof componentKeys)[number], number>;
+      const beyondPaid = Object.fromEntries(
+        componentKeys.map((key) => [key, target[key] - sum(paid)[key]]),
+      ) as Record<(typeof componentKeys)[number], number>;
+      if (unchanged) effect = "none";
+      else if (initiatedCents === 0) {
+        // Nothing was sent yet: replace the authorization but keep the
+        // original approval's initiation deadline.
+        effect =
+          target.refundCents > 0 || authorizedCents > 0 ? "replaced" : "none";
+        supersede(effectiveChain);
+        commitment = earliestCommitment(effectiveChain);
         if (target.refundCents > 0) {
           authorizationRefund = target;
-          lineCredits = newLines
-            .filter((line) => line.approvedQuantity > 0 && refunding)
-            .map((line) => ({
-              lineId: line.lineId,
-              physicalQuantity: line.approvedQuantity,
-              merchandiseCents: line.merchandiseCents,
-            }));
+          lineCredits = creditsBeyond([]);
+        }
+      } else if (increase > 0 && componentKeys.every((key) => diff[key] >= 0)) {
+        effect = "supplemental";
+        authorizationRefund = refundComponents(diff);
+        lineCredits = creditsBeyond(effectiveChain);
+      } else if (
+        !partlyPaid.length &&
+        componentKeys.every((key) => beyondPaid[key] >= 0) &&
+        netOf(beyondPaid) >= 0
+      ) {
+        // A reduction that stays above what was already sent replaces only
+        // the unpaid authorizations.
+        effect = "replaced";
+        supersede(unpaid);
+        commitment = earliestCommitment(unpaid);
+        if (netOf(beyondPaid) > 0) {
+          authorizationRefund = refundComponents(beyondPaid);
+          lineCredits = creditsBeyond(paid);
         }
       } else {
-        const diff = Object.fromEntries(
-          componentKeys.map((key) => [key, target[key] - existing[key]]),
-        ) as Record<(typeof componentKeys)[number], number>;
-        const increase = target.refundCents - authorizedCents;
-        if (increase === 0 && componentKeys.every((key) => diff[key] === 0))
-          effect = "none";
-        else if (increase > 0 && componentKeys.every((key) => diff[key] >= 0)) {
-          effect = "supplemental";
-          authorizationRefund = refundComponents(diff);
-          lineCredits = newLines
-            .map((line) => ({
-              lineId: line.lineId,
-              physicalQuantity: refunding
-                ? Math.max(
-                    0,
-                    line.approvedQuantity - creditedQuantity(line.lineId, true),
-                  )
-                : 0,
-              merchandiseCents: refunding
-                ? Math.max(
-                    0,
-                    line.merchandiseCents - creditedMerchandise(line.lineId),
-                  )
-                : 0,
-            }))
-            .filter(
-              (credit) =>
-                credit.physicalQuantity > 0 || credit.merchandiseCents > 0,
-            );
-        } else effect = "flagged";
+        // Would claw back money or split a partly sent refund: hold every
+        // unpaid remainder until a later revision settles it.
+        effect = "flagged";
+        holdIds = effectiveChain
+          .filter((row) => remaining(row) > 0 && row.on_hold !== 1)
+          .map((row) => row.id);
       }
+      statements.push(
+        ...(effect === "flagged"
+          ? refundHoldStatements(db, {
+              authorizationIds: holdIds,
+              revisionId: id,
+              timestamp,
+              guard,
+            })
+          : releaseRefundHoldStatements(db, {
+              authorizationIds: effectiveChain
+                .filter((row) => row.on_hold === 1)
+                .map((row) => row.id),
+              revisionId: id,
+              timestamp,
+              guard,
+            })),
+      );
       const previousAuthorization = [...effectiveChain]
         .reverse()
         .find((row) => (row.initiated_cents ?? 0) > 0);
@@ -538,6 +620,7 @@ export function createDecisionRevisionService(
             effect === "supplemental"
               ? (previousAuthorization?.id ?? null)
               : null,
+          commitment,
           actorId: actor.id,
           timestamp,
           commandId,
@@ -552,7 +635,7 @@ export function createDecisionRevisionService(
         refundText = " No refund is due under the revised decision.";
       else if (effect === "flagged")
         refundText =
-          " The refund already initiated stays as recorded while we review the amounts with you.";
+          " Amounts already initiated stay as recorded. Any unpaid part of the refund is paused while we review the corrected amounts with you.";
       const outcomeText =
         outcome === "approved"
           ? "Approved"

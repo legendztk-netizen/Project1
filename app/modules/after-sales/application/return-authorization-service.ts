@@ -151,6 +151,16 @@ export function createReturnAuthorizationService(
     return row;
   }
 
+  /** Aborts the batch unless the Case is still open at the version read. */
+  const caseVersionAssertion = (caseId: string, version: number) =>
+    db
+      .prepare(
+        `INSERT INTO after_sales_batch_assertions(failed)
+         SELECT 1 WHERE NOT EXISTS(SELECT 1 FROM after_sales_cases
+           WHERE id=? AND version=? AND status='open')`,
+      )
+      .bind(caseId, version);
+
   async function caseEvent(input: {
     caseId: string;
     orderId: string;
@@ -209,6 +219,7 @@ export function createReturnAuthorizationService(
       input: {
         orderId: string;
         caseId: string;
+        expectedVersion: number;
         locationId: string;
         instructions: string;
         lines: Array<{
@@ -257,7 +268,11 @@ export function createReturnAuthorizationService(
         return replay.id;
       }
       const caseRow = await adminCase(input.orderId, input.caseId);
-      if (caseRow.status !== "open") throw conflict();
+      if (
+        caseRow.status !== "open" ||
+        caseRow.version !== input.expectedVersion
+      )
+        throw conflict();
       const location = await db
         .prepare(
           `SELECT id,label,address,phone,purpose FROM seller_return_locations WHERE id=?`,
@@ -305,6 +320,7 @@ export function createReturnAuthorizationService(
         },
       });
       const statements: D1PreparedStatement[] = [
+        caseVersionAssertion(caseRow.id, input.expectedVersion),
         db
           .prepare(
             `INSERT INTO after_sales_return_authorizations
@@ -395,6 +411,7 @@ export function createReturnAuthorizationService(
       input: {
         orderId: string;
         caseId: string;
+        expectedVersion: number;
         reason: string;
         commandId: string;
       },
@@ -403,7 +420,6 @@ export function createReturnAuthorizationService(
       const commandId = afterSalesCommandId(input.commandId);
       const reason = afterSalesText(input.reason, "Customer-visible reason");
       const caseRow = await adminCase(input.orderId, input.caseId);
-      if (caseRow.status !== "open") throw conflict();
       const timestamp = now();
       const event = await caseEvent({
         caseId: caseRow.id,
@@ -419,22 +435,32 @@ export function createReturnAuthorizationService(
         .bind(event.id)
         .first();
       if (replay) return;
-      await db.batch([
-        ...event.statements,
-        db
-          .prepare(
-            `INSERT INTO admin_audit_events
+      if (
+        caseRow.status !== "open" ||
+        caseRow.version !== input.expectedVersion
+      )
+        throw conflict();
+      await db
+        .batch([
+          caseVersionAssertion(caseRow.id, input.expectedVersion),
+          ...event.statements,
+          db
+            .prepare(
+              `INSERT INTO admin_audit_events
              (id,event_type,entity_type,entity_id,actor_id,payload_json,occurred_at)
              VALUES (?,'order.return_declined','confirmed_order',?,?,?,?)`,
-          )
-          .bind(
-            `return-declined:${commandId}`,
-            input.orderId,
-            actor.id,
-            JSON.stringify({ caseId: caseRow.id, reason, commandId }),
-            timestamp,
-          ),
-      ]);
+            )
+            .bind(
+              `return-declined:${commandId}`,
+              input.orderId,
+              actor.id,
+              JSON.stringify({ caseId: caseRow.id, reason, commandId }),
+              timestamp,
+            ),
+        ])
+        .catch((error: unknown) => {
+          throw error instanceof Response ? error : conflict();
+        });
     },
 
     async adminCloseCase(

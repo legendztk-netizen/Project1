@@ -1,6 +1,7 @@
 import { Form } from "react-router";
 import type { RefundAuthorizationView } from "../infrastructure/d1-refund-authorizations";
 import { usd } from "../domain/refund-calculation";
+import { RESTOCKING_FEE_PERCENT } from "../domain/return-policy";
 import "./after-sales.css";
 
 const labels = {
@@ -11,7 +12,7 @@ const labels = {
     tax: "Sales Tax adjustment",
     service: "Service fee reversal",
     gross: "Gross refund",
-    restocking: "Restocking fee (10%)",
+    restocking: `Restocking fee (${RESTOCKING_FEE_PERCENT}%)`,
     thirdParty: "Documented third-party cost",
     net: "Refund amount",
     initiated: "Refund initiated",
@@ -24,7 +25,7 @@ const labels = {
     tax: "销售税调整",
     service: "服务费退回",
     gross: "退款总额",
-    restocking: "退货手续费（10%）",
+    restocking: `退货手续费（${RESTOCKING_FEE_PERCENT}%）`,
     thirdParty: "已记录第三方费用",
     net: "应退金额",
     initiated: "已发起退款",
@@ -35,7 +36,7 @@ const labels = {
 export function refundStatusLabel(
   refund: Pick<
     RefundAuthorizationView,
-    "status" | "initiatedCents" | "refundCents" | "deadlineDateEt"
+    "status" | "initiatedCents" | "refundCents" | "deadlineDateEt" | "onHold"
   >,
   language: "en" | "zh",
 ) {
@@ -43,6 +44,10 @@ export function refundStatusLabel(
     return language === "en"
       ? "Replaced by a revised amount"
       : "已被修订金额取代";
+  if (refund.onHold)
+    return language === "en"
+      ? "Unpaid part paused while we review the revised decision with you"
+      : "修订待复核：未发起部分已暂停，不能发起退款";
   if (refund.initiatedCents >= refund.refundCents)
     return language === "en" ? "Refund initiated" : "已发起退款";
   if (refund.initiatedCents > 0)

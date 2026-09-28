@@ -20,6 +20,10 @@ export const LAUNCH_RETURN_POLICY = Object.freeze({
 
 export const RETURN_POLICY_PATH = "/policies/returns";
 
+/** Restocking fee as a whole percentage for customer-facing text. */
+export const RESTOCKING_FEE_PERCENT =
+  LAUNCH_RETURN_POLICY.restockingFeeBasisPoints / 100;
+
 // PI refund terms that disclose customer terms for an "Other problem" the
 // buyer caused. Earlier accepted terms only disclose them for convenience
 // returns, so those Orders keep seller terms for every problem report.
@@ -169,8 +173,7 @@ export function convenienceReturnOpen(deliveredAt: string, at: string) {
 }
 
 export const PRODUCT_RETURN_DISCLOSURE = Object.freeze({
-  standard:
-    "Unused standard products may request return review within 14 calendar days of delivery. Approved convenience returns carry a 10% restocking fee; customer-paid return shipping applies.",
+  standard: `Unused standard products may request return review within ${LAUNCH_RETURN_POLICY.requestWindowCalendarDays} calendar days of delivery. Approved convenience returns carry a ${RESTOCKING_FEE_PERCENT}% restocking fee; customer-paid return shipping applies.`,
   madeToOrder:
     "Convenience returns are unavailable after cutting or production approval. Remedies remain available for seller error or a nonconforming product.",
 });

@@ -13,6 +13,7 @@ import {
   shipShipment,
   startAfterSalesDatabase,
   unprivileged,
+  caseVersion,
 } from "./fixtures/after-sales-order";
 
 let db: D1Database;
@@ -66,6 +67,7 @@ async function decided(prefix: string, approvedQuantity: number) {
   ).adminIssue(owner, {
     orderId: order.orderId,
     caseId,
+    expectedVersion: await caseVersion(db, caseId),
     locationId: "plano-returns",
     instructions: "Return both adapters.",
     lines: [line],
@@ -376,4 +378,110 @@ it("turns a declined decision into an approved refund only through an inspected 
       .bind(decisionId)
       .run(),
   ).rejects.toThrow(/append-only/);
+});
+
+async function destination(orderId: string) {
+  return createRefundInitiationService(
+    db,
+    clock("2026-09-22T12:00:00.000Z"),
+  ).adminAddDestination(refunder, {
+    orderId,
+    channel: "bank_transfer",
+    kind: "original_channel",
+    label: "Buyer bank",
+    holderName: "Buyer",
+    institution: "Bank",
+    samePurchasingContext: true,
+    verificationEvidence: "Remittance advice",
+    commandId: crypto.randomUUID(),
+  });
+}
+
+const initiate = (
+  orderId: string,
+  refundId: string,
+  destinationId: string,
+  amountCents: number,
+) =>
+  createRefundInitiationService(
+    db,
+    clock("2026-09-26T12:00:00.000Z"),
+  ).adminRecordInitiation(refunder, {
+    orderId,
+    refundKind: "after_sales",
+    refundId,
+    destinationId,
+    amountCents,
+    initiatedDateEt: "2026-09-26",
+    externalReference: `WIRE-${crypto.randomUUID().slice(0, 8)}`,
+    commandId: crypto.randomUUID(),
+  });
+
+it("keeps the original approval deadline when a revision replaces an uninitiated refund, and appends nothing for an unchanged revision", async () => {
+  const { order, line, decisionId } = await decided("v5", 1);
+  const original = (await receipt(order.orderId)).decision!.refunds[0];
+  const input = { ...line, orderId: order.orderId, decisionId };
+  await revise({ ...input, expectedRevision: 0, approvedQuantity: 2 });
+  const replaced = (await receipt(order.orderId)).decision!.refunds[1];
+  expect(replaced).toMatchObject({
+    status: "approved",
+    refundCents: 5000,
+    approvedAt: original.approvedAt,
+    deadlineDateEt: original.deadlineDateEt,
+    deadlineAt: original.deadlineAt,
+  });
+  await revise({ ...input, expectedRevision: 1, approvedQuantity: 2 });
+  const view = await receipt(order.orderId);
+  expect(view.decision!.revisions[1].financialEffect).toBe("none");
+  expect(view.decision!.refunds.map((refund) => refund.status)).toEqual([
+    "superseded",
+    "approved",
+  ]);
+});
+
+it("applies a reduction that stays above the initiated amount by superseding only the uninitiated refund", async () => {
+  const { order, line, decisionId } = await decided("v6", 1);
+  const destinationId = await destination(order.orderId);
+  const original = (await receipt(order.orderId)).decision!.refunds[0];
+  await initiate(order.orderId, original.id, destinationId, 2500);
+  const input = { ...line, orderId: order.orderId, decisionId };
+  await revise({ ...input, expectedRevision: 0, approvedQuantity: 2 });
+  await revise({ ...input, expectedRevision: 1, approvedQuantity: 1 });
+  const view = await receipt(order.orderId);
+  expect(view.decision!.revisions[1].financialEffect).toBe("replaced");
+  expect(
+    view.decision!.refunds.map((refund) => [
+      refund.sourceKind,
+      refund.status,
+      refund.refundCents,
+      refund.initiatedCents,
+    ]),
+  ).toEqual([
+    ["return", "approved", 2500, 2500],
+    ["supplemental", "superseded", 2500, 0],
+  ]);
+});
+
+it("holds the unpaid remainder of a partly initiated refund when a reduction is flagged, until a later revision settles it", async () => {
+  const { order, line, decisionId } = await decided("v7", 2);
+  const destinationId = await destination(order.orderId);
+  const original = (await receipt(order.orderId)).decision!.refunds[0];
+  await initiate(order.orderId, original.id, destinationId, 1000);
+  const input = { ...line, orderId: order.orderId, decisionId };
+  await revise({ ...input, expectedRevision: 0, approvedQuantity: 1 });
+  const flagged = await receipt(order.orderId);
+  expect(flagged.decision!.revisions[0].financialEffect).toBe("flagged");
+  expect(flagged.decision!.refunds[0]).toMatchObject({
+    onHold: true,
+    remainingCents: 4000,
+  });
+  await expect(
+    initiate(order.orderId, original.id, destinationId, 500),
+  ).rejects.toMatchObject({ status: 409 });
+  // Restoring the original decision releases the hold.
+  await revise({ ...input, expectedRevision: 1, approvedQuantity: 2 });
+  const settled = await receipt(order.orderId);
+  expect(settled.decision!.revisions[1].financialEffect).toBe("none");
+  expect(settled.decision!.refunds[0].onHold).toBe(false);
+  await initiate(order.orderId, original.id, destinationId, 4000);
 });

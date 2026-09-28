@@ -577,3 +577,11 @@ export async function shipShipment(
     });
   return version;
 }
+
+/** Current version of a Case, as the Admin page would render it. */
+export async function caseVersion(db: D1Database, caseId: string) {
+  return (await db
+    .prepare("SELECT version FROM after_sales_cases WHERE id=?")
+    .bind(caseId)
+    .first<number>("version"))!;
+}

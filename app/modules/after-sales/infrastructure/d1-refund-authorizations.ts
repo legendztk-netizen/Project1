@@ -33,6 +33,39 @@ export interface RefundAuthorizationRow {
   created_at: string;
   initiated_cents?: number;
   initiations_json?: string;
+  on_hold?: number;
+}
+
+/** An approval's frozen initiation commitment, carried to a replacement. */
+export interface RefundCommitment {
+  approvedAt: string;
+  deadlineDateEt: string;
+  deadlineAt: string;
+  calendarVersion: string;
+}
+
+/** The earliest approved commitment among authorizations being replaced. */
+export function earliestCommitment(
+  rows: RefundAuthorizationRow[],
+): RefundCommitment | null {
+  const approved = rows
+    .filter(
+      (row) =>
+        row.approved_at &&
+        row.deadline_date_et &&
+        row.deadline_at &&
+        row.calendar_version,
+    )
+    .sort((a, b) => a.deadline_at!.localeCompare(b.deadline_at!));
+  const first = approved[0];
+  return first
+    ? {
+        approvedAt: first.approved_at!,
+        deadlineDateEt: first.deadline_date_et!,
+        deadlineAt: first.deadline_at!,
+        calendarVersion: first.calendar_version!,
+      }
+    : null;
 }
 
 /** Physical units and merchandise already credited per line (effective only). */
@@ -55,6 +88,27 @@ export async function priorLineCredits(db: D1Database, orderId: string) {
       { quantity: row.quantity, merchandiseCents: row.merchandise_cents },
     ]),
   );
+}
+
+/**
+ * Merchandise already credited under customer terms on this Order (initial
+ * return decisions, their revisions and Supplemental Refunds). The 10%
+ * restocking fee is cumulative over this base so no decision path rounds
+ * differently. `excludeIds` leaves out a chain being recalculated.
+ */
+export function priorCustomerMerchandise(
+  rows: RefundAuthorizationRow[],
+  excludeIds: ReadonlySet<string> = new Set(),
+) {
+  return rows
+    .filter(
+      (row) =>
+        !excludeIds.has(row.id) &&
+        row.status !== "superseded" &&
+        row.responsibility === "customer" &&
+        (row.source_kind === "return" || row.source_kind === "supplemental"),
+    )
+    .reduce((sum, row) => sum + row.merchandise_cents, 0);
 }
 
 export function authorizationStatus(
@@ -88,6 +142,8 @@ export function refundAuthorizationStatements(
     }>;
     previousAuthorizationId?: string | null;
     supersedesId?: string | null;
+    // Keeps the replaced approval's deadline instead of restarting it.
+    commitment?: RefundCommitment | null;
     actorId: string;
     timestamp: string;
     commandId: string;
@@ -96,7 +152,18 @@ export function refundAuthorizationStatements(
 ) {
   const status = authorizationStatus(input.responsibility, input.refund);
   const deadline =
-    status === "approved" ? refundInitiationDeadline(input.timestamp) : null;
+    status !== "approved"
+      ? null
+      : input.commitment
+        ? {
+            dateEt: input.commitment.deadlineDateEt,
+            at: input.commitment.deadlineAt,
+            calendarVersion: input.commitment.calendarVersion,
+          }
+        : refundInitiationDeadline(input.timestamp);
+  const approvedAt = !deadline
+    ? null
+    : (input.commitment?.approvedAt ?? input.timestamp);
   const statements: D1PreparedStatement[] = [
     db
       .prepare(
@@ -127,7 +194,7 @@ export function refundAuthorizationStatements(
         status,
         input.supersedesId ?? null,
         input.previousAuthorizationId ?? null,
-        deadline ? input.timestamp : null,
+        approvedAt,
         deadline?.dateEt ?? null,
         deadline?.at ?? null,
         deadline?.calendarVersion ?? null,
@@ -198,7 +265,9 @@ export async function readRefundAuthorizations(
                'channel',i.channel,'initiatedDateEt',i.initiated_date_et,
                'externalReference',i.external_reference,'recordedAt',i.recorded_at))
              FROM (SELECT * FROM after_sales_refund_initiations
-               WHERE authorization_id=a.id ORDER BY recorded_at,rowid) i) AS initiations_json
+               WHERE authorization_id=a.id ORDER BY recorded_at,rowid) i) AS initiations_json,
+           EXISTS(SELECT 1 FROM after_sales_refund_holds h
+             WHERE h.authorization_id=a.id AND h.released_at IS NULL) AS on_hold
          FROM after_sales_refund_authorizations a WHERE ${clause.sql}
          ORDER BY a.created_at,a.rowid`,
       )
@@ -249,6 +318,8 @@ export function projectRefundAuthorization(
     ),
     remainingCents:
       row.status === "superseded" ? 0 : row.refund_cents - initiated,
+    // A flagged decision revision paused the unpaid remainder.
+    onHold: row.on_hold === 1,
     approvedAt: row.approved_at,
     deadlineDateEt: row.deadline_date_et,
     deadlineAt: row.deadline_at,
@@ -263,3 +334,54 @@ export function projectRefundAuthorization(
 export type RefundAuthorizationView = ReturnType<
   typeof projectRefundAuthorization
 >;
+
+/**
+ * Holds the unpaid remainder of each authorization for a flagged decision
+ * revision; the D1 initiation guard refuses a held refund.
+ */
+export function refundHoldStatements(
+  db: D1Database,
+  input: {
+    authorizationIds: string[];
+    revisionId: string;
+    timestamp: string;
+    guard: { sql: string; bindings: unknown[] };
+  },
+) {
+  return input.authorizationIds.map((id) =>
+    db
+      .prepare(
+        `INSERT INTO after_sales_refund_holds(authorization_id,revision_id,created_at)
+         SELECT ?,?,? WHERE ${input.guard.sql}`,
+      )
+      .bind(id, input.revisionId, input.timestamp, ...input.guard.bindings),
+  );
+}
+
+/** Releases every active hold on these authorizations for a later revision. */
+export function releaseRefundHoldStatements(
+  db: D1Database,
+  input: {
+    authorizationIds: string[];
+    revisionId: string;
+    timestamp: string;
+    guard: { sql: string; bindings: unknown[] };
+  },
+) {
+  if (!input.authorizationIds.length) return [];
+  return [
+    db
+      .prepare(
+        `UPDATE after_sales_refund_holds SET released_revision_id=?,released_at=?
+         WHERE released_at IS NULL
+           AND authorization_id IN (${input.authorizationIds.map(() => "?").join(",")})
+           AND ${input.guard.sql}`,
+      )
+      .bind(
+        input.revisionId,
+        input.timestamp,
+        ...input.authorizationIds,
+        ...input.guard.bindings,
+      ),
+  ];
+}

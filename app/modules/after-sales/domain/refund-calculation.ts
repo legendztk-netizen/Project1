@@ -35,7 +35,7 @@ export function cumulativeLineAmount(
   return upTo(priorQuantity + quantity) - upTo(priorQuantity);
 }
 
-/** Cumulative 10% restocking fee so partial decisions cannot over-deduct. */
+/** Cumulative restocking fee so partial decisions cannot over-deduct. */
 export function cumulativeRestockingFee(
   priorMerchandiseCents: number,
   merchandiseCents: number,

@@ -165,6 +165,7 @@ export async function runAfterSalesAdminAction(input: {
         await createReturnAuthorizationService(db, options).adminIssue(actor, {
           orderId,
           caseId: text(form, "caseId"),
+          expectedVersion: Number(form.get("expectedVersion")),
           locationId: text(form, "locationId"),
           instructions: text(form, "instructions"),
           lines: readRaLines(form),
@@ -179,6 +180,7 @@ export async function runAfterSalesAdminAction(input: {
           {
             orderId,
             caseId: text(form, "caseId"),
+            expectedVersion: Number(form.get("expectedVersion")),
             reason: text(form, "reason"),
             commandId,
           },
@@ -218,6 +220,7 @@ export async function runAfterSalesAdminAction(input: {
             orderId,
             receiptId: text(form, "receiptId"),
             note: text(form, "note"),
+            commandId,
           },
         );
         break;
