@@ -5,6 +5,7 @@ import {
   type JWTVerifyGetKey,
 } from "jose";
 
+import type { AdminPermission } from "../app/modules/admin/domain/admin-permissions";
 import {
   findActiveAdminIdentityByEmail,
   type ActiveAdminIdentityRecord,
@@ -21,7 +22,7 @@ export interface AdminAccessBindings {
 
 export interface AdminIdentity {
   catalogPermission?: "view" | "edit";
-  permissions?: readonly ("after_sales.review" | "after_sales.refund")[];
+  permissions?: readonly AdminPermission[];
   accountType: "owner" | "subaccount";
   canManageSubaccounts: boolean;
   email: string;

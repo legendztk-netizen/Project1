@@ -218,6 +218,10 @@ export default [
     "admin/settings/commercial",
     "modules/admin/routes/commercial-settings.tsx",
   ),
+  route(
+    "admin/settings/permissions",
+    "modules/admin/routes/admin-permissions.tsx",
+  ),
   route("admin/catalog/products", "modules/admin/routes/catalog-products.tsx"),
   route(
     "admin/catalog/product-editor",

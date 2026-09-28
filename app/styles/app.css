@@ -698,6 +698,37 @@ a {
   gap: 14px;
 }
 
+.commercial-settings-form fieldset {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.commercial-settings-form .admin-permission-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.admin-permission-option input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  margin-top: 2px;
+}
+
+.admin-permission-option span {
+  display: grid;
+  gap: 3px;
+}
+
+.admin-permission-option small {
+  color: var(--muted);
+  font-weight: 400;
+}
+
 .shipment-group-editor {
   display: grid;
   gap: 18px;

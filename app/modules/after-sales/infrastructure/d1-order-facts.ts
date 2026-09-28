@@ -49,6 +49,8 @@ export interface OrderFacts {
   lines: OrderLineFact[];
   shipments: ShipmentFact[];
   activeHolds: HoldFact[];
+  // Physical units already removed by Cancellation Resolutions, per line.
+  cancelledByLine: Map<string, number>;
 }
 
 interface LineRow {
@@ -88,71 +90,85 @@ export function createD1OrderFacts(db: D1Database) {
         snapshot_json: string;
       }>();
     if (!order) throw new Response("Order not found", { status: 404 });
-    const [lines, shipments, allocations, holds, dispatched, delivered] =
-      await Promise.all([
-        db
-          .prepare(
-            `SELECT line_id,line_number,line_kind,snapshot_json
+    const [
+      lines,
+      shipments,
+      allocations,
+      holds,
+      dispatched,
+      delivered,
+      cancelled,
+    ] = await Promise.all([
+      db
+        .prepare(
+          `SELECT line_id,line_number,line_kind,snapshot_json
              FROM confirmed_order_lines WHERE order_id=? ORDER BY line_number`,
-          )
-          .bind(orderId)
-          .all<LineRow>(),
-        db
-          .prepare(
-            `SELECT id,display_name,sequence_number,status,version
+        )
+        .bind(orderId)
+        .all<LineRow>(),
+      db
+        .prepare(
+          `SELECT id,display_name,sequence_number,status,version
              FROM order_shipments WHERE order_id=? ORDER BY sequence_number`,
-          )
-          .bind(orderId)
-          .all<{
-            id: string;
-            display_name: string;
-            sequence_number: number;
-            status: ShipmentFact["status"];
-            version: number;
-          }>(),
-        db
-          .prepare(
-            `SELECT shipment_id,line_id,physical_quantity
+        )
+        .bind(orderId)
+        .all<{
+          id: string;
+          display_name: string;
+          sequence_number: number;
+          status: ShipmentFact["status"];
+          version: number;
+        }>(),
+      db
+        .prepare(
+          `SELECT shipment_id,line_id,physical_quantity
              FROM order_shipment_allocations WHERE order_id=?`,
-          )
-          .bind(orderId)
-          .all<{
-            shipment_id: string;
-            line_id: string;
-            physical_quantity: number;
-          }>(),
-        db
-          .prepare(
-            `SELECT id,line_id,shipment_id,physical_quantity,kind
+        )
+        .bind(orderId)
+        .all<{
+          shipment_id: string;
+          line_id: string;
+          physical_quantity: number;
+        }>(),
+      db
+        .prepare(
+          `SELECT id,line_id,shipment_id,physical_quantity,kind
              FROM order_quantity_holds WHERE order_id=? AND active=1`,
-          )
-          .bind(orderId)
-          .all<{
-            id: string;
-            line_id: string;
-            shipment_id: string | null;
-            physical_quantity: number;
-            kind: string;
-          }>(),
-        db
-          .prepare(
-            `SELECT DISTINCT shipment_id FROM shipment_dispatch_quantities
+        )
+        .bind(orderId)
+        .all<{
+          id: string;
+          line_id: string;
+          shipment_id: string | null;
+          physical_quantity: number;
+          kind: string;
+        }>(),
+      db
+        .prepare(
+          `SELECT DISTINCT shipment_id FROM shipment_dispatch_quantities
              WHERE order_id=?`,
-          )
-          .bind(orderId)
-          .all<{ shipment_id: string }>(),
-        db
-          .prepare(
-            `SELECT shipment_id,actual_date,recorded_at FROM shipment_milestone_events
+        )
+        .bind(orderId)
+        .all<{ shipment_id: string }>(),
+      db
+        .prepare(
+          `SELECT shipment_id,actual_date,recorded_at FROM shipment_milestone_events
              WHERE order_id=? AND kind='delivered'`,
-          )
-          .bind(orderId)
-          .all<{
-            shipment_id: string;
-            actual_date: string;
-            recorded_at: string;
-          }>(),
-      ]);
+        )
+        .bind(orderId)
+        .all<{
+          shipment_id: string;
+          actual_date: string;
+          recorded_at: string;
+        }>(),
+      db
+        .prepare(
+          `SELECT line_id,sum(physical_quantity) AS quantity
+             FROM order_cancelled_quantities WHERE order_id=? GROUP BY line_id`,
+        )
+        .bind(orderId)
+        .all<{ line_id: string; quantity: number }>(),
+    ]);
     const snapshot = JSON.parse(order.snapshot_json) as {
       conditions?: {
         madeToOrderAcknowledgements?: Array<{ lineId: string }>;
@@ -237,6 +253,9 @@ export function createD1OrderFacts(db: D1Database) {
         physicalQuantity: row.physical_quantity,
         kind: row.kind,
       })),
+      cancelledByLine: new Map(
+        cancelled.results.map((row) => [row.line_id, row.quantity]),
+      ),
     };
   }
 
@@ -265,7 +284,10 @@ export function cancellableQuantities(
       const held = facts.activeHolds
         .filter((hold) => hold.lineId === line.lineId)
         .reduce((sum, hold) => sum + hold.physicalQuantity, 0);
-      const available = line.physicalQuantity - held;
+      const available =
+        line.physicalQuantity -
+        held -
+        (facts.cancelledByLine.get(line.lineId) ?? 0);
       if (available > 0)
         result.push({
           lineId: line.lineId,

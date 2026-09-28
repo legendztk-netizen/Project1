@@ -5,6 +5,7 @@ import {
   ChevronDown,
   FileText,
   FileUp,
+  KeyRound,
   LayoutDashboard,
   MessagesSquare,
   RotateCcw,
@@ -25,6 +26,7 @@ export type AdminNavigationKey =
   | "notifications"
   | "overview"
   | "orders"
+  | "permissions"
   | "quotes"
   | "system";
 
@@ -90,6 +92,12 @@ const adminNavigation = [
     label: "商业设置",
     icon: Settings,
     to: "/admin/settings/commercial",
+  },
+  {
+    key: "permissions",
+    label: "账号权限",
+    icon: KeyRound,
+    to: "/admin/settings/permissions",
   },
 ] as const;
 

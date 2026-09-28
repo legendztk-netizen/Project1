@@ -117,7 +117,14 @@ export interface SeededOrder {
 export async function seedAfterSalesOrder(
   db: D1Database,
   prefix: string,
-  options: { receivedCents?: number; refundTermsVersion?: string } = {},
+  options: {
+    receivedCents?: number;
+    refundTermsVersion?: string;
+    // Leave every line unallocated (no Shipment plan quantities yet).
+    unallocated?: boolean;
+    // The PI acknowledged the standard-shaped second line as made to order.
+    acknowledgeStandardSecond?: boolean;
+  } = {},
 ): Promise<SeededOrder> {
   const p = prefix;
   const lines = [
@@ -266,6 +273,7 @@ export async function seedAfterSalesOrder(
         { lineId: `${p}-mto` },
         { lineId: `${p}-cut` },
         { lineId: `${p}-asm` },
+        ...(options.acknowledgeStandardSecond ? [{ lineId: `${p}-std2` }] : []),
       ],
     },
   });
@@ -490,13 +498,14 @@ export async function seedAfterSalesOrder(
           fixtureClock,
           fixtureClock,
         ),
-      ...shipment.allocations.map(([lineId, quantity]) =>
-        db
-          .prepare(
-            `INSERT INTO order_shipment_allocations
+      ...(options.unallocated ? [] : shipment.allocations).map(
+        ([lineId, quantity]) =>
+          db
+            .prepare(
+              `INSERT INTO order_shipment_allocations
              (shipment_id,order_id,line_id,physical_quantity) VALUES (?,?,?,?)`,
-          )
-          .bind(shipment.id, `${p}-order`, lineId, quantity),
+            )
+            .bind(shipment.id, `${p}-order`, lineId, quantity),
       ),
     );
   }

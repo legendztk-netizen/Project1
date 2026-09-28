@@ -29,20 +29,34 @@ interface AdminNotificationRow {
   customer_email: string | null;
   change_kind: "delivery_address" | "shipping_plan" | null;
   order_id: string | null;
+  request_id: string | null;
 }
 
 export const ADMIN_NOTIFICATION_PAGE_SIZE = 50;
 const MAX_BATCH_READ = 200;
 
-function target(row: AdminNotificationRow) {
-  if (row.kind === "shipping_change_requested" && row.order_id)
-    return `/admin/orders/${encodeURIComponent(row.order_id)}?tab=changes`;
-  if (row.kind !== "rfq_submitted" && row.order_id)
-    return `/admin/orders/${encodeURIComponent(row.order_id)}?tab=after-sales`;
-  if (row.kind === "rfq_submitted")
-    return `/admin/quotes/${encodeURIComponent(row.source_id)}`;
-  return "/admin/notifications";
-}
+const orderTab = (tab: string) => (row: AdminNotificationRow) =>
+  row.order_id
+    ? `/admin/orders/${encodeURIComponent(row.order_id)}?tab=${tab}`
+    : null;
+
+// Where each notification kind is worked. Customer Case replies moved to
+// Messages, so they open the conversation rather than the Order.
+const targets: Record<
+  AdminNotificationKind,
+  (row: AdminNotificationRow) => string | null
+> = {
+  rfq_submitted: (row) => `/admin/quotes/${encodeURIComponent(row.source_id)}`,
+  shipping_change_requested: orderTab("changes"),
+  cancellation_requested: orderTab("after-sales"),
+  after_sales_case_opened: orderTab("after-sales"),
+  return_inspection_overdue: orderTab("after-sales"),
+  refund_initiation_overdue: orderTab("after-sales"),
+  after_sales_customer_reply: (row) =>
+    row.request_id
+      ? `/admin/messages/${encodeURIComponent(row.request_id)}`
+      : null,
+};
 
 function project(row: AdminNotificationRow): AdminNotification {
   return {
@@ -53,14 +67,14 @@ function project(row: AdminNotificationRow): AdminNotification {
     reference: row.reference,
     customerEmail: row.customer_email,
     changeKind: row.change_kind,
-    target: target(row),
+    target: targets[row.kind](row) ?? "/admin/notifications",
   };
 }
 
 const notificationSelect = `SELECT n.id, n.kind, n.source_id, n.created_at, r.read_at,
   COALESCE(q.reference_number, o.order_number) AS reference,
   COALESCE(qp.email_display, cp.email_display, xp.email_display, scp.email_display, rcp.email_display) AS customer_email,
-  c.kind AS change_kind, COALESCE(c.order_id, x.order_id, ra.order_id, sr.order_id, sc.order_id, rc.order_id, rr.order_id) AS order_id
+  c.kind AS change_kind, o.request_id AS request_id, COALESCE(c.order_id, x.order_id, ra.order_id, sr.order_id, sc.order_id, rc.order_id, rr.order_id) AS order_id
   FROM admin_notifications n
   LEFT JOIN admin_notification_reads r ON r.notification_id=n.id AND r.admin_id=?1
   LEFT JOIN customer_quote_requests q ON n.kind='rfq_submitted' AND q.id=n.source_id

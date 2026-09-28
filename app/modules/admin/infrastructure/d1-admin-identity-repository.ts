@@ -1,4 +1,7 @@
-export type AdminPermission = "after_sales.review" | "after_sales.refund";
+import {
+  isAdminPermission,
+  type AdminPermission,
+} from "../domain/admin-permissions";
 
 export interface ActiveAdminIdentityRecord {
   catalogPermission?: "view" | "edit";
@@ -40,13 +43,7 @@ export async function findActiveAdminIdentityByEmail(
       : {}),
     ...(row.permissions
       ? {
-          permissions: row.permissions
-            .split(",")
-            .filter(
-              (value): value is AdminPermission =>
-                value === "after_sales.review" ||
-                value === "after_sales.refund",
-            ),
+          permissions: row.permissions.split(",").filter(isAdminPermission),
         }
       : {}),
     accountType: row.account_type,

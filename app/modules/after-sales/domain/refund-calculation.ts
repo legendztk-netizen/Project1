@@ -106,3 +106,24 @@ export function parseUsdCents(value: unknown, label: string) {
   const [whole, fraction = ""] = text.split(".");
   return Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
 }
+
+/**
+ * Admin working notes (logistics recalculation and tax basis) stay out of
+ * customer projections; the customer sees the amounts and the reason.
+ */
+export function customerFinancial<
+  T extends {
+    logisticsNote: string | null;
+    taxNote: string | null;
+    sellerLogisticsNote?: string | null;
+  },
+>(financial: T): T {
+  return {
+    ...financial,
+    logisticsNote: null,
+    taxNote: null,
+    ...("sellerLogisticsNote" in financial
+      ? { sellerLogisticsNote: null }
+      : {}),
+  };
+}

@@ -1,6 +1,6 @@
 import type { AdminIdentity } from "#workers/admin-access";
 
-export type AfterSalesPermission = "after_sales.review" | "after_sales.refund";
+import type { AdminPermission } from "../../admin/domain/admin-permissions";
 
 /**
  * Owner holds every permission. Subaccounts need an explicit Owner-granted
@@ -8,7 +8,7 @@ export type AfterSalesPermission = "after_sales.review" | "after_sales.refund";
  */
 export function hasAfterSalesPermission(
   actor: AdminIdentity | null | undefined,
-  permission: AfterSalesPermission,
+  permission: AdminPermission,
 ) {
   if (!actor?.id) return false;
   if (actor.accountType === "owner") return true;
@@ -20,7 +20,7 @@ export function hasAfterSalesPermission(
 
 export function requireAfterSalesPermission(
   actor: AdminIdentity | null | undefined,
-  permission: AfterSalesPermission,
+  permission: AdminPermission,
 ) {
   if (!hasAfterSalesPermission(actor, permission))
     throw new Response("Forbidden", { status: 403 });

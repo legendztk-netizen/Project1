@@ -151,16 +151,8 @@ it("upgrades a Spec 6 database without losing notifications or double-counting s
     { authorized_credit_cents: 700, uninitiated_refund_cents: 700 },
   ]);
 
-  copy((name) => name >= "0115");
+  copy((name) => name >= "0115" && name < "0124");
   wrangler(["d1", "migrations", "apply", "DB"]);
-  expect(
-    query<{ version: number }>(
-      "SELECT version FROM application_schema_state WHERE singleton=1",
-    )[0].version,
-  ).toBe(contract.schemaVersion);
-  expect(query("SELECT count(*) AS count FROM d1_migrations")[0]).toEqual({
-    count: contract.migrations.length,
-  });
   // Existing notifications and read receipts survive the table rebuild.
   expect(
     query("SELECT id,kind,source_id FROM admin_notifications ORDER BY id"),
@@ -182,6 +174,73 @@ it("upgrades a Spec 6 database without losing notifications or double-counting s
         (SELECT count(*) FROM after_sales_refund_authorizations) +
         (SELECT count(*) FROM after_sales_refund_destinations) AS count`)[0],
   ).toEqual({ count: 0 });
+
+  // A Case whose replies were written before conversation moved to Messages.
+  writeFileSync(
+    join(directory, "legacy-case.sql"),
+    `INSERT INTO after_sales_cases (id,case_number,order_id,profile_id,reason,description,
+        policy_version,status,submission_command_id,submission_hash,created_at,updated_at)
+        VALUES ('up-case','AS-UP-1','up-order','up-buyer','wrong_item','Wrong part',
+        'return-policy-2026-09-24-launch','open','up-case-cmd','h','${now}','${now}');
+      INSERT INTO after_sales_case_messages (id,case_id,author_role,author_id,visibility,kind,
+        body,created_at,command_id,command_hash)
+        VALUES ('up-reply','up-case','customer','up-buyer','customer','message',
+          'The flange is the wrong size','2026-09-02T10:00:00.000Z','up-reply-cmd','h1'),
+        ('up-answer','up-case','admin','owner','customer','message',
+          'Please send a photo','2026-09-02T11:00:00.000Z','up-answer-cmd','h2'),
+        ('up-note','up-case','admin','owner','internal','message',
+          'Check the packing list','2026-09-02T12:00:00.000Z','up-note-cmd','h3'),
+        ('up-event','up-case','admin','owner','customer','event',
+          'RA issued','2026-09-02T13:00:00.000Z','up-event-cmd','h4');`,
+  );
+  wrangler([
+    "d1",
+    "execute",
+    "DB",
+    "--file",
+    join(directory, "legacy-case.sql"),
+  ]);
+  copy((name) => name >= "0124");
+  wrangler(["d1", "migrations", "apply", "DB"]);
+  expect(
+    query<{ version: number }>(
+      "SELECT version FROM application_schema_state WHERE singleton=1",
+    )[0].version,
+  ).toBe(contract.schemaVersion);
+  expect(query("SELECT count(*) AS count FROM d1_migrations")[0]).toEqual({
+    count: contract.migrations.length,
+  });
+  // Customer-visible replies continue in Messages, labelled with the Case;
+  // the Admin-only reply becomes an internal note. Events stay on the Case.
+  expect(
+    query(`SELECT m.id,m.author_role,m.body,t.case_id FROM quote_conversation_messages m
+      LEFT JOIN message_case_topics t ON t.message_id=m.id
+      WHERE m.request_id='up-request' ORDER BY m.created_at`),
+  ).toEqual([
+    {
+      id: "case-message:up-reply",
+      author_role: "customer",
+      body: "The flange is the wrong size",
+      case_id: "up-case",
+    },
+    {
+      id: "case-message:up-answer",
+      author_role: "admin",
+      body: "Please send a photo",
+      case_id: "up-case",
+    },
+  ]);
+  expect(
+    query(
+      "SELECT id,case_id,body FROM message_internal_notes WHERE request_id='up-request'",
+    ),
+  ).toEqual([
+    {
+      id: "case-note:up-note",
+      case_id: "up-case",
+      body: "Check the packing list",
+    },
+  ]);
   expect(
     query("SELECT count(*) AS count FROM pragma_foreign_key_check")[0],
   ).toEqual({ count: 0 });

@@ -2,6 +2,7 @@ import type { AdminIdentity } from "#workers/admin-access";
 import { requireAfterSalesPermission } from "../domain/permissions";
 import {
   cumulativeLineAmount,
+  customerFinancial,
   refundComponents,
   usd,
 } from "../domain/refund-calculation";
@@ -220,6 +221,8 @@ export function createCancellationService(
     const refunds = (
       await readRefundAuthorizations(db, { orderId: orderFacts.orderId })
     ).filter((refund) => refund.source_kind === "cancellation");
+    const projectFinancial = (financial: ResolutionFinancial) =>
+      audience === "customer" ? customerFinancial(financial) : financial;
     return rows.map((row) => {
       const resolution = resolutions.results.find(
         (item) => item.request_id === row.id,
@@ -269,9 +272,9 @@ export function createCancellationService(
               customerReason: resolution.customer_reason,
               decidedAt: resolution.decided_at,
               lines: JSON.parse(resolution.lines_json) as ResolutionLine[],
-              financial: JSON.parse(
-                resolution.financial_json,
-              ) as ResolutionFinancial,
+              financial: projectFinancial(
+                JSON.parse(resolution.financial_json) as ResolutionFinancial,
+              ),
               refunds: refunds
                 .filter((refund) => refund.source_id === resolution.id)
                 .map((refund) => projectRefundAuthorization(refund, audience)),
@@ -1234,19 +1237,34 @@ export function createCancellationService(
                 ),
             );
         }
+        // Each touched Shipment moves from the version this decision read;
+        // a concurrent decision on the same Shipment aborts the batch.
+        for (const shipmentId of shipmentIds) {
+          const shipment = orderFacts.shipments.find(
+            (candidate) => candidate.id === shipmentId,
+          )!;
+          statements.push(
+            db
+              .prepare(
+                `UPDATE order_shipments SET version=version+1,updated_at=?
+                 WHERE order_id=? AND id=? AND version=? AND ${resolved.sql}`,
+              )
+              .bind(
+                timestamp,
+                request.order_id,
+                shipmentId,
+                shipment.version,
+                ...resolved.bindings,
+              ),
+            db
+              .prepare(
+                `INSERT INTO after_sales_batch_assertions(failed)
+                 SELECT 1 WHERE changes()!=1 AND ${resolved.sql}`,
+              )
+              .bind(...resolved.bindings),
+          );
+        }
         statements.push(
-          db
-            .prepare(
-              `UPDATE order_shipments SET version=version+1,updated_at=?
-               WHERE order_id=? AND id IN (${shipmentIds.map(() => "?").join(",")})
-                 AND ${resolved.sql}`,
-            )
-            .bind(
-              timestamp,
-              request.order_id,
-              ...shipmentIds,
-              ...resolved.bindings,
-            ),
           db
             .prepare(
               `DELETE FROM order_cancellation_allocation_edit_context

@@ -3,6 +3,7 @@ import { requireAfterSalesPermission } from "../domain/permissions";
 import {
   cumulativeLineAmount,
   cumulativeRestockingFee,
+  customerFinancial,
   refundComponents,
   usd,
 } from "../domain/refund-calculation";
@@ -171,6 +172,8 @@ export function createReturnInspectionService(
       orderId,
       decisions.results.map((decision) => decision.id),
     );
+    const projectFinancial = (financial: ReturnDecisionFinancial) =>
+      audience === "customer" ? customerFinancial(financial) : financial;
     return receipts.results.map((receipt) => {
       const decision = decisions.results.find(
         (item) => item.receipt_id === receipt.id,
@@ -203,18 +206,24 @@ export function createReturnInspectionService(
               customerReason: decision.customer_reason,
               decidedAt: decision.decided_at,
               lines: JSON.parse(decision.lines_json) as ReturnDecisionLine[],
-              financial: JSON.parse(
-                decision.financial_json,
-              ) as ReturnDecisionFinancial,
+              financial: projectFinancial(
+                JSON.parse(decision.financial_json) as ReturnDecisionFinancial,
+              ),
               replacement: decision.replacement_json
                 ? (JSON.parse(decision.replacement_json) as Record<
                     string,
                     string
                   >)
                 : null,
-              revisions: revisions.filter(
-                (revision) => revision.decisionId === decision.id,
-              ),
+              revisions: revisions
+                .filter((revision) => revision.decisionId === decision.id)
+                .map((revision) => ({
+                  ...revision,
+                  effective: {
+                    ...revision.effective,
+                    financial: projectFinancial(revision.effective.financial),
+                  },
+                })),
               refunds: refunds
                 .filter(
                   (refund) =>

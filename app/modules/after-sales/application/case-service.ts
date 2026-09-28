@@ -61,9 +61,16 @@ export async function claimableQuantities(
       .all<{ shipment_id: string; line_id: string; quantity: number }>(),
     db
       .prepare(
-        `SELECT shipment_id,line_id,sum(physical_quantity) AS quantity
-         FROM after_sales_case_lines WHERE order_id=?
-         GROUP BY shipment_id,line_id`,
+        // An open Case holds its whole claim; a closed Case keeps only the
+        // units actually received (mirrors after_sales_case_line_guard).
+        `SELECT l.shipment_id,l.line_id,
+           sum(CASE WHEN c.status='open' THEN l.physical_quantity
+             ELSE min(l.physical_quantity,coalesce((SELECT sum(r.physical_quantity)
+               FROM after_sales_receipt_lines r WHERE r.case_id=l.case_id
+                 AND r.line_id=l.line_id AND r.shipment_id=l.shipment_id),0)) END)
+             AS quantity
+         FROM after_sales_case_lines l JOIN after_sales_cases c ON c.id=l.case_id
+         WHERE l.order_id=? GROUP BY l.shipment_id,l.line_id`,
       )
       .bind(orderFacts.orderId)
       .all<{ shipment_id: string; line_id: string; quantity: number }>(),
