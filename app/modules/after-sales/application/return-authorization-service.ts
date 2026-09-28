@@ -1,14 +1,17 @@
 import type { AdminIdentity } from "#workers/admin-access";
-import { piSha256 } from "../../proforma-invoice/domain/proforma-invoice";
 import { requireAfterSalesPermission } from "../domain/permissions";
 import {
   etDisplayDate,
   isOnOrBefore,
   raArrivalDeadline,
 } from "../domain/return-policy";
-import { customerMessageStatements } from "../infrastructure/d1-customer-messages";
+import { caseEventStatements } from "../infrastructure/d1-case-events";
 import { createD1OrderFacts } from "../infrastructure/d1-order-facts";
-import { afterSalesCommandId, afterSalesText } from "./cancellation-service";
+import {
+  afterSalesCommandId,
+  afterSalesText,
+  commandHash as hash,
+} from "./after-sales-command";
 
 export interface LocationRow {
   id: string;
@@ -34,7 +37,6 @@ interface RaRow {
   actor_id: string;
 }
 
-const hash = (value: string) => piSha256(new TextEncoder().encode(value));
 const conflict = () =>
   new Response("Return authorization state changed; reload", { status: 409 });
 
@@ -159,50 +161,13 @@ export function createReturnAuthorizationService(
     timestamp: string;
     guard?: { sql: string; bindings: unknown[] };
   }) {
-    const id = `case-event:${input.commandId}`;
     const orderFacts = await facts.read(input.orderId);
-    const guard = input.guard ?? { sql: "1=1", bindings: [] };
-    const statements: D1PreparedStatement[] = [
-      db
-        .prepare(
-          `INSERT INTO after_sales_case_messages
-           (id,case_id,author_role,author_id,visibility,kind,body,created_at,
-            command_id,command_hash)
-           SELECT ?,?,'admin',?,'customer','event',?,?,?,? WHERE ${guard.sql}`,
-        )
-        .bind(
-          id,
-          input.caseId,
-          input.actorId,
-          input.body,
-          input.timestamp,
-          id,
-          await hash(input.body),
-          ...guard.bindings,
-        ),
-      db
-        .prepare(
-          `UPDATE after_sales_cases SET version=version+1,updated_at=?
-           WHERE id=? AND EXISTS(SELECT 1 FROM after_sales_case_messages WHERE id=?)`,
-        )
-        .bind(input.timestamp, input.caseId, id),
-    ];
-    if (input.email)
-      statements.push(
-        ...(await customerMessageStatements(db, {
-          orderRequestId: orderFacts.requestId,
-          actorId: input.actorId,
-          messageId: `case-event-email:${input.commandId}`,
-          body: input.email,
-          caseId: input.caseId,
-          timestamp: input.timestamp,
-          guard: {
-            sql: "EXISTS(SELECT 1 FROM after_sales_case_messages WHERE id=?)",
-            bindings: [id],
-          },
-        })),
-      );
-    return { id, statements, orderFacts };
+    const event = await caseEventStatements(db, {
+      ...input,
+      orderRequestId: orderFacts.requestId,
+      guard: input.guard ?? { sql: "1=1", bindings: [] },
+    });
+    return { ...event, orderFacts };
   }
 
   return {

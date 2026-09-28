@@ -1,5 +1,4 @@
 import type { AdminIdentity } from "#workers/admin-access";
-import { piSha256 } from "../../proforma-invoice/domain/proforma-invoice";
 import { requireAfterSalesPermission } from "../domain/permissions";
 import {
   customerTermsAllowed,
@@ -11,7 +10,11 @@ import {
   createD1OrderFacts,
   type OrderFacts,
 } from "../infrastructure/d1-order-facts";
-import { afterSalesCommandId, afterSalesText } from "./cancellation-service";
+import {
+  afterSalesCommandId,
+  afterSalesText,
+  commandHash as hash,
+} from "./after-sales-command";
 
 export type CaseReason =
   "convenience_return" | "wrong_item" | "damaged" | "nonconforming" | "other";
@@ -38,7 +41,6 @@ interface CaseRow {
   updated_at: string;
 }
 
-const hash = (value: string) => piSha256(new TextEncoder().encode(value));
 const conflict = () =>
   new Response("After-sales Case changed; reload", { status: 409 });
 

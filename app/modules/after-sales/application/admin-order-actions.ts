@@ -2,22 +2,22 @@ import type { AdminIdentity } from "#workers/admin-access";
 import { piSha256 } from "../../proforma-invoice/domain/proforma-invoice";
 import { validateEvidence } from "../../quote-review/domain/private-review";
 import { parseUsdCents } from "../domain/refund-calculation";
-import { readCancellationDecisions } from "../ui/admin-cancellations";
-import { readFactoryEvidence } from "../ui/admin-exceptional";
-import { readCancellationQuantities } from "../ui/customer-cancellations";
-import { readRaLines } from "../ui/return-authorizations";
-import {
-  beijingLocalToIso,
-  readInspectionItems,
-  readReceiptLines,
-  readRevisionItems,
-} from "../ui/return-inspection";
 import { createDecisionRevisionService } from "./decision-revision-service";
 import {
   createAfterSalesFiles,
   type AfterSalesFileScope,
 } from "./after-sales-files";
 import { createCancellationService } from "./cancellation-service";
+import {
+  beijingLocalToIso,
+  readCancellationDecisions,
+  readCancellationQuantities,
+  readFactoryEvidence,
+  readInspectionItems,
+  readRaLines,
+  readReceiptLines,
+  readRevisionItems,
+} from "./parse-after-sales-forms";
 import { createReturnAuthorizationService } from "./return-authorization-service";
 import { createReturnInspectionService } from "./return-inspection-service";
 import {

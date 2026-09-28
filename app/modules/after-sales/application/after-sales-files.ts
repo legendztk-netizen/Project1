@@ -3,7 +3,7 @@ import { piSha256 } from "../../proforma-invoice/domain/proforma-invoice";
 import { validateEvidence } from "../../quote-review/domain/private-review";
 import { requireAfterSalesPermission } from "../domain/permissions";
 import { createD1OrderFacts } from "../infrastructure/d1-order-facts";
-import { afterSalesCommandId, afterSalesText } from "./cancellation-service";
+import { afterSalesCommandId, afterSalesText } from "./after-sales-command";
 
 export type AfterSalesFileScope = "cancellation" | "case" | "inspection";
 

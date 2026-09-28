@@ -36,10 +36,11 @@ import {
 import { createCancellationService } from "../../after-sales/application/cancellation-service";
 import { createCaseService } from "../../after-sales/application/case-service";
 import { createAfterSalesFiles } from "../../after-sales/application/after-sales-files";
+import { CustomerCaseAction } from "../../after-sales/ui/customer-cases";
 import {
-  CustomerCaseAction,
+  readCancellationQuantities,
   readCaseLines,
-} from "../../after-sales/ui/customer-cases";
+} from "../../after-sales/application/parse-after-sales-forms";
 import { CustomerReturnsTab } from "../../after-sales/ui/customer-returns";
 import { readPrivateReviewForm } from "../../quote-review/domain/private-review";
 import { createReturnAuthorizationService } from "../../after-sales/application/return-authorization-service";
@@ -48,7 +49,6 @@ import {
   CustomerCancellationAction,
   CustomerCancellationRequests,
   CustomerSupportPath,
-  readCancellationQuantities,
 } from "../../after-sales/ui/customer-cancellations";
 
 export const headers = piPrivateHeaders;

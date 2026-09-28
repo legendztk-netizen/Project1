@@ -4,7 +4,7 @@ import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
 import type { AfterSalesFileView } from "../application/after-sales-files";
 import { productClassLabel } from "./admin-cancellations";
 import "../../shipment/ui/order-shipping-changes.css";
-import { scopedField } from "./scoped-fields";
+import { scopedField } from "../application/parse-after-sales-forms";
 import { AdminActionDialog } from "./admin-action-dialog";
 import "./after-sales.css";
 
@@ -148,24 +148,6 @@ export function FactoryEvidenceFields({
       )}
     </fieldset>
   );
-}
-
-export function readFactoryEvidence(form: FormData) {
-  if (!form.has("factoryStatus")) return undefined;
-  const local = String(form.get("factoryReviewedAt") ?? "");
-  // Admin enters Beijing time (UTC+8, no DST).
-  const reviewedAt = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(local)
-    ? new Date(`${local}:00+08:00`).toISOString()
-    : local;
-  return {
-    status: String(form.get("factoryStatus") ?? ""),
-    source: String(form.get("factorySource") ?? ""),
-    reviewedAt,
-    supportReference: String(form.get("factorySupportReference") ?? ""),
-    attachmentIds: form.getAll("factoryAttachmentId").map(String),
-    externalIdentifiers: String(form.get("factoryExternalIdentifiers") ?? ""),
-    precut: form.get("factoryPrecut") === "on" ? true : null,
-  };
 }
 
 export function AdminEvidenceFiles({

@@ -4,7 +4,7 @@ import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
 import type { CaseView } from "../application/case-service";
 import type { ReturnAuthorizationView } from "../application/return-authorization-service";
 import { etDisplayDate } from "../domain/return-policy";
-import { readScopedFields, scopedField } from "./scoped-fields";
+import { scopedField } from "../application/parse-after-sales-forms";
 import { Ban, CircleX, PackageCheck } from "lucide-react";
 import { AdminActionDialog, EventAttachmentField } from "./admin-action-dialog";
 import "./after-sales.css";
@@ -322,18 +322,4 @@ export function AdminCaseDecisionActions({
       </AdminActionDialog>
     </>
   );
-}
-
-export function readRaLines(form: FormData) {
-  const lines: Array<{
-    lineId: string;
-    shipmentId: string;
-    physicalQuantity: number;
-  }> = [];
-  for (const { lineId, shipmentId, value } of readScopedFields(form, "raQty")) {
-    const physicalQuantity = Number(value);
-    if (physicalQuantity > 0 && shipmentId)
-      lines.push({ lineId, shipmentId, physicalQuantity });
-  }
-  return lines;
 }

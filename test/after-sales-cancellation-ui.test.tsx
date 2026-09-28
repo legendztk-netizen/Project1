@@ -17,8 +17,8 @@ import { afterEach, expect, it } from "vitest";
 import {
   CustomerCancellationAction,
   CustomerCancellationRequests,
-  readCancellationQuantities,
 } from "../app/modules/after-sales/ui/customer-cancellations";
+import { readCancellationQuantities } from "../app/modules/after-sales/application/parse-after-sales-forms";
 import { AdminCancellationRequests } from "../app/modules/after-sales/ui/admin-cancellations";
 
 afterEach(cleanup);

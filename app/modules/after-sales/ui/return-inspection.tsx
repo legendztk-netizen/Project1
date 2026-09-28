@@ -7,7 +7,7 @@ import type { ReturnAuthorizationView } from "../application/return-authorizatio
 import type { ReceiptView } from "../application/return-inspection-service";
 import { AdminEvidenceFiles } from "./admin-exceptional";
 import { RefundBreakdown, refundStatusLabel } from "./refund-breakdown";
-import { readScopedFields, scopedField } from "./scoped-fields";
+import { scopedField } from "../application/parse-after-sales-forms";
 import { AdminActionDialog, EventAttachmentField } from "./admin-action-dialog";
 import "./after-sales.css";
 
@@ -25,47 +25,6 @@ const outcomeZh: Record<string, string> = {
   partially_approved: "部分批准",
   declined: "拒绝",
 };
-
-export function readReceiptLines(form: FormData) {
-  const lines: Array<{
-    lineId: string;
-    shipmentId: string;
-    physicalQuantity: number;
-  }> = [];
-  for (const { lineId, shipmentId, value } of readScopedFields(
-    form,
-    "receiveQty",
-  )) {
-    const physicalQuantity = Number(value);
-    if (physicalQuantity > 0 && shipmentId)
-      lines.push({ lineId, shipmentId, physicalQuantity });
-  }
-  return lines;
-}
-
-export function readInspectionItems(form: FormData) {
-  return readScopedFields(form, "inspectApprove").map(
-    ({ lineId, shipmentId, value }) => ({
-      lineId,
-      shipmentId: shipmentId ?? "",
-      approvedQuantity: Number(value),
-      conditions: Object.fromEntries(
-        conditionLabels.map(([key]) => [
-          key,
-          String(
-            form.get(scopedField(`inspect-${key}`, lineId, shipmentId)) ?? "",
-          ),
-        ]),
-      ),
-    }),
-  );
-}
-
-export function beijingLocalToIso(value: string) {
-  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)
-    ? new Date(`${value}:00+08:00`).toISOString()
-    : value;
-}
 
 export function AdminReceiptRecordActions({
   item,
@@ -553,19 +512,4 @@ export function AdminReturnReceipts({
       ))}
     </div>
   );
-}
-
-export function readRevisionItems(form: FormData) {
-  const items: Array<{
-    lineId: string;
-    shipmentId: string;
-    approvedQuantity: number;
-  }> = [];
-  for (const { lineId, shipmentId, value } of readScopedFields(
-    form,
-    "reviseApprove",
-  ))
-    if (shipmentId)
-      items.push({ lineId, shipmentId, approvedQuantity: Number(value) });
-  return items;
 }

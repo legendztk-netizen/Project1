@@ -17,7 +17,7 @@ import {
   projectRefundAuthorization,
   readRefundAuthorizations,
 } from "../infrastructure/d1-refund-authorizations";
-import { afterSalesCommandId, afterSalesText } from "./cancellation-service";
+import { afterSalesCommandId, afterSalesText } from "./after-sales-command";
 
 export type RefundKind = "after_sales" | "shipping";
 type Channel = "bank_transfer" | "paypal";

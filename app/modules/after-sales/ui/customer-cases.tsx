@@ -6,7 +6,7 @@ import { ShipmentActionDialog } from "../../shipment/ui/shipment-action-dialog";
 import type { CaseReason, CustomerCases } from "../application/case-service";
 import { etDisplayDate } from "../domain/return-policy";
 import "../../shipment/ui/order-shipping-changes.css";
-import { readScopedFields, scopedField } from "./scoped-fields";
+import { scopedField } from "../application/parse-after-sales-forms";
 import "./after-sales.css";
 
 export const customerCaseReasonLabel: Record<CaseReason, string> = {
@@ -17,23 +17,6 @@ export const customerCaseReasonLabel: Record<CaseReason, string> = {
   nonconforming: "Defective or not as specified",
   other: "Other problem",
 };
-
-export function readCaseLines(form: FormData) {
-  const lines: Array<{
-    lineId: string;
-    shipmentId: string;
-    physicalQuantity: number;
-  }> = [];
-  for (const { lineId, shipmentId, value } of readScopedFields(
-    form,
-    "caseQty",
-  )) {
-    const physicalQuantity = Number(value);
-    if (!value.trim() || physicalQuantity === 0 || !shipmentId) continue;
-    lines.push({ lineId, shipmentId, physicalQuantity });
-  }
-  return lines;
-}
 
 export function CustomerCaseAction({
   cases,

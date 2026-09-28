@@ -1,16 +1,15 @@
 import type { AdminIdentity } from "#workers/admin-access";
-import { piSha256 } from "../../proforma-invoice/domain/proforma-invoice";
 import { requireAfterSalesPermission } from "../domain/permissions";
 import {
   cumulativeLineAmount,
   refundComponents,
   usd,
 } from "../domain/refund-calculation";
-import { refundInitiationDeadline } from "../domain/return-policy";
 import {
-  customerMessageStatements,
   etDisplayDate,
-} from "../infrastructure/d1-customer-messages";
+  refundInitiationDeadline,
+} from "../domain/return-policy";
+import { customerMessageStatements } from "../infrastructure/d1-customer-messages";
 import {
   priorLineCredits,
   projectRefundAuthorization,
@@ -22,6 +21,12 @@ import {
   createD1OrderFacts,
   type OrderFacts,
 } from "../infrastructure/d1-order-facts";
+import {
+  afterSalesCommandId,
+  afterSalesText,
+  commandHash as hash,
+  optionalAfterSalesText as optionalNote,
+} from "./after-sales-command";
 
 export type CancellationStatus = "pending_review" | "withdrawn" | "resolved";
 
@@ -45,22 +50,8 @@ interface RequestRow {
   updated_at: string;
 }
 
-const hash = (value: string) => piSha256(new TextEncoder().encode(value));
 export const cancellationConflict = () =>
   new Response("Cancellation state changed; reload", { status: 409 });
-
-export function afterSalesText(value: unknown, label: string, maximum = 2000) {
-  if (typeof value !== "string" || !value.trim() || value.length > maximum)
-    throw new Response(`${label} required`, { status: 400 });
-  return value.trim();
-}
-
-export function afterSalesCommandId(value: unknown) {
-  const commandId = afterSalesText(value, "Command ID", 100);
-  if (!/^[0-9a-f-]{36}$/i.test(commandId))
-    throw new Response("Invalid command ID", { status: 400 });
-  return commandId;
-}
 
 export function parseCancellationQuantities(
   value: unknown,
@@ -145,11 +136,6 @@ export interface CancellationDecisionInput {
   thirdPartyCostEvidence?: string;
   factoryEvidence?: FactoryEvidence;
 }
-
-const optionalNote = (value: unknown, label: string) =>
-  typeof value === "string" && value.trim()
-    ? afterSalesText(value, label)
-    : null;
 
 export function createCancellationService(
   db: D1Database,

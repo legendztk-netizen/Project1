@@ -1,5 +1,4 @@
 import type { AdminIdentity } from "#workers/admin-access";
-import { piSha256 } from "../../proforma-invoice/domain/proforma-invoice";
 import { requireAfterSalesPermission } from "../domain/permissions";
 import {
   cumulativeLineAmount,
@@ -13,7 +12,7 @@ import {
   inspectionDeadline,
   isOnOrBefore,
 } from "../domain/return-policy";
-import { customerMessageStatements } from "../infrastructure/d1-customer-messages";
+import { caseEventStatements } from "../infrastructure/d1-case-events";
 import { createD1OrderFacts } from "../infrastructure/d1-order-facts";
 import {
   priorLineCredits,
@@ -21,7 +20,11 @@ import {
   readRefundAuthorizations,
   refundAuthorizationStatements,
 } from "../infrastructure/d1-refund-authorizations";
-import { afterSalesCommandId, afterSalesText } from "./cancellation-service";
+import {
+  afterSalesCommandId,
+  afterSalesText,
+  commandHash as hash,
+} from "./after-sales-command";
 import { createDecisionRevisionService } from "./decision-revision-service";
 
 export const inspectionConditionKeys = [
@@ -64,7 +67,6 @@ export interface ReturnDecisionFinancial {
   outboundDdpRefunded: boolean;
 }
 
-const hash = (value: string) => piSha256(new TextEncoder().encode(value));
 const conflict = () =>
   new Response("Return state changed; reload", { status: 409 });
 const note = (value: unknown, label: string) =>
@@ -89,60 +91,6 @@ export function createReturnInspectionService(
 ) {
   const now = () => (options.now?.() ?? new Date()).toISOString();
   const facts = createD1OrderFacts(db);
-
-  async function caseEventStatements(input: {
-    caseId: string;
-    orderRequestId: string;
-    actorId: string;
-    body: string;
-    email: string | null;
-    commandId: string;
-    timestamp: string;
-    guard: { sql: string; bindings: unknown[] };
-  }) {
-    const id = `case-event:${input.commandId}`;
-    const statements: D1PreparedStatement[] = [
-      db
-        .prepare(
-          `INSERT INTO after_sales_case_messages
-           (id,case_id,author_role,author_id,visibility,kind,body,created_at,
-            command_id,command_hash)
-           SELECT ?,?,'admin',?,'customer','event',?,?,?,? WHERE ${input.guard.sql}`,
-        )
-        .bind(
-          id,
-          input.caseId,
-          input.actorId,
-          input.body,
-          input.timestamp,
-          id,
-          await hash(input.body),
-          ...input.guard.bindings,
-        ),
-      db
-        .prepare(
-          `UPDATE after_sales_cases SET version=version+1,updated_at=?
-           WHERE id=? AND EXISTS(SELECT 1 FROM after_sales_case_messages WHERE id=?)`,
-        )
-        .bind(input.timestamp, input.caseId, id),
-    ];
-    if (input.email)
-      statements.push(
-        ...(await customerMessageStatements(db, {
-          orderRequestId: input.orderRequestId,
-          actorId: input.actorId,
-          messageId: `case-event-email:${input.commandId}`,
-          body: input.email,
-          caseId: input.caseId,
-          timestamp: input.timestamp,
-          guard: {
-            sql: "EXISTS(SELECT 1 FROM after_sales_case_messages WHERE id=?)",
-            bindings: [id],
-          },
-        })),
-      );
-    return statements;
-  }
 
   async function read(orderId: string, audience: "customer" | "admin") {
     const at = now();
@@ -450,19 +398,21 @@ export function createReturnInspectionService(
               line.physicalQuantity,
             ),
         ),
-        ...(await caseEventStatements({
-          caseId: ra.case_id,
-          orderRequestId: orderFacts.requestId,
-          actorId: actor.id,
-          body:
-            timeliness === "timely"
-              ? `We received ${received} under ${ra.ra_number}. Inspection comes next; we aim to decide within 5 US business days.`
-              : `We received ${received} after ${ra.ra_number} expired. The late arrival is under review before any inspection decision.`,
-          email: null,
-          commandId,
-          timestamp,
-          guard,
-        })),
+        ...(
+          await caseEventStatements(db, {
+            caseId: ra.case_id,
+            orderRequestId: orderFacts.requestId,
+            actorId: actor.id,
+            body:
+              timeliness === "timely"
+                ? `We received ${received} under ${ra.ra_number}. Inspection comes next; we aim to decide within 5 US business days.`
+                : `We received ${received} after ${ra.ra_number} expired. The late arrival is under review before any inspection decision.`,
+            email: null,
+            commandId,
+            timestamp,
+            guard,
+          })
+        ).statements,
         db
           .prepare(
             `INSERT INTO admin_audit_events
@@ -961,16 +911,18 @@ export function createReturnInspectionService(
           : ""
       } ${refundLine}`;
       statements.push(
-        ...(await caseEventStatements({
-          caseId: receipt.case_id,
-          orderRequestId: orderFacts.requestId,
-          actorId: actor.id,
-          body,
-          email: `Case ${receipt.case_number} for Order ${orderFacts.orderNumber}: ${body} Reply to this message if you have questions.`,
-          commandId,
-          timestamp,
-          guard,
-        })),
+        ...(
+          await caseEventStatements(db, {
+            caseId: receipt.case_id,
+            orderRequestId: orderFacts.requestId,
+            actorId: actor.id,
+            body,
+            email: `Case ${receipt.case_number} for Order ${orderFacts.orderNumber}: ${body} Reply to this message if you have questions.`,
+            commandId,
+            timestamp,
+            guard,
+          })
+        ).statements,
         db
           .prepare(
             `INSERT INTO admin_audit_events

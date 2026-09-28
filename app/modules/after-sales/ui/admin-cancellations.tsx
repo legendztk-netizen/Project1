@@ -4,7 +4,7 @@ import { Form } from "react-router";
 import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
 import type { CancellationRequestView } from "../application/cancellation-service";
 import "../../shipment/ui/order-shipping-changes.css";
-import { readScopedFields, scopedField } from "./scoped-fields";
+import { scopedField } from "../application/parse-after-sales-forms";
 import { AdminActionDialog } from "./admin-action-dialog";
 import "./after-sales.css";
 import { RefundBreakdown, refundStatusLabel } from "./refund-breakdown";
@@ -248,15 +248,4 @@ export function AdminCancellationDecisionForm({
       </Form>
     </AdminActionDialog>
   );
-}
-
-export function readCancellationDecisions(form: FormData) {
-  const decisions: Array<{
-    lineId: string;
-    shipmentId: string | null;
-    approvedQuantity: number;
-  }> = [];
-  for (const { lineId, shipmentId, value } of readScopedFields(form, "approve"))
-    decisions.push({ lineId, shipmentId, approvedQuantity: Number(value) });
-  return decisions;
 }

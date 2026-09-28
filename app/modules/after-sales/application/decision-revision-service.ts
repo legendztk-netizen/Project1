@@ -1,5 +1,4 @@
 import type { AdminIdentity } from "#workers/admin-access";
-import { piSha256 } from "../../proforma-invoice/domain/proforma-invoice";
 import { requireAfterSalesPermission } from "../domain/permissions";
 import {
   cumulativeLineAmount,
@@ -9,20 +8,23 @@ import {
   type CalculatedRefund,
 } from "../domain/refund-calculation";
 import { etDisplayDate } from "../domain/return-policy";
-import { customerMessageStatements } from "../infrastructure/d1-customer-messages";
+import { caseEventStatements } from "../infrastructure/d1-case-events";
 import { createD1OrderFacts } from "../infrastructure/d1-order-facts";
 import {
   readRefundAuthorizations,
   refundAuthorizationStatements,
   type RefundAuthorizationRow,
 } from "../infrastructure/d1-refund-authorizations";
-import { afterSalesCommandId, afterSalesText } from "./cancellation-service";
+import {
+  afterSalesCommandId,
+  afterSalesText,
+  commandHash as hash,
+} from "./after-sales-command";
 import type {
   ReturnDecisionFinancial,
   ReturnDecisionLine,
 } from "./return-inspection-service";
 
-const hash = (value: string) => piSha256(new TextEncoder().encode(value));
 const conflict = () =>
   new Response("Decision changed; reload", { status: 409 });
 
@@ -557,47 +559,26 @@ export function createDecisionRevisionService(
           : outcome === "partially_approved"
             ? "Partially approved"
             : "Declined";
-      const orderRequestId = orderFacts.requestId;
       const body = `Revised inspection decision #${input.expectedRevision + 1}: ${outcomeText}. ${newLines
         .map(
           (line) =>
             `${line.displayName}: ${line.approvedQuantity} of ${line.receivedQuantity} approved`,
         )
         .join("; ")}. Reason: ${customerReason}${refundText}`;
-      const eventId = `case-event:${commandId}`;
       statements.push(
-        db
-          .prepare(
-            `INSERT INTO after_sales_case_messages
-             (id,case_id,author_role,author_id,visibility,kind,body,created_at,
-              command_id,command_hash)
-             SELECT ?,?,'admin',?,'customer','event',?,?,?,? WHERE ${guard.sql}`,
-          )
-          .bind(
-            eventId,
-            decision.case_id,
-            actor.id,
+        ...(
+          await caseEventStatements(db, {
+            caseId: decision.case_id,
+            orderRequestId: orderFacts.requestId,
+            actorId: actor.id,
             body,
+            email: `Case ${decision.case_number}: ${body}`,
+            messageId: `decision-revision:${commandId}`,
+            commandId,
             timestamp,
-            eventId,
-            await hash(body),
-            ...guard.bindings,
-          ),
-        db
-          .prepare(
-            `UPDATE after_sales_cases SET version=version+1,updated_at=?
-             WHERE id=? AND EXISTS(SELECT 1 FROM after_sales_case_messages WHERE id=?)`,
-          )
-          .bind(timestamp, decision.case_id, eventId),
-        ...(await customerMessageStatements(db, {
-          orderRequestId,
-          actorId: actor.id,
-          messageId: `decision-revision:${commandId}`,
-          body: `Case ${decision.case_number}: ${body}`,
-          caseId: decision.case_id,
-          timestamp,
-          guard,
-        })),
+            guard,
+          })
+        ).statements,
         db
           .prepare(
             `INSERT INTO admin_audit_events

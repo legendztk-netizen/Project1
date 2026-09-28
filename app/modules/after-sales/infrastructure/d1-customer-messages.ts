@@ -67,5 +67,3 @@ export async function customerMessageStatements(
       : []),
   ];
 }
-
-export { etDisplayDate } from "../domain/return-policy";

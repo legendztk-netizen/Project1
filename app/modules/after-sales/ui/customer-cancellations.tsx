@@ -10,7 +10,10 @@ import {
   refundStatusLabel,
 } from "./refund-breakdown";
 import "../../shipment/ui/order-shipping-changes.css";
-import { readScopedFields, scopedField } from "./scoped-fields";
+import {
+  cancellationQuantityField,
+  scopedField,
+} from "../application/parse-after-sales-forms";
 import "./after-sales.css";
 
 type CustomerCancellations = Awaited<
@@ -28,28 +31,6 @@ const outcomeLabel: Record<string, string> = {
   partially_approved: "Partially approved",
   declined: "Declined",
 };
-
-export const cancellationQuantityField = (
-  lineId: string,
-  shipmentId: string | null,
-) => scopedField("cancelQty", lineId, shipmentId);
-
-export function readCancellationQuantities(form: FormData) {
-  const quantities: Array<{
-    lineId: string;
-    shipmentId: string | null;
-    physicalQuantity: number;
-  }> = [];
-  for (const { lineId, shipmentId, value } of readScopedFields(
-    form,
-    "cancelQty",
-  )) {
-    const physicalQuantity = Number(value);
-    if (!value.trim() || physicalQuantity === 0) continue;
-    quantities.push({ lineId, shipmentId, physicalQuantity });
-  }
-  return quantities;
-}
 
 export function CustomerCancellationAction({
   cancellations,

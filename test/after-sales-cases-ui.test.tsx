@@ -4,10 +4,17 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, expect, it } from "vitest";
 
+import { CustomerCaseAction } from "../app/modules/after-sales/ui/customer-cases";
 import {
-  CustomerCaseAction,
+  readCancellationDecisions,
+  readCancellationQuantities,
   readCaseLines,
-} from "../app/modules/after-sales/ui/customer-cases";
+  readInspectionItems,
+  readRaLines,
+  readReceiptLines,
+  readRevisionItems,
+  scopedField,
+} from "../app/modules/after-sales/application/parse-after-sales-forms";
 import { AdminCases } from "../app/modules/after-sales/ui/admin-cases";
 import { AdminReturnReceipts } from "../app/modules/after-sales/ui/return-inspection";
 import {
@@ -270,17 +277,7 @@ it("tells the customer the next step for each Case stage", () => {
   );
 });
 
-it("round-trips Spec 6 Shipment ids that contain colons in every scoped form", async () => {
-  const { scopedField } =
-    await import("../app/modules/after-sales/ui/scoped-fields");
-  const { readCancellationQuantities } =
-    await import("../app/modules/after-sales/ui/customer-cancellations");
-  const { readRaLines } =
-    await import("../app/modules/after-sales/ui/return-authorizations");
-  const { readInspectionItems, readReceiptLines, readRevisionItems } =
-    await import("../app/modules/after-sales/ui/return-inspection");
-  const { readCancellationDecisions } =
-    await import("../app/modules/after-sales/ui/admin-cancellations");
+it("round-trips Spec 6 Shipment ids that contain colons in every scoped form", () => {
   const lineId = "line:with:colons";
   const shipmentId = "shipment:order-123:together";
   const data = new FormData();
