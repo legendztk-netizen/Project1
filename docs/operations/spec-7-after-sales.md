@@ -248,5 +248,9 @@ completion](../reviews/spec-007-refund-account-verification-2026-09-28.md),
 and [the three Order child tabs](../reviews/order-after-sales-subtabs-2026-09-28.md).
 These are local tests with test data and stub email. They do not establish
 production migration readiness, external email delivery, carrier events or
-bank/PayPal settlement. Re-run the complete release checks against the final
-branch before merging.
+bank/PayPal settlement. The final branch check passed formatting, lint,
+typecheck, 1,267 tests (3 skipped), a local Worker dry-run, the 38-test smoke
+suite, and a production-build dry-run. The schema 129 production migration plan
+passed in a temporary local database; it does not inspect production D1.
+See the [final review and verification record](../reviews/spec-007-final-handoff-2026-09-28.md)
+for the exact scope and limits.
