@@ -509,7 +509,9 @@ export function createDecisionRevisionService(
         effect =
           target.refundCents > 0 || authorizedCents > 0 ? "replaced" : "none";
         supersede(effectiveChain);
-        commitment = earliestCommitment(effectiveChain);
+        // A zero-refund revision can leave no effective authorization. The
+        // original obligation still lives in the append-only decision chain.
+        commitment = earliestCommitment(authorizations);
         if (target.refundCents > 0) {
           authorizationRefund = target;
           lineCredits = creditsBeyond([]);

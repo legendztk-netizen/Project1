@@ -104,6 +104,36 @@ it("revises an inspection covering the same Order line from two shipments", asyn
       .all<{ physical_quantity: number; merchandise_cents: number }>()
   ).results;
   expect(credits).toEqual([{ physical_quantity: 2, merchandise_cents: 1800 }]);
+  const readDeadline = () =>
+    db
+      .prepare(
+        `SELECT deadline_at FROM after_sales_refund_authorizations
+    WHERE order_id=? AND status='approved'`,
+      )
+      .bind(order.orderId)
+      .first<string>("deadline_at");
+  const originalDeadline = await readDeadline();
+  const later = createDecisionRevisionService(db, {
+    now: () => new Date("2026-09-28T12:00:00.000Z"),
+  });
+  await later.adminRevise(owner, {
+    orderId: order.orderId,
+    decisionId,
+    expectedRevision: 1,
+    items: lines.map((line) => ({ ...line, approvedQuantity: 0 })),
+    customerReason: "Reassessing the findings",
+    commandId: crypto.randomUUID(),
+  });
+  expect(await readDeadline()).toBeNull();
+  await later.adminRevise(owner, {
+    orderId: order.orderId,
+    decisionId,
+    expectedRevision: 2,
+    items: lines.map((line) => ({ ...line, approvedQuantity: 1 })),
+    customerReason: "Original findings confirmed",
+    commandId: crypto.randomUUID(),
+  });
+  expect(await readDeadline()).toBe(originalDeadline);
 });
 it("rejects logistics already refunded by Spec 6", async () => {
   const order = await seedAfterSalesOrder(db, "review-ship");
