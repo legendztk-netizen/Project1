@@ -4,9 +4,13 @@ import {
   piSha256,
   type ProformaInvoiceSnapshot,
 } from "./proforma-invoice";
+import {
+  piPaymentChannelLabel,
+  piPaymentTermsText,
+} from "./pi-payment-presentation";
 import { readyScheduleText } from "../../shipment/domain/ready-schedule";
 
-export const PI_PDF_RENDERER_VERSION = "pi-pdf-v5";
+export const PI_PDF_RENDERER_VERSION = "pi-pdf-v6";
 
 interface TextBlock {
   text: string;
@@ -57,6 +61,77 @@ function fields(value: unknown, prefix = ""): TextBlock[] {
   ];
 }
 
+function assemblyFields(
+  assembly: ProformaInvoiceSnapshot["lines"][number]["assembly"],
+): TextBlock[] {
+  if (!assembly) return [];
+  const { hose, finishedLength, measurement, clocking, protection } = assembly;
+  const end = (value: typeof assembly.endA) => ({
+    hoseEnd: {
+      sku: value.hoseEnd.sku,
+      displayName: value.hoseEnd.displayName,
+      angle: value.hoseEnd.angle,
+      connectionStandard: value.hoseEnd.connectionStandard,
+      connectionDash: value.hoseEnd.connectionDash,
+      gender: value.hoseEnd.gender,
+      thread: value.hoseEnd.thread,
+      sealingForm: value.hoseEnd.sealingForm,
+      swivelForm: value.hoseEnd.swivelForm,
+    },
+    ferrule: value.ferrule,
+    assemblyWorkingBar: value.assemblyWorkingBar,
+  });
+  return fields(
+    {
+      hose: {
+        sku: hose.sku,
+        series: hose.series,
+        dash: hose.dash,
+        nominalIdIn: hose.nominalIdIn,
+        primaryStandard: hose.primaryStandard,
+        equivalentStandard: hose.equivalentStandard,
+        reinforcement: hose.reinforcement,
+        performance: hose.performance,
+      },
+      endA: end(assembly.endA),
+      endB: end(assembly.endB),
+      finishedLength: {
+        value: finishedLength.originalValue,
+        unit: finishedLength.originalUnit,
+        tolerance: finishedLength.tolerance.display,
+        requestedTighterTolerance: finishedLength.requestedTighterTolerance,
+      },
+      measurement: measurement.method
+        ? {
+            code: measurement.method.code,
+            method: measurement.method.displayName,
+            endpointRule: measurement.method.endpointRule,
+          }
+        : { state: measurement.state },
+      clocking: clocking
+        ? {
+            status: clocking.status,
+            target: clocking.targetDisplay,
+            targetDegrees: clocking.targetDegrees,
+            standardToleranceDegrees: clocking.standardToleranceDegrees,
+            viewDirection: clocking.convention.viewDirection,
+            measurementDirection: clocking.convention.measurementDirection,
+            zeroReference: clocking.convention.zeroReference,
+          }
+        : null,
+      protection: protection
+        ? {
+            code: protection.code,
+            name: protection.publicName,
+            specification: protection.specification,
+          }
+        : null,
+      application: assembly.application,
+    },
+    "Assembly specifications",
+  );
+}
+
 export function proformaInvoicePdfContent(
   snapshot: ProformaInvoiceSnapshot,
 ): readonly TextBlock[] {
@@ -66,19 +141,19 @@ export function proformaInvoicePdfContent(
       text: `${snapshot.documentNumber} | Version ${snapshot.documentVersion}`,
     },
     {
-      text: `Issued: ${formatPiDate(snapshot.issuedAt, "customer")} | UTC ${snapshot.issuedAt}`,
+      text: `Issued: ${formatPiDate(snapshot.issuedAt, "customer")}`,
     },
     {
-      text: `Valid until: ${formatPiDate(snapshot.validUntil, "customer")} | UTC ${snapshot.validUntil}`,
+      text: `Valid until: ${formatPiDate(snapshot.validUntil, "customer")}`,
     },
+    { text: `Payment due: ${piPaymentTermsText(snapshot)}` },
+    { text: `Payment reference: ${snapshot.documentNumber}` },
     {
-      text:
-        snapshot.paymentTerms?.kind === "fixed_et_date"
-          ? `Payment due: ${snapshot.paymentTerms.dueDateEt} at 23:59 ET`
-          : snapshot.paymentTerms?.kind === "ten_us_business_days"
-            ? "Payment due: within 10 US bank business days after PI acceptance (23:59 ET on the tenth day)."
-            : "Payment terms: consult the separately verified historical agreement.",
+      text: `Payment method: ${piPaymentChannelLabel(snapshot.paymentSelection.channel)}`,
     },
+    ...(snapshot.issuedPaymentInstructions
+      ? [{ text: snapshot.issuedPaymentInstructions.instructions }]
+      : []),
     { text: "Seller", heading: true },
     { text: snapshot.seller.legalName },
     { text: snapshot.seller.registeredAddressEn },
@@ -87,12 +162,15 @@ export function proformaInvoicePdfContent(
     { text: "Delivery destination", heading: true },
     ...fields(snapshot.destination),
   ];
+  blocks.push({ text: "Order specifications and terms", heading: true });
   for (const [index, line] of snapshot.lines.entries()) {
     blocks.push(
       { text: `Line ${index + 1}: ${line.sku}`, heading: true },
       { text: line.displayName },
       {
-        text: `Quantity: ${line.quantity} ${line.salesUnit} | Pricing quantity: ${line.totals.quantity}${line.lineKind === "length_based_hose" ? " ft" : " units"}`,
+        text: line.lengthOrder
+          ? `Quantity: ${line.lengthOrder.pieceCount} pieces x ${line.lengthOrder.originalLengthValue} ${line.lengthOrder.originalLengthUnit} each | Total: ${line.lengthOrder.totalFootage} ft`
+          : `Quantity: ${line.quantity} ${line.salesUnit}`,
       },
       {
         text: `Unit price: ${usd(line.price.unitPriceCents)} | Discount: ${(line.price.discountBasisPoints / 100).toFixed(2)}%`,
@@ -100,25 +178,13 @@ export function proformaInvoicePdfContent(
       {
         text: `Undiscounted: ${usd(line.totals.undiscountedCents)} | Discount: ${usd(line.totals.discountCents)} | Line total: ${usd(line.totals.totalCents)}`,
       },
-      {
-        text: `Original reference (non-binding): ${line.reference.currency} ${line.reference.unitPrice ?? "Not recorded"}`,
-      },
       ...line.product.specifications.map((spec) => ({
         text: `${spec.label}: ${spec.value}`,
       })),
       ...line.quotedSpecificationOverrides.map((spec) => ({
         text: `Approved amendment - ${spec.label}: ${spec.value}`,
       })),
-      ...fields(line.lengthOrder, "Length order"),
-      ...fields(line.assembly, "Assembly"),
-      ...fields(
-        {
-          lineId: line.id,
-          catalogReleaseId: line.catalogReleaseId,
-          product: { ...line.product, specifications: undefined },
-        },
-        "Captured product basis",
-      ),
+      ...assemblyFields(line.assembly),
     );
   }
   blocks.push(
@@ -156,39 +222,21 @@ export function proformaInvoicePdfContent(
     ]),
     { text: `Lead time: ${snapshot.terms.leadTime}` },
     { text: `Sales tax treatment: ${snapshot.terms.taxTreatment}` },
-    ...Object.entries(snapshot.terms.charges).map(([key, value]) => ({
-      text: `${label(key)}: ${usd(value)}`,
-    })),
-    {
-      text: `Merchandise after discount: ${usd(snapshot.totals.merchandiseCents)}`,
-    },
-    { text: `Total discount: ${usd(snapshot.totals.discountCents)}` },
-    { text: `TOTAL: ${usd(snapshot.totals.totalCents)}`, heading: true },
     { text: "Cancellation and refund conditions", heading: true },
-    { text: `Cancellation (${snapshot.conditions.cancellation.version})` },
+    { text: "Cancellation", subheading: true },
     { text: snapshot.conditions.cancellation.text },
-    { text: `Refund (${snapshot.conditions.refund.version})` },
+    { text: "Refund", subheading: true },
     { text: snapshot.conditions.refund.text },
     { text: "Acknowledgements", heading: true },
-    { text: `General (${snapshot.conditions.generalAcknowledgement.version})` },
+    { text: "General", subheading: true },
     { text: snapshot.conditions.generalAcknowledgement.text },
     ...snapshot.conditions.madeToOrderAcknowledgements.flatMap((value) => [
-      { text: `Line ${value.lineId} (${value.version})` },
+      {
+        text: `Line ${snapshot.lines.findIndex((line) => line.id === value.lineId) + 1} - Made-to-order acknowledgement`,
+        subheading: true,
+      },
       { text: value.text },
     ]),
-    { text: "Payment", heading: true },
-    {
-      text: `Selected channel: ${snapshot.paymentSelection.channel === "bank_transfer" ? "Bank Transfer" : "PayPal"}`,
-    },
-    {
-      text: "Current selected Payment Instructions are supplied separately with this PI.",
-    },
-    { text: "Source versions", heading: true },
-    ...fields(snapshot.quoteRevision),
-    {
-      text: `Seller identity: ${snapshot.seller.id} / version ${snapshot.seller.version}`,
-    },
-    ...fields(snapshot.paymentSelection),
   );
   return blocks.filter((block) => block.text !== "");
 }
@@ -369,13 +417,87 @@ export async function renderProformaInvoicePdf(
     printable,
   );
   y -= 14;
+  band("PAYMENT SUMMARY");
+  page!.drawRectangle({
+    x: margin,
+    y: y - 14,
+    width: printable,
+    height: 40,
+    color: ink,
+  });
+  page!.drawText(`PI TOTAL: ${usd(snapshot.totals.totalCents)}`, {
+    x: margin + 12,
+    y: y - 2,
+    font: face.bold,
+    size: 20,
+    color: rgb(1, 1, 1),
+  });
+  y -= 34;
+  function paymentText(
+    text: string,
+    size = 10,
+    strong = false,
+    highlight = false,
+  ) {
+    const font = strong ? face.bold : face.regular;
+    for (const value of wrap(
+      text,
+      (value) => measure(value, font, size),
+      printable - 20,
+    )) {
+      if (y < 70) {
+        nextPage();
+        band("PAYMENT INSTRUCTIONS - CONTINUED");
+      }
+      if (highlight)
+        page!.drawRectangle({
+          x: margin,
+          y: y - 5,
+          width: printable,
+          height: size + 6,
+          color: pale,
+        });
+      draw(page!, value, font, size, margin + 10, y);
+      y -= size + 5;
+    }
+    y -= 5;
+  }
+  paymentText(`Payment due: ${piPaymentTermsText(snapshot)}`, 9);
+  paymentText(`Payment reference: ${snapshot.documentNumber}`, 10, true);
+  paymentText(
+    piPaymentChannelLabel(snapshot.paymentSelection.channel),
+    11,
+    true,
+  );
+  if (snapshot.issuedPaymentInstructions) {
+    paymentText(
+      snapshot.issuedPaymentInstructions.instructions,
+      11,
+      false,
+      true,
+    );
+    paymentText(
+      `Account details as issued on ${formatPiDate(snapshot.issuedAt, "customer")}.`,
+      8,
+    );
+  } else {
+    paymentText(
+      "Account details are not recorded in this historical PI. Open My Quotes for current payment instructions.",
+      10,
+    );
+  }
+  paymentText(
+    "1. Review and accept this PI in My Quotes before payment.\n2. Confirm the current account details and remaining balance in My Quotes, then pay in USD using the PI number as your reference.\n3. Send your payment reference or remittance advice through the quote conversation. Your order is confirmed after PI acceptance and full cleared payment.",
+    9,
+  );
+  y -= 12;
   band("PARTIES & DELIVERY");
   const col = (printable - 24) / 2;
   const buyer = snapshot.buyer;
   const destination = snapshot.destination;
   const partyColumns = [
     `SELLER\n${snapshot.seller.legalName}\n${snapshot.seller.registeredAddressEn}`,
-    `BUYER / SHIP TO\n${buyer.legalName || buyer.contactName}\n${destination.recipientName}\n${destination.addressLine1}\n${destination.addressLine2 || ""}\n${destination.city}, ${destination.stateProvince} ${destination.postalCode}\n${destination.countryCode}\n${destination.recipientEmail}`,
+    `BUYER / SHIP TO\n${buyer.legalName || buyer.contactName}${buyer.legalName && buyer.contactName !== buyer.legalName ? `\n${buyer.contactName}` : ""}${buyer.tradeName ? `\n${buyer.tradeName}` : ""}\n${buyer.contactEmail}${buyer.registrationOrTaxId ? `\nTax ID: ${buyer.registrationOrTaxId}` : ""}\nSHIP TO: ${destination.recipientName}\n${destination.addressLine1}\n${destination.addressLine2 || ""}\n${destination.city}, ${destination.stateProvince} ${destination.postalCode}\n${destination.countryCode}\n${destination.recipientEmail}\n${destination.recipientPhone}`,
   ].map((text) => wrap(text, (value) => measure(value, face.regular, 9), col));
   for (
     let row = 0;
@@ -408,7 +530,7 @@ export async function renderProformaInvoicePdf(
   tableHeader();
   for (const [index, line] of snapshot.lines.entries()) {
     const cells = [
-      `${index + 1}. ${line.displayName}\n${line.sku}`,
+      `${index + 1}. ${line.displayName}\n${line.sku}${line.lengthOrder ? `\n${line.lengthOrder.pieceCount} pieces x ${line.lengthOrder.originalLengthValue} ${line.lengthOrder.originalLengthUnit} each` : ""}`,
       `${line.totals.quantity}\n${line.lineKind === "length_based_hose" ? "ft" : line.salesUnit}`,
       line.price.unitPriceCents === null
         ? "Pending"
@@ -451,15 +573,17 @@ export async function renderProformaInvoicePdf(
     });
     y -= 8;
   }
-  if (y < 250) nextPage();
-  y -= 10;
-  band("AMOUNT DUE / USD");
+
   const amounts: Array<[string, number]> = [
     ["Merchandise after discount", snapshot.totals.merchandiseCents],
     ...Object.entries(snapshot.terms.charges)
       .filter(([, amount]) => amount !== 0)
       .map(([key, amount]) => [label(key), amount] as [string, number]),
   ];
+  // Keep the breakdown and total together when they fit on one page.
+  if (y < 180 + amounts.length * 18) nextPage();
+  y -= 10;
+  band("PRICE BREAKDOWN / USD");
   for (const [name, amount] of amounts) {
     if (y < 85) nextPage();
     draw(page!, name, face.regular, 9, margin + 8, y);
@@ -482,7 +606,7 @@ export async function renderProformaInvoicePdf(
     height: 40,
     color: ink,
   });
-  page!.drawText("TOTAL DUE", {
+  page!.drawText("PI TOTAL", {
     x: margin + 12,
     y: y - 11,
     font: face.bold,
@@ -507,8 +631,12 @@ export async function renderProformaInvoicePdf(
     draw(page!, text, face.regular, 9, margin, y);
     y -= 13;
   }
-  nextPage();
-  for (const block of content) {
+  y -= 20;
+  for (const block of content.slice(
+    content.findIndex(
+      (block) => block.text === "Order specifications and terms",
+    ),
+  )) {
     const font = block.heading || block.subheading ? face.bold : face.regular;
     const size = block.heading ? 11 : 8.5;
     let lines: string[];
@@ -523,6 +651,10 @@ export async function renderProformaInvoicePdf(
         "PI text cannot be rendered with the selected font; supply an embedded font covering all document characters",
       );
     }
+    const needed = lines.length * (block.heading ? 18 : 11.5) + 16;
+    if (!block.heading && needed < 630 && y - needed < 58) nextPage();
+    if (block.text === "Cancellation and refund conditions" && y < 400)
+      nextPage();
     if ((block.heading || block.subheading) && y < 105) nextPage();
     if (block.heading) {
       y -= 9;
@@ -544,7 +676,7 @@ export async function renderProformaInvoicePdf(
   for (const [index, page] of pages.entries()) {
     draw(
       page,
-      `Page ${index + 1} of ${pages.length} | ${PI_PDF_RENDERER_VERSION}`,
+      `Page ${index + 1} of ${pages.length}`,
       face.regular,
       8,
       margin,

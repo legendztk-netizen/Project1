@@ -16,7 +16,7 @@ function bindingsFor(environment: "local" | "preview" | "production") {
 
   return {
     ...resources,
-    ADMIN_AUTH_MODE: deployed ? "cloudflare-access" : "local-stub",
+    ADMIN_AUTH_MODE: deployed ? "cloudflare-access" : "password",
     ADMIN_ORIGIN: deployed
       ? `https://admin.${hostname}`
       : "http://admin.localhost:5173",
@@ -99,7 +99,9 @@ describe("runtime environment validation", () => {
         ...bindingsFor("preview"),
         ADMIN_AUTH_MODE: "local-stub",
       }),
-    ).toThrow("ADMIN_AUTH_MODE must be cloudflare-access for preview");
+    ).toThrow(
+      "ADMIN_AUTH_MODE must be cloudflare-access or password for preview",
+    );
   });
 
   it("requires the local Admin identity mode in local development", () => {
@@ -108,6 +110,6 @@ describe("runtime environment validation", () => {
         ...bindingsFor("local"),
         ADMIN_AUTH_MODE: "cloudflare-access",
       }),
-    ).toThrow("ADMIN_AUTH_MODE must be local-stub in local development");
+    ).toThrow("ADMIN_AUTH_MODE must be password in local development");
   });
 });

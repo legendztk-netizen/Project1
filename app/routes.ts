@@ -86,6 +86,8 @@ export default [
     "assembly-measurement-guide",
     "modules/storefront/routes/assembly-measurement-guide.tsx",
   ),
+  route("admin/login", "modules/admin/routes/admin-login.tsx"),
+  route("admin/logout", "modules/admin/routes/admin-logout.ts"),
   route("admin", "modules/admin/routes/admin-home.tsx"),
   route("admin/notifications", "modules/admin/routes/notifications.tsx"),
   route(

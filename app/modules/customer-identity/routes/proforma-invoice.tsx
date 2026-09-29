@@ -1,4 +1,5 @@
 import { Link, data, type LoaderFunctionArgs } from "react-router";
+import { useState } from "react";
 import { ArrowLeft, Download, Eye, Package } from "lucide-react";
 import { cloudflareContext } from "#workers/context";
 import { piAcceptance, type PiAcceptanceStatus } from "#workers/pi-acceptance";
@@ -12,6 +13,10 @@ import {
   piPayments,
 } from "#workers/proforma-invoice";
 import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
+import {
+  piPaymentChannelLabel,
+  piPaymentTermsText,
+} from "../../proforma-invoice/domain/pi-payment-presentation";
 import { AccountWorkspace } from "../ui/account-workspace";
 import { CustomerQuoteNavigation } from "../ui/customer-quote-navigation";
 import { hoseMediaPath } from "../../storefront/ui/catalog-media";
@@ -78,7 +83,7 @@ function lineImage(line: Snapshot["lines"][number]) {
   return line.product?.mainImageUrl ?? null;
 }
 
-function paymentDueText(payment: Payment) {
+function paymentDueText(payment: Payment | null, snapshot?: Snapshot) {
   if (!payment) return null;
   return payment.dueAt
     ? formatPiDate(payment.dueAt, "customer")
@@ -86,10 +91,18 @@ function paymentDueText(payment: Payment) {
       ? "Not specified in the accepted PI"
       : payment.termKind === "legacy_review"
         ? "Contact Support to confirm historical payment terms"
-        : "10 US bank business days after acceptance";
+        : snapshot
+          ? piPaymentTermsText(snapshot)
+          : "10 US bank business days after acceptance";
 }
 
-function PaymentProgress({ payment }: { payment: NonNullable<Payment> }) {
+function PaymentProgress({
+  payment,
+  snapshot,
+}: {
+  payment: NonNullable<Payment>;
+  snapshot: Snapshot;
+}) {
   const paid = payment.receiptHistoryKnown
     ? Math.min(payment.amountReceivedCents, payment.totalDueCents)
     : null;
@@ -142,7 +155,7 @@ function PaymentProgress({ payment }: { payment: NonNullable<Payment> }) {
         </div>
         <div>
           <dt>Payment due (ET)</dt>
-          <dd>{paymentDueText(payment)}</dd>
+          <dd>{paymentDueText(payment, snapshot)}</dd>
         </div>
         {payment.excessCents > 0 && (
           <div>
@@ -151,6 +164,171 @@ function PaymentProgress({ payment }: { payment: NonNullable<Payment> }) {
           </div>
         )}
       </dl>
+    </section>
+  );
+}
+
+function CopyPaymentText({ text, label }: { text: string; label: string }) {
+  const [feedback, setFeedback] = useState("");
+  return (
+    <span className="customer-pi-copy">
+      <button
+        type="button"
+        className="button button-secondary"
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(text);
+            setFeedback("Copied");
+          } catch {
+            setFeedback("Copy unavailable. Select and copy the text below.");
+          }
+        }}
+      >
+        {label}
+      </button>
+      <span role="status">{feedback}</span>
+    </span>
+  );
+}
+
+function PaymentInstructions({
+  invoice,
+  payment,
+  accepted,
+  base,
+}: {
+  invoice: PiRecord;
+  payment?: Payment | null;
+  accepted: boolean;
+  base: string;
+}) {
+  const instructions = invoice.paymentInstructions;
+  const settled = !!payment?.paymentConfirmed || !!payment?.orderId;
+  const received = !!payment?.receiptHistoryKnown && payment.balanceCents === 0;
+  const uncertain = !settled && !!payment && !payment.receiptHistoryKnown;
+  return (
+    <section
+      className="customer-quote-section customer-pi-card customer-pi-pay"
+      aria-labelledby="payment-instructions-heading"
+    >
+      <div className="customer-pi-card-heading">
+        <h2 id="payment-instructions-heading">Payment instructions</h2>
+        {instructions && (
+          <span className="customer-order-badge ready">
+            {piPaymentChannelLabel(instructions.channel)}
+          </span>
+        )}
+      </div>
+      <div className="customer-pi-pay-summary">
+        <div>
+          <span>
+            {settled
+              ? "Payment confirmed"
+              : received
+                ? "Received, pending confirmation"
+                : uncertain
+                  ? "Balance under review"
+                  : payment
+                    ? "Remaining to pay"
+                    : "PI total"}
+          </span>
+          <strong>
+            {uncertain
+              ? "Contact Support"
+              : usd(
+                  settled || received
+                    ? 0
+                    : payment
+                      ? payment.balanceCents
+                      : invoice.snapshot.totals.totalCents,
+                )}
+          </strong>
+        </div>
+        <div>
+          <span>Payment due (ET)</span>
+          <p>
+            {paymentDueText(payment ?? null, invoice.snapshot) ??
+              piPaymentTermsText(invoice.snapshot)}
+          </p>
+        </div>
+      </div>
+      {!instructions ? (
+        <p role="alert">
+          Current payment instructions are unavailable. Contact Support before
+          sending payment.
+        </p>
+      ) : (
+        <>
+          {settled || received ? (
+            <p>
+              No additional payment is needed.{" "}
+              {received && !settled && "We are verifying your payment."}
+            </p>
+          ) : uncertain ? (
+            <p>
+              Contact Support to confirm your remaining balance before sending
+              payment.
+            </p>
+          ) : (
+            <p>
+              {accepted
+                ? "Your PI is accepted. Use the current details below to arrange payment in USD."
+                : "Review and accept your PI before arranging payment in USD."}
+            </p>
+          )}
+          <div className="customer-pi-bank-heading">
+            <h3>
+              Current{" "}
+              {instructions.channel === "paypal"
+                ? "PayPal instructions"
+                : "bank details"}
+            </h3>
+            <CopyPaymentText
+              key={instructions.instructions}
+              text={instructions.instructions}
+              label="Copy payment details"
+            />
+          </div>
+          <p className="customer-pi-instructions">
+            {instructions.instructions}
+          </p>
+          <div className="customer-pi-reference">
+            <div>
+              <span>Payment reference</span>
+              <strong>{invoice.snapshot.documentNumber}</strong>
+            </div>
+            <CopyPaymentText
+              text={invoice.snapshot.documentNumber}
+              label="Copy reference"
+            />
+          </div>
+          {!settled && !received && !uncertain && (
+            <ol className="customer-pi-payment-steps">
+              <li>
+                {accepted
+                  ? "PI accepted."
+                  : "Review and accept the PI, including specifications and delivery terms."}
+              </li>
+              <li>
+                Use these current payment details and include the PI number as
+                your payment reference. If you have already sent payment, send
+                us the reference before paying again.
+              </li>
+              <li>
+                <Link to={`${base}/conversation`}>
+                  Send payment reference or remittance advice
+                </Link>{" "}
+                through your quote conversation. We confirm your order after
+                acceptance and full cleared payment.
+              </li>
+            </ol>
+          )}
+          <p className="customer-pi-muted">
+            Use the current instructions on this page if they differ from an
+            earlier PDF or email.
+          </p>
+        </>
+      )}
     </section>
   );
 }
@@ -232,7 +410,10 @@ function Items({ snapshot }: { snapshot: Snapshot }) {
                 </span>
               </span>
               <span className="customer-pi-item-qty">
-                {line.quantity} {line.salesUnit} ×{" "}
+                {line.lengthOrder
+                  ? line.lengthOrder.totalFootage
+                  : line.quantity}{" "}
+                {line.lengthOrder ? "ft" : line.salesUnit} ×{" "}
                 {line.price?.unitPriceCents == null
                   ? "Pending"
                   : usd(line.price.unitPriceCents)}
@@ -393,8 +574,7 @@ export default function ProformaInvoice({
                   </span>
                 </div>
                 <p>
-                  Version {snapshot.documentVersion} · Quote revision{" "}
-                  {snapshot.quoteRevision.number}
+                  Version {snapshot.documentVersion}
                   {lifecycle?.awaitingReplacement && " · Updated PI pending"}
                 </p>
               </div>
@@ -445,6 +625,14 @@ export default function ProformaInvoice({
                 </Link>
               )}
             </div>
+            {showPaymentInstructions && (
+              <PaymentInstructions
+                invoice={invoice}
+                payment={payment}
+                accepted={!!status?.acceptance}
+                base={base}
+              />
+            )}
             <dl className="customer-pi-facts customer-pi-key-facts">
               <div>
                 <dt>Issued (ET)</dt>
@@ -469,29 +657,8 @@ export default function ProformaInvoice({
                 </>
               )}
             </dl>
-            {payment && <PaymentProgress payment={payment} />}
-            {showPaymentInstructions && (
-              <section className="customer-quote-section customer-pi-card">
-                <h2>Payment instructions</h2>
-                {invoice.paymentInstructions ? (
-                  <>
-                    <p className="customer-pi-muted">
-                      {invoice.paymentInstructions.channel === "paypal"
-                        ? "PayPal"
-                        : "Bank transfer"}{" "}
-                      · Version {invoice.paymentInstructions.version}
-                    </p>
-                    <p className="customer-pi-instructions">
-                      {invoice.paymentInstructions.instructions}
-                    </p>
-                  </>
-                ) : (
-                  <p role="alert">
-                    Current payment instructions are unavailable. Contact
-                    Support before sending payment.
-                  </p>
-                )}
-              </section>
+            {payment && (
+              <PaymentProgress payment={payment} snapshot={snapshot} />
             )}
             <Parties snapshot={snapshot} />
             <Items snapshot={snapshot} />

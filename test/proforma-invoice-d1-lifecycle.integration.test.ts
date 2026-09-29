@@ -1273,6 +1273,8 @@ it("never exposes historical or unused-channel instructions in history, customer
     f.first.requestId,
   );
   expect(historical.paymentInstructions).toBeNull();
+  expect(historical.snapshot.issuedPaymentInstructions).toBeUndefined();
+  expect(current!.snapshot.issuedPaymentInstructions).toBeUndefined();
   expect(current!.paymentInstructions!.instructions).toBe(
     "PAYPAL-CURRENT-SENTINEL",
   );

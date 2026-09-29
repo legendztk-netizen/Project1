@@ -67,8 +67,13 @@ Order creation.
   the seller's legal address.
 - Every issued PI has one selected Payment Channel, `Bank Transfer` or `PayPal`,
   and one required multiline Payment Instructions version. The fixed PI PDF and
-  current instructions are provided together, while instructions remain a
-  separately versioned panel rather than part of the immutable PDF hash.
+  current instructions are provided together. Newly issued PDFs include a frozen
+  issuance copy in the payment summary; the current instructions remain separately
+  versioned in My Quotes. Updating them never rewrites an issued PDF or its hash.
+  Historical PDFs without an issuance copy direct customers to My Quotes and
+  never substitute a later account into the original document. Customer PDFs
+  retain commercial specifications and terms but omit internal IDs, source
+  hashes, catalog snapshots, reference prices, and renderer versions.
 - An issued PI is valid for 14 calendar days by default. An authorized Admin may
   set a different explicit validity deadline before issuance. Customer display
   uses ET and Admin display uses the equivalent Beijing Time.

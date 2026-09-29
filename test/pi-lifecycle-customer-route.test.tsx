@@ -1,6 +1,13 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import {
   MemoryRouter,
   RouterContextProvider,
@@ -276,4 +283,33 @@ it("hides payment and acceptance while an unaccepted current PI awaits replaceme
   expect(screen.queryByText("CURRENT BANK DETAILS")).toBeNull();
   expect(screen.queryByRole("link", { name: /Review and accept/ })).toBeNull();
   expect(screen.getAllByText("Updated PI pending").length).toBeGreaterThan(0);
+});
+
+it("copies the current payment details and exact PI reference, with a manual-copy fallback", async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    value: { writeText },
+    configurable: true,
+  });
+  render(
+    <MemoryRouter>
+      <Page
+        loaderData={{
+          requestId: "request",
+          invoice,
+          status,
+          history: history("current"),
+        }}
+      />
+    </MemoryRouter>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Copy payment details" }));
+  await waitFor(() =>
+    expect(writeText).toHaveBeenCalledWith("CURRENT BANK DETAILS"),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Copy reference" }));
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith("PI-EXACT"));
+  writeText.mockRejectedValueOnce(new Error("clipboard denied"));
+  fireEvent.click(screen.getByRole("button", { name: "Copy payment details" }));
+  await screen.findByText("Copy unavailable. Select and copy the text below.");
 });

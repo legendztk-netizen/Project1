@@ -1,0 +1,279 @@
+.admin-login {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: #edf2f6;
+  padding: 24px;
+  color: #243548;
+}
+.admin-login > section {
+  width: min(430px, 100%);
+  background: white;
+  border: 1px solid #dce4ec;
+  border-radius: 16px;
+  padding: 36px;
+  box-shadow: 0 20px 60px #22354810;
+}
+.admin-login h1 {
+  margin: 16px 0;
+  font-size: 28px;
+}
+.admin-login p,
+.admin-login > section > small {
+  color: #738497;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.admin-login form {
+  display: grid;
+  gap: 20px;
+  margin: 26px 0;
+}
+.admin-login label,
+.admin-account-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+.admin-login input,
+.admin-account-dialog input,
+.admin-account-dialog select {
+  border: 1px solid #ccd8e3;
+  border-radius: 6px;
+  padding: 11px;
+  font: inherit;
+  color: #243548;
+  background: white;
+  min-width: 0;
+}
+.admin-login input:focus-visible,
+.admin-account-dialog :is(input, select, button):focus-visible {
+  outline: 3px solid #95b9d3;
+  outline-offset: 2px;
+}
+.admin-accounts .admin-topbar {
+  align-items: center;
+  gap: 20px;
+}
+.admin-accounts .admin-topbar p {
+  color: #738497;
+  font-size: 14px;
+}
+.admin-account-table {
+  overflow: auto;
+  background: white;
+  border: 1px solid #e0e6ed;
+  border-radius: 12px;
+}
+.admin-account-table table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 760px;
+  font-size: 13px;
+}
+.admin-account-table th,
+.admin-account-table td {
+  padding: 20px;
+  text-align: left;
+  border-bottom: 1px solid #edf0f4;
+}
+.admin-account-table th {
+  background: #f7f9fb;
+  color: #748497;
+  font-weight: 500;
+}
+.admin-account-table td small {
+  display: block;
+  color: #8593a3;
+  margin-top: 6px;
+  font-size: 11px;
+}
+.account-active,
+.account-disabled {
+  display: inline-block;
+  white-space: nowrap;
+  padding: 5px 8px;
+  border-radius: 5px;
+  background: #eaf5ef;
+  color: #347657;
+  font-size: 12px;
+}
+.account-disabled {
+  background: #f0f1f4;
+  color: #83909e;
+}
+.admin-account-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.admin-account-actions button,
+.admin-account-dialog button:not(.button) {
+  border: 1px solid #d9e2eb;
+  background: white;
+  border-radius: 6px;
+  padding: 7px 10px;
+  color: #315674;
+  cursor: pointer;
+  white-space: nowrap;
+  font: inherit;
+  font-size: 12px;
+}
+.admin-account-actions .account-delete {
+  color: #ae4545;
+}
+.admin-permission-chip {
+  display: inline-block;
+  font-size: 11px;
+  background: #eef3f7;
+  padding: 5px 8px;
+  border-radius: 5px;
+  margin: 3px;
+}
+.admin-account-empty {
+  padding: 40px;
+  text-align: center;
+  color: #728597;
+}
+.admin-account-empty h2 {
+  font-size: 18px;
+  color: #344f68;
+}
+.admin-account-empty p {
+  font-size: 13px;
+  margin-bottom: 22px;
+}
+.admin-account-dialog {
+  width: min(680px, 94vw);
+  max-height: 90vh;
+  border: 1px solid #ccd5df;
+  border-radius: 14px;
+  padding: 24px;
+  box-shadow: 0 24px 70px #16263a45;
+  color: #243548;
+}
+.admin-account-dialog::backdrop {
+  background: #13233870;
+  backdrop-filter: blur(2px);
+}
+.admin-account-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #e5ebf0;
+  padding-bottom: 16px;
+}
+.admin-account-dialog h2 {
+  font-size: 20px;
+  margin: 0;
+}
+.admin-account-dialog fieldset {
+  border: 0;
+  padding: 0;
+  display: grid;
+  gap: 20px;
+  margin: 22px 0;
+}
+.admin-account-dialog small {
+  font-size: 11px;
+  color: #7c8fa2;
+  display: block;
+  line-height: 1.6;
+}
+.admin-account-dialog p {
+  font-size: 13px;
+  line-height: 1.8;
+}
+.admin-account-dialog .admin-module-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid #edf0f4;
+  gap: 16px;
+}
+.admin-module-row select {
+  flex-shrink: 0;
+}
+.admin-account-dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 20px;
+  border-top: 1px solid #e5ebf0;
+}
+.admin-account-hint {
+  color: #7b8fa1;
+  font-size: 12px;
+}
+.admin-login [role="alert"],
+.admin-account-dialog [role="alert"] {
+  color: #a02727;
+}
+.admin-account-dialog button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.admin-sidebar .admin-session-info {
+  border-top: 1px solid #ffffff20;
+  margin: 12px 16px;
+  padding-top: 14px;
+  font-size: 12px;
+  color: #b7c2ca;
+}
+.admin-session-info form {
+  margin-top: 10px;
+}
+.admin-session-info button {
+  border: 1px solid #ffffff30;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.admin-readonly-notice {
+  position: fixed;
+  bottom: 12px;
+  right: 16px;
+  z-index: 5;
+  max-width: 320px;
+  padding: 10px 16px;
+  background: #eaf2f8;
+  border: 1px solid #cbddeb;
+  border-radius: 8px;
+  color: #45647c;
+  font-size: 12px;
+  box-shadow: 0 4px 16px #22354810;
+}
+@media (max-width: 700px) {
+  .admin-login > section {
+    padding: 24px;
+  }
+  .admin-accounts .admin-topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .admin-account-dialog .admin-module-row {
+    align-items: flex-start;
+  }
+  .admin-sidebar .admin-session-info {
+    margin: 10px 5px;
+    font-size: 10px;
+  }
+  .admin-session-info button {
+    padding: 6px 4px;
+  }
+  .admin-session-info strong {
+    display: none;
+  }
+}
+
+.admin-permission-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}

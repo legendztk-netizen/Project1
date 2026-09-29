@@ -33,7 +33,7 @@
         "PUBLIC_APP_NAME": "Hydraulic Supply",
         "PUBLIC_STOREFRONT_ORIGIN": "http://storefront.localhost:5173",
         "ADMIN_ORIGIN": "http://admin.localhost:5173",
-        "ADMIN_AUTH_MODE": "local-stub",
+        "ADMIN_AUTH_MODE": "password",
         "CLOUDFLARE_ACCESS_TEAM_DOMAIN": "https://local.invalid",
         "CLOUDFLARE_ACCESS_AUD": "local-stub",
         "EMAIL_DELIVERY_MODE": "stub",

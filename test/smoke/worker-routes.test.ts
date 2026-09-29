@@ -1,3 +1,4 @@
+import { adminSmokeSession } from "../fixtures/admin-smoke-session";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -14,13 +15,8 @@ let persistenceDirectory: string;
 let preview: ChildProcess;
 let previewExit: Promise<number | null>;
 
-// Synchronous Wrangler calls can delay processing idle-socket close events.
-// Keep each smoke request independent; never retry failed mutations.
-function fetch(input: string | URL, init?: RequestInit) {
-  const headers = new Headers(init?.headers);
-  headers.set("Connection", "close");
-  return globalThis.fetch(input, { ...init, headers });
-}
+const adminSession = adminSmokeSession();
+const fetch = adminSession.fetch;
 
 interface D1QueryResult<T> {
   results: T[];
@@ -394,6 +390,7 @@ beforeAll(async () => {
     },
   );
   expect(migration.status, `${migration.stdout}\n${migration.stderr}`).toBe(0);
+  runLocalD1(adminSession.sql);
 
   port = await findAvailablePort();
   origin = `http://${host}:${port}`;
@@ -442,6 +439,25 @@ afterAll(async () => {
 });
 
 describe("Cloudflare Worker route surfaces", () => {
+  it("requires an admin session and rejects cross-origin admin mutations", async () => {
+    const signedOut = await globalThis.fetch(`${origin}/admin`, {
+      headers: { Accept: "text/html", Connection: "close" },
+      redirect: "manual",
+    });
+    expect(signedOut.status).toBe(302);
+    expect(signedOut.headers.get("location")).toBe("/admin/login");
+    const data = await globalThis.fetch(`${origin}/admin.data`, {
+      headers: { Connection: "close" },
+    });
+    expect(data.status).toBe(401);
+    const crossOrigin = await fetch(`${origin}/admin/catalog/import`, {
+      method: "POST",
+      headers: { Origin: "https://untrusted.example.test" },
+    });
+    expect(crossOrigin.status).toBe(403);
+    expect(await crossOrigin.text()).toBe("Invalid origin");
+  });
+
   it("serves machine-readable health from the Worker", async () => {
     const response = await fetch(`${origin}/health`);
 
@@ -472,8 +488,8 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(admin).toContain('data-surface="admin"');
     expect(admin).not.toContain('data-surface="storefront"');
     expect(admin).not.toContain('href="#"');
-    expect(admin).toContain("owner@local.invalid");
-    expect(admin).toContain("local-development");
+    expect(admin).toContain("Smoke Owner");
+    expect(admin).toContain("后台总览");
     expect(admin).toContain('href="/admin/after-sales"');
     const afterSalesResponse = await fetch(`${origin}/admin/after-sales`);
     const afterSales = await afterSalesResponse.text();
@@ -7150,9 +7166,13 @@ describe("Cloudflare Worker route surfaces", () => {
       expect(detailText).not.toContain(hiddenLabel);
     }
 
-    const writeAttempt = await fetch(`${origin}/admin/quotes/${requestId}`, {
-      method: "POST",
-    });
+    const writeAttempt = await globalThis.fetch(
+      `${origin}/admin/quotes/${requestId}`,
+      {
+        method: "POST",
+        headers: { Cookie: adminSession.cookie, Connection: "close" },
+      },
+    );
     expect(writeAttempt.status).toBe(403);
     const sameOriginWriteAttempt = await fetch(
       `${origin}/admin/quotes/${requestId}`,

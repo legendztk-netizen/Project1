@@ -1,3 +1,4 @@
+import { adminSmokeSession } from "../fixtures/admin-smoke-session";
 import { catalogWorksheetContracts } from "../../app/modules/catalog/domain/catalog-workbook";
 import { componentImportFixtures } from "../fixtures/component-item-import";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
@@ -11,6 +12,8 @@ import * as XLSX from "@e965/xlsx";
 import { createD1CatalogItemRepository } from "../../app/modules/catalog/infrastructure/d1-catalog-item-repository";
 import { seedCatalogItemBaseline } from "../fixtures/catalog-item-baseline";
 
+const adminSession = adminSmokeSession();
+const fetch = adminSession.fetch;
 const directory = mkdtempSync(join(tmpdir(), "item-worker-"));
 let origin: string;
 let preview: ChildProcess;
@@ -63,6 +66,7 @@ beforeAll(async () => {
     remoteBindings: false,
   });
   try {
+    await platform.env.DB.exec(adminSession.sql);
     await seedCatalogItemBaseline(platform.env.DB);
     const items = createD1CatalogItemRepository(platform.env.DB);
     await items.enable({ environment: "local", actorId: "local-owner" });

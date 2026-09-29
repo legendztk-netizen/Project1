@@ -36,6 +36,7 @@ export async function loader({ context, request }: Route.LoaderArgs) {
       )?.state ??
       "online",
     payload,
+    initialSeries: !code ? (url.searchParams.get("series") ?? "") : "",
     productType: type,
     kind: kind as "series" | "sku",
     commandId: crypto.randomUUID(),

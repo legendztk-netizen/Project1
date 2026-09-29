@@ -5,17 +5,30 @@
 The Worker protects `/admin` and every `/admin/*` path before React Router runs.
 Storefront and `/health` requests do not enter this authentication branch.
 
-Local development uses the explicit `local-stub` mode and maps to the fixed
-development-only `owner@local.invalid` Owner identity. Runtime validation
-rejects `local-stub` in preview and production. Outside local development, the
-Worker first requires the configured Admin origin, then requires
-`Cf-Access-Jwt-Assertion`, validates its signature against the configured
-Cloudflare Access certificates, and verifies issuer, audience, expiration, and
-subject. The normalized email must map to an active D1 Admin Identity. That
-record supplies the stable application ID, Owner/Subaccount type, and
-subaccount-management permission used by application authorization and audit.
-Admin Identity emails are stored lowercase; D1 rejects mixed-case records so
-Access normalization and account uniqueness cannot diverge.
+Local development uses `ADMIN_AUTH_MODE=password`; `/admin/login` is the only
+public entry to the admin application (logout is a same-origin POST). There is
+no automatic Owner identity. The local Owner account is initialized separately
+in D1, with username `admin` and a salted hash; no bootstrap password lives in
+source or migration files. Local credentials do not seed any remote database.
+
+Password mode validates an opaque server-side session on every request. The
+session cookie is HttpOnly, SameSite=Strict, Secure on HTTPS, and scoped to `/`
+so both `/admin` and React Router `/admin.data` requests receive it. Password
+resets, permission changes, disabling and deletion revoke sessions. Owner can
+change their own password after verifying the current password, which revokes
+all their sessions and redirects to login. Subaccount account-management APIs
+are forbidden. Module checks protect both HTML and `.data` resource requests;
+all unsafe admin requests require the same Origin.
+
+Preview and production remain configured with `cloudflare-access` until an
+explicit deployment migration. In that mode the Worker requires the configured
+Admin origin and `Cf-Access-Jwt-Assertion`, validates signature, issuer,
+audience, expiration, and subject, then maps email to an active D1 identity.
+Its module grants remain enforced. Password mode is also supported outside
+local development with HTTPS and the configured Admin origin; switching modes
+requires configuration review and independently provisioning an Owner in the
+target environment. Neither mode accepts `local-stub` as an authentication
+bypass.
 
 Missing assertions return HTTP 401. Invalid assertions, incomplete claims,
 wrong-host requests, and identities absent or disabled in D1 return HTTP 403.

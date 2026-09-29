@@ -379,7 +379,7 @@ describe("PI readiness and fixed public snapshots", () => {
     ).toBe("Batch 17");
   });
 
-  it("strips nested private metadata and keeps payment text out of the immutable snapshot", () => {
+  it("strips nested private metadata and freezes the public issuance payment instructions", () => {
     const input = fixture();
     const revision = input.revision!;
     revision.terms.taxTreatment = "Exempt";
@@ -398,11 +398,17 @@ describe("PI readiness and fixed public snapshots", () => {
     });
     const before = createProformaInvoiceSnapshot(input);
     expect(JSON.stringify(before)).not.toMatch(
-      /PRIVATE|taxEvidenceId|packingEstimate|instructions"/,
+      /PRIVATE|taxEvidenceId|packingEstimate/,
     );
     input.paymentInstructions!.instructions =
       "Updated separately\nDo not put this into the fixed PDF.";
-    expect(createProformaInvoiceSnapshot(input)).toEqual(before);
+    expect(before.issuedPaymentInstructions.instructions).not.toContain(
+      "Updated separately",
+    );
+    expect(
+      createProformaInvoiceSnapshot(input).issuedPaymentInstructions
+        .instructions,
+    ).toContain("Updated separately");
     expect(
       publicPiPaymentInstructions(input.paymentInstructions, "bank_transfer")
         .instructions,

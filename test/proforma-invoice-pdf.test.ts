@@ -175,7 +175,7 @@ function fixture(): CreateProformaInvoiceInput {
       id: "payment-1",
       version: 1,
       channel: "bank_transfer",
-      instructions: "SEPARATE-PAYMENT-TEXT\nNot a real payment account.",
+      instructions: "ISSUED-PAYMENT-TEXT\nNot a real payment account.",
       status: "current",
       createdAt: "2026-09-01T00:00:00.000Z",
       createdBy: "PRIVATE-ACTOR",
@@ -244,7 +244,9 @@ it("paginates multiline content and unbroken long identifiers without dropping t
     .map((block) => block.text)
     .join("\n");
   expect(content).toContain("FINAL-REFUND-CLAUSE");
-  expect(content).not.toMatch(/PRIVATE|SEPARATE-PAYMENT-TEXT/);
+  expect(content).not.toMatch(
+    /PRIVATE|Source versions|Captured product basis|test-source-hash|payment-1/,
+  );
   if (process.env.PI_TEST_PDF_PATH)
     writeFileSync(process.env.PI_TEST_PDF_PATH, rendered.bytes);
 });
@@ -377,9 +379,7 @@ it.skipIf(!canExtract)(
       "\u6771\u4eac\u90fd\u65b0\u5bbf\u533a",
     ])
       expect(extracted.stdout).toContain(text);
-    expect(extracted.stdout).not.toMatch(
-      /PRIVATE|SEPARATE-PAYMENT-TEXT|\uFFFD/,
-    );
+    expect(extracted.stdout).not.toMatch(/PRIVATE|\uFFFD/);
   },
   30000,
 );
@@ -417,9 +417,10 @@ it.skipIf(!canExtract)(
     expect(extracted.status, extracted.stderr).toBe(0);
     for (const text of [
       "PROFORMA INVOICE",
+      "ISSUED-PAYMENT-TEXT",
+      "Payment reference: PI-TEST-0001",
       "Issued: Oct 25, 2026, 00:30:00 ET",
       "Valid until: Nov 8, 2026, 00:30:00 ET",
-      "UTC 2026-11-08T05:30:00.000Z",
       "PI-TEST-0001",
       SELLER_LEGAL_NAME,
       "Hangzhou, Zhejiang, China",
@@ -431,19 +432,109 @@ it.skipIf(!canExtract)(
       "New York, US",
       "Sales tax treatment: Exempt",
       "Freight: USD 20.00",
-      "TOTAL: USD 55.00",
-      "cancel-v1",
-      "general-v1",
+      "PI TOTAL: USD 55.00",
       "FINAL-REFUND-CLAUSE",
-      "test-source-hash",
-      "payment-1",
-      "2026-11-08T05:30:00.000Z",
     ])
       expect(extracted.stdout).toContain(text);
     for (let index = 1; index <= rendered.pageCount; index++)
       expect(extracted.stdout).toContain(
         `Page ${index} of ${rendered.pageCount}`,
       );
-    expect(extracted.stdout).not.toMatch(/PRIVATE|SEPARATE-PAYMENT-TEXT/);
+    expect(extracted.stdout).not.toMatch(
+      /PRIVATE|Source versions|Captured product basis|test-source-hash|payment-1/,
+    );
   },
 );
+
+it("keeps the issuance account immutable and supports historical snapshots without an account", async () => {
+  const input = fixture();
+  const snapshot = createProformaInvoiceSnapshot(input);
+  input.paymentInstructions!.instructions =
+    "NEW ACCOUNT - NOT THE ISSUED ACCOUNT";
+  expect(snapshot.issuedPaymentInstructions.instructions).toContain(
+    "ISSUED-PAYMENT-TEXT",
+  );
+  expect(Object.isFrozen(snapshot.issuedPaymentInstructions)).toBe(true);
+  const { issuedPaymentInstructions: _issued, ...historical } = snapshot;
+  const pdf = await renderProformaInvoicePdf(historical);
+  const path = join(directory, "historical.pdf");
+  writeFileSync(path, pdf.bytes);
+  if (canExtract) {
+    const extracted = spawnSync(
+      python,
+      [
+        "-c",
+        "import sys; from pypdf import PdfReader; print(' '.join(p.extract_text() for p in PdfReader(sys.argv[1]).pages))",
+        path,
+      ],
+      { encoding: "utf8" },
+    );
+    expect(extracted.status).toBe(0);
+    expect(extracted.stdout).toContain(
+      "Account details are not recorded in this historical PI",
+    );
+    expect(extracted.stdout).not.toContain("ISSUED-PAYMENT-TEXT");
+  }
+});
+
+it.skipIf(!canExtract)(
+  "puts the exact issuance account, USD total and payment reference on page one",
+  async () => {
+    const snapshot = createProformaInvoiceSnapshot(fixture());
+    const pdf = await renderProformaInvoicePdf(snapshot);
+    const path = join(directory, "payment-first.pdf");
+    writeFileSync(path, pdf.bytes);
+    const extracted = spawnSync(
+      python,
+      [
+        "-c",
+        "import sys; from pypdf import PdfReader; print(PdfReader(sys.argv[1]).pages[0].extract_text())",
+        path,
+      ],
+      { encoding: "utf8" },
+    );
+    expect(extracted.status).toBe(0);
+    for (const text of [
+      "PI TOTAL: USD 55.00",
+      "ISSUED-PAYMENT-TEXT",
+      "Payment reference: PI-TEST-0001",
+      "10 US bank business days",
+      "current account details",
+    ])
+      expect(extracted.stdout).toContain(text);
+  },
+);
+
+it("renders a fixed payment date in customer format and keeps long payment instructions intact", async () => {
+  const input = fixture();
+  input.fixedPaymentDueDateEt = "2026-10-15";
+  input.paymentInstructions!.instructions =
+    Array.from(
+      { length: 60 },
+      (_, index) => `Bank instruction line ${index + 1}: TEST ONLY`,
+    ).join("\n") + "\nFINAL-PAYMENT-INSTRUCTION";
+  const snapshot = createProformaInvoiceSnapshot(input);
+  expect(
+    proformaInvoicePdfContent(snapshot)
+      .map((block) => block.text)
+      .join("\n"),
+  ).toContain("Oct 15, 2026, 11:59 PM ET");
+  const pdf = await renderProformaInvoicePdf(snapshot);
+  const path = join(directory, "long-payment.pdf");
+  writeFileSync(path, pdf.bytes);
+  assertRenderedPages(path, pdf.pageCount);
+  if (canExtract) {
+    const extracted = spawnSync(
+      python,
+      [
+        "-c",
+        "import sys; from pypdf import PdfReader; print(' '.join(p.extract_text() for p in PdfReader(sys.argv[1]).pages))",
+        path,
+      ],
+      { encoding: "utf8" },
+    );
+    expect(extracted.status).toBe(0);
+    expect(extracted.stdout).toContain("FINAL-PAYMENT-INSTRUCTION");
+    expect(extracted.stdout).toContain("PAYMENT INSTRUCTIONS - CONTINUED");
+  }
+});

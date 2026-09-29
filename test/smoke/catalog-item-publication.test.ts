@@ -1,3 +1,4 @@
+import { adminSmokeSession } from "../fixtures/admin-smoke-session";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,6 +8,8 @@ import { getPlatformProxy } from "wrangler";
 import { beforeAll, afterAll, expect, it } from "vitest";
 import { seedCatalogItemBaseline } from "../fixtures/catalog-item-baseline";
 
+const adminSession = adminSmokeSession();
+const fetch = adminSession.fetch;
 const directory = mkdtempSync(join(tmpdir(), "item-worker-"));
 let origin: string;
 let preview: ChildProcess;
@@ -84,6 +87,7 @@ beforeAll(async () => {
     remoteBindings: false,
   });
   try {
+    await platform.env.DB.exec(adminSession.sql);
     await seedCatalogItemBaseline(platform.env.DB);
   } finally {
     await platform.dispose();

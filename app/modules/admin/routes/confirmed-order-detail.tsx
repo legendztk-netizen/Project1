@@ -1,3 +1,4 @@
+import { canWriteAdminModule } from "../domain/admin-module-access";
 import { refundAccountProtector } from "#workers/refund-accounts";
 import { parseUsdCents } from "../../after-sales/domain/refund-calculation";
 import { useRef } from "react";
@@ -228,6 +229,15 @@ export async function action({ context, params, request }: ActionFunctionArgs) {
   await confirmedOrders(env).adminRead(adminIdentity, orderId);
   const form = await readPrivateReviewForm(request, { maxFiles: 5 });
   const intent = String(form.get("intent") ?? "");
+  if (
+    !canWriteAdminModule(
+      adminIdentity,
+      isAfterSalesAdminIntent(intent) ? "after_sales" : "orders",
+    )
+  )
+    throw new Response("当前模块为只读或未授权，不能提交此操作", {
+      status: 403,
+    });
   if (intent === "follow-on") {
     await followOnQuotes(env).adminCreate(
       adminIdentity,

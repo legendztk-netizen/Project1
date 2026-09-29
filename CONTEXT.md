@@ -133,7 +133,9 @@ _Avoid_: Company administrator role system, shared password, billing contact
 
 **Owner Account**:
 The single primary Admin Backoffice identity with every application permission,
-including creating, disabling, and assigning permissions to Admin Subaccounts.
+including creating, resetting passwords, disabling, deleting, and assigning
+module permissions to Admin Subaccounts. Username `admin` is reserved for the
+primary account. Passwords are stored only as salted hashes.
 _Avoid_: Shared login, job title, customer owner, Factory Batch Access
 
 **Admin Subaccount**:
@@ -151,10 +153,20 @@ Operations, or Catalog role.
 _Avoid_: Job title, Owner identity, Factory Batch Access
 
 **Admin Identity**:
-An authorized Cloudflare account member authenticated with MFA through
-Cloudflare Access and mapped to the active Owner Account or an Admin Subaccount
-and its Admin Permissions in D1. Access authentication does not replace
-application authorization.
+An active Owner Account or Admin Subaccount authenticated with a username and
+password in password-auth environments, using a revocable server-side session.
+Admin Subaccounts have a username, password credential and name; each module
+is denied, read-only, or writable as selected by the Owner.
+Assembly parameter configuration is authorized separately from product management;
+granting product access does not grant configuration access. Notification access
+also requires permission to view the source business module. Read-only notification
+access permits opening authorized notifications and updating personal read state,
+but does not grant business editing permissions. Password resets,
+disabling and deletion invalidate existing sessions. Deletion removes login
+access and credentials while retaining identity references in business audits.
+Existing deployed Cloudflare Access environments retain their configured
+authentication until explicitly migrated; application authorization remains
+required. Local development no longer automatically assumes Owner identity.
 _Avoid_: Customer Profile, shared admin login, unvalidated identity header
 
 **Admin Audit Event**:
@@ -457,15 +469,18 @@ _Avoid_: Forced reading timer, scroll tracking, click-only evidence
 
 **Payment Instructions**:
 The complete plain-text bank-transfer directions or seller-issued PayPal link
-pasted by Owner/Admin for one PI, versioned separately from the fixed PI PDF,
-displayed, and emailed with that PI and its acceptance entry point. It is not
-part of the PI document, PI hash, or PI Acceptance Record, so an authorized
-instruction change does not replace or alter the PI. The application preserves
+pasted by Owner/Admin for one PI, versioned separately, displayed, and emailed
+with that PI and its acceptance entry point. A newly issued PI includes the
+instructions current at issuance as a dated payment reference. Current Payment
+Instructions in My Quotes govern subsequent payment; an authorized instruction
+change does not replace or alter the fixed PI or its Acceptance Record. The
+issuance copy remains historical and must not be treated as a live account or
+remaining balance. The application preserves
 line breaks and safe links but does not parse, infer, or rewrite beneficiary
 fields. Payment Instructions do not collect payment on the website and do not
 establish PI acceptance or Cleared Funds. The Payment Due Date begins only after
 PI acceptance.
-_Avoid_: PI PDF content, checkout, structured beneficiary profile, HTML
+_Avoid_: Live account in a historical PDF, checkout, structured beneficiary profile, HTML
 
 **PI Payment Channel**:
 The single seller-selected payment method attached to one issued PI: bank

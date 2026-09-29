@@ -1,3 +1,7 @@
+import {
+  canAccessAdminPath,
+  adminPathModule,
+} from "../app/modules/admin/domain/admin-module-access";
 import { RouterContextProvider, createRequestHandler } from "react-router";
 
 import { cloudflareContext } from "./context";
@@ -41,27 +45,69 @@ export default {
   async fetch(request, env, ctx) {
     const runtime = validateRuntimeEnvironment(env);
     const url = new URL(request.url);
+    const adminPath = url.pathname.replace(/\.data$/, "");
 
     if (url.pathname === "/health") {
       return createHealthResponse(env);
     }
 
     let adminIdentity;
-    if (isAdminPath(url.pathname)) {
+    const authPath = [
+      "/admin/login",
+      "/admin/login.data",
+      "/admin/logout",
+      "/admin/logout.data",
+    ].includes(url.pathname);
+    if (
+      isAdminPath(url.pathname) &&
+      env.APP_ENV !== "local" &&
+      url.origin !== env.ADMIN_ORIGIN
+    )
+      return new Response("Admin origin required", { status: 403 });
+    if (
+      isAdminPath(url.pathname) &&
+      !["GET", "HEAD", "OPTIONS"].includes(request.method) &&
+      request.headers.get("Origin") !== url.origin
+    )
+      return new Response("Invalid origin", { status: 403 });
+    if (isAdminPath(url.pathname) && !authPath) {
       try {
         adminIdentity = await authorizeAdminRequest(request, env);
       } catch (error) {
-        if (error instanceof AdminAccessDenied)
+        if (error instanceof AdminAccessDenied) {
+          if (
+            error.status === 401 &&
+            env.ADMIN_AUTH_MODE === "password" &&
+            request.method === "GET" &&
+            request.headers.get("Accept")?.includes("text/html")
+          )
+            return new Response(null, {
+              status: 302,
+              headers: {
+                Location: "/admin/login",
+                "Cache-Control": "no-store",
+              },
+            });
           return adminAccessDeniedResponse(error);
+        }
         throw error;
       }
     }
 
     if (
       adminIdentity &&
+      !canAccessAdminPath(adminIdentity, url.pathname, request.method)
+    )
+      return new Response("当前账号没有此模块的访问或操作权限", {
+        status: 403,
+        headers: { "Cache-Control": "no-store" },
+      });
+
+    if (
+      adminIdentity &&
       !["GET", "HEAD", "OPTIONS"].includes(request.method) &&
-      (url.pathname.startsWith("/admin/catalog/") ||
-        url.pathname === "/admin/diagnostics/catalog-release") &&
+      (adminPath.startsWith("/admin/catalog/") ||
+        adminPath === "/admin/diagnostics/catalog-release") &&
       ![
         "/admin/catalog/requests",
         "/admin/catalog/bulk-import",
@@ -70,7 +116,8 @@ export default {
         "/admin/catalog/items",
         "/admin/catalog/products",
         "/admin/catalog/commercial",
-      ].includes(url.pathname)
+        "/admin/catalog/reference-data",
+      ].includes(adminPath)
     ) {
       const state = await env.DB.prepare(
         "SELECT mode FROM catalog_item_publication_state WHERE singleton = 1",
@@ -85,13 +132,16 @@ export default {
       adminIdentity?.catalogPermission === "view" &&
       request.method !== "GET" &&
       request.method !== "HEAD" &&
-      url.pathname.startsWith("/admin/catalog/")
+      adminPathModule(adminPath) === "catalog"
     )
       return new Response("需要产品编辑权限", { status: 403 });
     const routerContext = new RouterContextProvider();
     routerContext.set(cloudflareContext, { adminIdentity, env, runtime, ctx });
 
-    return requestHandler(request, routerContext);
+    const response = await requestHandler(request, routerContext);
+    if (isAdminPath(url.pathname))
+      response.headers.set("Cache-Control", "no-store");
+    return response;
   },
 
   async email(message, env) {

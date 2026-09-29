@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { request as httpsRequest } from "node:https";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -14,6 +14,7 @@ interface D1QueryResult<T> {
 
 let persistenceDirectory: string;
 let port: number;
+let workerConfigPath: string;
 let worker: ChildProcess;
 let workerExit: Promise<number | null>;
 
@@ -61,7 +62,10 @@ function deployedRequest(path: string, body = "") {
   return new Promise<{ body: string; status: number }>((resolve, reject) => {
     const request = httpsRequest(
       {
+        agent: false,
         headers: {
+          connection: "close",
+          origin: `https://127.0.0.1:${port}`,
           "content-length": Buffer.byteLength(body),
           "content-type": "application/x-www-form-urlencoded",
         },
@@ -81,6 +85,9 @@ function deployedRequest(path: string, body = "") {
           }),
         );
       },
+    );
+    request.setTimeout(5000, () =>
+      request.destroy(new Error("Worker request timed out")),
     );
     request.once("error", reject);
     request.end(body);
@@ -115,12 +122,29 @@ beforeAll(async () => {
 
   port = await availablePort();
   const inspectorPort = await availablePort();
+  // Vite emits explicit HTTP dev defaults that override Wrangler CLI defaults.
+  // This fixture must present the same HTTPS origin to the Worker and client.
+  const config = JSON.parse(
+    await readFile(join(process.cwd(), "build/server/wrangler.json"), "utf8"),
+  );
+  config.dev = {
+    ...config.dev,
+    local_protocol: "https",
+    upstream_protocol: "https",
+  };
+  workerConfigPath = join(
+    process.cwd(),
+    "build/server",
+    `smoke-${crypto.randomUUID()}.json`,
+  );
+  await writeFile(workerConfigPath, JSON.stringify(config));
+
   worker = spawn(
     join(process.cwd(), "node_modules", ".bin", "wrangler"),
     [
       "dev",
       "--config",
-      join(process.cwd(), "build/server/wrangler.json"),
+      workerConfigPath,
       "--local",
       "--ip",
       "127.0.0.1",
@@ -129,6 +153,8 @@ beforeAll(async () => {
       "--inspector-port",
       String(inspectorPort),
       "--local-protocol",
+      "https",
+      "--upstream-protocol",
       "https",
       "--persist-to",
       persistenceDirectory,
@@ -177,6 +203,7 @@ afterAll(async () => {
     worker.kill("SIGTERM");
     await workerExit;
   }
+  if (workerConfigPath) await rm(workerConfigPath, { force: true });
   if (persistenceDirectory) {
     await rm(persistenceDirectory, { force: true, recursive: true });
   }

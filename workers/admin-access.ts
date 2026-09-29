@@ -1,3 +1,5 @@
+import { readAdminSession } from "../app/modules/admin/infrastructure/admin-password-auth";
+import type { ModuleAccess } from "../app/modules/admin/domain/admin-module-access";
 import {
   createRemoteJWKSet,
   jwtVerify,
@@ -12,7 +14,7 @@ import {
 } from "../app/modules/admin/infrastructure/d1-admin-identity-repository";
 
 export interface AdminAccessBindings {
-  ADMIN_AUTH_MODE: "cloudflare-access" | "local-stub";
+  ADMIN_AUTH_MODE: "cloudflare-access" | "password" | "local-stub";
   ADMIN_ORIGIN: string;
   APP_ENV: "local" | "preview" | "production";
   CLOUDFLARE_ACCESS_AUD: string;
@@ -21,13 +23,16 @@ export interface AdminAccessBindings {
 }
 
 export interface AdminIdentity {
+  username?: string;
+  displayName?: string;
+  moduleAccess?: ModuleAccess;
   catalogPermission?: "view" | "edit";
   permissions?: readonly AdminPermission[];
   accountType: "owner" | "subaccount";
   canManageSubaccounts: boolean;
   email: string;
   id: string;
-  source: "cloudflare-access" | "local-development";
+  source: "cloudflare-access" | "local-development" | "password";
 }
 
 interface CloudflareAccessClaims extends JWTPayload {
@@ -123,21 +128,18 @@ export async function authorizeAdminRequest(
   bindings: AdminAccessBindings,
   dependencies: AdminAuthorizationDependencies = {},
 ): Promise<AdminIdentity> {
-  if (bindings.APP_ENV === "local") {
-    if (bindings.ADMIN_AUTH_MODE !== "local-stub") {
-      throw new AdminAccessDenied(
-        "Local Admin authentication is misconfigured",
-        403,
-      );
-    }
-    return {
-      accountType: "owner",
-      canManageSubaccounts: true,
-      email: "owner@local.invalid",
-      id: "local-owner",
-      source: "local-development",
-    };
+  if (bindings.ADMIN_AUTH_MODE === "password") {
+    if (
+      bindings.APP_ENV !== "local" &&
+      new URL(request.url).origin !== bindings.ADMIN_ORIGIN
+    )
+      throw new AdminAccessDenied("Admin routes require the Admin origin", 403);
+    const identity = await readAdminSession(bindings.DB, request);
+    if (!identity) throw new AdminAccessDenied("请先登录后台", 401);
+    return identity;
   }
+  if (bindings.APP_ENV === "local")
+    throw new AdminAccessDenied("本地后台必须使用账号密码登录", 403);
 
   if (bindings.ADMIN_AUTH_MODE !== "cloudflare-access") {
     throw new AdminAccessDenied("Cloudflare Access is required", 403);

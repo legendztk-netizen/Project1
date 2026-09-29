@@ -12,6 +12,10 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { Form, Link, redirect, useNavigation } from "react-router";
 
+import {
+  canAccessAdminPath,
+  canWriteAdminModule,
+} from "../domain/admin-module-access";
 import type { Route } from "./+types/catalog-reference-data";
 import {
   isMeasurementMethodCode,
@@ -244,7 +248,11 @@ function mutationFromForm(form: FormData) {
 }
 
 export async function loader({ context, request }: Route.LoaderArgs) {
-  const { env } = requireAdminRequestContext(context);
+  const { env, adminIdentity } = requireAdminRequestContext(context);
+  if (
+    !canAccessAdminPath(adminIdentity, "/admin/catalog/reference-data", "GET")
+  )
+    throw new Response("需要总成参数配置权限", { status: 403 });
   const repository = createD1ConfiguratorReferenceRepository(env.DB);
   const url = new URL(request.url);
   const releaseId = url.searchParams.get("release");
@@ -261,6 +269,7 @@ export async function loader({ context, request }: Route.LoaderArgs) {
     throw redirect("/admin/catalog/reference-data");
   }
   return {
+    canEdit: canWriteAdminModule(adminIdentity, "configurator"),
     activeRelease: activeSnapshot?.release ?? null,
     currentDraftRelease: currentDraftSnapshot?.release ?? null,
     saved: url.searchParams.get("saved"),
@@ -272,6 +281,8 @@ export async function action({ context, request }: Route.ActionArgs) {
   const { adminIdentity, env } = requireAdminRequestContext(context);
   if (request.method !== "POST")
     throw new Response("不允许使用此请求方法", { status: 405 });
+  if (!canWriteAdminModule(adminIdentity, "configurator"))
+    throw new Response("需要总成参数配置编辑权限", { status: 403 });
   const form = await request.formData();
   const auditContext = {
     ipAddress: request.headers.get("cf-connecting-ip") ?? "local",
@@ -854,214 +865,228 @@ export default function CatalogReferenceData({
     <div className="admin-shell" data-surface="admin">
       <AdminNavigation active="configurator" />
       <main className="reference-data-page">
-        <div className="diagnostic-toolbar">
-          <Link className="button button-secondary" to="/admin">
-            <ArrowLeft size={17} /> 返回总览
-          </Link>
-          <Link
-            className="button button-secondary"
-            to="/assembly-measurement-guide"
-          >
-            <Ruler size={17} /> 查看客户测量指南
-          </Link>
-        </div>
-        <header className="catalog-review-header">
-          <div>
-            <span className="eyebrow">全局配置器规则</span>
-            <h1>总成参数配置</h1>
-            <p>这些设置适用于客户配置器及后续所有产品目录版本。</p>
+        <fieldset
+          disabled={loaderData.canEdit === false}
+          className="admin-permission-fieldset"
+        >
+          <div className="diagnostic-toolbar">
+            <Link className="button button-secondary" to="/admin">
+              <ArrowLeft size={17} /> 返回总览
+            </Link>
+            <Link
+              className="button button-secondary"
+              to="/assembly-measurement-guide"
+            >
+              <Ruler size={17} /> 查看客户测量指南
+            </Link>
           </div>
-          <span className="release-status active">全局</span>
-        </header>
+          <header className="catalog-review-header">
+            <div>
+              <span className="eyebrow">全局配置器规则</span>
+              <h1>总成参数配置</h1>
+              <p>这些设置适用于客户配置器及后续所有产品目录版本。</p>
+            </div>
+            <span className="release-status active">全局</span>
+          </header>
 
-        {loaderData.saved ? (
-          <p className="catalog-update-success" role="status">
-            <ShieldCheck size={17} /> 已保存{" "}
-            {loaderData.saved.replaceAll("_", " ")}.
-          </p>
-        ) : null}
-        {actionData?.formError ? (
-          <p className="form-error" role="alert">
-            <CircleAlert size={17} /> {actionData.formError}
-          </p>
-        ) : null}
+          {loaderData.saved ? (
+            <p className="catalog-update-success" role="status">
+              <ShieldCheck size={17} /> 已保存{" "}
+              {loaderData.saved.replaceAll("_", " ")}.
+            </p>
+          ) : null}
+          {actionData?.formError ? (
+            <p className="form-error" role="alert">
+              <CircleAlert size={17} /> {actionData.formError}
+            </p>
+          ) : null}
 
-        <section className="reference-section">
-          <div className="reference-section-heading">
-            <div>
-              <span className="eyebrow">仅管理员可见的定价</span>
-              <h2>总成服务参考价</h2>
-              <p>零部件价格来自销售报价；以下服务金额作为全局参考价输入。</p>
+          <section className="reference-section">
+            <div className="reference-section-heading">
+              <div>
+                <span className="eyebrow">仅管理员可见的定价</span>
+                <h2>总成服务参考价</h2>
+                <p>零部件价格来自销售报价；以下服务金额作为全局参考价输入。</p>
+              </div>
+              <SectionActions onEdit={() => setEditor("schedule")} />
             </div>
-            <SectionActions onEdit={() => setEditor("schedule")} />
-          </div>
-          <dl className="reference-readonly-values">
-            <div>
-              <dt>基础服务价</dt>
-              <dd>
-                {schedule?.assemblyServicePriceUsd === null || !schedule
-                  ? "未提供"
-                  : `$${schedule.assemblyServicePriceUsd.toFixed(2)}`}
-              </dd>
-            </div>
-            <div>
-              <dt>每起算英尺</dt>
-              <dd>
-                {schedule?.assemblyServicePricePerStartedFootUsd === null ||
-                !schedule
-                  ? "未提供"
-                  : `$${schedule.assemblyServicePricePerStartedFootUsd.toFixed(2)}`}
-              </dd>
-            </div>
-            <div>
-              <dt>当前版本</dt>
-              <dd>v{schedule?.recordVersion ?? 0}</dd>
-            </div>
-          </dl>
-        </section>
+            <dl className="reference-readonly-values">
+              <div>
+                <dt>基础服务价</dt>
+                <dd>
+                  {schedule?.assemblyServicePriceUsd === null || !schedule
+                    ? "未提供"
+                    : `$${schedule.assemblyServicePriceUsd.toFixed(2)}`}
+                </dd>
+              </div>
+              <div>
+                <dt>每起算英尺</dt>
+                <dd>
+                  {schedule?.assemblyServicePricePerStartedFootUsd === null ||
+                  !schedule
+                    ? "未提供"
+                    : `$${schedule.assemblyServicePricePerStartedFootUsd.toFixed(2)}`}
+                </dd>
+              </div>
+              <div>
+                <dt>当前版本</dt>
+                <dd>v{schedule?.recordVersion ?? 0}</dd>
+              </div>
+            </dl>
+          </section>
 
-        <section className="reference-section">
-          <div className="reference-section-heading">
-            <div>
-              <span className="eyebrow">M01-M07</span>
-              <h2>测量方法</h2>
-              <p>
-                客户查看全部方法并选择实际使用的方法；选择 Not
-                Sure（不确定）时转人工审核。
-              </p>
+          <section className="reference-section">
+            <div className="reference-section-heading">
+              <div>
+                <span className="eyebrow">M01-M07</span>
+                <h2>测量方法</h2>
+                <p>
+                  客户查看全部方法并选择实际使用的方法；选择 Not
+                  Sure（不确定）时转人工审核。
+                </p>
+              </div>
+              <SectionActions
+                onAdd={() => setEditor("method-add")}
+                onEdit={() => setEditor("method-edit")}
+              />
             </div>
-            <SectionActions
-              onAdd={() => setEditor("method-add")}
-              onEdit={() => setEditor("method-edit")}
-            />
-          </div>
-          <div className="reference-table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>方法</th>
-                  <th>名称</th>
-                  <th>示意图</th>
-                  <th>资源版本</th>
-                  <th>记录版本</th>
-                </tr>
-              </thead>
-              <tbody>
-                {snapshot.measurementMethods.map((method) => (
-                  <tr key={method.code}>
-                    <td>{method.code}</td>
-                    <td>{method.displayName}</td>
-                    <td>{method.diagramAssetKey}</td>
-                    <td>{method.diagramAssetVersion}</td>
-                    <td>v{method.recordVersion}</td>
+            <div className="reference-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>方法</th>
+                    <th>名称</th>
+                    <th>示意图</th>
+                    <th>资源版本</th>
+                    <th>记录版本</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+                </thead>
+                <tbody>
+                  {snapshot.measurementMethods.map((method) => (
+                    <tr key={method.code}>
+                      <td>{method.code}</td>
+                      <td>{method.displayName}</td>
+                      <td>{method.diagramAssetKey}</td>
+                      <td>{method.diagramAssetVersion}</td>
+                      <td>v{method.recordVersion}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
 
-        <section className="reference-section">
-          <div className="reference-section-heading">
-            <div>
-              <span className="eyebrow">M08</span>
-              <h2>时钟角规则</h2>
-              <p>
-                接受 000-359 的任意整数角度；Not
-                Sure（不确定）和更严公差要求转人工审核。
-              </p>
+          <section className="reference-section">
+            <div className="reference-section-heading">
+              <div>
+                <span className="eyebrow">M08</span>
+                <h2>时钟角规则</h2>
+                <p>
+                  接受 000-359 的任意整数角度；Not
+                  Sure（不确定）和更严公差要求转人工审核。
+                </p>
+              </div>
+              <SectionActions onEdit={() => setEditor("clocking")} />
             </div>
-            <SectionActions onEdit={() => setEditor("clocking")} />
-          </div>
-          <dl className="reference-readonly-values">
-            <div>
-              <dt>预设角度</dt>
-              <dd>{clocking?.presets.join(", ") || "未提供"}</dd>
-            </div>
-            <div>
-              <dt>标准公差</dt>
-              <dd>
-                {clocking ? `±${clocking.standardToleranceDegrees}°` : "未提供"}
-              </dd>
-            </div>
-            <div>
-              <dt>渲染器版本</dt>
-              <dd>{clocking?.rendererVersion || "未提供"}</dd>
-            </div>
-          </dl>
-        </section>
+            <dl className="reference-readonly-values">
+              <div>
+                <dt>预设角度</dt>
+                <dd>{clocking?.presets.join(", ") || "未提供"}</dd>
+              </div>
+              <div>
+                <dt>标准公差</dt>
+                <dd>
+                  {clocking
+                    ? `±${clocking.standardToleranceDegrees}°`
+                    : "未提供"}
+                </dd>
+              </div>
+              <div>
+                <dt>渲染器版本</dt>
+                <dd>{clocking?.rendererVersion || "未提供"}</dd>
+              </div>
+            </dl>
+          </section>
 
-        <section className="reference-section">
-          <div className="reference-section-heading">
-            <div>
-              <span className="eyebrow">总成选项</span>
-              <h2>安装防护件</h2>
-              <p>标准出口包装为必选项，并与这些套管和护具选项分别管理。</p>
+          <section className="reference-section">
+            <div className="reference-section-heading">
+              <div>
+                <span className="eyebrow">总成选项</span>
+                <h2>安装防护件</h2>
+                <p>标准出口包装为必选项，并与这些套管和护具选项分别管理。</p>
+              </div>
+              <SectionActions
+                onAdd={() => setEditor("protection-add")}
+                onEdit={() => setEditor("protection-edit")}
+              />
             </div>
-            <SectionActions
-              onAdd={() => setEditor("protection-add")}
-              onEdit={() => setEditor("protection-edit")}
-            />
-          </div>
-          <div className="reference-table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>代码</th>
-                  <th>客户选项</th>
-                  <th>供应状态</th>
-                  <th>按长度计算的参考价</th>
-                </tr>
-              </thead>
-              <tbody>
-                {snapshot.installedProtections.map((option) => (
-                  <tr key={option.code}>
-                    <td>{option.code}</td>
-                    <td>{option.publicName}</td>
-                    <td>
-                      {{
-                        available: "可用",
-                        discontinued: "已停产",
-                        temporarily_unavailable: "暂不可用",
-                      }[option.availability] ?? option.availability}
-                    </td>
-                    <td>
-                      {option.isNoAdditionalProtection
-                        ? "$0.00"
-                        : option.referenceBasePriceUsd === null ||
-                            option.referenceMaterialPricePerFootUsd === null ||
-                            option.referenceInstallationPricePerStartedFootUsd ===
-                              null
-                          ? "未提供"
-                          : `$${option.referenceBasePriceUsd.toFixed(2)} + $${option.referenceMaterialPricePerFootUsd.toFixed(2)}/实际英尺 + $${option.referenceInstallationPricePerStartedFootUsd.toFixed(2)}/起算英尺`}
-                    </td>
+            <div className="reference-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>代码</th>
+                    <th>客户选项</th>
+                    <th>供应状态</th>
+                    <th>按长度计算的参考价</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+                </thead>
+                <tbody>
+                  {snapshot.installedProtections.map((option) => (
+                    <tr key={option.code}>
+                      <td>{option.code}</td>
+                      <td>{option.publicName}</td>
+                      <td>
+                        {{
+                          available: "可用",
+                          discontinued: "已停产",
+                          temporarily_unavailable: "暂不可用",
+                        }[option.availability] ?? option.availability}
+                      </td>
+                      <td>
+                        {option.isNoAdditionalProtection
+                          ? "$0.00"
+                          : option.referenceBasePriceUsd === null ||
+                              option.referenceMaterialPricePerFootUsd ===
+                                null ||
+                              option.referenceInstallationPricePerStartedFootUsd ===
+                                null
+                            ? "未提供"
+                            : `$${option.referenceBasePriceUsd.toFixed(2)} + $${option.referenceMaterialPricePerFootUsd.toFixed(2)}/实际英尺 + $${option.referenceInstallationPricePerStartedFootUsd.toFixed(2)}/起算英尺`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
 
-        {editor === "schedule" ? (
-          <ScheduleEditor onClose={() => setEditor(null)} schedule={schedule} />
-        ) : null}
-        {editor === "method-edit" || editor === "method-add" ? (
-          <MeasurementMethodEditor
-            methods={snapshot.measurementMethods}
-            mode={editor === "method-edit" ? "edit" : "add"}
-            onClose={() => setEditor(null)}
-          />
-        ) : null}
-        {editor === "clocking" ? (
-          <ClockingEditor clocking={clocking} onClose={() => setEditor(null)} />
-        ) : null}
-        {editor === "protection-edit" || editor === "protection-add" ? (
-          <ProtectionEditor
-            mode={editor === "protection-edit" ? "edit" : "add"}
-            onClose={() => setEditor(null)}
-            protections={snapshot.installedProtections}
-          />
-        ) : null}
+          {editor === "schedule" ? (
+            <ScheduleEditor
+              onClose={() => setEditor(null)}
+              schedule={schedule}
+            />
+          ) : null}
+          {editor === "method-edit" || editor === "method-add" ? (
+            <MeasurementMethodEditor
+              methods={snapshot.measurementMethods}
+              mode={editor === "method-edit" ? "edit" : "add"}
+              onClose={() => setEditor(null)}
+            />
+          ) : null}
+          {editor === "clocking" ? (
+            <ClockingEditor
+              clocking={clocking}
+              onClose={() => setEditor(null)}
+            />
+          ) : null}
+          {editor === "protection-edit" || editor === "protection-add" ? (
+            <ProtectionEditor
+              mode={editor === "protection-edit" ? "edit" : "add"}
+              onClose={() => setEditor(null)}
+              protections={snapshot.installedProtections}
+            />
+          ) : null}
+        </fieldset>
       </main>
     </div>
   );

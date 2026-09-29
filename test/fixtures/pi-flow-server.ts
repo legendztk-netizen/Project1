@@ -292,7 +292,7 @@ async function startPiFlowServerInternal(
       PUBLIC_APP_NAME: "TEST DATA - PI Acceptance",
       PUBLIC_STOREFRONT_ORIGIN: origin,
       ADMIN_ORIGIN: `http://localhost:${port}`,
-      ADMIN_AUTH_MODE: "local-stub",
+      ADMIN_AUTH_MODE: "password",
       CLOUDFLARE_ACCESS_TEAM_DOMAIN: "https://local.invalid",
       CLOUDFLARE_ACCESS_AUD: "local-stub",
       EMAIL_DELIVERY_MODE: "stub",
@@ -405,6 +405,25 @@ async function startPiFlowServerInternal(
       new URL("./catalog-item-baseline.ts", import.meta.url).href
     )) as typeof import("./catalog-item-baseline");
     await startup.wait(seedCatalogItemBaseline(db));
+    const adminToken =
+      crypto.randomUUID().replaceAll("-", "") +
+      crypto.randomUUID().replaceAll("-", "");
+    const { tokenDigest } =
+      await import("../../app/modules/admin/infrastructure/admin-password-auth");
+    await db
+      .prepare(
+        `INSERT INTO admin_identities(id,email,username,account_type,status,created_at,updated_at) VALUES('local-owner','owner@local.invalid','admin','owner','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`,
+      )
+      .run();
+    await db
+      .prepare(
+        `INSERT INTO admin_password_sessions(token_hash,admin_id,credential_version,expires_at) VALUES(?,'local-owner',1,?)`,
+      )
+      .bind(
+        await tokenDigest(adminToken),
+        new Date(Date.now() + 8 * 3600000).toISOString(),
+      )
+      .run();
     const now = new Date().toISOString();
     for (const id of [buyerId, "TEST-63-OTHER"]) {
       const email =
@@ -608,6 +627,11 @@ async function startPiFlowServerInternal(
         // timeout. Do not reuse an idle socket or retry a possibly sent mutation.
         const headers = new Headers(options.headers);
         headers.set("connection", "close");
+        if (path.startsWith("/admin"))
+          headers.set(
+            "cookie",
+            `${headers.get("cookie") ?? ""}; hs_admin_session=${adminToken}`,
+          );
         return await fetch(`${origin}${path}`, {
           redirect: "manual",
           signal: AbortSignal.timeout(45000),

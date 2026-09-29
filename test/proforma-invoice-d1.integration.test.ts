@@ -2310,9 +2310,11 @@ it("issues immutable exact snapshots and private PDF once; keeps current selecte
       },
     }).issue(actor, f.command),
   ).toEqual(pi);
+  const customerSnapshot = { ...pi.snapshot };
+  delete customerSnapshot.issuedPaymentInstructions;
   expect(
     await service().customerCurrent(f.profileId, f.command.requestId),
-  ).toEqual(pi);
+  ).toEqual({ ...pi, snapshot: customerSnapshot });
   const download = await service().customerDownload(
     f.profileId,
     f.command.requestId,
@@ -2367,7 +2369,8 @@ it("issues immutable exact snapshots and private PDF once; keeps current selecte
   expect(current.paymentInstructions?.instructions).toContain(
     "TEST UPDATED BANK",
   );
-  expect(current.snapshot).toEqual(pi.snapshot);
+  expect(current.snapshot).toEqual(customerSnapshot);
+  expect(JSON.stringify(current)).not.toContain("TEST ONLY bank_transfer");
   expect(
     await (
       await service().customerDownload(f.profileId, f.command.requestId, pi.id)

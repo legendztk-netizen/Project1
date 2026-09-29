@@ -1,126 +1,144 @@
-import { Activity, Boxes, Database, Waypoints } from "lucide-react";
-import { Link } from "react-router";
-
+import {
+  ArrowRight,
+  Boxes,
+  ClipboardList,
+  FileText,
+  MessagesSquare,
+  PackageCheck,
+  RefreshCw,
+  RotateCcw,
+  Settings,
+  Waypoints,
+} from "lucide-react";
+import { Link, useRevalidator } from "react-router";
 import type { Route } from "./+types/admin-home";
-import { createD1CatalogPublicationRepository } from "../../catalog/infrastructure/d1-catalog-publication-repository";
 import { requireAdminRequestContext } from "../infrastructure/admin-request-context";
-import { createD1CatalogItemRepository } from "../../catalog/infrastructure/d1-catalog-item-repository";
+import { readAdminOverview } from "../infrastructure/admin-overview";
 import { AdminNavigation } from "../ui/admin-navigation";
+import { formatBeijingDateTime } from "../../quote-review/domain/admin-quote-review";
+import "../styles/admin-overview.css";
 
 export function meta() {
-  return [{ title: "Admin Backoffice | Hydraulic Supply" }];
+  return [{ title: "后台总览 | 管理后台" }];
 }
-
 export async function loader({ context }: Route.LoaderArgs) {
   const { adminIdentity, env } = requireAdminRequestContext(context);
-  const activeRelease = await createD1CatalogPublicationRepository(
-    env.DB,
-  ).findActiveRelease();
-  return {
-    activeRelease,
-    adminIdentity,
-    environment: env.APP_ENV,
-    publication: await createD1CatalogItemRepository(env.DB).state(),
-  };
+  return readAdminOverview(env.DB, adminIdentity);
 }
-
+const icons = {
+  products: Boxes,
+  catalog: ClipboardList,
+  configurator: Waypoints,
+  quotes: FileText,
+  orders: PackageCheck,
+  messages: MessagesSquare,
+  after_sales: RotateCcw,
+  settings: Settings,
+};
 export default function AdminHome({ loaderData }: Route.ComponentProps) {
-  const itemMode = loaderData.publication.mode === "items";
+  const revalidator = useRevalidator();
+  const busy = revalidator.state !== "idle";
   return (
     <div className="admin-shell" data-surface="admin">
       <AdminNavigation active="overview" />
-
-      <main className="admin-main">
+      <main className="admin-main admin-overview">
         <header className="admin-topbar">
           <div>
-            <span className="eyebrow">Admin Backoffice</span>
-            <h1>Overview</h1>
+            <span className="eyebrow">管理后台</span>
+            <h1>后台总览</h1>
+            <p>查看待处理业务，快速进入常用工作。</p>
           </div>
-          <span className="environment-badge">
-            <Activity size={15} /> {loaderData.adminIdentity.accountType} ·{" "}
-            {loaderData.environment}
-          </span>
+          <button
+            type="button"
+            className="button button-secondary"
+            onClick={() => void revalidator.revalidate()}
+            disabled={busy}
+          >
+            <RefreshCw size={16} aria-hidden="true" />
+            {busy ? "正在更新…" : "刷新待办"}
+          </button>
         </header>
-
-        <section className="admin-metrics" aria-label="Platform status">
-          <article>
-            <span>Application</span>
-            <strong>Running</strong>
-            <small>Cloudflare Worker</small>
-          </article>
-          <article>
-            <span>产品发布方式</span>
-            <strong>
-              {itemMode
-                ? "条目级发布"
-                : (loaderData.activeRelease?.releaseNumber ?? "尚未发布")}
-            </strong>
-            <small>
-              {itemMode
-                ? "产品独立发布，总成按受影响系列更新"
-                : loaderData.activeRelease
-                  ? "整本目录发布"
-                  : "等待导入产品"}
-            </small>
-          </article>
-          <article>
-            <span>Environment</span>
-            <strong>{loaderData.environment}</strong>
-            <small>Runtime binding</small>
-          </article>
-        </section>
-
-        <section className="admin-panel">
-          <div>
-            <span className="eyebrow">System boundary</span>
-            <h2>Catalog operations</h2>
+        <section
+          className="overview-section"
+          aria-labelledby="overview-tasks-title"
+          aria-busy={busy}
+        >
+          <div className="overview-section-heading">
+            <h2 id="overview-tasks-title">业务待办</h2>
+            <span>更新于 {formatBeijingDateTime(loaderData.updatedAt)}</span>
           </div>
-          <div className="empty-state">
-            <Database size={24} />
-            <div>
-              <strong>
-                {itemMode
-                  ? "产品维护已切换到条目流程"
-                  : loaderData.activeRelease
-                    ? "目录已发布"
-                    : "尚无已发布目录"}
-              </strong>
-              <p>
-                {itemMode
-                  ? "手动新增或编辑直接发布；批量导入在产品审核与发布中处理。历史目录保留只读。"
-                  : "通过目录导入和审核维护产品。"}
-              </p>
+          {loaderData.metrics.length ? (
+            <div className="overview-tasks">
+              {loaderData.metrics.map((metric) => {
+                const Icon = icons[metric.key as keyof typeof icons];
+                return (
+                  <Link
+                    key={metric.key}
+                    to={metric.to}
+                    className={`overview-task${metric.count ? " has-pending" : ""}`}
+                    aria-label={`${metric.title} ${metric.count}，查看列表`}
+                  >
+                    <div className="overview-task-heading">
+                      <span>{metric.title}</span>
+                      <Icon size={21} aria-hidden="true" />
+                    </div>
+                    <strong>{metric.count.toLocaleString("zh-CN")}</strong>
+                    <small>{metric.description}</small>
+                    <span className="overview-task-link">
+                      查看列表 <ArrowRight size={15} aria-hidden="true" />
+                    </span>
+                  </Link>
+                );
+              })}
             </div>
-          </div>
-          <Link className="button button-primary" to="/admin/catalog/products">
-            <Boxes size={17} /> 管理所有产品
-          </Link>
-          <Link
-            className="button button-secondary"
-            to="/admin/catalog/requests"
-          >
-            <Boxes size={17} /> 产品审核与发布
-          </Link>
-          <Link
-            className="button button-secondary"
-            to="/admin/catalog/reference-data"
-          >
-            <Waypoints size={17} /> 总成参数配置
-          </Link>
-          {itemMode && (
-            <Link
-              className="button button-secondary"
-              to="/admin/catalog/history"
-            >
-              历史目录与来源
-            </Link>
+          ) : (
+            <p className="overview-empty">
+              当前可用模块没有待办统计，请从下方常用操作进入。
+            </p>
           )}
-          <Link
-            className="button button-secondary"
-            to="/admin/diagnostics/catalog-release"
-          >
-            <Database size={17} /> Open D1 diagnostic
-          </Link>
+        </section>
+        <section
+          className="overview-section"
+          aria-labelledby="overview-shortcuts-title"
+        >
+          <div className="overview-section-heading">
+            <h2 id="overview-shortcuts-title">常用操作</h2>
+            <span>按当前账号权限显示</span>
+          </div>
+          {loaderData.shortcuts.length ? (
+            <div className="overview-shortcuts">
+              {loaderData.shortcuts.map((item) => {
+                const Icon = icons[item.key];
+                return (
+                  <Link
+                    key={item.key}
+                    to={item.to}
+                    className="overview-shortcut"
+                  >
+                    <span className="overview-shortcut-icon">
+                      <Icon size={22} aria-hidden="true" />
+                    </span>
+                    <div>
+                      <strong>
+                        {item.title}
+                        {item.readonly && <small>只读</small>}
+                      </strong>
+                      <p>{item.description}</p>
+                    </div>
+                    <ArrowRight size={18} aria-hidden="true" />
+                  </Link>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="overview-empty">
+              <strong>暂未获得业务模块权限</strong>
+              <p>请联系主账号管理员分配权限后开始工作。</p>
+              <Link to="/admin/settings/permissions">
+                查看我的权限 <ArrowRight size={14} aria-hidden="true" />
+              </Link>
+            </div>
+          )}
         </section>
       </main>
     </div>

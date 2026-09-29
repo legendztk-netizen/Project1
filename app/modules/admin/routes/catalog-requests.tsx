@@ -47,7 +47,32 @@ export async function loader({ context, request }: Route.LoaderArgs) {
       url.searchParams.get(k) ?? (k === "status" ? "pending" : ""),
     ]),
   );
-  const all = await repository.all();
+  const productRepository = createD1ProductManagementRepository(env.DB);
+  const [
+    all,
+    detail,
+    productSeries,
+    batches,
+    relations,
+    batchSource,
+    media,
+    state,
+  ] = await Promise.all([
+    repository.all(),
+    url.searchParams.get("detail")
+      ? repository.get(url.searchParams.get("detail")!)
+      : Promise.resolve(null),
+    productRepository.seriesOptions(),
+    repository.batches(),
+    repository.relations(filters.batch || undefined),
+    filters.batch
+      ? repository.batchSource(filters.batch)
+      : Promise.resolve(null),
+    env.DB.prepare(
+      "SELECT id,COALESCE(approved_reference,id) AS label FROM catalog_media_versions ORDER BY created_at DESC",
+    ).all<{ id: string; label: string }>(),
+    createD1CatalogItemRepository(env.DB).state(),
+  ]);
   const scope = all.filter(
     (r) =>
       (!filters.batch || r.batchId === filters.batch) &&
@@ -66,22 +91,18 @@ export async function loader({ context, request }: Route.LoaderArgs) {
           .toLowerCase()
           .includes(filters.q.toLowerCase())),
   );
-  const detail = url.searchParams.get("detail")
-    ? await repository.get(url.searchParams.get("detail")!)
-    : null;
-  const products = await createD1ProductManagementRepository(env.DB).all();
+  const products =
+    detail?.command.payload.kind === "series"
+      ? await productRepository.all()
+      : [];
   return {
     requests,
     filters,
-    batchSource: filters.batch
-      ? await repository.batchSource(filters.batch)
-      : null,
+    batchSource,
     seriesOptions: [
       ...new Map(
         [
-          ...products
-            .filter((p) => p.kind === "series")
-            .map((p) => ({ code: p.code, productType: p.productType })),
+          ...productSeries,
           ...all.map((r) => ({
             code: itemSeriesCode(r.command.payload),
             productType: r.command.payload.productType,
@@ -91,8 +112,8 @@ export async function loader({ context, request }: Route.LoaderArgs) {
           .map((option) => [`${option.productType}:${option.code}`, option]),
       ).values(),
     ],
-    batches: await repository.batches(),
-    relations: await repository.relations(filters.batch || undefined),
+    batches,
+    relations,
     detail,
     affected: products
       .filter(
@@ -102,13 +123,9 @@ export async function loader({ context, request }: Route.LoaderArgs) {
           p.seriesCode === itemCode(detail.command.payload),
       )
       .map((p) => p.code),
-    media: (
-      await env.DB.prepare(
-        "SELECT id,COALESCE(approved_reference,id) AS label FROM catalog_media_versions ORDER BY created_at DESC",
-      ).all<{ id: string; label: string }>()
-    ).results,
+    media: media.results,
     canEdit: adminIdentity.catalogPermission !== "view",
-    mode: (await createD1CatalogItemRepository(env.DB).state()).mode,
+    mode: state.mode,
     batchId: crypto.randomUUID(),
   };
 }

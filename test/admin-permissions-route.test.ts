@@ -4,8 +4,8 @@ import { cloudflareContext } from "../workers/context";
 import { action } from "../app/modules/admin/routes/admin-permissions";
 import { owner } from "./fixtures/after-sales-order";
 const { save } = vi.hoisted(() => ({ save: vi.fn() }));
-vi.mock("../app/modules/admin/infrastructure/d1-admin-permissions", () => ({
-  createD1AdminPermissions: () => ({ setSubaccountPermissions: save }),
+vi.mock("../app/modules/admin/infrastructure/d1-admin-accounts", () => ({
+  createAdminAccounts: () => ({ mutate: save }),
 }));
 function args(method: string, origin?: string, isOwner = true) {
   const context = new RouterContextProvider();
@@ -27,10 +27,11 @@ function args(method: string, origin?: string, isOwner = true) {
         ...(method === "POST"
           ? {
               body: new URLSearchParams({
-                adminId: "staff",
-                permission: "after_sales.refund",
+                id: "staff",
+                intent: "permissions",
+                "module.after_sales": "write",
                 commandId: crypto.randomUUID(),
-                expectedVersion: "4",
+                version: "4",
               }),
             }
           : {}),
@@ -54,12 +55,10 @@ it("rejects foreign or absent Origin, GET and subaccount mutations before saving
 });
 it("passes the displayed version and valid same-origin Owner command to the repository", async () => {
   const response = await action(args("POST", "https://admin.example.test"));
-  expect(response).toMatchObject({ status: 302 });
-  expect(save).toHaveBeenCalledWith(
-    expect.objectContaining({
-      adminId: "staff",
-      expectedVersion: 4,
-      permissions: ["after_sales.refund"],
-    }),
-  );
+  expect(response).toMatchObject({ ok: true, intent: "permissions" });
+  const [actor, form] = save.mock.calls.at(-1)!;
+  expect(actor).toBe(owner.id);
+  expect(form.get("id")).toBe("staff");
+  expect(form.get("version")).toBe("4");
+  expect(form.get("module.after_sales")).toBe("write");
 });

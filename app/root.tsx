@@ -1,3 +1,4 @@
+import { AdminIdentityContext } from "./modules/admin/ui/admin-identity-context";
 import {
   Links,
   Meta,
@@ -14,6 +15,7 @@ import "./styles/app.css";
 import { cloudflareContext } from "#workers/context";
 
 export interface RootLoaderData {
+  admin?: import("#workers/admin-access").AdminIdentity;
   customer: {
     email: string;
     id: string;
@@ -25,7 +27,7 @@ export async function loader({
   context,
   request,
 }: Route.LoaderArgs): Promise<RootLoaderData> {
-  const { env } = context.get(cloudflareContext);
+  const { env, adminIdentity } = context.get(cloudflareContext);
   const profile = await createCustomerIdentityService(env).readSession(request);
   // Advisory badge only: a read failure must never block the storefront.
   const unreadMessages = profile
@@ -35,6 +37,7 @@ export async function loader({
     : 0;
 
   return {
+    admin: adminIdentity,
     customer: profile
       ? { email: profile.email, id: profile.id, unreadMessages }
       : null,
@@ -59,8 +62,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function App() {
-  return <Outlet />;
+export default function App({ loaderData }: Route.ComponentProps) {
+  return (
+    <AdminIdentityContext value={loaderData.admin}>
+      <Outlet />
+    </AdminIdentityContext>
+  );
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
