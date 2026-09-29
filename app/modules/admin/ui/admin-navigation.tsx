@@ -1,3 +1,9 @@
+import { AdminIdentityContext } from "./admin-identity-context";
+import {
+  canAccessAdminPath,
+  adminPathModule,
+} from "../domain/admin-module-access";
+import "../styles/admin-accounts.css";
 import {
   Bell,
   Boxes,
@@ -12,8 +18,8 @@ import {
   Settings,
   Waypoints,
 } from "lucide-react";
-import { useEffect, useState } from "react";
-import { Link, useLocation } from "react-router";
+import { useContext, useEffect, useState } from "react";
+import { Form, Link, useLocation } from "react-router";
 
 import { BrandMark } from "../../shared/ui/brand-mark";
 
@@ -102,8 +108,9 @@ const adminNavigation = [
 ] as const;
 
 const UNREAD_REFRESH_MS = 30_000;
+const OPEN_GROUP_STORAGE_KEY = "admin-navigation-open-group";
 
-function useUnreadNotifications(known: number | undefined) {
+function useUnreadNotifications(known: number | undefined, enabled = true) {
   const location = useLocation();
   const [unread, setUnread] = useState<number | null>(known ?? null);
   const [messages, setMessages] = useState<number | null>(null);
@@ -111,6 +118,7 @@ function useUnreadNotifications(known: number | undefined) {
     if (known !== undefined) setUnread(known);
   }, [known]);
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     const refresh = async () => {
       if (document.visibilityState !== "visible") return;
@@ -141,7 +149,7 @@ function useUnreadNotifications(known: number | undefined) {
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [location.key]);
+  }, [location.key, enabled]);
   return { unread, messages };
 }
 
@@ -154,16 +162,63 @@ export function AdminNavigation({
   maintenanceMode?: CatalogMaintenanceMode;
   unreadNotifications?: number;
 }) {
+  const identity = useContext(AdminIdentityContext);
+  const location = useLocation();
+  const currentModule = adminPathModule(location.pathname);
+  const readonly =
+    identity?.accountType === "subaccount" &&
+    currentModule &&
+    identity.moduleAccess?.[currentModule] === "read";
   const [openGroup, setOpenGroup] = useState<AdminNavigationKey | null>(
     active === "imports" ? "imports" : null,
   );
-  const { unread, messages } = useUnreadNotifications(unreadNotifications);
+  // Each admin page mounts its own sidebar. Keep the user's choice across
+  // those mounts instead of deriving it again from the destination page.
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(OPEN_GROUP_STORAGE_KEY);
+      if (saved !== null) {
+        setOpenGroup(saved === "imports" ? "imports" : null);
+      } else {
+        sessionStorage.setItem(
+          OPEN_GROUP_STORAGE_KEY,
+          active === "imports" ? "imports" : "",
+        );
+      }
+    } catch {
+      // Storage may be unavailable; the toggle still works on this page.
+    }
+  }, [active]);
+  function toggleGroup(group: AdminNavigationKey) {
+    const next = openGroup === group ? null : group;
+    setOpenGroup(next);
+    try {
+      sessionStorage.setItem(OPEN_GROUP_STORAGE_KEY, next ?? "");
+    } catch {
+      // The in-memory state remains usable when storage is blocked.
+    }
+  }
+  const { unread, messages } = useUnreadNotifications(
+    unreadNotifications,
+    !identity?.moduleAccess ||
+      identity.accountType === "owner" ||
+      !!identity.moduleAccess.notifications,
+  );
 
   return (
     <aside className="admin-sidebar">
       <BrandMark />
       <nav aria-label="管理后台导航">
         {adminNavigation.map((item) => {
+          if (
+            identity?.moduleAccess &&
+            !canAccessAdminPath(
+              identity,
+              "to" in item ? item.to : "/admin/catalog/products",
+              "GET",
+            )
+          )
+            return null;
           const activeItem = item.key === active;
           const hasChildren = "children" in item;
           const expanded = hasChildren && openGroup === item.key;
@@ -197,11 +252,7 @@ export function AdminNavigation({
                   aria-controls={`admin-submenu-${item.key}`}
                   aria-expanded={expanded}
                   className={`admin-nav-item admin-nav-toggle${activeItem ? " active" : ""}`}
-                  onClick={() =>
-                    setOpenGroup((current) =>
-                      current === item.key ? null : item.key,
-                    )
-                  }
+                  onClick={() => toggleGroup(item.key)}
                   type="button"
                 >
                   {content}
@@ -247,6 +298,24 @@ export function AdminNavigation({
           );
         })}
       </nav>
+      {identity?.source === "password" && (
+        <div className="admin-session-info">
+          <strong>
+            {identity.username || identity.displayName} ·{" "}
+            {identity.accountType === "owner" ? "主账号" : "子账号"}
+          </strong>
+          <Form method="post" action="/admin/logout">
+            <button>退出登录</button>
+          </Form>
+        </div>
+      )}
+      {readonly && (
+        <div className="admin-readonly-notice" role="status">
+          {currentModule === "notifications"
+            ? "当前通知为只读权限，可查看详情和标记自己的已读状态。"
+            : "当前模块为只读权限，提交修改需要主账号授权。"}
+        </div>
+      )}
       <Link className="admin-storefront-link" to="/">
         打开客户前台
       </Link>

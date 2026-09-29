@@ -77,25 +77,14 @@ describe("Admin route boundary", () => {
     expect(isAdminPath(pathname)).toBe(expected);
   });
 
-  it("uses an explicit Owner identity only in local development", async () => {
-    const identity = await authorizeAdminRequest(
-      new Request("http://admin.localhost:5173/admin"),
-      {
+  it("rejects the old local automatic Owner mode", async () => {
+    await expect(
+      authorizeAdminRequest(new Request("http://localhost/admin"), {
         ...deployedBindings,
-        ADMIN_AUTH_MODE: "local-stub",
-        ADMIN_ORIGIN: "http://admin.localhost:5173",
         APP_ENV: "local",
-        CLOUDFLARE_ACCESS_AUD: "local-stub",
-        CLOUDFLARE_ACCESS_TEAM_DOMAIN: "https://local.invalid",
-      },
-    );
-
-    expect(identity).toMatchObject({
-      accountType: "owner",
-      canManageSubaccounts: true,
-      email: "owner@local.invalid",
-      source: "local-development",
-    });
+        ADMIN_AUTH_MODE: "local-stub",
+      }),
+    ).rejects.toMatchObject({ status: 403 });
   });
 
   it("rejects an unauthorized deployed Catalog mutation before route handling", async () => {

@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Form, Link, useFetcher, useLocation } from "react-router";
+import {
+  Link,
+  useFetcher,
+  useLocation,
+  useNavigate,
+  useNavigation,
+} from "react-router";
 import type { loader as pageLoader, action } from "../routes/catalog-products";
 import type { loader as editorLoader } from "../routes/catalog-product-editor";
 import { AdminNavigation } from "./admin-navigation";
@@ -27,6 +33,13 @@ import "../styles/product-management.css";
 type PageData = Awaited<ReturnType<typeof pageLoader>>;
 type EditorData = Awaited<ReturnType<typeof editorLoader>>;
 const key = (r: ProductSelection) => `${r.productType}:${r.kind}:${r.code}`;
+const seriesFields = [
+  "hoseSeries",
+  "fittingSeries",
+  "ferruleSeries",
+  "adapterFamilyId",
+  "couplerSeries",
+];
 const stateLabels: Record<string, string> = {
   online: "上线",
   draft: "草稿",
@@ -52,6 +65,7 @@ function Modal({
     <dialog
       ref={ref}
       className="product-editor"
+      aria-label={title}
       onCancel={(e) => {
         e.preventDefault();
         onClose();
@@ -80,7 +94,7 @@ function Field({
 }) {
   return (
     <label>
-      {field.header}
+      {field.header.replace(/^\*\s*/, "")}
       {field.required ? " *" : ""}
       {series ? (
         <select
@@ -214,6 +228,7 @@ function ProductEditor({
               field={f}
               defaultValue={
                 values[f.key] ??
+                (seriesFields.includes(f.key) ? editor.initialSeries : null) ??
                 (f.key === "technicalDataStatus" ? "Complete" : null)
               }
               readOnly={
@@ -332,7 +347,7 @@ function ProductEditor({
           </button>
           {canEdit && (
             <button type="submit" disabled={busy}>
-              提交
+              {busy ? "正在保存…" : "保存产品"}
             </button>
           )}
         </footer>
@@ -340,21 +355,56 @@ function ProductEditor({
     </Modal>
   );
 }
+function priceSummary(rows: ManagedProduct[]) {
+  const currencies = new Map<string, number[]>();
+  for (const r of rows)
+    if (r.amount !== null) {
+      currencies.set(r.currency, [
+        ...(currencies.get(r.currency) ?? []),
+        r.amount,
+      ]);
+    }
+  return [...currencies].map(([currency, amounts]) => {
+    const min = Math.min(...amounts),
+      max = Math.max(...amounts);
+    const format = (n: number) =>
+      n.toLocaleString("en-US", { maximumFractionDigits: 4 });
+    return `${currency} ${format(min)}${min === max ? "" : ` – ${format(max)}`}`;
+  });
+}
 export function ProductManagementPage(props: PageData) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const navigation = useNavigation();
   const editor = useFetcher<typeof editorLoader>();
   const mutation = useFetcher<typeof action>();
   const plan = useFetcher<typeof pageLoader>();
   const [selected, setSelected] = useState<ProductSelection[]>([]);
   const [expanded, setExpanded] = useState<string[]>([]);
+  const [query, setQuery] = useState(props.query);
   const [editorOpen, setEditorOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [menu, setMenu] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addType, setAddType] = useState<CommercialProductType>("hose");
+  const [addKind, setAddKind] = useState<"series" | "sku">("sku");
   const [deleteId, setDeleteId] = useState("");
+  const filtered = !!(
+    props.query ||
+    props.types.length ||
+    props.status ||
+    props.attention
+  );
   useEffect(() => {
     setSelected([]);
-    setExpanded([]);
-  }, [location.search]);
+    setQuery(props.query);
+    setExpanded(
+      props.query || props.status || props.attention
+        ? props.page.items
+            .filter((g) => g.item.kind === "series")
+            .map((g) => key(g.item))
+        : [],
+    );
+  }, [location.search, props.query, props.status, props.attention]);
   useEffect(() => {
     if (mutation.state === "idle" && mutation.data?.ok) {
       setEditorOpen(false);
@@ -364,15 +414,29 @@ export function ProductManagementPage(props: PageData) {
   }, [mutation.state, mutation.data]);
   const controls = selectionActions(selected);
   const busy = mutation.state !== "idle";
+  const loading = navigation.state !== "idle";
+  const canWrite = props.canEdit && props.state.mode === "items";
+  function filter(changes: Record<string, string | string[]>) {
+    const params = new URLSearchParams(location.search);
+    params.delete("page");
+    params.delete("deletePlan");
+    for (const [name, value] of Object.entries(changes)) {
+      params.delete(name);
+      for (const v of Array.isArray(value) ? value : [value])
+        if (v) params.append(name, v);
+    }
+    void navigate(`?${params}`);
+  }
   function open(
     type: CommercialProductType,
     kind: "series" | "sku",
     code = "",
+    series = "",
   ) {
     setEditorOpen(true);
-    setMenu(false);
+    setAddOpen(false);
     void editor.load(
-      `/admin/catalog/product-editor?type=${type}&kind=${kind}&code=${encodeURIComponent(code)}`,
+      `/admin/catalog/product-editor?${new URLSearchParams({ type, kind, code, series })}`,
     );
   }
   function toggle(row: ManagedProduct) {
@@ -397,60 +461,176 @@ export function ProductManagementPage(props: PageData) {
     params.set("page", String(number));
     return `?${params}`;
   }
-  function row(r: ManagedProduct, child = false) {
+  const allExpanded = props.page.items
+    .filter((g) => g.item.kind === "series")
+    .every((g) => expanded.includes(key(g.item)));
+  function row(
+    r: ManagedProduct,
+    children: ManagedProduct[] = [],
+    child = false,
+    totalChildren = children.length,
+  ) {
+    const isSeries = r.kind === "series";
+    const prices = priceSummary(isSeries ? children : [r]);
+    const missing = isSeries
+      ? children.filter((c) => c.amount === null).length
+      : Number(r.amount === null);
+    const technicalPending = (isSeries ? children : [r]).filter(
+      (c) => c.technicalStatus === "Pending",
+    ).length;
+    const drafts = isSeries
+      ? children.filter((c) => c.draftRevisionId).length
+      : 0;
     return (
-      <tr key={key(r)} className={child ? "product-child" : ""}>
+      <tr key={key(r)} className={child ? "product-child" : "product-parent"}>
         <td>
           <input
             type="checkbox"
-            aria-label={`选择${r.kind === "series" ? "系列" : "SKU"} ${r.code}`}
+            aria-label={`选择${isSeries ? "系列" : "SKU"} ${r.code}`}
             checked={selected.some((s) => key(s) === key(r))}
             onChange={() => toggle(r)}
           />
         </td>
         <td>
-          {r.kind === "series" && (
+          <div className="product-identity">
+            {isSeries && (
+              <button
+                className="product-expand"
+                type="button"
+                aria-label={`${expanded.includes(key(r)) ? "收起" : "展开"} ${r.code}`}
+                aria-expanded={expanded.includes(key(r))}
+                onClick={() =>
+                  setExpanded((old) =>
+                    old.includes(key(r))
+                      ? old.filter((k) => k !== key(r))
+                      : [...old, key(r)],
+                  )
+                }
+              >
+                {expanded.includes(key(r)) ? "−" : "+"}
+              </button>
+            )}
+            {r.imageId ? (
+              <img
+                alt=""
+                loading="lazy"
+                src={`/media/catalog/${encodeURIComponent(r.imageId)}/thumbnail`}
+              />
+            ) : (
+              <span className="product-image-placeholder" aria-hidden="true">
+                {isSeries ? "系列" : "SKU"}
+              </span>
+            )}
+            <div>
+              <strong>{r.name}</strong>
+              <small>
+                {r.name !== r.code ? `${r.code} · ` : ""}
+                {isSeries
+                  ? children.length !== totalChildren
+                    ? `匹配 ${children.length} / ${totalChildren} SKU`
+                    : `${children.length} SKU`
+                  : `系列 ${r.seriesCode || "未设置"}`}
+              </small>
+            </div>
+          </div>
+        </td>
+        <td>
+          <span className="product-category">
+            {productTypeLabels[r.productType]}
+          </span>
+        </td>
+        <td className="product-spec">
+          {isSeries ? (
+            <>
+              <span>{children.length} 个匹配规格</span>
+              <small>展开查看尺寸与接口</small>
+            </>
+          ) : (
+            <>
+              <span>{r.dimensions || "规格待补充"}</span>
+              <small>
+                {r.technicalStatus
+                  ? `技术资料：${({ Complete: "完整", Inherited: "继承系列", Pending: "待完善" } as Record<string, string>)[r.technicalStatus] ?? r.technicalStatus}`
+                  : ""}
+              </small>
+            </>
+          )}
+        </td>
+        <td className="product-price">
+          {prices.length ? (
+            prices.map((p) => <strong key={p}>{p}</strong>)
+          ) : (
+            <span className="product-muted">暂无定价</span>
+          )}
+          <small>
+            {isSeries
+              ? "匹配 SKU 的价格范围"
+              : r.salesUnit
+                ? `每 ${r.salesUnit}`
+                : "零售单价"}
+          </small>
+        </td>
+        <td>
+          <span className={`product-state product-state-${r.state}`}>
+            {stateLabels[r.state] ?? r.state}
+          </span>
+          {isSeries && children.length > 0 && (
+            <small>
+              {children.filter((c) => c.state === "online").length} /{" "}
+              {children.length} SKU 上线
+            </small>
+          )}
+        </td>
+        <td className="product-quality">
+          {missing > 0 && (
+            <span className="product-warning">
+              {isSeries ? `${missing} 个 SKU 未定价` : "未定价"}
+            </span>
+          )}
+          {(r.draftRevisionId || drafts > 0) && (
+            <span>有草稿修订{drafts > 0 ? `（${drafts} SKU）` : ""}</span>
+          )}
+          {(r.assemblyPending || children.some((c) => c.assemblyPending)) && (
+            <span>总成待更新</span>
+          )}
+          {technicalPending > 0 && (
+            <span>
+              {isSeries
+                ? `${technicalPending} 个 SKU 技术资料待完善`
+                : "技术资料待完善"}
+            </span>
+          )}
+          {!missing &&
+            !r.draftRevisionId &&
+            !drafts &&
+            !technicalPending &&
+            !r.assemblyPending &&
+            !children.some((c) => c.assemblyPending) &&
+            (isSeries ||
+              !r.technicalStatus ||
+              ["Complete", "Inherited"].includes(r.technicalStatus)) && (
+              <span className="product-muted">—</span>
+            )}
+        </td>
+        <td>
+          <div className="product-row-actions">
             <button
               type="button"
-              aria-label={`${expanded.includes(key(r)) ? "收起" : "展开"} ${r.code}`}
-              aria-expanded={expanded.includes(key(r))}
-              onClick={() =>
-                setExpanded((old) =>
-                  old.includes(key(r))
-                    ? old.filter((k) => k !== key(r))
-                    : [...old, key(r)],
-                )
-              }
+              aria-label={`${canWrite ? "编辑" : "查看"} ${r.code}`}
+              onClick={() => open(r.productType, r.kind, r.code)}
             >
-              {expanded.includes(key(r)) ? "▾" : "▸"}
+              {canWrite ? "编辑" : "查看"}
             </button>
-          )}
-          {r.imageId && (
-            <img
-              alt=""
-              src={`/media/catalog/${encodeURIComponent(r.imageId)}/thumbnail`}
-            />
-          )}
-          <strong>{r.name}</strong>
-        </td>
-        <td>{productTypeLabels[r.productType]}</td>
-        <td>{r.kind === "sku" ? r.dimensions : "系列"}</td>
-        <td>
-          {r.amount === null
-            ? "—"
-            : `${r.currency} ${r.amount.toLocaleString(undefined, { maximumFractionDigits: 4 })}`}
-        </td>
-        <td>
-          {stateLabels[r.state] ?? r.state}
-          {r.assemblyPending && <span> · 总成待更新</span>}
-        </td>
-        <td>
-          <button
-            type="button"
-            onClick={() => open(r.productType, r.kind, r.code)}
-          >
-            更多
-          </button>
+            {isSeries && canWrite && (
+              <button
+                type="button"
+                aria-label={`在 ${r.code} 下新增 SKU`}
+                onClick={() => open(r.productType, "sku", "", r.code)}
+              >
+                + SKU
+              </button>
+            )}
+          </div>
         </td>
       </tr>
     );
@@ -459,14 +639,23 @@ export function ProductManagementPage(props: PageData) {
     <div className="admin-shell" data-surface="admin">
       <AdminNavigation active="imports" maintenanceMode="manual" />
       <main className="product-management">
-        <header>
-          <span className="eyebrow">产品数据维护</span>
-          <h1>管理所有产品</h1>
-          <p>按系列与子体管理产品，提交后按所选状态生效。</p>
+        <header className="product-page-header">
+          <div>
+            <span className="eyebrow">产品数据维护 / CATALOG</span>
+            <h1>管理所有产品</h1>
+            <p>查找产品、维护规格与价格，掌握每个系列的发布情况。</p>
+          </div>
+          <button
+            className="product-primary"
+            disabled={!canWrite}
+            onClick={() => setAddOpen(true)}
+          >
+            ＋ 新增产品
+          </button>
         </header>
         {props.state.mode === "legacy" && (
           <aside role="status">
-            <p>当前为旧目录模式。新产品管理在隔离环境启用后可直接发布。</p>
+            <p>当前为旧目录模式。启用条目发布后可新增和维护产品。</p>
             {props.canEnable && props.canEdit && (
               <mutation.Form method="post">
                 <button name="intent" value="enable">
@@ -476,141 +665,312 @@ export function ProductManagementPage(props: PageData) {
             )}
           </aside>
         )}
-        <section className="product-management-toolbar">
-          <Form method="get">
-            <fieldset>
-              <legend>产品小类（不选即全部）</legend>
+        <section className="product-filters" aria-label="搜索与筛选">
+          <form
+            className="product-search"
+            onSubmit={(e) => {
+              e.preventDefault();
+              filter({ q: query.trim() });
+            }}
+          >
+            <label htmlFor="product-search">查找产品</label>
+            <div>
+              <input
+                id="product-search"
+                name="q"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="搜索 SKU、系列名称、尺寸或接口…"
+              />
+              <button
+                className="product-primary"
+                type="submit"
+                disabled={loading}
+              >
+                {loading ? "查询中…" : "查询"}
+              </button>
+            </div>
+          </form>
+          <div className="product-filter-row">
+            <span className="product-filter-label">产品类目</span>
+            <div className="product-type-chips">
+              <button
+                aria-pressed={!props.types.length}
+                onClick={() => filter({ type: [] })}
+              >
+                全部
+              </button>
               {commercialProductTypes.map((t) => (
-                <label key={t}>
-                  <input
-                    type="checkbox"
-                    name="type"
-                    value={t}
-                    defaultChecked={props.types.includes(t)}
-                  />
+                <button
+                  key={t}
+                  aria-pressed={props.types.includes(t)}
+                  onClick={() =>
+                    filter({
+                      type: props.types.includes(t)
+                        ? props.types.filter((x) => x !== t)
+                        : [...props.types, t],
+                    })
+                  }
+                >
                   {productTypeLabels[t]}
-                </label>
+                </button>
               ))}
-            </fieldset>
+            </div>
+            <span className="product-muted">可多选</span>
+          </div>
+          <div className="product-filter-row">
             <label>
-              SKU 模糊查询
-              <input name="q" defaultValue={props.query} />
-            </label>
-            <label>
-              每页
-              <select name="size" defaultValue={props.pageSize}>
-                <option value="20">20</option>
-                <option value="50">50</option>
+              发布状态
+              <select
+                value={props.status ?? ""}
+                onChange={(e) => filter({ status: e.target.value })}
+              >
+                <option value="">全部状态</option>
+                <option value="online">上线</option>
+                <option value="draft">草稿</option>
+                <option value="discontinued">停用</option>
               </select>
             </label>
-            <button>筛选</button>
-          </Form>
-          <div className="product-actions">
-            <div
-              className="product-add-menu"
-              onMouseEnter={() => setMenu(true)}
-              onMouseLeave={() => setMenu(false)}
-              onFocus={() => setMenu(true)}
-              onBlur={(e) => {
-                if (!e.currentTarget.contains(e.relatedTarget as Node))
-                  setMenu(false);
-              }}
-            >
-              <button
-                type="button"
-                aria-expanded={menu}
-                aria-haspopup="true"
-                disabled={!props.canEdit || props.state.mode !== "items"}
-                onClick={() => setMenu(true)}
+            <label>
+              待处理项
+              <select
+                value={props.attention ?? ""}
+                onChange={(e) => filter({ attention: e.target.value })}
               >
-                新增
+                <option value="">全部产品</option>
+                <option value="missing_price">未定价</option>
+                <option value="draft_changes">有草稿修订</option>
+                <option value="assembly_pending">总成待更新</option>
+                <option value="technical_pending">技术资料待完善</option>
+              </select>
+            </label>
+            {filtered && (
+              <button
+                className="product-text-button"
+                onClick={() => {
+                  setQuery("");
+                  void navigate(location.pathname);
+                }}
+              >
+                清空筛选
               </button>
-              {menu && props.canEdit && props.state.mode === "items" && (
-                <div className="product-add-options">
-                  {commercialProductTypes.map((t) => (
-                    <div key={t}>
-                      <strong>{productTypeLabels[t]}</strong>
-                      {t === "hose" || t === "hose_end" ? (
-                        <>
-                          <button onClick={() => open(t, "series")}>
-                            增加系列
-                          </button>
-                          <button onClick={() => open(t, "sku")}>
-                            增加子体
-                          </button>
-                        </>
-                      ) : (
-                        <button onClick={() => open(t, "sku")}>新增产品</button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <button
-              disabled={!controls.edit}
-              onClick={() =>
-                open(
-                  selected[0].productType,
-                  selected[0].kind,
-                  selected[0].code,
-                )
+            )}
+          </div>
+        </section>
+        <section className="product-overview" aria-label="当前筛选结果概览">
+          <div>
+            <span>系列 / 独立项目</span>
+            <strong>{props.page.total}</strong>
+          </div>
+          <div>
+            <span>匹配 SKU</span>
+            <strong>{props.page.summary.skuCount}</strong>
+          </div>
+          <div>
+            <span>上线 SKU</span>
+            <strong>{props.page.summary.onlineCount}</strong>
+          </div>
+          <div>
+            <span>未定价 SKU</span>
+            <strong
+              className={
+                props.page.summary.missingPriceCount ? "product-warning" : ""
               }
             >
-              {props.canEdit ? "编辑" : "查看"}
-            </button>
-            <button
-              disabled={
-                !props.canEdit ||
-                !controls.delete ||
-                props.state.mode !== "items"
-              }
-              onClick={remove}
-            >
-              删除
-            </button>
+              {props.page.summary.missingPriceCount}
+            </strong>
           </div>
         </section>
         {mutation.data?.error && <p role="alert">{mutation.data.error}</p>}
         {mutation.data?.ok && <p role="status">{mutation.data.result}</p>}
-        <p>
-          {props.page.total} 个一级项目 · 已选择 {selected.length} 项
-        </p>
-        <div className="product-table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>选择</th>
-                <th>系列 / SKU</th>
-                <th>类目</th>
-                <th>关键尺寸</th>
-                <th>当前零售价格</th>
-                <th>状态</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {props.page.items.flatMap((g) => [
-                row(g.item),
-                ...(expanded.includes(key(g.item))
-                  ? g.children.map((c) => row(c, true))
-                  : []),
-              ])}
-            </tbody>
-          </table>
-        </div>
-        {!props.page.items.length && <p>没有符合条件的产品。</p>}
-        <nav aria-label="产品分页">
-          {props.page.page > 1 && (
-            <Link to={pageHref(props.page.page - 1)}>上一页</Link>
+        <section
+          className="product-results"
+          aria-label="产品列表"
+          aria-busy={loading}
+        >
+          <div className="product-list-toolbar">
+            <div>
+              <h2>产品列表</h2>
+              <span className="product-muted">
+                {filtered ? "当前筛选结果" : "全部产品"} · 按系列分组
+              </span>
+            </div>
+            <div>
+              <button
+                disabled={!props.page.items.length}
+                onClick={() =>
+                  setExpanded(
+                    allExpanded
+                      ? []
+                      : props.page.items
+                          .filter((g) => g.item.kind === "series")
+                          .map((g) => key(g.item)),
+                  )
+                }
+              >
+                {allExpanded && props.page.items.length
+                  ? "收起全部"
+                  : "展开全部"}
+              </button>
+              <label>
+                每页
+                <select
+                  value={props.pageSize}
+                  onChange={(e) => filter({ size: e.target.value })}
+                >
+                  <option value="20">20 组</option>
+                  <option value="50">50 组</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          {selected.length > 0 && (
+            <div className="product-selection">
+              <strong>已选择 {selected.length} 项</strong>
+              <button
+                disabled={!controls.edit}
+                onClick={() =>
+                  open(
+                    selected[0].productType,
+                    selected[0].kind,
+                    selected[0].code,
+                  )
+                }
+              >
+                {canWrite ? "编辑" : "查看"}
+              </button>
+              <button disabled={!canWrite || !controls.delete} onClick={remove}>
+                删除
+              </button>
+              <button onClick={() => setSelected([])}>取消选择</button>
+              {!controls.delete && <span>系列与 SKU 请分别选择操作</span>}
+            </div>
           )}
-          <span>
-            第 {props.page.page} / {props.page.pages} 页
-          </span>
-          {props.page.page < props.page.pages && (
-            <Link to={pageHref(props.page.page + 1)}>下一页</Link>
+          {loading && (
+            <p className="product-loading" role="status">
+              正在更新列表…
+            </p>
           )}
-        </nav>
+          <div className="product-table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>选择</th>
+                  <th>产品 / 系列</th>
+                  <th>类目</th>
+                  <th>规格信息</th>
+                  <th>零售价格</th>
+                  <th>发布状态</th>
+                  <th>待处理</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {props.page.items.flatMap((g) => [
+                  row(g.item, g.children, false, g.totalChildren),
+                  ...(expanded.includes(key(g.item))
+                    ? g.children.map((c) => row(c, [], true))
+                    : []),
+                ])}
+              </tbody>
+            </table>
+          </div>
+          {!props.page.items.length && (
+            <div className="product-empty">
+              <strong>没有找到符合条件的产品</strong>
+              <p>试试其他 SKU、系列名称，或减少筛选条件。</p>
+              {filtered && (
+                <button onClick={() => void navigate(location.pathname)}>
+                  清空筛选
+                </button>
+              )}
+            </div>
+          )}
+          <nav className="product-pagination" aria-label="产品分页">
+            <span>
+              共 {props.page.total} 组 · 第 {props.page.page} /{" "}
+              {props.page.pages} 页
+            </span>
+            <div>
+              {props.page.page > 1 ? (
+                <Link to={pageHref(props.page.page - 1)}>← 上一页</Link>
+              ) : (
+                <span aria-disabled="true">← 上一页</span>
+              )}
+              {props.page.page < props.page.pages ? (
+                <Link to={pageHref(props.page.page + 1)}>下一页 →</Link>
+              ) : (
+                <span aria-disabled="true">下一页 →</span>
+              )}
+            </div>
+          </nav>
+        </section>
+        {addOpen && (
+          <Modal title="新增产品" onClose={() => setAddOpen(false)}>
+            <p className="product-modal-intro">
+              先选择产品类目，再填写规格、价格和发布状态。
+            </p>
+            <div className="product-add-types">
+              {commercialProductTypes.map((t, i) => (
+                <button
+                  key={t}
+                  aria-pressed={addType === t}
+                  onClick={() => {
+                    setAddType(t);
+                    setAddKind("sku");
+                  }}
+                >
+                  <span>0{i + 1}</span>
+                  <strong>{productTypeLabels[t]}</strong>
+                  <small>
+                    {t === "hose" || t === "hose_end"
+                      ? "支持系列与 SKU"
+                      : "新增 SKU 产品"}
+                  </small>
+                </button>
+              ))}
+            </div>
+            {(addType === "hose" || addType === "hose_end") && (
+              <fieldset className="product-add-kind">
+                <legend>新增内容</legend>
+                <label>
+                  <input
+                    type="radio"
+                    name="addKind"
+                    checked={addKind === "sku"}
+                    onChange={() => setAddKind("sku")}
+                  />
+                  SKU 子体 <small>在已有系列下增加规格</small>
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="addKind"
+                    checked={addKind === "series"}
+                    onChange={() => setAddKind("series")}
+                  />
+                  产品系列 <small>先建立系列，再添加 SKU</small>
+                </label>
+              </fieldset>
+            )}
+            <footer>
+              <button onClick={() => setAddOpen(false)}>取消</button>
+              <button
+                className="product-primary"
+                onClick={() => open(addType, addKind)}
+              >
+                下一步：填写资料 →
+              </button>
+            </footer>
+          </Modal>
+        )}
+        {editorOpen && (editor.state !== "idle" || !editor.data) && (
+          <Modal title="加载产品资料" onClose={() => setEditorOpen(false)}>
+            <p role="status" className="product-loading">
+              正在读取规格、价格和可选系列…
+            </p>
+          </Modal>
+        )}
         {editorOpen && editor.state === "idle" && editor.data && (
           <ProductEditor
             key={editor.data.commandId}

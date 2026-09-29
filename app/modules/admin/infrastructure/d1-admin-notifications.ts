@@ -93,13 +93,27 @@ const notificationSelect = `SELECT n.id, n.kind, n.source_id, n.created_at, r.re
   LEFT JOIN confirmed_orders o ON o.id=COALESCE(c.order_id, x.order_id, ra.order_id, sr.order_id, sc.order_id, rc.order_id, rr.order_id)
   LEFT JOIN customer_profiles cp ON cp.id=c.profile_id`;
 
+// Apply the same scope before pagination, counts, lookup and read-state writes.
+// The actor and grants are checked in D1 so a revoked/disabled account fails closed.
+const granted = (module: string) =>
+  `EXISTS(SELECT 1 FROM admin_module_permissions p WHERE p.admin_id=i.id AND p.module='${module}' AND p.level IN ('read','write'))`;
+const visibleToAdmin = `EXISTS(SELECT 1 FROM admin_identities i
+  WHERE i.id=?1 AND i.status='active' AND i.deleted_at IS NULL AND (
+    i.account_type='owner' OR (i.account_type='subaccount' AND ${granted("notifications")} AND (
+      (n.kind='rfq_submitted' AND ${granted("quotes")}) OR
+      (n.kind='shipping_change_requested' AND ${granted("orders")}) OR
+      (n.kind IN ('cancellation_requested','after_sales_case_opened','return_inspection_overdue','refund_initiation_overdue') AND ${granted("orders")} AND ${granted("after_sales")}) OR
+      (n.kind='after_sales_customer_reply' AND ${granted("messages")} AND ${granted("after_sales")})
+    ))
+  ))`;
+
 export function createD1AdminNotifications(database: D1Database) {
   async function unreadCount(adminId: string) {
     const row = await database
       .prepare(
         `SELECT COUNT(*) AS count FROM admin_notifications n
-         WHERE NOT EXISTS(SELECT 1 FROM admin_notification_reads r
-           WHERE r.notification_id=n.id AND r.admin_id=?)`,
+         WHERE ${visibleToAdmin} AND NOT EXISTS(SELECT 1 FROM admin_notification_reads r
+           WHERE r.notification_id=n.id AND r.admin_id=?1)`,
       )
       .bind(adminId)
       .first<{ count: number }>();
@@ -113,8 +127,7 @@ export function createD1AdminNotifications(database: D1Database) {
       adminId: string,
       options: { filter: AdminNotificationFilter; page: number },
     ) {
-      const where =
-        options.filter === "unread" ? "WHERE r.read_at IS NULL" : "";
+      const where = `WHERE ${visibleToAdmin}${options.filter === "unread" ? " AND r.read_at IS NULL" : ""}`;
       const offset = (options.page - 1) * ADMIN_NOTIFICATION_PAGE_SIZE;
       const [rows, total, unread] = await Promise.all([
         database
@@ -126,7 +139,10 @@ export function createD1AdminNotifications(database: D1Database) {
           .bind(adminId, ADMIN_NOTIFICATION_PAGE_SIZE, offset)
           .all<AdminNotificationRow>(),
         database
-          .prepare("SELECT COUNT(*) AS count FROM admin_notifications")
+          .prepare(
+            `SELECT COUNT(*) AS count FROM admin_notifications n WHERE ${visibleToAdmin}`,
+          )
+          .bind(adminId)
           .first<{ count: number }>(),
         unreadCount(adminId),
       ]);
@@ -147,7 +163,7 @@ export function createD1AdminNotifications(database: D1Database) {
 
     async find(adminId: string, notificationId: string) {
       const row = await database
-        .prepare(`${notificationSelect} WHERE n.id=?2`)
+        .prepare(`${notificationSelect} WHERE n.id=?2 AND ${visibleToAdmin}`)
         .bind(adminId, notificationId)
         .first<AdminNotificationRow>();
       return row ? project(row) : null;
@@ -162,7 +178,7 @@ export function createD1AdminNotifications(database: D1Database) {
             .prepare(
               `INSERT OR IGNORE INTO admin_notification_reads
                (notification_id,admin_id,read_at)
-               SELECT id,?,? FROM admin_notifications WHERE id=?`,
+               SELECT n.id,?1,?2 FROM admin_notifications n WHERE n.id=?3 AND ${visibleToAdmin}`,
             )
             .bind(adminId, readAt, id),
         ),

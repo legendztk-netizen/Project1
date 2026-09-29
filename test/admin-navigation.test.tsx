@@ -16,6 +16,7 @@ import { AdminNavigation } from "../app/modules/admin/ui/admin-navigation";
 const fetchUnread = vi.fn(async () => Response.json({ unread: 0 }));
 
 beforeEach(() => {
+  sessionStorage.clear();
   fetchUnread.mockClear();
   vi.stubGlobal("fetch", fetchUnread);
 });
@@ -91,6 +92,37 @@ describe("AdminNavigation", () => {
       screen.getByRole("link", { name: "产品审核与发布" }).getAttribute("href"),
     ).toBe("/admin/catalog/requests");
   });
+
+  it("preserves the menu across outside clicks and page remounts until toggled again", () => {
+    const show = (active: "imports" | "orders") =>
+      render(
+        <MemoryRouter>
+          <AdminNavigation active={active} />
+          <button>页面内容</button>
+        </MemoryRouter>,
+      );
+    let page = show("imports");
+    fireEvent.click(screen.getByRole("button", { name: "页面内容" }));
+    expect(
+      screen
+        .getByRole("button", { name: "产品数据维护" })
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
+    fireEvent.click(screen.getByRole("link", { name: "订单" }));
+    page.unmount();
+    page = show("orders");
+    const toggle = screen.getByRole("button", { name: "产品数据维护" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(toggle);
+    expect(screen.queryByRole("group", { name: "产品数据维护" })).toBeNull();
+    page.unmount();
+    show("imports");
+    expect(
+      screen
+        .getByRole("button", { name: "产品数据维护" })
+        .getAttribute("aria-expanded"),
+    ).toBe("false");
+  });
 });
 
 describe("AdminNavigation notifications", () => {
@@ -134,4 +166,27 @@ describe("AdminNavigation notifications", () => {
       expect.anything(),
     );
   });
+});
+
+import { AdminIdentityContext } from "../app/modules/admin/ui/admin-identity-context";
+it("shows assembly parameter configuration independently of product management", () => {
+  render(
+    <MemoryRouter>
+      <AdminIdentityContext.Provider
+        value={{
+          id: "staff",
+          email: "staff@tests.invalid",
+          accountType: "subaccount",
+          canManageSubaccounts: false,
+          source: "cloudflare-access",
+          moduleAccess: { configurator: "read" },
+        }}
+      >
+        <AdminNavigation active="configurator" />
+      </AdminIdentityContext.Provider>
+    </MemoryRouter>,
+  );
+  expect(screen.getByRole("link", { name: "总成参数配置" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "产品数据维护" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "产品审核与发布" })).toBeNull();
 });

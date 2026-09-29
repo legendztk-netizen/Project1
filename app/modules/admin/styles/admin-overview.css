@@ -1,0 +1,168 @@
+.admin-overview {
+  max-width: 1560px;
+  width: 100%;
+}
+.admin-overview .admin-topbar p {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.overview-section {
+  margin-top: 30px;
+}
+.overview-section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.overview-section-heading h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+.overview-section-heading > span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+.overview-tasks {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+.overview-task {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+  color: inherit;
+  text-decoration: none;
+}
+.overview-task-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.88rem;
+}
+.overview-task-heading svg {
+  color: var(--muted);
+}
+.overview-task > strong {
+  font-size: 2.3rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+.overview-task.has-pending > strong {
+  color: #c52719;
+}
+.overview-task > small {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+.overview-task-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid #eef0f2;
+  font-size: 0.78rem;
+}
+.overview-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.overview-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 22px 18px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: white;
+  color: inherit;
+  text-decoration: none;
+}
+.overview-shortcut > div {
+  flex: 1;
+  min-width: 0;
+}
+.overview-shortcut strong {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+.overview-shortcut strong small {
+  padding: 2px 5px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 400;
+}
+.overview-shortcut p {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  margin: 7px 0 0;
+}
+.overview-shortcut-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 42px;
+  height: 42px;
+  border-radius: 9px;
+  background: #f0f3f5;
+  color: #45555f;
+}
+.overview-shortcut > svg {
+  color: #8b969e;
+  flex-shrink: 0;
+}
+.overview-task:hover,
+.overview-shortcut:hover {
+  border-color: #8f9da6;
+  box-shadow: 0 3px 12px #18252f0a;
+}
+.overview-task:focus-visible,
+.overview-shortcut:focus-visible {
+  outline: 3px solid #c52719;
+  outline-offset: 3px;
+}
+.overview-empty {
+  padding: 26px;
+  border: 1px dashed #bac5cb;
+  border-radius: 10px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.overview-empty a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+@media (max-width: 1200px) {
+  .overview-tasks,
+  .overview-shortcuts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 620px) {
+  .overview-tasks,
+  .overview-shortcuts {
+    grid-template-columns: 1fr;
+  }
+  .admin-overview .admin-topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

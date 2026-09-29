@@ -271,3 +271,100 @@ it("shows a durable failed PDF job with an explicit retry command", () => {
   expect(html).toContain('value="retry-pdf"');
   expect(html).toContain('value="saved-command"');
 });
+
+it("prioritizes current payment instructions above order details and never falls back to the PDF account", () => {
+  const html = render(
+    <CustomerPi
+      loaderData={{
+        requestId: "request",
+        invoice: {
+          ...invoice,
+          snapshot: {
+            ...invoice.snapshot,
+            issuedPaymentInstructions: {
+              channel: "bank_transfer",
+              instructions: "OLD PDF ACCOUNT",
+            },
+          },
+        },
+        status: currentStatus,
+      }}
+    />,
+  );
+  expect(html.indexOf("Payment instructions")).toBeLessThan(
+    html.indexOf("Issued (ET)"),
+  );
+  expect(html).toContain("Copy payment details");
+  expect(html).toContain("Copy reference");
+  expect(html).toContain("Selected bank details");
+  expect(html).not.toContain("OLD PDF ACCOUNT");
+});
+
+it.each([
+  {
+    name: "partial",
+    balanceCents: 2345,
+    amountReceivedCents: 10000,
+    receiptHistoryKnown: true,
+    paymentConfirmed: false,
+    amount: "USD 23.45",
+    action: true,
+  },
+  {
+    name: "received",
+    balanceCents: 0,
+    amountReceivedCents: 12345,
+    receiptHistoryKnown: true,
+    paymentConfirmed: false,
+    amount: "USD 0.00",
+    action: false,
+  },
+  {
+    name: "confirmed",
+    balanceCents: 0,
+    amountReceivedCents: 12345,
+    receiptHistoryKnown: true,
+    paymentConfirmed: true,
+    amount: "USD 0.00",
+    action: false,
+  },
+  {
+    name: "unknown",
+    balanceCents: 12345,
+    amountReceivedCents: 0,
+    receiptHistoryKnown: false,
+    paymentConfirmed: false,
+    amount: "Contact Support",
+    action: false,
+  },
+])("uses the $name balance without requesting duplicate payment", (sample) => {
+  const payment = {
+    ...sample,
+    totalDueCents: 12345,
+    excessCents: 0,
+    dueAt: "2026-10-15T03:59:00.000Z",
+    orderId: null,
+  } as unknown as NonNullable<
+    Parameters<typeof CustomerPi>[0]["loaderData"]["payment"]
+  >;
+  const html = render(
+    <CustomerPi
+      loaderData={{
+        requestId: "request",
+        invoice,
+        status: currentStatus,
+        payment,
+      }}
+    />,
+  );
+  const paymentPanel = html.slice(
+    html.indexOf('aria-labelledby="payment-instructions-heading"'),
+    html.indexOf('class="customer-pi-facts customer-pi-key-facts"'),
+  );
+  expect(paymentPanel).toContain(sample.amount);
+  expect(paymentPanel.includes("customer-pi-payment-steps")).toBe(
+    sample.action,
+  );
+  if (sample.name === "received" || sample.name === "confirmed")
+    expect(paymentPanel).toContain("No additional payment is needed");
+});

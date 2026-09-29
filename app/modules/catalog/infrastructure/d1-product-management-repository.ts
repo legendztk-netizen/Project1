@@ -29,17 +29,62 @@ export interface ManagedProduct extends ProductSelection {
   revisionId: string | null;
   draftRevisionId: string | null;
   assemblyPending: boolean;
+  salesUnit?: string | null;
+  technicalStatus?: string | null;
 }
 export interface ProductGroup {
   item: ManagedProduct;
   children: ManagedProduct[];
+  totalChildren?: number;
 }
 const facts = `
- SELECT 'hose' AS type,m.sku,m.hose_series AS series_code,CAST(m.nominal_id_in AS TEXT)||' in' AS dimensions FROM catalog_runtime_hose_variants m WHERE m.import_id=?1
- UNION ALL SELECT 'hose_end',m.sku,m.fitting_series,m.connection_dash||' / '||m.hose_tail_dash FROM catalog_runtime_hose_ends m WHERE m.import_id=?1
- UNION ALL SELECT 'ferrule',m.sku,m.ferrule_series,m.hose_tail_dash||' / '||m.hose_construction FROM catalog_runtime_ferrules m WHERE m.import_id=?1
+ SELECT 'hose' AS type,m.sku,m.hose_series AS series_code,COALESCE(CAST(m.nominal_id_in AS TEXT)||' in','')||COALESCE(' · '||m.working_bar||' bar','') AS dimensions FROM catalog_runtime_hose_variants m WHERE m.import_id=?1
+ UNION ALL SELECT 'hose_end',m.sku,m.fitting_series,COALESCE(m.connection_dash,'?')||' / '||COALESCE(m.hose_tail_dash,'?')||COALESCE(' · '||m.thread,'') FROM catalog_runtime_hose_ends m WHERE m.import_id=?1
+ UNION ALL SELECT 'ferrule',m.sku,m.ferrule_series,COALESCE(m.hose_tail_dash,'?')||' / '||COALESCE(m.hose_construction,'') FROM catalog_runtime_ferrules m WHERE m.import_id=?1
  UNION ALL SELECT 'adapter',m.sku,m.adapter_family_id,m.interface_1||' '||COALESCE(m.size_1,'')||' / '||m.interface_2||' '||COALESCE(m.size_2,'') FROM catalog_runtime_adapters m WHERE m.import_id=?1
- UNION ALL SELECT 'quick_coupler',m.sku,m.coupler_series,m.body_size||' / '||m.port_thread FROM catalog_runtime_quick_couplers m WHERE m.import_id=?1`;
+ UNION ALL SELECT 'quick_coupler',m.sku,m.coupler_series,COALESCE(m.body_size,'?')||' / '||COALESCE(m.port_thread,'?')||COALESCE(' · '||m.max_working_bar||' bar','') FROM catalog_runtime_quick_couplers m WHERE m.import_id=?1`;
+function variantDimensions(payload: CatalogItemPayload): string {
+  if (payload.kind !== "sku") return "";
+  const v = payload.variant as unknown as Record<
+    string,
+    string | number | null
+  >;
+  const value = (key: string, suffix = "") =>
+    v[key] == null ? "" : `${v[key]}${suffix}`;
+  switch (payload.productType) {
+    case "hose":
+      return [value("nominalIdIn", " in"), value("workingBar", " bar")]
+        .filter(Boolean)
+        .join(" · ");
+    case "hose_end":
+      return [
+        [value("connectionDash"), value("hoseTailDash")]
+          .filter(Boolean)
+          .join(" / "),
+        value("thread"),
+      ]
+        .filter(Boolean)
+        .join(" · ");
+    case "ferrule":
+      return [value("hoseTailDash"), value("hoseConstruction")]
+        .filter(Boolean)
+        .join(" / ");
+    case "adapter":
+      return [
+        [value("interface1"), value("size1")].filter(Boolean).join(" "),
+        [value("interface2"), value("size2")].filter(Boolean).join(" "),
+      ]
+        .filter(Boolean)
+        .join(" / ");
+    case "quick_coupler":
+      return [
+        [value("bodySize"), value("portThread")].filter(Boolean).join(" / "),
+        value("maxWorkingBar", " bar"),
+      ]
+        .filter(Boolean)
+        .join(" · ");
+  }
+}
 export function createD1ProductManagementRepository(database: D1Database) {
   const items = createD1CatalogItemRepository(database);
   async function all(): Promise<ManagedProduct[]> {
@@ -49,14 +94,17 @@ export function createD1ProductManagementRepository(database: D1Database) {
       )
       .first<{ source_import_id: string }>();
     if (!active) return [];
+    // Prevent SQLite from flattening the five-category UNION and rebuilding the
+    // large runtime views once per category. This is per-query work, not a cache.
     const [rows, series, extras] = await database.batch<
       Record<string, unknown>
     >([
       database
         .prepare(
-          `SELECT f.*,s.catalog_publication_status,COALESCE(p.currency,o.currency,'USD') AS currency,CASE WHEN p.id IS NOT NULL THEN p.reference_price_usd ELSE o.reference_price_usd END AS amount,image.media_version_id,
-    e.current_revision_id,e.draft_revision_id,d.invalidated_sequence>d.generated_sequence AS dirty
-    FROM (${facts}) f JOIN catalog_runtime_skus s ON s.sku=f.sku AND s.import_id=?1
+          `WITH product_facts AS MATERIALIZED (${facts})
+    SELECT f.*,s.catalog_publication_status,COALESCE(p.currency,o.currency,'USD') AS currency,CASE WHEN p.id IS NOT NULL THEN p.reference_price_usd ELSE o.reference_price_usd END AS amount,image.media_version_id,
+    e.current_revision_id,e.draft_revision_id,o.sales_unit,s.technical_data_status,d.invalidated_sequence>d.generated_sequence AS dirty
+    FROM product_facts f JOIN catalog_runtime_skus s ON s.sku=f.sku AND s.import_id=?1
     LEFT JOIN catalog_product_entities e ON e.kind='sku' AND e.code=f.sku
     LEFT JOIN catalog_runtime_sku_price_packaging p ON p.sku=f.sku AND p.import_id=?1
     LEFT JOIN catalog_runtime_sales_offers o ON o.base_sku=f.sku AND o.import_id=?1
@@ -94,6 +142,8 @@ export function createD1ProductManagementRepository(database: D1Database) {
       revisionId: r.current_revision_id as string | null,
       draftRevisionId: r.draft_revision_id as string | null,
       assemblyPending: Boolean(r.dirty),
+      salesUnit: r.sales_unit as string | null,
+      technicalStatus: r.technical_data_status as string | null,
     }));
     for (const r of series.results)
       result.push({
@@ -136,10 +186,12 @@ export function createD1ProductManagementRepository(database: D1Database) {
         seriesCode: itemSeriesCode(p),
         name: p.kind === "series" ? p.series.seriesName : String(r.code),
         imageId: p.mediaVersionId,
-        dimensions: "",
+        dimensions: variantDimensions(p),
         amount: p.kind === "sku" ? (p.price?.amount ?? null) : null,
         currency: p.kind === "sku" ? (p.price?.currency ?? "USD") : "USD",
         state: String(r.target_state),
+        technicalStatus:
+          p.kind === "sku" ? String(p.variant.technicalDataStatus ?? "") : null,
         revisionId: r.current_revision_id as string | null,
         draftRevisionId: r.draft_revision_id as string | null,
         assemblyPending: false,
@@ -164,8 +216,67 @@ export function createD1ProductManagementRepository(database: D1Database) {
           dimensions: "",
           amount: null,
           imageId: null,
+          revisionId: null,
+          draftRevisionId: null,
+          salesUnit: null,
+          technicalStatus: null,
         });
     return result;
+  }
+  async function seriesOptions(): Promise<
+    Array<{ code: string; productType: CommercialProductType }>
+  > {
+    const active = await database
+      .prepare(
+        "SELECT r.source_import_id FROM catalog_active_release a JOIN catalog_releases r ON r.id=a.release_id WHERE a.singleton=1",
+      )
+      .first<{ source_import_id: string }>();
+    if (!active) return [];
+    const [runtime, extras] = await database.batch<{
+      type: CommercialProductType;
+      code: string;
+      payload_json?: string;
+    }>([
+      database
+        .prepare(
+          `WITH product_facts AS MATERIALIZED (${facts}),
+        candidates AS (
+          SELECT 'sku' AS kind,type,sku AS identity_code,series_code AS code FROM product_facts
+          UNION ALL SELECT 'series','hose',series_code,series_code FROM catalog_runtime_hose_series WHERE import_id=?1
+          UNION ALL SELECT 'series','hose_end',series_code,series_code FROM catalog_runtime_hose_end_series WHERE import_id=?1
+        )
+        SELECT DISTINCT c.type,c.code FROM candidates c
+        LEFT JOIN catalog_product_entities e ON e.kind=c.kind AND e.product_type=c.type AND e.code=c.identity_code
+        WHERE e.hidden_at IS NULL`,
+        )
+        .bind(active.source_import_id),
+      database.prepare(`SELECT e.product_type AS type,e.code,r.payload_json
+        FROM catalog_product_entities e JOIN catalog_product_revisions r
+        ON r.id=COALESCE(e.current_revision_id,e.draft_revision_id)
+        WHERE e.hidden_at IS NULL`),
+    ]);
+    // Read only series identities for the review filter; no sales offers or derived assembly SKUs.
+    const options = new Map<
+      string,
+      { code: string; productType: CommercialProductType }
+    >();
+    for (const r of runtime.results)
+      if (r.code)
+        options.set(`${r.type}:${r.code}`, {
+          code: r.code,
+          productType: r.type,
+        });
+    for (const r of extras.results) {
+      if (!r.payload_json) continue;
+      const payload = JSON.parse(r.payload_json) as CatalogItemPayload;
+      const code = itemSeriesCode(payload);
+      if (code)
+        options.set(`${payload.productType}:${code}`, {
+          code,
+          productType: payload.productType,
+        });
+    }
+    return [...options.values()];
   }
   async function deletionPlan(selected: ProductSelection[]) {
     if (!selectionActions(selected).delete)
@@ -362,6 +473,7 @@ export function createD1ProductManagementRepository(database: D1Database) {
   }
   return {
     all,
+    seriesOptions,
     deletionPlan,
     remove,
     async list(input: {
@@ -369,42 +481,74 @@ export function createD1ProductManagementRepository(database: D1Database) {
       query: string;
       page: number;
       pageSize: 20 | 50;
+      status?: string;
+      attention?: string;
     }) {
       const rows = (await all()).filter(
         (r) => !input.types.length || input.types.includes(r.productType),
       );
-      const q = input.query.toUpperCase().trim();
-      const groups: ProductGroup[] = [];
-      for (const row of rows.filter((r) => r.kind === "series")) {
-        const children = rows.filter(
-          (r) =>
-            r.kind === "sku" &&
-            r.productType === row.productType &&
-            r.seriesCode === row.code &&
-            (!q || r.code.includes(q)),
+      const q = input.query.toLocaleLowerCase().trim();
+      const matchesText = (r: ManagedProduct) =>
+        !q ||
+        [r.code, r.name, r.seriesCode, r.dimensions].some((value) =>
+          value.toLocaleLowerCase().includes(q),
         );
-        if (!q || children.length || row.code.includes(q))
-          groups.push({ item: row, children });
+      const matchesFilters = (r: ManagedProduct) =>
+        (!input.status || r.state === input.status) &&
+        (!input.attention ||
+          (input.attention === "missing_price"
+            ? r.kind === "sku" && r.amount === null
+            : input.attention === "draft_changes"
+              ? !!r.draftRevisionId
+              : input.attention === "technical_pending"
+                ? r.kind === "sku" && r.technicalStatus === "Pending"
+                : r.assemblyPending));
+      const groups: ProductGroup[] = [];
+      const parents = new Set(
+        rows
+          .filter((r) => r.kind === "series")
+          .map((r) => `${r.productType}:${r.code}`),
+      );
+      const bySeries = new Map<string, ManagedProduct[]>();
+      for (const r of rows)
+        if (r.kind === "sku") {
+          const id = `${r.productType}:${r.seriesCode}`;
+          const siblings = bySeries.get(id) ?? [];
+          siblings.push(r);
+          bySeries.set(id, siblings);
+        }
+      for (const row of rows.filter((r) => r.kind === "series")) {
+        const siblings = bySeries.get(`${row.productType}:${row.code}`) ?? [];
+        const parentMatches = matchesText(row);
+        const children = siblings.filter(
+          (r) => (parentMatches || matchesText(r)) && matchesFilters(r),
+        );
+        if (children.length || (parentMatches && matchesFilters(row)))
+          groups.push({ item: row, children, totalChildren: siblings.length });
       }
       for (const row of rows.filter(
         (r) =>
-          r.kind === "sku" &&
-          !rows.some(
-            (s) =>
-              s.kind === "series" &&
-              s.productType === r.productType &&
-              s.code === r.seriesCode,
-          ),
+          r.kind === "sku" && !parents.has(`${r.productType}:${r.seriesCode}`),
       ))
-        if (!q || row.code.includes(q))
-          groups.push({ item: row, children: [] });
+        if (matchesText(row) && matchesFilters(row))
+          groups.push({ item: row, children: [], totalChildren: 0 });
       groups.sort(
         (a, b) =>
           commercialProductTypes.indexOf(a.item.productType) -
             commercialProductTypes.indexOf(b.item.productType) ||
           a.item.code.localeCompare(b.item.code),
       );
-      return paginateProductGroups(groups, input.page, input.pageSize);
+      const skus = groups.flatMap((g) =>
+        g.item.kind === "sku" ? [g.item] : g.children,
+      );
+      return {
+        ...paginateProductGroups(groups, input.page, input.pageSize),
+        summary: {
+          skuCount: skus.length,
+          onlineCount: skus.filter((r) => r.state === "online").length,
+          missingPriceCount: skus.filter((r) => r.amount === null).length,
+        },
+      };
     },
   };
 }

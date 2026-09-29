@@ -98,8 +98,8 @@ export function validateRuntimeEnvironment(
     }
 
     if (environment === "local") {
-      if (input.ADMIN_AUTH_MODE !== "local-stub") {
-        errors.push("ADMIN_AUTH_MODE must be local-stub in local development");
+      if (input.ADMIN_AUTH_MODE !== "password") {
+        errors.push("ADMIN_AUTH_MODE must be password in local development");
       }
       if (input.EMAIL_DELIVERY_MODE !== "stub") {
         errors.push("EMAIL_DELIVERY_MODE must be stub in local development");
@@ -111,9 +111,13 @@ export function validateRuntimeEnvironment(
           errors.push(`${variable} is still a placeholder for ${environment}`);
         }
       }
-      if (input.ADMIN_AUTH_MODE !== "cloudflare-access") {
+      if (
+        !["cloudflare-access", "password"].includes(
+          String(input.ADMIN_AUTH_MODE),
+        )
+      ) {
         errors.push(
-          `ADMIN_AUTH_MODE must be cloudflare-access for ${environment}`,
+          `ADMIN_AUTH_MODE must be cloudflare-access or password for ${environment}`,
         );
       }
       if (input.EMAIL_DELIVERY_MODE !== "resend") {

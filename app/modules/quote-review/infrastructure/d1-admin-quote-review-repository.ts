@@ -72,6 +72,14 @@ export function createD1AdminQuoteReviewRepository(database: D1Database) {
     });
   }
   return {
+    async countAwaitingReview() {
+      const row = await database
+        .prepare(
+          `SELECT count(*) AS count FROM (${reviewSelect}) WHERE review_state='awaiting_review'`,
+        )
+        .first<{ count: number }>();
+      return row?.count ?? 0;
+    },
     async find(requestId: string) {
       const row = await database
         .prepare(

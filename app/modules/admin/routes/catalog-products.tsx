@@ -35,25 +35,47 @@ export async function loader({ context, request }: Route.LoaderArgs) {
       commercialProductTypes.includes(t as CommercialProductType),
     );
   const pageSize = url.searchParams.get("size") === "50" ? 50 : 20;
+  const status = ["online", "draft", "discontinued"].includes(
+    url.searchParams.get("status") ?? "",
+  )
+    ? url.searchParams.get("status")!
+    : "";
+  const attention = [
+    "missing_price",
+    "draft_changes",
+    "assembly_pending",
+    "technical_pending",
+  ].includes(url.searchParams.get("attention") ?? "")
+    ? url.searchParams.get("attention")!
+    : "";
   const repository = createD1ProductManagementRepository(env.DB);
-  return {
-    page: await repository.list({
+  const [page, state, deletionPlan] = await Promise.all([
+    repository.list({
       types,
+      status,
+      attention,
       query: url.searchParams.get("q") ?? "",
       page: Number(url.searchParams.get("page") ?? 1),
       pageSize,
     }),
-    types,
-    query: url.searchParams.get("q") ?? "",
-    pageSize,
-    state: await createD1CatalogItemRepository(env.DB).state(),
-    canEdit: adminIdentity.catalogPermission !== "view",
-    canEnable: env.APP_ENV !== "production",
-    deletionPlan: url.searchParams.has("deletePlan")
-      ? await repository.deletionPlan(
+    createD1CatalogItemRepository(env.DB).state(),
+    url.searchParams.has("deletePlan")
+      ? repository.deletionPlan(
           JSON.parse(url.searchParams.get("deletePlan")!) as ProductSelection[],
         )
-      : null,
+      : Promise.resolve(null),
+  ]);
+  return {
+    page,
+    types,
+    status,
+    attention,
+    query: url.searchParams.get("q") ?? "",
+    pageSize,
+    state,
+    canEdit: adminIdentity.catalogPermission !== "view",
+    canEnable: env.APP_ENV !== "production",
+    deletionPlan,
   };
 }
 export async function action({ context, request }: Route.ActionArgs) {

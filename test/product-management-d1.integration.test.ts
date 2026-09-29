@@ -530,3 +530,189 @@ it("preserves legacy mixed-case series identities while editing and attaching a 
   ).toMatchObject({ variant: { fittingSeries: legacyCode } });
   expect((await catalog.findItem("LJF-04-04"))?.canAddToQuote).toBe(true);
 });
+
+it("keeps lightweight review series options equivalent to visible products, including drafts and deleted families", async () => {
+  const manager = createD1ProductManagementRepository(database);
+  const expected = async () =>
+    (await manager.all())
+      .filter((p) => p.kind === "series")
+      .map((p) => `${p.productType}:${p.code}`)
+      .sort();
+  const actual = async () =>
+    (await manager.seriesOptions())
+      .map((p) => `${p.productType}:${p.code}`)
+      .sort();
+  expect(await actual()).toEqual(await expected());
+  const parent = await repository.findProductPayload(
+    "ferrule",
+    "series",
+    "601R1",
+  );
+  if (!parent || parent.kind !== "series")
+    throw new Error("missing series fixture");
+  await repository.apply(
+    command(
+      {
+        ...parent,
+        series: {
+          ...parent.series,
+          seriesCode: "FILTER-DRAFT",
+          seriesName: "Draft filter family",
+        },
+        commercialRule: {
+          ...parent.commercialRule!,
+          seriesCode: "FILTER-DRAFT",
+        },
+      } as CatalogItemCommand["payload"],
+      "draft",
+    ),
+  );
+  expect(await actual()).toContain("ferrule:FILTER-DRAFT");
+  expect(await actual()).toEqual(await expected());
+  await manager.remove(
+    [{ kind: "series", productType: "ferrule", code: "FILTER-DRAFT" }],
+    "delete-filter-draft",
+    "owner-1",
+    "local",
+  );
+  expect(await actual()).not.toContain("ferrule:FILTER-DRAFT");
+  expect(await actual()).toEqual(await expected());
+});
+
+it("loads review filters without reading full product pricing, but retains affected SKUs for series details", async () => {
+  const { RouterContextProvider } = await import("react-router");
+  const { cloudflareContext } = await import("../workers/context");
+  const { loader } =
+    await import("../app/modules/admin/routes/catalog-requests");
+  const queries: string[] = [];
+  const context = new RouterContextProvider();
+  context.set(cloudflareContext, {
+    env: {
+      DB: {
+        prepare(sql: string) {
+          queries.push(sql);
+          return database.prepare(sql);
+        },
+        batch: database.batch.bind(database),
+      },
+      APP_ENV: "local",
+    } as CloudflareBindings,
+    runtime: { environment: "local" },
+    ctx: {} as ExecutionContext,
+    adminIdentity: {
+      accountType: "owner",
+      catalogPermission: "edit",
+      canManageSubaccounts: true,
+      email: "owner@example.test",
+      id: "owner-1",
+      source: "cloudflare-access",
+    },
+  });
+  const load = (query = "") => {
+    const url = new URL(`https://example.test/admin/catalog/requests${query}`);
+    return loader({
+      context,
+      request: new Request(url),
+      url,
+      params: {},
+      pattern: "/admin/catalog/requests",
+    });
+  };
+  const page = await load();
+  expect(page.seriesOptions.length).toBeGreaterThan(0);
+  expect(page.affected).toEqual([]);
+  expect(
+    queries.some((sql) => sql.includes("catalog_runtime_sales_offers")),
+  ).toBe(false);
+  const parent = await repository.findProductPayload(
+    "ferrule",
+    "series",
+    "601R1",
+  );
+  if (!parent) throw new Error("missing parent");
+  const id = await repository.createRequest(
+    command(parent, "online", "edit"),
+    [],
+  );
+  const detail = await load(`?detail=${encodeURIComponent(id)}`);
+  expect(detail.detail?.id).toBe(id);
+  expect(detail.affected).toContain("601R1_1WB_TEST");
+});
+
+it("searches names and specifications and combines SKU status with missing-price filters", async () => {
+  const manager = createD1ProductManagementRepository(database);
+  const parent = await repository.findProductPayload(
+    "ferrule",
+    "series",
+    "601R1",
+  );
+  if (!parent || parent.kind !== "series" || parent.productType !== "ferrule")
+    throw new Error("missing parent");
+  const series = {
+    ...parent,
+    commercialRule: null,
+    series: {
+      ...parent.series,
+      seriesCode: "UI-FILTER",
+      seriesName: "Precision filter family",
+    },
+  };
+  await repository.apply(command(series, "draft"));
+  const variant = {
+    ...fixtures[1].variant,
+    sku: "UI-FILTER-UNPRICED",
+    ferruleSeries: "UI-FILTER",
+    technicalDataStatus: "Pending",
+  };
+  await repository.apply(
+    command(
+      {
+        kind: "sku",
+        productType: "ferrule",
+        variant,
+        price: null,
+        mediaVersionId: image,
+      } as CatalogItemCommand["payload"],
+      "draft",
+    ),
+  );
+  const input = {
+    types: [] as [],
+    query: "precision FILTER",
+    page: 1,
+    pageSize: 20 as const,
+  };
+  const found = await manager.list(input);
+  expect(found.items).toHaveLength(1);
+  expect(found.items[0].children.map((r) => r.code)).toEqual([
+    "UI-FILTER-UNPRICED",
+  ]);
+  expect(found.summary).toEqual({
+    skuCount: 1,
+    onlineCount: 0,
+    missingPriceCount: 1,
+  });
+  const pending = await manager.list({
+    ...input,
+    attention: "technical_pending",
+  });
+  expect(pending.summary.skuCount).toBe(1);
+  const missing = await manager.list({
+    ...input,
+    status: "draft",
+    attention: "missing_price",
+  });
+  expect(missing.summary.skuCount).toBe(1);
+  expect(missing.items[0].totalChildren).toBe(1);
+  expect((await manager.list({ ...input, status: "online" })).total).toBe(0);
+  expect((await manager.list({ ...input, types: ["hose"] })).total).toBe(0);
+  const bySku = await manager.list({ ...input, query: "ui-filter-unpriced" });
+  expect(bySku.items[0].item.code).toBe("UI-FILTER");
+  expect(bySku.items[0].children[0].dimensions).toBe("-4 / 1-wire braid");
+  const bySpec = await manager.list({ ...input, query: "1-wire braid" });
+  expect(
+    bySpec.items
+      .flatMap((g) => g.children)
+      .some((r) => r.code === "601R1_1WB_TEST"),
+  ).toBe(true);
+});

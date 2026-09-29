@@ -45,6 +45,12 @@ beforeAll(async () => {
   db = platform.env.DB;
   const clock = "2026-09-20T08:00:00.000Z";
   await run(`
+    INSERT INTO admin_identities(id,email,account_type,status,created_at,updated_at)
+    VALUES ('owner','owner@tests.invalid','owner','active','${clock}','${clock}'),
+      ('subaccount','staff@tests.invalid','subaccount','active','${clock}','${clock}');
+    INSERT INTO admin_module_permissions(admin_id,module,level) VALUES
+      ('subaccount','notifications','read'),('subaccount','quotes','read'),('subaccount','orders','read'),
+      ('subaccount','after_sales','read'),('subaccount','messages','read');
     INSERT INTO customer_profiles
       (id,email_normalized,email_display,email_verified_at,created_at,updated_at)
     VALUES ('buyer','buyer@example.test','Buyer@example.test','${clock}','${clock}','${clock}');
@@ -193,4 +199,162 @@ it("opens a Case where it is worked and a legacy Case reply in Messages", async 
     notifications.find((item) => item.id === "after-sales-reply:notice-reply")
       ?.target,
   ).toBe("/admin/messages/ordered-request");
+});
+
+it("scopes list/count/lookup/read markers to current source-module grants, including revoked accounts", async () => {
+  await run(`INSERT INTO admin_identities(id,email,account_type,status,created_at,updated_at)
+    VALUES ('limited','limited@tests.invalid','subaccount','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+    INSERT INTO admin_module_permissions VALUES('limited','notifications','read')`);
+  const service = createD1AdminNotifications(db);
+  expect(
+    await service.list("limited", { filter: "all", page: 1 }),
+  ).toMatchObject({ notifications: [], all: 0, unread: 0, pageCount: 1 });
+  expect(await service.find("limited", "rfq:new-request")).toBeNull();
+  await service.markRead(
+    "limited",
+    ["rfq:new-request"],
+    new Date().toISOString(),
+  );
+  expect(
+    await db
+      .prepare(
+        "SELECT count(*) AS n FROM admin_notification_reads WHERE admin_id='limited'",
+      )
+      .first("n"),
+  ).toBe(0);
+  await run(
+    "INSERT INTO admin_module_permissions VALUES('limited','quotes','read')",
+  );
+  // Lots of inaccessible notifications must not consume a page or affect counts.
+  await db.batch(
+    Array.from({ length: 51 }, (_, n) =>
+      db
+        .prepare(
+          "INSERT INTO admin_notifications(id,kind,source_id,created_at) VALUES(?,'shipping_change_requested',?,'2030-01-01')",
+        )
+        .bind(`hidden-${n}`, `hidden-source-${n}`),
+    ),
+  );
+  const page = await service.list("limited", { filter: "all", page: 1 });
+  expect(page.notifications.length).toBeGreaterThan(0);
+  expect(page.notifications.every((n) => n.kind === "rfq_submitted")).toBe(
+    true,
+  );
+  expect(page.all).toBe(page.notifications.length);
+  expect(page.unread).toBe(page.all);
+  expect(page.pageCount).toBe(1);
+  await service.markRead(
+    "limited",
+    ["rfq:new-request", "shipping-change:change-1"],
+    new Date().toISOString(),
+  );
+  expect(await service.unreadCount("limited")).toBe(page.all - 1);
+  expect(await service.find("limited", "shipping-change:change-1")).toBeNull();
+  expect(
+    (
+      await service.list("limited", { filter: "unread", page: 1 })
+    ).notifications.map((n) => n.id),
+  ).not.toContain("rfq:new-request");
+  await run(
+    "DELETE FROM admin_module_permissions WHERE admin_id='limited' AND module='quotes'",
+  );
+  expect(await service.unreadCount("limited")).toBe(0);
+  expect(await service.find("limited", "rfq:new-request")).toBeNull();
+  await run(
+    "INSERT INTO admin_module_permissions VALUES('limited','orders','read')",
+  );
+  expect(
+    (
+      await service.list("limited", { filter: "all", page: 1 })
+    ).notifications.every((n) => n.kind === "shipping_change_requested"),
+  ).toBe(true);
+  await run(
+    "INSERT INTO admin_module_permissions VALUES('limited','after_sales','read')",
+  );
+  // Assert kind-level authorization independently of notification-id conventions.
+  const caseRow = await db
+    .prepare(
+      "SELECT id FROM admin_notifications WHERE kind='after_sales_case_opened' LIMIT 1",
+    )
+    .first<{ id: string }>();
+  expect(caseRow).not.toBeNull();
+  expect(await service.find("limited", caseRow!.id)).not.toBeNull();
+  const replyRow = await db
+    .prepare(
+      "SELECT id FROM admin_notifications WHERE kind='after_sales_customer_reply' LIMIT 1",
+    )
+    .first<{ id: string }>();
+  expect(await service.find("limited", replyRow!.id)).toBeNull();
+  await run(
+    "INSERT INTO admin_module_permissions VALUES('limited','messages','read')",
+  );
+  expect(await service.find("limited", replyRow!.id)).not.toBeNull();
+  await run("UPDATE admin_identities SET status='disabled' WHERE id='limited'");
+  expect(
+    await service.list("limited", { filter: "all", page: 1 }),
+  ).toMatchObject({ notifications: [], all: 0, unread: 0 });
+});
+
+import { RouterContextProvider } from "react-router";
+import { cloudflareContext } from "../workers/context";
+import { action as notificationAction } from "../app/modules/admin/routes/notifications";
+import { loader as badgeLoader } from "../app/modules/admin/routes/notifications-unread-count";
+import { canAccessAdminPath } from "../app/modules/admin/domain/admin-module-access";
+
+it("opens an authorized notification for a read-only user and rejects forged or unrelated actions", async () => {
+  await run(`INSERT INTO admin_identities(id,email,account_type,status,created_at,updated_at)
+    VALUES ('reader','reader@tests.invalid','subaccount','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+    INSERT INTO admin_module_permissions VALUES('reader','notifications','read'),('reader','quotes','read')`);
+  const identity = {
+    id: "reader",
+    email: "reader@tests.invalid",
+    accountType: "subaccount" as const,
+    canManageSubaccounts: false,
+    source: "password" as const,
+    moduleAccess: { notifications: "read" as const, quotes: "read" as const },
+  };
+  const context = new RouterContextProvider();
+  context.set(cloudflareContext, {
+    env: { DB: db } as CloudflareBindings,
+    adminIdentity: identity,
+    runtime: { environment: "local" },
+    ctx: {} as ExecutionContext,
+  });
+  const invoke = (intent: string, notificationId: string) =>
+    notificationAction({
+      context,
+      params: {},
+      url: new URL("https://admin.example.test/admin/notifications"),
+      pattern: "/admin/notifications",
+      request: new Request("https://admin.example.test/admin/notifications", {
+        method: "POST",
+        headers: { Origin: "https://admin.example.test" },
+        body: new URLSearchParams({ intent, notificationId }),
+      }),
+    } as Parameters<typeof notificationAction>[0]);
+  expect(
+    canAccessAdminPath(identity, "/admin/notifications.data", "POST"),
+  ).toBe(true);
+  const response = (await invoke("open", "rfq:new-request")) as Response;
+  expect(response.headers.get("Location")).toBe("/admin/quotes/new-request");
+  expect(
+    (await createD1AdminNotifications(db).find(identity.id, "rfq:new-request"))
+      ?.read,
+  ).toBe(true);
+  await expect(
+    invoke("open", "shipping-change:change-1"),
+  ).rejects.toMatchObject({ status: 404 });
+  await expect(invoke("edit-order", "rfq:new-request")).rejects.toMatchObject({
+    status: 400,
+  });
+  const badge = await badgeLoader({
+    context,
+    params: {},
+    request: new Request(
+      "https://admin.example.test/admin/notifications/unread-count",
+    ),
+    url: new URL("https://admin.example.test/admin/notifications/unread-count"),
+    pattern: "/admin/notifications/unread-count",
+  });
+  expect(await badge.json()).toMatchObject({ messages: 0 });
 });

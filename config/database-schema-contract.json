@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 129,
+  "schemaVersion": 131,
   "migrations": [
     "0000_initial_catalog_release.sql",
     "0001_add_admin_identities.sql",
@@ -129,6 +129,8 @@
     "0125_spec7_review_regressions.sql",
     "0126_shipping_credit_components.sql",
     "0127_customer_refund_accounts.sql",
-    "0128_customer_paypal_accounts.sql"
+    "0128_customer_paypal_accounts.sql",
+    "0129_admin_password_accounts.sql",
+    "0130_independent_configurator_permission.sql"
   ]
 }

@@ -352,14 +352,25 @@ function validatedProformaInvoiceSnapshot(input: CreateProformaInvoiceInput) {
       instructionId: instructions.id,
       instructionVersion: instructions.version,
     },
+    issuedPaymentInstructions: {
+      channel: instructions.channel,
+      instructions: instructions.instructions,
+    },
   };
   return freeze(snapshot);
 }
 
 export type ProformaInvoiceSnapshot = Omit<
   ReturnType<typeof createProformaInvoiceSnapshot>,
-  "paymentTerms"
-> & { readonly paymentTerms?: PiPaymentTerms };
+  "paymentTerms" | "issuedPaymentInstructions"
+> & {
+  readonly paymentTerms?: PiPaymentTerms;
+  // Optional only for historical snapshots; never backfill from current accounts.
+  readonly issuedPaymentInstructions?: {
+    readonly channel: PaymentChannel;
+    readonly instructions: string;
+  };
+};
 
 export function formatPiDate(instant: string, audience: "customer" | "admin") {
   const date = new Date(piUtcInstant(instant));

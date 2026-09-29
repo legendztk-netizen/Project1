@@ -18,6 +18,7 @@ describe("D1 Admin identity repository", () => {
         "owner@example.com",
       ),
     ).resolves.toEqual({
+      moduleAccess: {},
       accountType: "owner",
       canManageSubaccounts: true,
       email: "owner@example.com",
