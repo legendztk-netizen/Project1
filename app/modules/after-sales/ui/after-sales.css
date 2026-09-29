@@ -1,0 +1,814 @@
+.after-sales-quantity-list {
+  display: grid;
+  gap: 10px;
+}
+
+.after-sales-quantity-row {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  align-items: center;
+  gap: 12px;
+}
+
+.after-sales-quantity-row span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.after-sales-quantity-row small {
+  color: #5c6972;
+  overflow-wrap: anywhere;
+}
+
+.after-sales-line-list {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.after-sales-flag {
+  display: inline-block;
+  padding: 2px 8px;
+  color: #8a1c12;
+  background: #fdecea;
+  border-radius: 4px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+dl.after-sales-money {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 16px;
+  margin: 10px 0;
+}
+
+dl.after-sales-money dt {
+  color: #5c6972;
+  overflow-wrap: anywhere;
+}
+
+dl.after-sales-money dd {
+  margin: 0;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.after-sales-money .after-sales-money-total {
+  font-weight: 700;
+}
+
+.after-sales-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.after-sales-table th,
+.after-sales-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #d7dee3;
+  text-align: left;
+  vertical-align: top;
+}
+
+.after-sales-pagination {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 16px;
+}
+
+@media (max-width: 640px) {
+  .after-sales-quantity-row {
+    grid-template-columns: minmax(0, 1fr) 72px;
+  }
+
+  .after-sales-table thead {
+    display: none;
+  }
+
+  .after-sales-table tr {
+    display: grid;
+    padding: 8px 0;
+    border-bottom: 1px solid #d7dee3;
+  }
+
+  .after-sales-table td {
+    border: 0;
+    padding: 2px 0;
+  }
+}
+
+.customer-order-actions:empty {
+  display: none;
+}
+
+.after-sales-inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+.after-sales-inline-form > input,
+.after-sales-inline-form > .button {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.after-sales-files ul {
+  display: grid;
+  gap: 8px;
+  padding-left: 18px;
+}
+
+.after-sales-decision {
+  margin-top: 12px;
+}
+
+.after-sales-response {
+  display: grid;
+  gap: 8px;
+}
+
+.after-sales-thread {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.after-sales-thread li {
+  padding: 10px 12px;
+  background: #f5f7f8;
+  border-radius: 6px;
+}
+
+.after-sales-thread li.internal {
+  background: #fff7e6;
+}
+
+.after-sales-thread p {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.after-sales-address {
+  font-style: normal;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.after-sales-instructions {
+  white-space: pre-wrap;
+}
+
+/* Case cards: summary, actions, details and the operation record. */
+.after-sales-case-list,
+.after-sales-customer-cases,
+.after-sales-receipt-list,
+.after-sales-ra-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.after-sales-case-list > .after-sales-case-card,
+.after-sales-customer-cases > .after-sales-case-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+  margin: 0;
+  padding: 18px 20px;
+  background: #ffffff;
+  border: 1px solid #d7dee3;
+  border-radius: 8px;
+}
+
+.after-sales-case-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.after-sales-case-header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  overflow-wrap: anywhere;
+}
+
+.after-sales-case-header > div {
+  flex: 1 1 280px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.after-sales-case-header small {
+  color: #5c6972;
+}
+
+.after-sales-status {
+  flex: none;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.after-sales-status-open {
+  color: #8a4b00;
+  background: #fff1e0;
+}
+
+.after-sales-status-closed {
+  color: #4a5860;
+  background: #eef1f2;
+}
+
+.after-sales-case-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.after-sales-case-actions:empty {
+  display: none;
+}
+
+.after-sales-case-actions .button {
+  max-width: 100%;
+  white-space: normal;
+}
+
+.admin-shell .after-sales-case-actions > .button {
+  min-height: 44px;
+  padding: 8px 16px;
+  color: #17486a;
+  background: #e5f0fa;
+  border: 2px solid #6f95b4;
+  box-shadow: 0 2px 3px #17486a14;
+}
+
+.admin-shell .after-sales-case-actions > .button-primary {
+  color: #ffffff;
+  background: #245f88;
+  border-color: #245f88;
+}
+
+.admin-shell .after-sales-case-actions > .button:hover:not(:disabled) {
+  background: #d2e5f5;
+  border-color: #245f88;
+}
+
+.admin-shell .after-sales-case-actions > .button-primary:hover:not(:disabled) {
+  background: #194969;
+  border-color: #194969;
+}
+
+.admin-shell .after-sales-case-actions > .button:focus-visible {
+  outline: 3px solid #245f88;
+  outline-offset: 3px;
+}
+
+.after-sales-case-actions .button svg,
+.after-sales-file-links svg {
+  flex-shrink: 0;
+}
+
+.after-sales-next-step {
+  margin: 0;
+  padding: 10px 14px;
+  background: #f3f8fa;
+  border-left: 3px solid #28708a;
+}
+
+.after-sales-case-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 16px;
+}
+
+.after-sales-case-section {
+  min-width: 0;
+}
+
+.after-sales-case-section h4 {
+  margin: 0 0 8px;
+  color: #33444c;
+  font-size: 0.9rem;
+}
+
+.after-sales-description {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.after-sales-compact-lines {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.after-sales-compact-lines li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.after-sales-compact-lines span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.after-sales-compact-lines small {
+  color: #5c6972;
+  overflow-wrap: anywhere;
+}
+
+.after-sales-compact-lines b {
+  white-space: nowrap;
+}
+
+.after-sales-timeline {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0 0 0 16px;
+  list-style: none;
+  border-left: 2px solid #d7dee3;
+}
+
+.after-sales-timeline > li {
+  position: relative;
+  min-width: 0;
+}
+
+.after-sales-timeline > li::before {
+  position: absolute;
+  top: 6px;
+  left: -22px;
+  width: 10px;
+  height: 10px;
+  content: "";
+  background: #28708a;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+}
+
+.after-sales-timeline time {
+  color: #5c6972;
+  font-size: 0.8125rem;
+}
+
+.after-sales-timeline p {
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.after-sales-file-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.after-sales-file-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.after-sales-file-links li {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.after-sales-ra-card,
+.after-sales-refund-summary {
+  padding: 12px 14px;
+  border: 1px solid #e3e8eb;
+  border-radius: 6px;
+}
+
+.after-sales-ra-card header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+dl.after-sales-facts {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 10px 0 0;
+}
+
+dl.after-sales-facts div {
+  display: contents;
+}
+
+dl.after-sales-facts dt {
+  color: #5c6972;
+}
+
+dl.after-sales-facts dd {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.after-sales-refund-summary p {
+  margin: 0;
+}
+
+.after-sales-refund-summary details,
+.after-sales-evidence {
+  margin-top: 6px;
+}
+
+.after-sales-refund-summary summary,
+.after-sales-evidence summary {
+  color: #28708a;
+  cursor: pointer;
+}
+
+.after-sales-inspection-form .shipping-change-fields > label,
+.after-sales-inspection-form input,
+.after-sales-inspection-form select {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.after-sales-inspection-form input:not([type="hidden"]):not([type="file"]),
+.after-sales-inspection-form select,
+.after-sales-inspection-form textarea {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #aabac5;
+  border-radius: 5px;
+  font: inherit;
+}
+
+.after-sales-inspection-options {
+  padding: 12px 0;
+  border-top: 1px solid #d7dee3;
+}
+
+.after-sales-inspection-options summary {
+  color: #17486a;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.after-sales-inspection-options[open] > summary {
+  margin-bottom: 12px;
+}
+
+.after-sales-inspection-form > .button-primary {
+  background: #245f88;
+}
+
+.after-sales-inspection-form > .button-primary:hover {
+  background: #194969;
+}
+
+@media (max-width: 640px) {
+  .after-sales-case-list > .after-sales-case-card,
+  .after-sales-customer-cases > .after-sales-case-card {
+    padding: 16px;
+  }
+
+  .after-sales-case-actions .button {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+}
+
+.refund-account-button.button,
+.refund-account-form > .button-primary {
+  color: #ffffff;
+  background: #245f88;
+  border-color: #245f88;
+}
+.refund-account-button.button:hover,
+.refund-account-form > .button-primary:hover {
+  background: #194969;
+}
+.refund-account-form input:not([type="hidden"]):not([type="checkbox"]),
+.refund-account-form select,
+.refund-account-form textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #aabac5;
+  border-radius: 5px;
+  font: inherit;
+}
+.refund-account-form .shipping-change-fields > label {
+  min-width: 0;
+}
+
+.after-sales-refunds > .button-primary {
+  color: #ffffff;
+  background: #245f88;
+  margin-top: 16px;
+}
+.after-sales-refunds > .button-primary:hover {
+  background: #194969;
+}
+
+/* Keep cancellation-review controls scoped to this modal. */
+.cancellation-decision-form {
+  gap: 20px;
+  padding-top: 16px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.cancellation-decision-form .cancellation-form-intro {
+  margin: 0;
+  color: #5c6972;
+}
+.cancellation-decision-form .cancellation-form-section {
+  min-width: 0;
+  margin: 0;
+  padding: 18px 20px 20px;
+  border: 1px solid #dce4e9;
+  border-radius: 10px;
+}
+.cancellation-decision-form legend {
+  padding: 0 6px;
+  font-size: 16px;
+  font-weight: 700;
+}
+.cancellation-step {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 8px;
+  border-radius: 7px;
+  background: #e9f2f8;
+  color: #245f88;
+  font-size: 12px;
+  vertical-align: middle;
+}
+.cancellation-decision-form .cancellation-help,
+.cancellation-decision-form small {
+  color: #62717d;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+.cancellation-decision-form .cancellation-help {
+  margin: 0 0 14px;
+}
+.cancellation-decision-form label {
+  min-width: 0;
+  gap: 7px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.cancellation-decision-form
+  input:not([type="hidden"]):not([type="checkbox"]):not([type="file"]),
+.cancellation-decision-form select,
+.cancellation-decision-form textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #b6c4ce;
+  border-radius: 6px;
+  background: #fff;
+  color: #182a36;
+  font: inherit;
+  font-weight: 400;
+}
+.cancellation-decision-form select {
+  padding-right: 24px;
+  text-overflow: ellipsis;
+}
+.cancellation-decision-form textarea {
+  resize: vertical;
+}
+.cancellation-decision-form :is(input, select, textarea):focus-visible {
+  outline: 3px solid #c7e1f4;
+  outline-offset: 1px;
+  border-color: #245f88;
+}
+.cancellation-decision-form .shipping-change-fields {
+  gap: 18px 24px;
+  align-items: start;
+}
+.cancellation-decision-form .after-sales-quantity-row {
+  padding: 12px 14px;
+  background: #f5f8fa;
+  border-radius: 7px;
+}
+.cancellation-decision-form .cancellation-quantity-input {
+  gap: 4px;
+}
+.cancellation-responsibility {
+  margin-bottom: 18px;
+}
+.cancellation-fee-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.cancellation-fee-card {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  border-radius: 8px;
+  background: #f5f8fa;
+}
+.cancellation-fee-card .cancellation-help,
+.cancellation-deduction .cancellation-help {
+  margin: 0;
+}
+.cancellation-decision-form .cancellation-deduction {
+  margin: 20px 0 0;
+  padding: 14px 16px;
+  min-width: 0;
+  border: 1px dashed #bdceda;
+  border-radius: 8px;
+}
+.cancellation-deduction legend {
+  font-size: 14px;
+}
+.cancellation-deduction .cancellation-help {
+  margin-top: 10px;
+}
+.cancellation-optional {
+  color: #62717d;
+  font-size: 12px;
+  font-weight: 400;
+  margin-left: 6px;
+}
+.cancellation-decision-form .cancellation-deduction:disabled {
+  background: #f4f5f6;
+}
+.cancellation-decision-form .cancellation-deduction :disabled {
+  background: #edf0f2;
+  color: #687781;
+  cursor: not-allowed;
+}
+.cancellation-visibility {
+  width: fit-content;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #e9f2f8;
+  color: #245f88;
+  font-size: 11px;
+}
+.cancellation-optional-details {
+  margin-top: 18px;
+}
+.cancellation-optional-details summary {
+  color: #245f88;
+  cursor: pointer;
+  font-weight: 600;
+}
+.cancellation-optional-details[open] summary {
+  margin-bottom: 12px;
+}
+.cancellation-form-footer {
+  position: sticky;
+  bottom: -20px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 -20px -20px;
+  padding: 16px 20px;
+  border-top: 1px solid #d7e1e8;
+  background: #fff;
+  box-shadow: 0 -5px 16px #182a3608;
+}
+.cancellation-form-footer > div {
+  display: grid;
+  gap: 3px;
+}
+.cancellation-form-footer .button-primary {
+  flex-shrink: 0;
+  background: #245f88;
+  border-color: #245f88;
+  color: #fff;
+}
+.cancellation-form-footer .button-primary:hover {
+  background: #194969;
+}
+@media (max-width: 700px) {
+  .cancellation-decision-form .cancellation-form-section {
+    padding: 12px;
+  }
+  .cancellation-fee-grid {
+    grid-template-columns: 1fr;
+  }
+  .cancellation-form-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px 20px;
+  }
+  .cancellation-form-footer .button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+.admin-after-sales-tabs {
+  display: flex;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 8px 0 24px;
+  padding: 5px;
+  overflow-x: auto;
+  background: #e8eef2;
+  border: 1px solid #d8e2e9;
+  border-radius: 10px;
+}
+.admin-after-sales-tabs button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 18px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #526470;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.admin-after-sales-tabs button:hover {
+  background: #f5f8fa;
+  color: #245f88;
+}
+.admin-after-sales-tabs button[aria-selected="true"] {
+  background: #fff;
+  border-color: #cedee9;
+  box-shadow: 0 1px 4px #1b3c5012;
+  color: #174e75;
+}
+.admin-after-sales-tabs button:focus-visible,
+.admin-after-sales-panel:focus-visible {
+  outline: 2px solid #245f88;
+  outline-offset: 2px;
+}
+.admin-after-sales-tabs span {
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: #dce7ef;
+  color: #305c7b;
+  font-size: 12px;
+}
+.admin-after-sales-panel {
+  min-width: 0;
+}
+.admin-after-sales-panel > h3:first-child {
+  margin-top: 0;
+}
+@media (max-width: 640px) {
+  .admin-after-sales-tabs {
+    width: 100%;
+    gap: 2px;
+  }
+  .admin-after-sales-tabs button {
+    flex: 1;
+    padding: 8px;
+    gap: 5px;
+    font-size: 13px;
+  }
+}

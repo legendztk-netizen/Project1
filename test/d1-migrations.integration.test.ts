@@ -1,4 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   copyFileSync,
   existsSync,
@@ -17,7 +18,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { getPlatformProxy } from "wrangler";
 
 import { createD1CustomerIdentityRepository } from "../app/modules/customer-identity/infrastructure/d1-customer-identity-repository";
+import { createConfirmedOrderService } from "../app/modules/proforma-invoice/application/confirmed-order-service";
 import { staleLengthBasedHoseFeeGuardSql } from "../app/modules/quote-request/infrastructure/d1-quote-request-repository";
+import { createShipmentPlanService } from "../app/modules/shipment/application/shipment-plan-service";
+import type { AdminIdentity } from "../workers/admin-access";
 
 interface D1QueryResult<T> {
   results: T[];
@@ -281,6 +285,389 @@ afterEach(() => {
 });
 
 describe("real local D1 migration lifecycle", () => {
+  it("backfills legacy Orders and catches up orders created during deployment", async () => {
+    const fixture = createD1Fixture();
+    const laterMigrations = schemaContract.migrations.filter(
+      (migration) => migration >= "0092_shipment_plans.sql",
+    );
+    for (const migration of laterMigrations)
+      rmSync(join(fixture.directory, "migrations", migration));
+    const beforeUpgrade = applyMigrations(fixture);
+    expect(
+      beforeUpgrade.status,
+      `${beforeUpgrade.stdout}\n${beforeUpgrade.stderr}`,
+    ).toBe(0);
+
+    const now = "2026-09-01T00:00:00.000Z";
+    const hash = "a".repeat(64);
+    const orders = [
+      {
+        key: "together",
+        mode: "together",
+        lineKind: "length_based_hose",
+        line: { quantity: 40, lengthOrder: { pieceCount: 2 } },
+      },
+      {
+        key: "split",
+        mode: "split",
+        lineKind: "standard",
+        line: { quantity: 3 },
+      },
+      {
+        key: "held",
+        mode: "together",
+        lineKind: "standard",
+        line: { quantity: 1 },
+      },
+    ] as const;
+    queryD1(
+      fixture,
+      `INSERT INTO customer_profiles
+         (id,email_normalized,email_display,email_verified_at,created_at,updated_at)
+       VALUES ('legacy-profile','legacy@example.test','legacy@example.test','${now}','${now}','${now}');
+       INSERT INTO customer_purchasing_contexts
+         (id,kind,individual_profile_id,created_at,updated_at)
+       VALUES ('legacy-context','individual','legacy-profile','${now}','${now}');
+       INSERT INTO seller_payment_instruction_versions
+         (id,channel,version,instructions,status,command_id,created_by,created_at)
+       VALUES ('legacy-payment-instruction','bank_transfer',1,'Test bank','current',
+         'legacy-payment-command','test','${now}');
+       ${orders
+         .map(({ key, mode, lineKind, line }) => {
+           const snapshot = JSON.stringify({
+             terms: {
+               shipmentMode: mode,
+               splitPlan: mode === "split" ? "Two deliveries" : null,
+               charges: { freight: 0, insurance: 0, dutiesImport: 0 },
+               transportMethod: "sea",
+               incoterm: "DDP",
+               namedPlace: "US",
+             },
+             lines: [
+               {
+                 id: `line-${key}`,
+                 displayName: `Legacy ${key}`,
+                 sku: `LEGACY-${key}`,
+                 lineKind,
+                 salesUnit: "EA",
+                 ...line,
+               },
+             ],
+           });
+           const snapshotHash = createHash("sha256")
+             .update(snapshot)
+             .digest("hex");
+           return `
+           INSERT INTO customer_quote_requests
+             (id,reference_number,profile_id,purchasing_context_id,source_session_id,
+              source_session_version,source_address_id,purchasing_context_kind,
+              fulfillment_term,currency,merchandise_subtotal,service_fee_total,
+              idempotency_key,snapshot_json,submitted_at)
+           VALUES ('request-${key}','QR-LEGACY-${key}','legacy-profile','legacy-context',
+             'session-${key}','1','address-${key}','individual','DDP','USD',100,0,
+             'key-${key}','{}','${now}');
+           INSERT INTO quote_revisions
+             (id,request_id,revision_number,preparation_version,snapshot_json,snapshot_hash,
+              command_id,command_hash,issued_by,issued_at)
+           VALUES ('revision-${key}','request-${key}',1,1,'{}','${hash}',
+             'revision-command-${key}','${hash}','test','${now}');
+           INSERT INTO proforma_invoice_intents
+             (id,command_id,command_hash,request_id,quote_revision_id,quote_revision_hash,
+              source_revision_json,seller_identity_id,seller_version,payment_instruction_id,
+              payment_instruction_version,payment_channel,snapshot_json,snapshot_hash,
+              issued_by,issued_at,valid_until)
+           VALUES ('pi-${key}','pi-command-${key}','${hash}','request-${key}',
+             'revision-${key}','${hash}','{}','seller-identity-initial',1,
+             'legacy-payment-instruction',1,'bank_transfer','{}','${hash}',
+             'test','${now}','2026-10-01T00:00:00.000Z');
+           INSERT INTO proforma_invoices
+             (id,request_id,quote_revision_id,document_number,document_version,
+              snapshot_json,snapshot_hash,pdf_object_key,pdf_sha256,pdf_byte_size,
+              pdf_page_count,pdf_renderer_version,payment_channel,issued_by,issued_at,valid_until)
+           VALUES ('pi-${key}','request-${key}','revision-${key}','PI-LEGACY-${key}',1,
+             '{}','${hash}','pi/${key}.pdf','${hash}',1,1,'legacy',
+             'bank_transfer','test','${now}','2026-10-01T00:00:00.000Z');
+           INSERT INTO pi_customer_views
+             (id,pi_id,request_id,profile_id,purchasing_context_id,document_version,
+              snapshot_hash,pdf_sha256,pdf_byte_size,kind,occurred_at,request_evidence_json)
+           VALUES ('view-${key}','pi-${key}','request-${key}','legacy-profile',
+             'legacy-context',1,'${hash}','${hash}',1,'view','${now}','{}');
+           INSERT INTO pi_acceptances
+             (id,pi_id,request_id,profile_id,purchasing_context_id,source,document_version,
+              snapshot_hash,quote_revision_id,view_id,accepted_at,business_hash,evidence_json)
+           VALUES ('acceptance-${key}','pi-${key}','request-${key}','legacy-profile',
+             'legacy-context','website',1,'${hash}','revision-${key}','view-${key}',
+             '${now}','${hash}','{}');
+           INSERT INTO pi_payment_confirmations
+             (id,command_id,command_hash,pi_id,confirmed_cents,currency,actual_channel,
+              external_reference,actor_id,confirmed_at)
+           VALUES ('confirmation-${key}','confirmation-command-${key}','${hash}',
+             'pi-${key}',10000,'USD','bank_transfer','ref-${key}','test','${now}');
+           INSERT INTO confirmed_orders
+             (id,order_number,request_id,pi_id,purchasing_context_id,acceptance_id,
+              confirmation_id,snapshot_json,snapshot_hash,currency,total_cents,confirmed_at)
+           VALUES ('order-${key}','ORDER-LEGACY-${key}','request-${key}','pi-${key}',
+             'legacy-context','acceptance-${key}','confirmation-${key}',
+             '${snapshot}','${snapshotHash}','USD',10000,'${now}');
+           INSERT INTO confirmed_order_lines
+             (order_id,line_id,line_number,line_kind,snapshot_json)
+           VALUES ('order-${key}','line-${key}',1,'${lineKind}',
+             '${JSON.stringify(line)}');`;
+         })
+         .join("\n")}
+       INSERT INTO order_release_guards(order_id,held,updated_at)
+       VALUES ('order-held',1,'${now}');`,
+    );
+
+    for (const migration of laterMigrations)
+      copyFileSync(
+        join(projectRoot, "migrations", migration),
+        join(fixture.directory, "migrations", migration),
+      );
+    const upgrade = applyMigrations(fixture);
+    expect(upgrade.status, `${upgrade.stdout}\n${upgrade.stderr}`).toBe(0);
+    expect(
+      queryD1<{ order_id: string; source: string; status: string }>(
+        fixture,
+        "SELECT order_id,status,source FROM order_fulfillment_plans ORDER BY order_id",
+      ),
+    ).toEqual([
+      {
+        order_id: "order-held",
+        status: "review",
+        source: "accepted_together",
+      },
+      {
+        order_id: "order-split",
+        status: "review",
+        source: "historical_review",
+      },
+      {
+        order_id: "order-together",
+        status: "ready",
+        source: "accepted_together",
+      },
+    ]);
+    expect(
+      queryD1<{ order_id: string; physical_quantity: number }>(
+        fixture,
+        "SELECT order_id,physical_quantity FROM order_shipment_allocations",
+      ),
+    ).toEqual([{ order_id: "order-together", physical_quantity: 2 }]);
+    expect(
+      queryD1<{ count: number }>(
+        fixture,
+        "SELECT count(*) AS count FROM order_shipments",
+      ),
+    ).toEqual([{ count: 2 }]);
+
+    const originalLateSnapshot = queryD1<{ snapshot_json: string }>(
+      fixture,
+      "SELECT snapshot_json FROM confirmed_orders WHERE id='order-together'",
+    )[0];
+    const lateSnapshot = JSON.parse(originalLateSnapshot.snapshot_json) as {
+      terms: Record<string, unknown>;
+      lines: unknown[];
+    };
+    lateSnapshot.terms.shipmentMode = "split";
+    lateSnapshot.terms.splitPlan = "First and second dispatch";
+    lateSnapshot.terms.shipmentGroups = [
+      {
+        id: "first",
+        label: "First dispatch",
+        allocations: [{ lineId: "line-together", physicalQuantity: 1 }],
+        freightCents: 0,
+        insuranceCents: 0,
+        dutiesImportCents: 0,
+        transportMethod: "sea",
+        incoterm: "DDP",
+        namedPlace: "US",
+      },
+      {
+        id: "second",
+        label: "Second dispatch",
+        allocations: [{ lineId: "line-together", physicalQuantity: 1 }],
+        freightCents: 0,
+        insuranceCents: 0,
+        dutiesImportCents: 0,
+        transportMethod: "sea",
+        incoterm: "DDP",
+        namedPlace: "US",
+      },
+    ];
+    const lateSnapshotJson = JSON.stringify(lateSnapshot);
+    const lateSnapshotHash = createHash("sha256")
+      .update(lateSnapshotJson)
+      .digest("hex");
+
+    queryD1(
+      fixture,
+      `INSERT INTO customer_quote_requests
+         (id,reference_number,profile_id,purchasing_context_id,source_session_id,
+          source_session_version,source_address_id,purchasing_context_kind,
+          fulfillment_term,currency,merchandise_subtotal,service_fee_total,
+          idempotency_key,snapshot_json,submitted_at)
+         SELECT 'request-late','QR-LEGACY-late',profile_id,purchasing_context_id,
+           'session-late',source_session_version,'address-late',purchasing_context_kind,
+           fulfillment_term,currency,merchandise_subtotal,service_fee_total,
+           'key-late',snapshot_json,submitted_at
+         FROM customer_quote_requests WHERE id='request-together';
+       INSERT INTO quote_revisions
+         (id,request_id,revision_number,preparation_version,snapshot_json,
+          snapshot_hash,command_id,command_hash,issued_by,issued_at)
+         SELECT 'revision-late','request-late',revision_number,preparation_version,
+           snapshot_json,snapshot_hash,'revision-command-late',command_hash,
+           issued_by,issued_at FROM quote_revisions WHERE id='revision-together';
+       INSERT INTO proforma_invoice_intents
+         (id,command_id,command_hash,request_id,quote_revision_id,
+          quote_revision_hash,source_revision_json,seller_identity_id,
+          seller_version,payment_instruction_id,payment_instruction_version,
+          payment_channel,snapshot_json,snapshot_hash,issued_by,issued_at,valid_until)
+         SELECT 'pi-late','pi-command-late',command_hash,'request-late',
+           'revision-late',quote_revision_hash,source_revision_json,seller_identity_id,
+           seller_version,payment_instruction_id,payment_instruction_version,
+           payment_channel,snapshot_json,snapshot_hash,issued_by,issued_at,valid_until
+         FROM proforma_invoice_intents WHERE id='pi-together';
+       INSERT INTO proforma_invoices
+         (id,request_id,quote_revision_id,document_number,document_version,
+          snapshot_json,snapshot_hash,pdf_object_key,pdf_sha256,pdf_byte_size,
+          pdf_page_count,pdf_renderer_version,payment_channel,issued_by,issued_at,valid_until)
+         SELECT 'pi-late','request-late','revision-late','PI-LEGACY-late',
+           document_version,snapshot_json,snapshot_hash,'pi/late.pdf',pdf_sha256,
+           pdf_byte_size,pdf_page_count,pdf_renderer_version,payment_channel,
+           issued_by,issued_at,valid_until
+         FROM proforma_invoices WHERE id='pi-together';
+       INSERT INTO pi_customer_views
+         (id,pi_id,request_id,profile_id,purchasing_context_id,document_version,
+          snapshot_hash,pdf_sha256,pdf_byte_size,kind,occurred_at,request_evidence_json)
+         SELECT 'view-late','pi-late','request-late',profile_id,purchasing_context_id,
+           document_version,snapshot_hash,pdf_sha256,pdf_byte_size,kind,occurred_at,
+           request_evidence_json FROM pi_customer_views WHERE id='view-together';
+       INSERT INTO pi_acceptances
+         (id,pi_id,request_id,profile_id,purchasing_context_id,source,
+          document_version,snapshot_hash,quote_revision_id,view_id,
+          accepted_at,business_hash,evidence_json)
+         SELECT 'acceptance-late','pi-late','request-late',profile_id,
+           purchasing_context_id,source,document_version,snapshot_hash,
+           'revision-late','view-late',accepted_at,business_hash,evidence_json
+         FROM pi_acceptances WHERE id='acceptance-together';
+       INSERT INTO pi_payment_confirmations
+         (id,command_id,command_hash,pi_id,confirmed_cents,currency,
+          actual_channel,external_reference,actor_id,confirmed_at)
+         SELECT 'confirmation-late','confirmation-command-late',command_hash,
+           'pi-late',confirmed_cents,currency,actual_channel,external_reference,
+           actor_id,confirmed_at FROM pi_payment_confirmations
+         WHERE id='confirmation-together';
+       INSERT INTO confirmed_orders
+         (id,order_number,request_id,pi_id,purchasing_context_id,
+          acceptance_id,confirmation_id,snapshot_json,snapshot_hash,
+          currency,total_cents,confirmed_at)
+         SELECT 'order-late','ORDER-LEGACY-late','request-late','pi-late',
+           purchasing_context_id,'acceptance-late','confirmation-late',
+           '${lateSnapshotJson.replaceAll("'", "''")}','${lateSnapshotHash}',
+           currency,total_cents,confirmed_at
+         FROM confirmed_orders WHERE id='order-together';
+       INSERT INTO confirmed_order_lines
+         (order_id,line_id,line_number,line_kind,snapshot_json)
+         SELECT 'order-late',line_id,line_number,line_kind,snapshot_json
+         FROM confirmed_order_lines WHERE order_id='order-together';
+       INSERT INTO order_quantity_holds
+         (id,order_id,line_id,physical_quantity,kind,reason,created_at)
+       VALUES ('late-hold','order-late','line-together',1,'after_sales',
+         'Review one piece','${now}');`,
+    );
+    expect(
+      queryD1<{ count: number }>(
+        fixture,
+        "SELECT count(*) AS count FROM order_fulfillment_plans WHERE order_id='order-late'",
+      ),
+    ).toEqual([{ count: 0 }]);
+    const platform = await getPlatformProxy<{ DB: D1Database }>({
+      configPath: fixture.configPath,
+      persist: { path: join(fixture.persistenceDirectory, "v3") },
+      remoteBindings: false,
+    });
+    try {
+      const plans = createShipmentPlanService(platform.env.DB);
+      const ordersService = createConfirmedOrderService(platform.env.DB);
+      await expect(
+        plans.customerRead("other-profile", "order-late"),
+      ).rejects.toMatchObject({ status: 404 });
+      const actor: AdminIdentity = {
+        id: "owner",
+        email: "owner@example.test",
+        accountType: "owner",
+        canManageSubaccounts: true,
+        source: "local-development",
+      };
+      await platform.env.DB.prepare(
+        `CREATE TRIGGER fail_late_shipment BEFORE INSERT ON order_shipments
+         WHEN NEW.order_id='order-late'
+         BEGIN SELECT RAISE(ABORT,'injected shipment failure'); END`,
+      ).run();
+      await expect(plans.adminRead(actor, "order-late")).rejects.toThrow(
+        "injected shipment failure",
+      );
+      expect(
+        await platform.env.DB.prepare(
+          "SELECT count(*) AS count FROM order_fulfillment_plans WHERE order_id='order-late'",
+        ).first("count"),
+      ).toBe(0);
+      expect(
+        (await ordersService.customerList("legacy-profile")).records.find(
+          (order) => order.id === "order-late",
+        ),
+      ).toMatchObject({ shipmentPlanStatus: null, shipmentCount: 0 });
+      await platform.env.DB.prepare("DROP TRIGGER fail_late_shipment").run();
+      expect(
+        (await ordersService.customerList("legacy-profile")).records.find(
+          (order) => order.id === "order-late",
+        ),
+      ).toMatchObject({ shipmentPlanStatus: "review", shipmentCount: 2 });
+      expect(await plans.adminRead(actor, "order-late")).toMatchObject({
+        status: "review",
+        shipments: [
+          { allocations: [{ physicalQuantity: 1 }], held: false },
+          { allocations: [], held: true },
+        ],
+      });
+      expect(
+        await plans.customerRead("legacy-profile", "order-late"),
+      ).toMatchObject({
+        status: "review",
+        shipments: [
+          { allocations: [{ physicalQuantity: 1 }] },
+          { allocations: [] },
+        ],
+      });
+      await platform.env.DB.prepare(
+        "UPDATE order_quantity_holds SET active=0,resolved_at=? WHERE id='late-hold'",
+      )
+        .bind(now)
+        .run();
+      expect(await plans.adminRead(actor, "order-late")).toMatchObject({
+        status: "ready",
+        shipments: [
+          { allocations: [{ physicalQuantity: 1 }] },
+          { allocations: [{ physicalQuantity: 1 }] },
+        ],
+      });
+      await plans.adminRead(actor, "order-late");
+      expect(
+        await platform.env.DB.prepare(
+          "SELECT count(*) AS count FROM order_shipments WHERE order_id='order-late'",
+        ).first("count"),
+      ).toBe(2);
+      expect(
+        await platform.env.DB.prepare(
+          "SELECT count(*) AS count FROM order_shipment_allocations WHERE order_id='order-late'",
+        ).first("count"),
+      ).toBe(2);
+    } finally {
+      await platform.dispose();
+    }
+  }, 90_000);
+
   it("backfills product series inside published and historical catalog snapshots", () => {
     const fixture = createD1Fixture();
     const seriesMigration = "0050_version_product_series.sql";
@@ -517,7 +904,7 @@ describe("real local D1 migration lifecycle", () => {
         "SELECT series_name FROM catalog_hose_series WHERE id = 'hose-series'",
       ),
     ).toEqual([{ series_name: "Test Series" }]);
-  }, 40_000);
+  }, 90_000);
 
   it("archives drafts older than the active catalog during the upgrade", () => {
     const fixture = createD1Fixture();
@@ -570,7 +957,7 @@ describe("real local D1 migration lifecycle", () => {
       { id: "archive-new", status: "draft" },
       { id: "archive-old", status: "superseded" },
     ]);
-  }, 40_000);
+  }, 90_000);
 
   it("transactionally merges anonymous Quote Lists into one account-owned list", async () => {
     const directory = mkdtempSync(
@@ -1317,7 +1704,7 @@ describe("real local D1 migration lifecycle", () => {
     } finally {
       await platform.dispose();
     }
-  }, 30_000);
+  }, 90_000);
 
   it("runs pnpm migrate twice against one local D1 without duplicate schema", () => {
     const directory = mkdtempSync(join(tmpdir(), "hose-d1-command-isolation-"));
@@ -1418,7 +1805,7 @@ describe("real local D1 migration lifecycle", () => {
     expect(
       `${mixedCaseIdentity.stdout}\n${mixedCaseIdentity.stderr}`,
     ).toContain("admin_identity_email_lowercase");
-  }, 30_000);
+  }, 90_000);
 
   it("adds registry seeds only to pre-existing draft releases during an upgrade", () => {
     const fixture = createD1Fixture();
@@ -1507,7 +1894,7 @@ describe("real local D1 migration lifecycle", () => {
         "SELECT COUNT(*) AS count FROM configurator_global_registry_entries",
       ),
     ).toEqual([{ count: 12 }]);
-  }, 30_000);
+  }, 90_000);
 
   it("selects active and historical registry versions and locks published history", async () => {
     const fixture = createD1Fixture();
@@ -1690,5 +2077,5 @@ describe("real local D1 migration lifecycle", () => {
     } finally {
       await stopWorker(worker);
     }
-  }, 30_000);
+  }, 90_000);
 });

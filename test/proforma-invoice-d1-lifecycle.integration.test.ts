@@ -12,6 +12,7 @@ import {
 } from "../app/modules/proforma-invoice/application/proforma-invoice-service";
 import {
   piSha256,
+  piValidityDeadline,
   type PiConditions,
 } from "../app/modules/proforma-invoice/domain/proforma-invoice";
 import { renderProformaInvoicePdf } from "../app/modules/proforma-invoice/domain/proforma-invoice-pdf";
@@ -27,6 +28,7 @@ import {
   commercialTerms,
 } from "./fixtures/quote-commercial";
 import { publicHoseFixture } from "./fixtures/public-hose";
+import { piFixtureDate } from "./fixtures/pi-calendar";
 import { createQuotePreparation } from "../app/modules/quote-review/infrastructure/d1-quote-preparation";
 import { createQuoteRevisions } from "../app/modules/quote-review/infrastructure/d1-quote-revisions";
 import { createPiAcceptanceService } from "../app/modules/proforma-invoice/application/pi-acceptance-service";
@@ -41,6 +43,7 @@ import {
   type ReplaceProformaInvoiceCommand,
 } from "../app/modules/proforma-invoice/application/pi-lifecycle-service";
 import { createPiAcceptedAgreementService } from "../app/modules/proforma-invoice/application/pi-accepted-agreement-service";
+import { comparePiQuoteMaterial } from "../app/modules/proforma-invoice/domain/pi-lifecycle";
 
 const directory = mkdtempSync(join(tmpdir(), "pi-d1-"));
 let platform: Awaited<
@@ -57,7 +60,7 @@ const actor: AdminIdentity = {
   canManageSubaccounts: true,
   source: "local-development",
 };
-const issuedAt = "2026-09-14T10:00:00.000Z";
+const issuedAt = piFixtureDate("2026-09-14T10:00:00.000Z");
 const conditions: PiConditions = {
   cancellation: {
     version: "test-cancel-v1",
@@ -140,7 +143,7 @@ async function fixture(
   });
   const source = {
     version: 2,
-    submittedAt: "2026-09-14T08:00:00.000Z",
+    submittedAt: piFixtureDate("2026-09-14T08:00:00.000Z"),
     destination: commercialAddress,
     acknowledgements: { version: "captured-rfq-ack" },
     amounts: { manualCommercialReview: true },
@@ -183,7 +186,7 @@ async function fixture(
     prices,
     terms,
     totals: commercialTotals(source, prices, terms.charges),
-    issuedAt: "2026-09-14T09:00:00.000Z",
+    issuedAt: piFixtureDate("2026-09-14T09:00:00.000Z"),
     issuedBy: "PRIVATE-ADMIN-SENTINEL",
     factoryReviewConfirmed: true,
   };
@@ -620,6 +623,14 @@ it("locks accepted estimate variances and rejects no-op and foreign evidence bef
     code: "seller_freight_estimate_error",
     customerRequested: false,
   };
+  expect(comparePiQuoteMaterial(f.revision, f.next)).toMatchObject({
+    shipmentPlanUnchanged: true,
+    quantitiesUnchanged: true,
+    destinationUnchanged: true,
+    transportUnchanged: true,
+    customerDataUnchanged: true,
+    totalChanged: true,
+  });
   const blocked = await lifecycleService()
     .replace(actor, f.command)
     .catch((error) => error as Response);
@@ -867,7 +878,7 @@ it("rolls back successor, head and supersession when audit fails; recovers uncer
 it("derives expiry without a status write and prevents publication across the new deadline", async () => {
   const f = await replacementFixture();
   const expired = lifecycleService({
-    now: () => new Date("2026-09-29T10:00:00.000Z"),
+    now: () => new Date(piFixtureDate("2026-09-29T10:00:00.000Z")),
   });
   expect(
     (await expired.customerHistory(f.profileId, f.first.requestId))[0]
@@ -879,7 +890,9 @@ it("derives expiry without a status write and prevents publication across the ne
     canDownload: true,
   });
   const next = await expired.replace(actor, f.command);
-  expect(next.snapshot.validUntil).toBe("2026-10-13T10:00:00.000Z");
+  expect(next.snapshot.validUntil).toBe(
+    piValidityDeadline(piFixtureDate("2026-09-29T10:00:00.000Z")),
+  );
   expect(
     (await expired.customerHistory(f.profileId, f.first.requestId)).map(
       (p) => p.lifecycle.state,
@@ -1049,6 +1062,39 @@ it("issues a real new Quote Revision, delivers exact replacement PDF and require
     transportMethod: "Sea freight",
     shipmentMode: "split" as const,
     splitPlan: "Two separately quoted dispatches",
+    fixedDatePreparationConfirmed: true,
+    shipmentGroups: [
+      {
+        id: "first",
+        label: "First dispatch",
+        allocations: [{ lineId: "line-a", physicalQuantity: 1 }],
+        freightCents: 1000,
+        insuranceCents: 50,
+        dutiesImportCents: 150,
+        transportMethod: "Sea freight",
+        incoterm: "DDP" as const,
+        namedPlace: "New York, US",
+        readySchedule: {
+          kind: "fixed_date" as const,
+          readyDate: piFixtureDate("2026-10-20"),
+        },
+      },
+      {
+        id: "second",
+        label: "Second dispatch",
+        allocations: [{ lineId: "line-a", physicalQuantity: 1 }],
+        freightCents: 1000,
+        insuranceCents: 50,
+        dutiesImportCents: 150,
+        transportMethod: "Sea freight",
+        incoterm: "DDP" as const,
+        namedPlace: "New York, US",
+        readySchedule: {
+          kind: "fixed_date" as const,
+          readyDate: piFixtureDate("2026-10-27"),
+        },
+      },
+    ],
   };
   const version = await createQuotePreparation(db, actor).saveTerms(
     first.requestId,

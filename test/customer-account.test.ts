@@ -31,8 +31,44 @@ describe("customer account records", () => {
       recipientEmail: "buyer@example.com",
       recipientName: "Morgan Buyer",
       recipientPhone: "+1 212 555 0109",
-      stateProvince: "New York",
+      stateProvince: "NY",
     });
+  });
+
+  it("validates US states and ZIP codes but keeps other countries free-form", () => {
+    const address = {
+      addressLine1: "200 Park Avenue",
+      addressLine2: "",
+      city: "New York",
+      countryCode: "US",
+      label: "Main warehouse",
+      postalCode: "10166",
+      recipientEmail: "buyer@example.com",
+      recipientName: "Morgan Buyer",
+      recipientPhone: "+1 212 555 0109",
+      stateProvince: "ny",
+    };
+    expect(validatedDeliveryAddress(address)).toMatchObject({
+      stateProvince: "NY",
+      postalCode: "10166",
+    });
+    expect(
+      validatedDeliveryAddress({ ...address, postalCode: "101661234" }),
+    ).toMatchObject({ postalCode: "10166-1234" });
+    expect(() =>
+      validatedDeliveryAddress({ ...address, stateProvince: "Nowhere" }),
+    ).toThrow("Select a valid US state or territory.");
+    expect(() =>
+      validatedDeliveryAddress({ ...address, postalCode: "1016" }),
+    ).toThrow("Enter a valid US ZIP code");
+    expect(
+      validatedDeliveryAddress({
+        ...address,
+        countryCode: "CA",
+        stateProvince: "Ontario",
+        postalCode: "M5V 2T6",
+      }),
+    ).toMatchObject({ stateProvince: "Ontario", postalCode: "M5V 2T6" });
   });
 
   it.each([

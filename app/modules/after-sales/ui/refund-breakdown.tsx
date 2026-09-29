@@ -1,0 +1,181 @@
+import { Form } from "react-router";
+import type { RefundAuthorizationView } from "../infrastructure/d1-refund-authorizations";
+import { usd } from "../domain/refund-calculation";
+import { RESTOCKING_FEE_PERCENT } from "../domain/return-policy";
+import "./after-sales.css";
+
+const labels = {
+  en: {
+    merchandise: "Merchandise",
+    logistics: "Recoverable logistics",
+    sellerLogistics: "Seller-funded logistics",
+    tax: "Sales Tax adjustment",
+    service: "Service fee reversal",
+    gross: "Gross refund",
+    restocking: `Restocking fee (${RESTOCKING_FEE_PERCENT}%)`,
+    thirdParty: "Documented third-party cost",
+    net: "Refund amount",
+    initiated: "Refund initiated",
+    remaining: "Not yet initiated",
+  },
+  zh: {
+    merchandise: "商品金额（折后）",
+    logistics: "可退回物流费用",
+    sellerLogistics: "卖方承担的物流费用",
+    tax: "销售税调整",
+    service: "服务费退回",
+    gross: "退款总额",
+    restocking: `退货手续费（${RESTOCKING_FEE_PERCENT}%）`,
+    thirdParty: "已记录第三方费用",
+    net: "应退金额",
+    initiated: "已发起退款",
+    remaining: "尚未发起",
+  },
+} as const;
+
+export function refundStatusLabel(
+  refund: Pick<
+    RefundAuthorizationView,
+    "status" | "initiatedCents" | "refundCents" | "deadlineDateEt" | "onHold"
+  >,
+  language: "en" | "zh",
+) {
+  if (refund.status === "superseded")
+    return language === "en"
+      ? "Replaced by a revised amount"
+      : "已被修订金额取代";
+  if (refund.onHold)
+    return language === "en"
+      ? "Unpaid part paused while we review the revised decision with you"
+      : "修订待复核：未发起部分已暂停，不能发起退款";
+  if (refund.initiatedCents >= refund.refundCents)
+    return language === "en"
+      ? "Refund sent — bank processing may take longer"
+      : "已汇款，退款完成";
+  if (refund.initiatedCents > 0)
+    return language === "en" ? "Refund partly initiated" : "部分已发起退款";
+  if (refund.status === "awaiting_customer_confirmation")
+    return language === "en"
+      ? "Your confirmation is needed"
+      : "等待客户确认扣减金额";
+  if (refund.status === "disputed")
+    return language === "en"
+      ? "Disputed — under seller review"
+      : "客户对金额有异议，待处理";
+  return language === "en"
+    ? `Refund approved — not yet sent${refund.deadlineDateEt ? ` (to be initiated by ${refund.deadlineDateEt} ET)` : ""}`
+    : `退款已批准，尚未发起${refund.deadlineDateEt ? `（须在美东 ${refund.deadlineDateEt} 前发起）` : ""}`;
+}
+
+export function RefundBreakdown({
+  refund,
+  language,
+}: {
+  refund: RefundAuthorizationView;
+  language: "en" | "zh";
+}) {
+  const text = labels[language];
+  const rows: Array<[string, number, boolean?]> = [
+    [text.merchandise, refund.merchandiseCents],
+    [text.logistics, refund.logisticsCents],
+    [text.sellerLogistics, refund.sellerLogisticsCents],
+    [text.tax, refund.taxCents],
+    [text.service, refund.serviceFeeCents],
+  ];
+  return (
+    <dl className="after-sales-money">
+      {rows
+        .filter(([, value], index) => index === 0 || value > 0)
+        .map(([label, value]) => (
+          <div key={label} style={{ display: "contents" }}>
+            <dt>{label}</dt>
+            <dd>{usd(value)}</dd>
+          </div>
+        ))}
+      {(refund.restockingFeeCents > 0 || refund.thirdPartyCostCents > 0) && (
+        <>
+          <dt>{text.gross}</dt>
+          <dd>{usd(refund.grossCents)}</dd>
+        </>
+      )}
+      {refund.restockingFeeCents > 0 && (
+        <>
+          <dt>{text.restocking}</dt>
+          <dd>{usd(-refund.restockingFeeCents)}</dd>
+        </>
+      )}
+      {refund.thirdPartyCostCents > 0 && (
+        <>
+          <dt>
+            {text.thirdParty}
+            {refund.thirdPartyCostEvidence
+              ? ` — ${refund.thirdPartyCostEvidence}`
+              : ""}
+          </dt>
+          <dd>{usd(-refund.thirdPartyCostCents)}</dd>
+        </>
+      )}
+      <dt className="after-sales-money-total">{text.net}</dt>
+      <dd className="after-sales-money-total">{usd(refund.refundCents)}</dd>
+      {refund.initiations.map((initiation) => (
+        <div key={initiation.id} style={{ display: "contents" }}>
+          <dt>
+            {text.initiated} ·{" "}
+            {initiation.channel === "paypal"
+              ? "PayPal"
+              : language === "en"
+                ? "Bank transfer"
+                : "银行转账"}{" "}
+            · {initiation.initiatedDateEt} ET
+          </dt>
+          <dd>{usd(initiation.amountCents)}</dd>
+        </div>
+      ))}
+      {refund.initiatedCents > 0 && (
+        <>
+          <dt>{text.remaining}</dt>
+          <dd>{usd(refund.remainingCents)}</dd>
+        </>
+      )}
+    </dl>
+  );
+}
+
+/** Customer confirmation or dispute of a refund with a gross-to-net deduction. */
+export function CustomerRefundResponse({
+  refund,
+  commandId,
+  busy,
+}: {
+  refund: Pick<RefundAuthorizationView, "id" | "version" | "status">;
+  commandId: string;
+  busy: boolean;
+}) {
+  if (refund.status !== "awaiting_customer_confirmation") return null;
+  return (
+    <div className="after-sales-response">
+      <Form method="post" className="shipping-change-accept">
+        <input type="hidden" name="intent" value="refund-confirm" />
+        <input type="hidden" name="authorizationId" value={refund.id} />
+        <input type="hidden" name="expectedVersion" value={refund.version} />
+        <input type="hidden" name="commandId" value={commandId} />
+        <button className="button button-primary" disabled={busy}>
+          Confirm refund amount
+        </button>
+      </Form>
+      <Form method="post" className="shipping-change-withdraw">
+        <input type="hidden" name="intent" value="refund-dispute" />
+        <input type="hidden" name="authorizationId" value={refund.id} />
+        <input type="hidden" name="expectedVersion" value={refund.version} />
+        <input type="hidden" name="commandId" value={commandId} />
+        <label>
+          What should be reviewed?
+          <textarea name="note" required rows={2} />
+        </label>
+        <button className="button button-secondary" disabled={busy}>
+          Dispute this amount
+        </button>
+      </Form>
+    </div>
+  );
+}

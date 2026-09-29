@@ -145,7 +145,7 @@ function validatedProformaInvoiceSnapshot(input: CreateProformaInvoiceInput) {
     input.quoteRevisionId !== input.currentQuoteRevisionId
   )
     throw new Error("Current Quote Revision required");
-  if (revision.version !== 1)
+  if (revision.version !== 1 && revision.version !== 2)
     throw new Error("Unsupported Quote Revision schema version");
   const seller = input.seller;
   const addressText = seller?.registeredAddressEn?.trim() ?? "";
@@ -179,6 +179,10 @@ function validatedProformaInvoiceSnapshot(input: CreateProformaInvoiceInput) {
   const validated = validateQuoteIssuance(
     revision,
     revision.factoryReviewConfirmed === true,
+    {
+      allowHistoricalUnstructuredSplit: revision.version === 1,
+      requireReadySchedule: revision.version === 2,
+    },
   );
   for (const key of [
     "currency",
@@ -292,11 +296,29 @@ function validatedProformaInvoiceSnapshot(input: CreateProformaInvoiceInput) {
     terms: {
       shipmentMode: terms.shipmentMode,
       splitPlan: terms.splitPlan,
+      ...(validated.terms.shipmentGroups
+        ? { shipmentGroups: validated.terms.shipmentGroups }
+        : {}),
       transportMethod: terms.transportMethod,
       incoterm: terms.incoterm,
       namedPlace: terms.namedPlace,
       taxTreatment: terms.taxTreatment,
       leadTime: terms.leadTime,
+      ...(validated.terms.readySchedule
+        ? { readySchedule: validated.terms.readySchedule }
+        : {}),
+      ...(validated.terms.preparationDaysByLine
+        ? { preparationDaysByLine: validated.terms.preparationDaysByLine }
+        : {}),
+      ...(validated.terms.assemblyLeadConfirmed !== undefined
+        ? { assemblyLeadConfirmed: validated.terms.assemblyLeadConfirmed }
+        : {}),
+      ...(validated.terms.fixedDatePreparationConfirmed !== undefined
+        ? {
+            fixedDatePreparationConfirmed:
+              validated.terms.fixedDatePreparationConfirmed,
+          }
+        : {}),
       charges: {
         freight: terms.charges.freight,
         insurance: terms.charges.insurance,

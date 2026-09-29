@@ -365,3 +365,17 @@ it("blocks normal confirmation during a dispute and reserves release review for 
   expect((review as HTMLButtonElement).disabled).toBe(true);
   expect(review.parentElement?.title).toContain("Owner");
 });
+
+it("shows a specific factory-review blocker before payment confirmation", async () => {
+  const data = fixture();
+  data.payment.balanceCents = 0;
+  data.payment.factoryReviewRequired = true;
+  await show(data);
+  expect(
+    screen.getAllByText(/该报价有未完成工厂审核的规格变更或总成配置/).length,
+  ).toBeGreaterThan(0);
+  expect(
+    (screen.getByRole("button", { name: /^确认付款/ }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+});

@@ -1,4 +1,4 @@
-import { Ruler, UserRound } from "lucide-react";
+import { MessagesSquare, Ruler, UserRound } from "lucide-react";
 import { Link, useLocation, useRouteLoaderData } from "react-router";
 
 import { BrandMark } from "../../shared/ui/brand-mark";
@@ -40,19 +40,44 @@ export function StorefrontHeader() {
       </nav>
       <div className="storefront-header-actions">
         {isAuthenticated ? (
-          <Link
-            aria-current={
-              location.pathname === "/quote-list" ||
-              location.pathname.startsWith("/account")
-                ? "page"
-                : undefined
-            }
-            className="storefront-account-link"
-            to="/account"
-          >
-            <UserRound aria-hidden="true" size={18} />
-            <span>Account &amp; Lists</span>
-          </Link>
+          <>
+            <Link
+              aria-current={
+                location.pathname.startsWith("/account/messages")
+                  ? "page"
+                  : undefined
+              }
+              className="storefront-account-link"
+              to="/account/messages"
+            >
+              <MessagesSquare aria-hidden="true" size={18} />
+              <span>Messages</span>
+              {rootData?.customer?.unreadMessages ? (
+                <span
+                  className="storefront-messages-badge"
+                  aria-label={`${rootData.customer.unreadMessages} unread`}
+                >
+                  {rootData.customer.unreadMessages > 99
+                    ? "99+"
+                    : rootData.customer.unreadMessages}
+                </span>
+              ) : null}
+            </Link>
+            <Link
+              aria-current={
+                location.pathname === "/quote-list" ||
+                (location.pathname.startsWith("/account") &&
+                  !location.pathname.startsWith("/account/messages"))
+                  ? "page"
+                  : undefined
+              }
+              className="storefront-account-link"
+              to="/account"
+            >
+              <UserRound aria-hidden="true" size={18} />
+              <span>Account &amp; Lists</span>
+            </Link>
+          </>
         ) : (
           <>
             <Link className="storefront-register-link" to="/register">

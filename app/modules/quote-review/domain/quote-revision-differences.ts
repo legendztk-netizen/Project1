@@ -124,7 +124,11 @@ function material(quote: QuoteMaterial) {
       postalCode: t.destination.postalCode,
       countryCode: t.destination.countryCode,
     },
-    "Shipment plan": { mode: t.shipmentMode, plan: t.splitPlan },
+    "Shipment plan": {
+      mode: t.shipmentMode,
+      plan: t.splitPlan,
+      groups: t.shipmentGroups ?? [],
+    },
     Transport: t.transportMethod,
     "Sales tax": { treatment: t.taxTreatment, amountCents: t.charges.salesTax },
     "USD prices and discounts": entries.map(({ line, price }) => ({

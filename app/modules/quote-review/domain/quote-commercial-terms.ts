@@ -4,6 +4,14 @@ import {
 } from "../../customer-identity/domain/customer-account";
 import type { QuoteRequestSnapshot } from "../../quote-request/domain/quote-request";
 import { quoteLineTotals, type QuotedLinePrice } from "./quote-pricing";
+import {
+  validatedShipmentGroups,
+  type QuotedShipmentGroup,
+} from "../../shipment/domain/shipment-plan";
+import {
+  validatedReadySchedule,
+  type ReadyScheduleBasis,
+} from "../../shipment/domain/ready-schedule";
 
 export const commercialChargeKeys = [
   "freight",
@@ -24,6 +32,7 @@ export interface QuoteCommercialTerms {
   addressReplacementReason: string;
   shipmentMode: "together" | "split";
   splitPlan: string;
+  shipmentGroups?: QuotedShipmentGroup[];
   transportMethod: string;
   incoterm: "DDP" | "DAP";
   termReplacementReason: string;
@@ -34,6 +43,10 @@ export interface QuoteCommercialTerms {
   taxTreatment: "Collected" | "Exempt" | "Not Collected";
   taxEvidenceId: string | null;
   leadTime: string;
+  readySchedule?: ReadyScheduleBasis;
+  preparationDaysByLine?: Record<string, number>;
+  assemblyLeadConfirmed?: boolean;
+  fixedDatePreparationConfirmed?: boolean;
   charges: CommercialCharges;
   manualCurrencyConfirmed: boolean;
 }
@@ -47,6 +60,10 @@ function required(value: string, field: string) {
 export function validateCommercialTerms(
   input: QuoteCommercialTerms,
   source: QuoteRequestSnapshot,
+  options: {
+    allowHistoricalUnstructuredSplit?: boolean;
+    requireReadySchedule?: boolean;
+  } = {},
 ): QuoteCommercialTerms {
   const destination = validatedDeliveryAddress(input.destination);
   if (input.freightReviewConfirmed !== true)
@@ -90,6 +107,86 @@ export function validateCommercialTerms(
   ) as CommercialCharges;
   if (input.taxTreatment !== "Collected" && charges.salesTax !== 0)
     throw new Error("Tax amount must be zero when not collected");
+  const transportMethod = required(input.transportMethod, "Transport method");
+  const namedPlace = required(input.namedPlace, "Named place");
+  const readySchedule = input.readySchedule
+    ? validatedReadySchedule(input.readySchedule)
+    : undefined;
+  const shipmentGroups =
+    options.allowHistoricalUnstructuredSplit &&
+    input.shipmentMode === "split" &&
+    !input.shipmentGroups
+      ? undefined
+      : validatedShipmentGroups(
+          source.lines,
+          {
+            shipmentMode: input.shipmentMode,
+            shipmentGroups: input.shipmentGroups,
+            transportMethod,
+            incoterm: input.incoterm,
+            namedPlace,
+            charges,
+            readySchedule,
+          },
+          {
+            allowPerDispatchTransport: input.shipmentMode === "split",
+            requireReadySchedule: options.requireReadySchedule,
+          },
+        );
+  const reviewPreparation =
+    options.requireReadySchedule ||
+    !!input.preparationDaysByLine ||
+    input.assemblyLeadConfirmed === true ||
+    input.fixedDatePreparationConfirmed === true;
+  const preparationDaysByLine: Record<string, number> | undefined =
+    reviewPreparation
+      ? Object.fromEntries(
+          source.lines.map((line) => {
+            const entered = input.preparationDaysByLine?.[line.id];
+            const days = entered ?? (line.lineKind === "standard" ? 10 : null);
+            if (
+              !Number.isSafeInteger(days) ||
+              days === null ||
+              days < 1 ||
+              days > 365
+            )
+              throw new Error(
+                `Reviewed preparation days required for ${line.sku}`,
+              );
+            return [line.id, days];
+          }),
+        )
+      : undefined;
+  if (
+    reviewPreparation &&
+    source.lines.some((line) => line.lineKind === "configured_assembly") &&
+    input.assemblyLeadConfirmed !== true
+  )
+    throw new Error("Sales must confirm assembly preparation lead time");
+  if (reviewPreparation && shipmentGroups) {
+    for (const group of shipmentGroups) {
+      if (!group.readySchedule) continue;
+      const longest = Math.max(
+        ...group.allocations.map(
+          (allocation) => preparationDaysByLine![allocation.lineId],
+        ),
+      );
+      if (
+        group.readySchedule.kind === "china_business_days" &&
+        group.readySchedule.days < longest
+      )
+        throw new Error(
+          `${group.label}: ready schedule is shorter than the longest preparation requirement`,
+        );
+      if (
+        group.readySchedule.kind === "fixed_date" &&
+        input.fixedDatePreparationConfirmed !== true
+      )
+        throw new Error(
+          "Sales must confirm fixed dates cover preparation requirements",
+        );
+    }
+  }
   const requiresCurrencyReview =
     source.amounts.manualCommercialReview ||
     source.lines.some(
@@ -112,19 +209,29 @@ export function validateCommercialTerms(
       : "",
     shipmentMode: input.shipmentMode,
     splitPlan: input.shipmentMode === "split" ? input.splitPlan.trim() : "",
-    transportMethod: required(input.transportMethod, "Transport method"),
+    shipmentGroups,
+    transportMethod,
     incoterm: input.incoterm,
     termReplacementReason:
       source.importResponsibility.fulfillmentTerm !== input.incoterm
         ? input.termReplacementReason.trim()
         : "",
-    namedPlace: required(input.namedPlace, "Named place"),
+    namedPlace,
     packingEstimate: required(input.packingEstimate, "Packing estimate"),
     freightReviewConfirmed: true,
     actualPacking: input.actualPacking.trim(),
     taxTreatment: input.taxTreatment,
     taxEvidenceId: input.taxTreatment === "Exempt" ? input.taxEvidenceId : null,
     leadTime: required(input.leadTime, "Reviewed lead time"),
+    readySchedule,
+    ...(preparationDaysByLine ? { preparationDaysByLine } : {}),
+    ...(reviewPreparation
+      ? {
+          assemblyLeadConfirmed: input.assemblyLeadConfirmed === true,
+          fixedDatePreparationConfirmed:
+            input.fixedDatePreparationConfirmed === true,
+        }
+      : {}),
     charges,
     manualCurrencyConfirmed: input.manualCurrencyConfirmed === true,
   };

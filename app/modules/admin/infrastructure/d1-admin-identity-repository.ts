@@ -1,5 +1,11 @@
+import {
+  isAdminPermission,
+  type AdminPermission,
+} from "../domain/admin-permissions";
+
 export interface ActiveAdminIdentityRecord {
   catalogPermission?: "view" | "edit";
+  permissions?: AdminPermission[];
   accountType: "owner" | "subaccount";
   canManageSubaccounts: boolean;
   email: string;
@@ -8,6 +14,7 @@ export interface ActiveAdminIdentityRecord {
 
 interface AdminIdentityRow {
   catalog_permission: "view" | "edit";
+  permissions: string | null;
   account_type: "owner" | "subaccount";
   email: string;
   id: string;
@@ -19,7 +26,9 @@ export async function findActiveAdminIdentityByEmail(
 ): Promise<ActiveAdminIdentityRecord | null> {
   const row = await database
     .prepare(
-      `SELECT id, email, account_type, catalog_permission
+      `SELECT id, email, account_type, catalog_permission,
+         (SELECT group_concat(permission) FROM admin_identity_permissions p
+           WHERE p.admin_id = admin_identities.id) AS permissions
        FROM admin_identities
        WHERE email = ? AND status = 'active'
        LIMIT 1`,
@@ -31,6 +40,11 @@ export async function findActiveAdminIdentityByEmail(
   return {
     ...(row.catalog_permission === "view"
       ? { catalogPermission: "view" as const }
+      : {}),
+    ...(row.permissions
+      ? {
+          permissions: row.permissions.split(",").filter(isAdminPermission),
+        }
       : {}),
     accountType: row.account_type,
     canManageSubaccounts: row.account_type === "owner",

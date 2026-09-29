@@ -1,5 +1,10 @@
 import { KeyRound } from "lucide-react";
 import { data, Form, redirect, useNavigation } from "react-router";
+import {
+  customerPasswordMinimumLength,
+  customerPasswordPattern,
+  customerPasswordRequirement,
+} from "../domain/customer-password";
 
 import type { Route } from "./+types/reset-password";
 import { cloudflareContext } from "#workers/context";
@@ -95,7 +100,9 @@ export default function ResetPassword({
               autoComplete="new-password"
               autoFocus
               id="reset-new-password"
-              minLength={15}
+              minLength={customerPasswordMinimumLength}
+              pattern={customerPasswordPattern}
+              title={customerPasswordRequirement}
               name="newPassword"
               required
               type="password"
@@ -104,13 +111,15 @@ export default function ResetPassword({
             <input
               autoComplete="new-password"
               id="reset-confirm-password"
-              minLength={15}
+              minLength={customerPasswordMinimumLength}
+              pattern={customerPasswordPattern}
+              title={customerPasswordRequirement}
               name="confirmPassword"
               required
               type="password"
             />
             <p className="password-guidance">
-              Use at least 15 characters. Your complete password is hashed; it
+              {customerPasswordRequirement} Your complete password is hashed; it
               is never shortened or stored as readable text.
             </p>
             <button

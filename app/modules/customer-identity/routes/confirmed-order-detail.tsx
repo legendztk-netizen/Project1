@@ -1,9 +1,17 @@
-import { ArrowLeft } from "lucide-react";
+import { refundAccountProtector } from "#workers/refund-accounts";
+import { createRefundAccountService } from "../../after-sales/application/refund-account-service";
+import {
+  CustomerRefundAccountAction,
+  CustomerRefundAccountStatus,
+} from "../../after-sales/ui/customer-refund-account";
+import { ArrowLeft, MessagesSquare } from "lucide-react";
 import {
   data,
   Form,
   Link,
   redirect,
+  useActionData,
+  useNavigation,
   type ActionFunctionArgs,
   type LoaderFunctionArgs,
 } from "react-router";
@@ -14,11 +22,43 @@ import {
   piCustomerProfile,
   piPrivateHeaders,
   piRouteId,
+  shipmentPlans,
 } from "#workers/proforma-invoice";
 import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
 import { ConfirmedOrderLine } from "../../proforma-invoice/ui/confirmed-order-line";
 import { AccountWorkspace } from "../ui/account-workspace";
 import { requireTrustedAuthPost } from "../application/trusted-auth-request";
+import { createShipmentReadyScheduleService } from "../../shipment/application/shipment-ready-schedule-service";
+import { createShipmentMilestoneService } from "../../shipment/application/shipment-milestone-service";
+import {
+  CustomerShipmentCards,
+  customerOrderProgress,
+} from "../../shipment/ui/customer-shipment-cards";
+import { createOrderShippingChangeService } from "../../shipment/application/order-shipping-change-service";
+import {
+  CustomerOrderShippingChanges,
+  CustomerShippingChangeActions,
+} from "../../shipment/ui/customer-order-shipping-changes";
+import { createCancellationService } from "../../after-sales/application/cancellation-service";
+import { createCaseService } from "../../after-sales/application/case-service";
+import { createAfterSalesFiles } from "../../after-sales/application/after-sales-files";
+import { CustomerCaseAction } from "../../after-sales/ui/customer-cases";
+import {
+  readCancellationQuantities,
+  readCaseLines,
+} from "../../after-sales/application/parse-after-sales-forms";
+import { CustomerReturnsTab } from "../../after-sales/ui/customer-returns";
+import { CustomerShippingRefunds } from "../../after-sales/ui/customer-shipping-refunds";
+import { createRefundInitiationService } from "../../after-sales/application/refund-initiation-service";
+import { createRefundResponseService } from "../../after-sales/application/refund-response-service";
+import { readPrivateReviewForm } from "../../quote-review/domain/private-review";
+import { createReturnAuthorizationService } from "../../after-sales/application/return-authorization-service";
+import { createReturnInspectionService } from "../../after-sales/application/return-inspection-service";
+import {
+  CustomerCancellationAction,
+  CustomerCancellationRequests,
+  CustomerSupportPath,
+} from "../../after-sales/ui/customer-cancellations";
 
 export const headers = piPrivateHeaders;
 export async function loader({ context, request, params }: LoaderFunctionArgs) {
@@ -28,12 +68,62 @@ export async function loader({ context, request, params }: LoaderFunctionArgs) {
     profileId,
     piRouteId(params.orderId),
   );
-  const drafts = await followOnQuotes(env).customerListForOrder(
-    profileId,
-    order.id,
-  );
+  const [
+    drafts,
+    shipmentPlan,
+    readySchedules,
+    milestones,
+    shippingChanges,
+    cancellations,
+    cases,
+    returnAuthorizations,
+    returnReceipts,
+    shippingRefunds,
+    refundAccount,
+  ] = await Promise.all([
+    followOnQuotes(env).customerListForOrder(profileId, order.id),
+    shipmentPlans(env).customerRead(profileId, order.id),
+    createShipmentReadyScheduleService(env.DB).customerRead(
+      profileId,
+      order.id,
+    ),
+    createShipmentMilestoneService(env.DB).customerRead(profileId, order.id),
+    createOrderShippingChangeService(env.DB).customerRead(profileId, order.id),
+    createCancellationService(env.DB).customerRead(profileId, order.id),
+    createCaseService(env.DB).customerRead(profileId, order.id),
+    createReturnAuthorizationService(env.DB).customerRead(profileId, order.id),
+    createReturnInspectionService(env.DB).customerRead(profileId, order.id),
+    createRefundInitiationService(env.DB).customerShippingRefunds(
+      profileId,
+      order.id,
+    ),
+    createRefundAccountService(env.DB, {
+      protector: await refundAccountProtector(env),
+    }).customerRead(profileId, order.id),
+  ]);
+  const hasReturns =
+    cases.cases.length > 0 || cancellations.requests.length > 0;
   return data(
-    { order, drafts, commandId: crypto.randomUUID() },
+    {
+      tab:
+        hasReturns && new URL(request.url).searchParams.get("tab") === "returns"
+          ? ("returns" as const)
+          : ("details" as const),
+      hasReturns,
+      order,
+      drafts,
+      shipmentPlan,
+      readySchedules,
+      milestones,
+      shippingChanges,
+      cancellations,
+      cases,
+      returnAuthorizations,
+      returnReceipts,
+      shippingRefunds,
+      refundAccount,
+      commandId: crypto.randomUUID(),
+    },
     { headers: headers() },
   );
 }
@@ -48,8 +138,219 @@ export async function action({ context, request, params }: ActionFunctionArgs) {
   const profileId = await piCustomerProfile(env, request);
   const orderId = piRouteId(params.orderId);
   await confirmedOrders(env).customerRead(profileId, orderId);
-  const form = await request.formData();
+  const form = await readPrivateReviewForm(request);
   const commandId = String(form.get("commandId") ?? "");
+  const intent = String(form.get("intent") ?? "follow-on");
+  const returnsHref = `/account/orders/${encodeURIComponent(orderId)}?tab=returns`;
+  if (intent === "refund-account-submit") {
+    try {
+      const value = (key: string) => String(form.get(key) ?? "");
+      await createRefundAccountService(env.DB, {
+        protector: await refundAccountProtector(env),
+        auditIp: request.headers.get("cf-connecting-ip") ?? "local",
+      }).customerSubmit(profileId, {
+        orderId,
+        expectedVersion: Number(form.get("expectedVersion")),
+        commandId,
+        samePurchasingContext: form.get("samePurchasingContext") === "on",
+        details:
+          value("channel") === "paypal"
+            ? {
+                channel: "paypal",
+                holderName: value("holderName"),
+                paypalEmail: value("paypalEmail"),
+              }
+            : {
+                channel: value("channel") as "bank_transfer",
+                holderName: value("holderName"),
+                bankName: value("bankName"),
+                bankCountry: value("bankCountry"),
+                accountNumber: value("accountNumber"),
+                routingCode: value("routingCode"),
+                swiftCode: value("swiftCode"),
+                accountType: value("accountType"),
+                holderAddress: value("holderAddress"),
+                bankAddress: value("bankAddress"),
+              },
+      });
+    } catch (error) {
+      if (!(error instanceof Response) || ![400, 409].includes(error.status))
+        throw error;
+      return data(
+        { intent, error: await error.text() },
+        { status: error.status, headers: headers() },
+      );
+    }
+    return redirect(returnsHref, { headers: headers() });
+  }
+  if (intent === "case-open") {
+    const auditIp = request.headers.get("cf-connecting-ip") ?? "local";
+    const file = form.get("file");
+    try {
+      const caseId = await createCaseService(env.DB, { auditIp }).customerOpen(
+        profileId,
+        {
+          orderId,
+          reason: String(form.get("reason") ?? ""),
+          description: String(form.get("description") ?? ""),
+          lines: readCaseLines(form),
+          commandId,
+        },
+      );
+      if (file instanceof File && file.size > 0)
+        await createAfterSalesFiles(env.DB, env.PRIVATE_FILES).customerUpload(
+          profileId,
+          { orderId, scopeKind: "case", scopeId: caseId, file, commandId },
+        );
+    } catch (error) {
+      if (error instanceof Response && ![400, 404, 409].includes(error.status))
+        throw error;
+      return data(
+        {
+          intent,
+          error:
+            error instanceof Response && error.status === 409
+              ? "These items or this case changed. Refresh and review the current order."
+              : error instanceof Response
+                ? await error.text()
+                : "Check the details and try again.",
+        },
+        {
+          status: error instanceof Response ? error.status : 400,
+          headers: headers(),
+        },
+      );
+    }
+    return redirect(returnsHref);
+  }
+  if (intent.startsWith("cancellation-") || intent.startsWith("refund-")) {
+    const cancellations = createCancellationService(env.DB, {
+      auditIp: request.headers.get("cf-connecting-ip") ?? "local",
+    });
+    try {
+      if (intent === "cancellation-submit")
+        await cancellations.customerSubmit(profileId, {
+          orderId,
+          reason: String(form.get("reason") ?? ""),
+          quantities: readCancellationQuantities(form),
+          commandId,
+        });
+      else if (intent === "refund-confirm" || intent === "refund-dispute")
+        await createRefundResponseService(env.DB, {
+          auditIp: request.headers.get("cf-connecting-ip") ?? "local",
+        }).customerRespond(profileId, {
+          orderId,
+          authorizationId: String(form.get("authorizationId") ?? ""),
+          expectedVersion: Number(form.get("expectedVersion")),
+          response: intent === "refund-confirm" ? "confirm" : "dispute",
+          note: String(form.get("note") ?? ""),
+          commandId,
+        });
+      else if (intent === "cancellation-withdraw")
+        await cancellations.customerWithdraw(profileId, {
+          orderId,
+          requestId: String(form.get("requestId") ?? ""),
+          expectedVersion: Number(form.get("expectedVersion")),
+          commandId,
+        });
+      else throw new Response("Invalid operation", { status: 400 });
+    } catch (error) {
+      if (error instanceof Response && ![400, 409].includes(error.status))
+        throw error;
+      return data(
+        {
+          intent,
+          error:
+            error instanceof Response && error.status === 409
+              ? "These quantities or this request changed. Refresh and review the current order."
+              : error instanceof Response
+                ? `Check the cancellation details: ${await error.text()}.`
+                : "Check the cancellation details.",
+        },
+        {
+          status: error instanceof Response ? error.status : 400,
+          headers: headers(),
+        },
+      );
+    }
+    return redirect(returnsHref);
+  }
+  if (intent.startsWith("shipping-change-")) {
+    const changes = createOrderShippingChangeService(env.DB, {
+      auditIp: request.headers.get("cf-connecting-ip") ?? "local",
+    });
+    try {
+      if (intent === "shipping-change-submit") {
+        const kind = String(form.get("kind") ?? "");
+        const shipmentIds = form.getAll("shipmentId").map(String);
+        await changes.customerSubmit(profileId, {
+          orderId,
+          kind: kind as "delivery_address" | "shipping_plan",
+          requested: {
+            note: String(form.get("note") ?? ""),
+            ...(kind === "delivery_address"
+              ? {
+                  destination: {
+                    recipientName: String(form.get("recipientName") ?? ""),
+                    addressLine1: String(form.get("addressLine1") ?? ""),
+                    addressLine2: String(form.get("addressLine2") ?? ""),
+                    city: String(form.get("city") ?? ""),
+                    stateProvince: String(form.get("stateProvince") ?? ""),
+                    postalCode: String(form.get("postalCode") ?? ""),
+                    countryCode: String(form.get("countryCode") ?? ""),
+                    recipientPhone: String(form.get("recipientPhone") ?? ""),
+                    recipientEmail: String(form.get("recipientEmail") ?? ""),
+                  },
+                }
+              : {}),
+          },
+          shipments: shipmentIds.map((shipmentId) => ({
+            shipmentId,
+            expectedVersion: Number(form.get(`shipmentVersion:${shipmentId}`)),
+          })),
+          commandId,
+        });
+      } else if (intent === "shipping-change-accept") {
+        if (form.get("acceptTerms") !== "on")
+          throw new Response("Please accept the current change version", {
+            status: 400,
+          });
+        await changes.customerAccept(profileId, {
+          orderId,
+          requestId: String(form.get("requestId") ?? ""),
+          proposalId: String(form.get("proposalId") ?? ""),
+          proposalHash: String(form.get("proposalHash") ?? ""),
+          expectedVersion: Number(form.get("expectedVersion")),
+          commandId,
+        });
+      } else if (intent === "shipping-change-withdraw") {
+        await changes.customerWithdraw(profileId, {
+          orderId,
+          requestId: String(form.get("requestId") ?? ""),
+          expectedVersion: Number(form.get("expectedVersion")),
+          reason: String(form.get("reason") ?? ""),
+          commandId,
+        });
+      } else throw new Response("Invalid operation", { status: 400 });
+    } catch (error) {
+      if (error instanceof Response && ![400, 409].includes(error.status))
+        throw error;
+      return data(
+        {
+          intent,
+          error:
+            error instanceof Response && error.status === 409
+              ? "This change or shipment has changed. Refresh and review the latest details."
+              : "Check the selected shipments and required details.",
+        },
+        {
+          status: error instanceof Response ? error.status : 400,
+          headers: headers(),
+        },
+      );
+    }
+    return redirect(`/account/orders/${encodeURIComponent(orderId)}`);
+  }
   const draft = await followOnQuotes(env).customerCreate(
     profileId,
     orderId,
@@ -65,86 +366,270 @@ export default function ConfirmedOrderDetail({
 }: {
   loaderData: Awaited<ReturnType<typeof loader>>["data"];
 }) {
-  const { order, drafts, commandId } = loaderData;
+  const {
+    tab,
+    hasReturns,
+    order,
+    drafts,
+    shipmentPlan,
+    readySchedules,
+    milestones,
+    shippingChanges,
+    cancellations,
+    cases,
+    returnAuthorizations,
+    returnReceipts,
+    shippingRefunds,
+    refundAccount,
+    commandId,
+  } = loaderData;
+  const actionData = useActionData<typeof action>();
+  const navigation = useNavigation();
   const snapshot = order.snapshot;
   const address = snapshot.destination;
+  const progress = customerOrderProgress(shipmentPlan, milestones);
+  const orderShipments = shipmentPlan.shipments.map((shipment) => ({
+    id: shipment.id,
+    displayName: shipment.displayName,
+    status: shipment.status,
+    version: shipment.version,
+    held: shipment.held,
+  }));
   return (
     <AccountWorkspace activeView="orders">
-      <main className="account-detail-content customer-quote-detail">
+      <main className="account-detail-content customer-quote-detail customer-order-detail">
         <Link className="customer-quote-back-link" to="/account?view=orders">
           <ArrowLeft size={17} />
           Back to Orders
         </Link>
-        <span className="eyebrow">{order.status}</span>
-        <h1 className="confirmed-order-number">{order.orderNumber}</h1>
-        <p>Confirmed {formatPiDate(order.confirmedAt, "customer")}</p>
-        {order.status === "Payment Review Hold" && (
-          <p role="status">
-            Payment is under review. The order is preserved, but further release
-            is paused. Please contact Support.
-          </p>
-        )}
-        <Link
-          to={`/account/quotes/${encodeURIComponent(order.requestId)}/pi/${encodeURIComponent(order.piId)}`}
-        >
-          View accepted PI
-        </Link>
-        <section className="customer-quote-section">
-          <h2>Additional purchases</h2>
-          <Form method="post">
-            <input type="hidden" name="commandId" value={commandId} />
-            <button className="button button-secondary">
-              Start a follow-on quote
-            </button>
-          </Form>
-          {drafts.map((draft) => (
-            <p key={draft.id}>
-              {draft.submittedRequestId ? (
-                <Link
-                  to={`/account/quotes/${encodeURIComponent(draft.submittedRequestId)}`}
-                >
-                  View follow-on request
-                </Link>
-              ) : (
-                <Link
-                  to={`/quote-list?followOnDraftId=${encodeURIComponent(draft.id)}`}
-                >
-                  Continue follow-on draft
-                </Link>
-              )}
+        <header className="customer-order-hero">
+          <div>
+            <span className="eyebrow">Order {order.orderNumber}</span>
+            <h1>
+              {order.status === "Payment Review Hold"
+                ? "Payment under review"
+                : progress.headline}
+            </h1>
+            <p>
+              {progress.summary} · Confirmed{" "}
+              {formatPiDate(order.confirmedAt, "customer")}
             </p>
-          ))}
-        </section>
-        <section className="customer-quote-section">
-          <h2>Order total</h2>
-          <p>USD {(order.totalCents / 100).toFixed(2)}</p>
-          <p>
-            {snapshot.terms.incoterm} · {snapshot.terms.namedPlace} ·{" "}
-            {snapshot.terms.transportMethod}
-          </p>
-        </section>
-        {snapshot.lines.map((line) => (
-          <ConfirmedOrderLine key={line.id} line={line} />
-        ))}
-        <section className="customer-quote-section">
-          <h2>Delivery destination</h2>
-          <address>
-            {address.recipientName}
-            <br />
-            {address.addressLine1}
-            <br />
-            {address.addressLine2 && (
-              <>
-                {address.addressLine2}
-                <br />
-              </>
+          </div>
+          <strong className="customer-order-total">
+            USD {(order.totalCents / 100).toFixed(2)}
+          </strong>
+        </header>
+        <div className="customer-order-actions">
+          <CustomerRefundAccountAction
+            account={refundAccount}
+            commandId={commandId}
+            actionData={
+              actionData?.intent === "refund-account-submit"
+                ? actionData
+                : undefined
+            }
+          />
+          <Link
+            className="button button-secondary"
+            to={`/account/messages/${encodeURIComponent(order.requestId)}`}
+          >
+            <MessagesSquare size={17} aria-hidden="true" />
+            Message us
+          </Link>
+          <CustomerShippingChangeActions
+            shipments={orderShipments}
+            destination={snapshot.destination}
+            commandId={commandId}
+            actionData={
+              actionData?.intent === "shipping-change-submit"
+                ? actionData
+                : undefined
+            }
+          />
+          <CustomerCaseAction
+            cases={cases}
+            commandId={commandId}
+            actionData={
+              actionData?.intent === "case-open" ? actionData : undefined
+            }
+          />
+          <CustomerCancellationAction
+            cancellations={cancellations}
+            commandId={commandId}
+            actionData={
+              actionData?.intent === "cancellation-submit"
+                ? actionData
+                : undefined
+            }
+          />
+        </div>
+        <CustomerRefundAccountStatus account={refundAccount} />
+        {hasReturns && (
+          <nav className="customer-quote-tabs" aria-label="Order sections">
+            <Link
+              to={`/account/orders/${encodeURIComponent(order.id)}`}
+              aria-current={tab === "details" ? "page" : undefined}
+              preventScrollReset
+            >
+              <span
+                className="customer-quote-tab-label"
+                data-label="Order details"
+              >
+                <span>Order details</span>
+              </span>
+            </Link>
+            <Link
+              to={`/account/orders/${encodeURIComponent(order.id)}?tab=returns`}
+              aria-current={tab === "returns" ? "page" : undefined}
+              preventScrollReset
+            >
+              <span
+                className="customer-quote-tab-label"
+                data-label="After-sales Cases"
+              >
+                <span>After-sales Cases</span>
+              </span>
+              <span className="customer-quote-tab-count">
+                {cases.cases.length + cancellations.requests.length}
+              </span>
+            </Link>
+          </nav>
+        )}
+        {tab === "returns" ? (
+          <section className="customer-quote-section after-sales-returns-panel">
+            <h2>After-sales Cases</h2>
+            {actionData?.error &&
+              (actionData.intent === "cancellation-withdraw" ||
+                actionData.intent?.startsWith("refund-")) && (
+                <p className="shipping-change-error" role="alert">
+                  {actionData.error}
+                </p>
+              )}
+            <CustomerReturnsTab
+              cases={cases}
+              ras={returnAuthorizations}
+              receipts={returnReceipts}
+              orderId={order.id}
+              requestId={order.requestId}
+              commandId={commandId}
+              busy={navigation.state !== "idle"}
+            />
+            <CustomerCancellationRequests
+              cancellations={cancellations}
+              commandId={commandId}
+              busy={navigation.state !== "idle"}
+            />
+          </section>
+        ) : (
+          <>
+            {order.status === "Payment Review Hold" && (
+              <p className="shipment-card-status" role="status">
+                Payment is under review. The order is preserved, but further
+                release is paused. Please contact Support.
+              </p>
             )}
-            {address.city}, {address.stateProvince} {address.postalCode}
-            <br />
-            {address.countryCode}
-          </address>
-          <p>Lead time: {snapshot.terms.leadTime}</p>
-        </section>
+            <CustomerShipmentCards
+              plan={shipmentPlan}
+              milestones={milestones}
+              schedules={readySchedules}
+            />
+            <CustomerOrderShippingChanges
+              changes={shippingChanges}
+              shipments={orderShipments}
+              commandId={commandId}
+              busy={navigation.state !== "idle"}
+              error={
+                actionData?.intent?.startsWith("shipping-change-") &&
+                actionData.intent !== "shipping-change-submit"
+                  ? actionData.error
+                  : undefined
+              }
+            />
+            <CustomerShippingRefunds refunds={shippingRefunds} />
+            <CustomerSupportPath cancellations={cancellations} />
+            <section className="customer-quote-section customer-order-details">
+              <div className="customer-order-section-heading">
+                <h2>Order details</h2>
+                <Link
+                  to={`/account/quotes/${encodeURIComponent(order.requestId)}/pi/${encodeURIComponent(order.piId)}`}
+                >
+                  View accepted PI
+                </Link>
+              </div>
+              {snapshot.lines.map((line) => (
+                <ConfirmedOrderLine key={line.id} line={line} />
+              ))}
+              <dl className="customer-order-facts">
+                <div>
+                  <dt>Order total</dt>
+                  <dd>USD {(order.totalCents / 100).toFixed(2)}</dd>
+                </div>
+                <div>
+                  <dt>Terms</dt>
+                  <dd>
+                    {snapshot.terms.incoterm} · {snapshot.terms.namedPlace} ·{" "}
+                    {snapshot.terms.transportMethod}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Lead time</dt>
+                  <dd>{snapshot.terms.leadTime}</dd>
+                </div>
+                <div>
+                  <dt>Delivery destination</dt>
+                  <dd>
+                    <address>
+                      {address.recipientName}
+                      <br />
+                      {address.addressLine1}
+                      <br />
+                      {address.addressLine2 && (
+                        <>
+                          {address.addressLine2}
+                          <br />
+                        </>
+                      )}
+                      {address.city}, {address.stateProvince}{" "}
+                      {address.postalCode}
+                      <br />
+                      {address.countryCode}
+                    </address>
+                  </dd>
+                </div>
+              </dl>
+            </section>
+            <section className="customer-quote-section">
+              <h2>Need more products?</h2>
+              <p>
+                Additional items are quoted separately and don&apos;t change
+                this order.
+              </p>
+              <Form method="post">
+                <input type="hidden" name="commandId" value={commandId} />
+                <button className="button button-secondary">
+                  Start a follow-on quote
+                </button>
+              </Form>
+              {drafts.map((draft) => (
+                <p key={draft.id}>
+                  {draft.submittedRequestId ? (
+                    <Link
+                      to={`/account/quotes/${encodeURIComponent(draft.submittedRequestId)}`}
+                    >
+                      View follow-on request
+                    </Link>
+                  ) : (
+                    <Link
+                      to={`/quote-list?followOnDraftId=${encodeURIComponent(draft.id)}`}
+                    >
+                      Continue follow-on draft
+                    </Link>
+                  )}
+                </p>
+              ))}
+            </section>
+          </>
+        )}
       </main>
     </AccountWorkspace>
   );

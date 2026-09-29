@@ -1,6 +1,6 @@
 # Spec 6: Shipment and Customer Order Progress
 
-> Status: Tickets published (#94-#99); implementation pending. Prerequisite: Spec 4B / Issue #6 is completed.
+> Status: Implemented and locally verified on `codex/spec6-work` (#94-#99); release/deployment pending. Prerequisite: Spec 4B / Issue #6 is completed.
 > Spec 5 / Issue #7 is deferred and is not a first-release prerequisite.
 
 ## First-release Boundary
@@ -109,16 +109,24 @@ Delivery` button.
 - Before carrier handoff, a customer may submit a Delivery Address Change Request
   or Shipping Change Request for an eligible Shipment. Submission holds only
   affected quantities.
+- In the first release, Admin may split one unshipped Shipment into two and
+  reallocate quantities among existing unshipped Shipments. Merging two
+  Shipments into one is out of scope; Admin declines that request with a
+  reason. Existing Shipment history must not be erased to simulate a merge.
 - Admin rechecks carrier, tax, trade term, and price effects. Approval creates an
-  immutable Order Change Confirmation; it becomes effective only after explicit
-  customer acceptance and any required additional Cleared Funds. Silence never
-  applies the change.
+  immutable Order Change Confirmation. After the customer explicitly accepts
+  the current version, Admin may manually apply it. Additional payment for a
+  positive adjustment is handled offline; the website does not require a
+  receipt attestation or claim Cleared Funds for that adjustment. Silence and
+  an Admin proposal alone never apply the change.
 - Accepted financial adjustments form an append-only effective Order obligation
   alongside the unchanged original PI/Order totals. Reserve an approved refund
   until its separately recorded initiation; it is not freely allocatable excess.
-  Payment review and Spec 7 refunds must use the same adjusted obligation and
-  funding facts so a legitimate refund does not create a false payment shortfall
-  or permit the same entitlement to be refunded twice.
+  Payment review and Spec 7 refunds must reconcile authorized credits against
+  the original system-tracked PI funding without treating offline positive
+  adjustments as system-verified funds. A legitimate recorded refund must not
+  create a false payment shortfall or permit the same entitlement to be
+  refunded twice.
 - After carrier handoff, website change actions are disabled and the customer is
   directed to Support. Accepted quantity, destination, split, or service changes
   that alter commercial terms use the established replacement/confirmation
@@ -136,8 +144,9 @@ Delivery` button.
 - Calendar tests cover China processing dates, revisions, and no automatic delay
   status. Time-zone display is validated in ET for customers and Beijing Time for
   Admin.
-- Change-request tests cover holds, customer acceptance, additional-payment
-  guard, cancellation before effect, and disabling after carrier handoff.
+- Change-request tests cover holds, customer acceptance, explicit Admin
+  application without a false Cleared Funds claim for offline adjustments,
+  cancellation before effect, and disabling after carrier handoff.
 - Security tests prove Internal Shipment Documents remain inaccessible until
   explicitly shared.
 - Queue tests prove repeated milestone messages do not send duplicate customer

@@ -294,7 +294,9 @@ it("projects acceptance on the customer PI page and links its immutable record",
       ])}
     />,
   );
-  expect(screen.getByRole("heading", { name: "PI Accepted" })).toBeTruthy();
+  expect(
+    screen.getByText("Accepted", { selector: ".customer-order-badge" }),
+  ).toBeTruthy();
   expect(
     screen
       .getByRole("link", { name: "Acceptance record" })

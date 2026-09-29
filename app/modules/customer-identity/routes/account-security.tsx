@@ -1,5 +1,10 @@
 import { KeyRound, MailCheck } from "lucide-react";
 import { data, Form, Link, redirect, useNavigation } from "react-router";
+import {
+  customerPasswordMinimumLength,
+  customerPasswordPattern,
+  customerPasswordRequirement,
+} from "../domain/customer-password";
 
 import type { Route } from "./+types/account-security";
 import { cloudflareContext } from "#workers/context";
@@ -125,7 +130,9 @@ function PasswordFields(input: { current?: boolean }) {
       <input
         autoComplete="new-password"
         id="new-password"
-        minLength={15}
+        minLength={customerPasswordMinimumLength}
+        pattern={customerPasswordPattern}
+        title={customerPasswordRequirement}
         name="newPassword"
         required
         type="password"
@@ -134,15 +141,14 @@ function PasswordFields(input: { current?: boolean }) {
       <input
         autoComplete="new-password"
         id="confirm-password"
-        minLength={15}
+        minLength={customerPasswordMinimumLength}
+        pattern={customerPasswordPattern}
+        title={customerPasswordRequirement}
         name="confirmPassword"
         required
         type="password"
       />
-      <p className="password-guidance">
-        Use at least 15 characters. Spaces and passphrases are welcome; no
-        symbol recipe is required.
-      </p>
+      <p className="password-guidance">{customerPasswordRequirement}</p>
     </>
   );
 }

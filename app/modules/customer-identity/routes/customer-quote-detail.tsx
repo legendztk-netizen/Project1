@@ -1,7 +1,7 @@
 import { formatQuoteAmounts } from "../../quote-list/domain/quote-currency-totals";
 import { CustomerQuoteOffer } from "../../quote-review/ui/customer-quote-offer";
 import { QuoteRevisionChanges } from "../../quote-review/ui/quote-revision-changes";
-import { ArrowLeft, FileText } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { Link, data, redirect } from "react-router";
 
 import type { Route } from "./+types/customer-quote-detail";
@@ -15,6 +15,12 @@ import {
   quotePurchasingAs,
 } from "../../quote-request/ui/customer-quote-presentation";
 import { CustomerQuoteProductPreview } from "../../quote-request/ui/customer-quote-product-preview";
+import {
+  customerQuoteNextStep,
+  customerQuoteStep,
+  customerQuoteStepLabels,
+} from "../../quote-request/ui/customer-quote-next-step";
+import { ShipmentStepper } from "../../shipment/ui/shipment-stepper";
 import { cloudflareContext } from "#workers/context";
 import { customerPaymentProgress } from "../../proforma-invoice/application/customer-payment-progress";
 
@@ -134,11 +140,40 @@ function configuredAssemblyDetails(line: AnonymousQuoteLine) {
   );
 }
 
+function quoteAmount(
+  quoteRequest: Route.ComponentProps["loaderData"]["quoteRequest"],
+) {
+  const pi = quoteRequest.currentPi;
+  if (!pi)
+    return {
+      label: "Submitted merchandise reference",
+      value: formatQuoteAmounts(quoteRequest.snapshot.amounts),
+    };
+  return {
+    label:
+      quoteRequest.progress.code === "PI_REPLACEMENT_REQUIRED"
+        ? "Previous PI total"
+        : quoteRequest.progress.code === "PI_EXPIRED"
+          ? "Expired PI total"
+          : "PI total",
+    value:
+      pi.currency === "USD" &&
+      typeof pi.totalCents === "number" &&
+      Number.isSafeInteger(pi.totalCents) &&
+      pi.totalCents >= 0
+        ? `USD ${(pi.totalCents / 100).toFixed(2)}`
+        : "Not available",
+  };
+}
+
 export default function CustomerQuoteDetail({
   loaderData,
 }: Route.ComponentProps) {
   const quoteRequest = loaderData.quoteRequest;
   const snapshot = quoteRequest.snapshot;
+  const next = customerQuoteNextStep(quoteRequest);
+  const amount = quoteAmount(quoteRequest);
+  const lineCount = snapshot.lines.length;
 
   return (
     <AccountWorkspace activeView="my-quotes">
@@ -147,41 +182,49 @@ export default function CustomerQuoteDetail({
           <ArrowLeft aria-hidden="true" size={17} /> Back to My Quotes
         </Link>
 
-        <header className="customer-quote-detail-header">
+        <header className="customer-pi-hero customer-quote-hero">
           <div>
             <span className="eyebrow">Quote request</span>
-            <h1>{quoteRequest.referenceNumber}</h1>
+            <div className="customer-pi-hero-title">
+              <h1>{quoteRequest.referenceNumber}</h1>
+              <span className="customer-order-badge">
+                {quoteRequest.progress.label}
+              </span>
+            </div>
             <p>
               Submitted{" "}
-              {customerQuoteDateTime.format(new Date(quoteRequest.submittedAt))}
+              {customerQuoteDateTime.format(new Date(quoteRequest.submittedAt))}{" "}
+              · {lineCount} item{lineCount === 1 ? "" : "s"}
             </p>
           </div>
-          <span className="customer-quote-status">
-            {quoteRequest.progress.label}
-          </span>
+          <div className="customer-quote-hero-amount">
+            <span>{amount.label}</span>
+            <strong className="customer-pi-total">{amount.value}</strong>
+          </div>
         </header>
         <CustomerQuoteNavigation requestId={quoteRequest.id} />
-        {quoteRequest.orderId ? (
-          <Link
-            className="button button-secondary"
-            to={`/account/orders/${encodeURIComponent(quoteRequest.orderId)}`}
-          >
-            View confirmed order
-          </Link>
-        ) : null}
 
         <section
-          className="customer-quote-progress"
+          className="customer-quote-section customer-quote-next"
           aria-label="Quote progress"
         >
-          <FileText aria-hidden="true" size={22} />
-          <div>
-            <strong>{quoteRequest.progress.label}</strong>
-            <p>
-              {quoteRequest.currentOffer
-                ? "Your published quote is shown below. Review the PI when issued."
-                : "We received your request and will prepare the formal quote."}
-            </p>
+          <ShipmentStepper
+            labels={customerQuoteStepLabels}
+            completed={customerQuoteStep(quoteRequest)}
+          />
+          <div className="customer-quote-next-row">
+            <div>
+              <strong>What happens next</strong>
+              <p>{next.summary}</p>
+            </div>
+            {next.action && (
+              <Link
+                className={`button ${next.action.primary ? "button-primary" : "button-secondary"}`}
+                to={next.action.to}
+              >
+                {next.action.label}
+              </Link>
+            )}
           </div>
         </section>
 
@@ -189,16 +232,16 @@ export default function CustomerQuoteDetail({
           <CustomerQuoteOffer offer={quoteRequest.currentOffer} />
         ) : null}
         {quoteRequest.proposedChanges?.length ? (
-          <section>
+          <section className="customer-quote-section">
             <h2>Proposed revision · Not yet issued</h2>
             <QuoteRevisionChanges changes={quoteRequest.proposedChanges} />
           </section>
         ) : null}
         {(quoteRequest.offerHistory?.length ?? 0) > 1 ? (
-          <section>
+          <section className="customer-quote-section">
             <h2>Previous quote versions</h2>
             {quoteRequest.offerHistory!.slice(1).map((offer) => (
-              <details key={offer.id}>
+              <details key={offer.id} className="customer-quote-history">
                 <summary>
                   Revision {offer.revisionNumber} ·{" "}
                   {customerQuoteDateTime.format(new Date(offer.issuedAt))}
@@ -208,66 +251,78 @@ export default function CustomerQuoteDetail({
             ))}
           </section>
         ) : null}
+
         <section className="customer-quote-section">
           <h2>Submitted products</h2>
           <div className="customer-quote-lines">
-            {snapshot.lines.map((line) => (
-              <article key={line.id}>
-                <div className="customer-quote-line-copy">
-                  <h3>{line.displayName}</h3>
-                  <p>SKU {line.sku}</p>
-                  <p>{lineDetails(line)}</p>
-                </div>
-                <CustomerQuoteProductPreview line={line} />
-                <strong className="customer-quote-line-quantity">
-                  Qty {line.quantity}
-                </strong>
-                {configuredAssemblyDetails(line)}
-              </article>
-            ))}
+            {snapshot.lines.map((line) => {
+              const assembly = configuredAssemblyDetails(line);
+              return (
+                <article key={line.id}>
+                  <div className="customer-quote-line-copy">
+                    <h3>{line.displayName}</h3>
+                    <p>SKU {line.sku}</p>
+                    <p>{lineDetails(line)}</p>
+                  </div>
+                  <CustomerQuoteProductPreview line={line} />
+                  <strong className="customer-quote-line-quantity">
+                    Qty {line.quantity}
+                  </strong>
+                  {assembly && (
+                    <details className="customer-quote-line-spec">
+                      <summary>Assembly specification</summary>
+                      {assembly}
+                    </details>
+                  )}
+                </article>
+              );
+            })}
           </div>
         </section>
 
-        <div className="customer-quote-detail-grid">
-          <section className="customer-quote-section">
-            <h2>Delivery destination</h2>
-            <address>
-              <strong>{snapshot.destination.recipientName}</strong>
-              <span>{snapshot.destination.addressLine1}</span>
-              {snapshot.destination.addressLine2 ? (
-                <span>{snapshot.destination.addressLine2}</span>
-              ) : null}
-              <span>
-                {snapshot.destination.city},{" "}
-                {snapshot.destination.stateProvince}{" "}
-                {snapshot.destination.postalCode}
-              </span>
-              <span>{snapshot.destination.countryCode}</span>
-            </address>
-          </section>
-
-          <section className="customer-quote-section">
-            <h2>Request summary</h2>
-            <dl className="customer-quote-summary">
-              <div>
-                <dt>Purchasing as</dt>
-                <dd>{quotePurchasingAs(quoteRequest)}</dd>
-              </div>
-              <div>
-                <dt>Import handling</dt>
-                <dd>{quoteImportHandling(quoteRequest)}</dd>
-              </div>
-              <div>
-                <dt>Merchandise reference</dt>
-                <dd>{formatQuoteAmounts(snapshot.amounts)}</dd>
-              </div>
-            </dl>
-            <p className="customer-quote-commercial-note">
-              This is the submitted request snapshot, not a formal quoted price,
-              PI, payment request or order.
-            </p>
-          </section>
-        </div>
+        <section className="customer-quote-section">
+          <h2>Request details</h2>
+          <dl className="customer-pi-facts">
+            <div>
+              <dt>Purchasing as</dt>
+              <dd>{quotePurchasingAs(quoteRequest)}</dd>
+            </div>
+            <div>
+              <dt>Import handling</dt>
+              <dd>{quoteImportHandling(quoteRequest)}</dd>
+            </div>
+            <div>
+              <dt>Merchandise reference</dt>
+              <dd>{formatQuoteAmounts(snapshot.amounts)}</dd>
+            </div>
+            <div>
+              <dt>Delivery destination</dt>
+              <dd>
+                <address className="customer-quote-address">
+                  {snapshot.destination.recipientName}
+                  <br />
+                  {snapshot.destination.addressLine1}
+                  {snapshot.destination.addressLine2 ? (
+                    <>
+                      <br />
+                      {snapshot.destination.addressLine2}
+                    </>
+                  ) : null}
+                  <br />
+                  {snapshot.destination.city},{" "}
+                  {snapshot.destination.stateProvince}{" "}
+                  {snapshot.destination.postalCode}
+                  <br />
+                  {snapshot.destination.countryCode}
+                </address>
+              </dd>
+            </div>
+          </dl>
+          <p className="customer-quote-commercial-note">
+            This is the submitted request snapshot, not a formal quoted price,
+            PI, payment request or order.
+          </p>
+        </section>
       </main>
     </AccountWorkspace>
   );

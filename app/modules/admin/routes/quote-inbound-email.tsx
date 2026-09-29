@@ -79,7 +79,9 @@ export default function InboundEmail({ loaderData }: Route.ComponentProps) {
                   大小：{row.raw_size} bytes · 处理尝试：{row.attempts}
                 </p>
                 {row.request_id ? (
-                  <Link to={`/admin/quotes/${row.request_id}/conversation`}>
+                  <Link
+                    to={`/admin/messages/${encodeURIComponent(row.request_id)}`}
+                  >
                     查看会话
                   </Link>
                 ) : null}

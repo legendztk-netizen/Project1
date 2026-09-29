@@ -1,0 +1,108 @@
+.admin-notification-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  padding-block: 18px;
+}
+.admin-notification-toolbar .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.admin-notification-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.admin-notification-check input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.admin-notification-error {
+  margin: 0;
+  color: var(--accent);
+  font-size: 14px;
+}
+.admin-notification-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+.admin-notification-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding-left: 14px;
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid transparent;
+  background: var(--surface);
+}
+.admin-notification-list li.unread {
+  border-left-color: var(--accent);
+  background: #fff7f6;
+}
+.admin-notification-open button {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 16px 16px 16px 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.admin-notification-open button:hover .admin-notification-title,
+.admin-notification-open button:focus-visible .admin-notification-title {
+  color: var(--accent);
+}
+.admin-notification-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.admin-notification-list li.read .admin-notification-title {
+  color: var(--muted);
+  font-weight: 500;
+}
+.admin-notification-dot {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+}
+.admin-notification-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.admin-notification-empty {
+  margin: 0;
+  padding: 40px 0;
+  color: var(--muted);
+  text-align: center;
+}
+.admin-notification-pages {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-block: 18px;
+  font-size: 14px;
+}

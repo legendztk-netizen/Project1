@@ -7,6 +7,7 @@ import {
   ListChecks,
   LoaderCircle,
   MapPin,
+  MessagesSquare,
   Save,
 } from "lucide-react";
 import { Link } from "react-router";
@@ -38,6 +39,12 @@ const items = [
     view: "orders",
   },
   {
+    href: "/account/messages",
+    icon: MessagesSquare,
+    label: "Messages",
+    view: "messages",
+  },
+  {
     href: "/account?view=addresses",
     icon: MapPin,
     label: "Addresses",
@@ -60,7 +67,7 @@ const items = [
 export type AccountNavigationView = (typeof items)[number]["view"];
 export type AccountDetailView = Exclude<
   AccountNavigationView,
-  "quote-list" | "security"
+  "quote-list" | "security" | "messages"
 >;
 
 export function isAccountDetailView(
@@ -70,16 +77,19 @@ export function isAccountDetailView(
     (item) =>
       item.view === value &&
       item.view !== "quote-list" &&
-      item.view !== "security",
+      item.view !== "security" &&
+      item.view !== "messages",
   );
 }
 
 export function AccountDetailNavigation({
   activeView,
   pendingHref,
+  unreadMessages = 0,
 }: {
   activeView: AccountNavigationView;
   pendingHref?: string;
+  unreadMessages?: number;
 }) {
   return (
     <nav className="account-detail-navigation" aria-label="Account details">
@@ -104,6 +114,14 @@ export function AccountDetailNavigation({
               <Icon aria-hidden="true" size={16} />
             )}
             {item.label}
+            {item.view === "messages" && unreadMessages > 0 && (
+              <span
+                className="account-nav-badge"
+                aria-label={`${unreadMessages} unread`}
+              >
+                {unreadMessages > 99 ? "99+" : unreadMessages}
+              </span>
+            )}
           </Link>
         );
       })}

@@ -30,6 +30,7 @@ import {
 } from "../../quote-review/domain/private-review";
 import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
 import { AccountWorkspace } from "../ui/account-workspace";
+import { readyScheduleText } from "../../shipment/domain/ready-schedule";
 
 export const headers = piPrivateHeaders;
 export function meta() {
@@ -234,6 +235,29 @@ function AcceptanceForm({
           onChange={(event) => setLegalName(event.target.value)}
         />
       </label>
+      {(invoice.snapshot.terms?.shipmentGroups?.some(
+        (group) => group.readySchedule,
+      ) ||
+        invoice.snapshot.terms?.readySchedule) && (
+        <section className="customer-quote-section">
+          <h2>Agreed ready-to-ship schedule</h2>
+          {invoice.snapshot.terms?.shipmentGroups?.length ? (
+            invoice.snapshot.terms.shipmentGroups.map((group) =>
+              group.readySchedule ? (
+                <p key={group.id}>
+                  {group.label}: {readyScheduleText(group.readySchedule)}
+                </p>
+              ) : null,
+            )
+          ) : invoice.snapshot.terms?.readySchedule ? (
+            <p>{readyScheduleText(invoice.snapshot.terms.readySchedule)}</p>
+          ) : null}
+          <p>
+            Transit time starts after dispatch and is separate from this
+            preparation schedule.
+          </p>
+        </section>
+      )}
       <label className="quote-confirmation">
         <input
           type="checkbox"

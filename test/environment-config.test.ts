@@ -211,7 +211,22 @@ describe("environment configuration contract", () => {
       "utf8",
     );
 
-    expect(quality).toContain("pnpm ci:check");
+    for (const command of [
+      "pnpm format:check",
+      "pnpm lint",
+      "pnpm typecheck",
+      "pnpm dry-run:local",
+      "pnpm migrate",
+      "pnpm migrate:verify",
+      "pnpm build:production",
+      "pnpm deploy:validate:production",
+      "pnpm exec vitest run --shard=${{ matrix.shard }}/4 --maxWorkers=1",
+    ]) {
+      expect(quality).toContain(command);
+    }
+    expect(quality).toContain("needs: [static, tests]");
+    expect(quality).toContain("needs.static.result");
+    expect(quality).toContain("needs.tests.result");
     expect(deployment).toContain("pnpm deploy:validate:production");
     expect(`${quality}\n${deployment}`).not.toContain("secrets.");
     expect(deployment).not.toContain("pnpm deploy:production");

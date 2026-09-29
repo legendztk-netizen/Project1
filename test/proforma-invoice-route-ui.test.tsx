@@ -69,7 +69,89 @@ it("shows the exact protected PI links, USD total and selected instructions in E
   expect(html).not.toContain("<script>");
   expect(html).toContain("Sep 13, 2026");
   expect(html).toContain("20:00:00");
-  expect(html).toContain("flex-wrap:wrap");
+  expect(html).toContain('class="customer-pi-actions"');
+  expect(html).not.toContain("Hangzhou Rongyao Trading Co., Ltd.");
+  expect(html).not.toContain("Hangzhou, China");
+});
+it("groups a complete PI into parties, items and commercial terms", () => {
+  const full = {
+    ...invoice,
+    snapshot: {
+      ...invoice.snapshot,
+      totals: { merchandiseCents: 9400, discountCents: 0, totalCents: 9900 },
+      buyer: {
+        kind: "individual",
+        legalName: null,
+        tradeName: null,
+        registrationOrTaxId: null,
+        contactName: "Pat Buyer",
+        contactEmail: "pat@example.test",
+      },
+      destination: {
+        recipientName: "Receiving Dock",
+        addressLine1: "1 Main St",
+        addressLine2: "",
+        city: "Portland",
+        stateProvince: "OR",
+        postalCode: "97201",
+        countryCode: "US",
+        recipientPhone: "555-0100",
+      },
+      lines: [
+        {
+          id: "line-1",
+          sku: "ADP-1",
+          displayName: "Straight adapter",
+          quantity: 20,
+          salesUnit: "EA",
+          product: { mainImageUrl: null },
+          price: { unitPriceCents: 200 },
+          totals: { totalCents: 4000 },
+        },
+      ],
+      terms: {
+        incoterm: "DDP",
+        namedPlace: "OR",
+        transportMethod: "Sea",
+        shipmentMode: "together",
+        splitPlan: "",
+        leadTime: "15 Days",
+        taxTreatment: "Not Collected",
+        charges: { freight: 500, insurance: 0 },
+      },
+      conditions: {
+        cancellation: { text: "Cancellation needs review." },
+        refund: { text: "Refunds follow policy." },
+      },
+    },
+  } as unknown as PiRecord;
+  const html = render(
+    <CustomerPi
+      loaderData={{
+        requestId: "request",
+        invoice: full,
+        status: currentStatus,
+      }}
+    />,
+  );
+  for (const text of [
+    "Buyer and delivery",
+    "Pat Buyer",
+    "Receiving Dock",
+    "Straight adapter",
+    "20 EA × USD 2.00",
+    "USD 40.00",
+    "Freight",
+    "USD 5.00",
+    "USD 99.00",
+    "DDP · OR",
+    "15 Days",
+    "Cancellation and refund conditions",
+  ])
+    expect(html).toContain(text);
+  expect(html).not.toContain("Insurance");
+  expect(html).not.toContain("Seller");
+  expect(html).not.toContain("Hangzhou Rongyao Trading Co., Ltd.");
 });
 it("shows actionable unavailable-instructions and unissued states without payment fallback", () => {
   const html = render(

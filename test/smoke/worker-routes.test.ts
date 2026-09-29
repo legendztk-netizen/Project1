@@ -474,6 +474,23 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(admin).not.toContain('href="#"');
     expect(admin).toContain("owner@local.invalid");
     expect(admin).toContain("local-development");
+    expect(admin).toContain('href="/admin/after-sales"');
+    const afterSalesResponse = await fetch(`${origin}/admin/after-sales`);
+    const afterSales = await afterSalesResponse.text();
+    expect(afterSalesResponse.status).toBe(200);
+    expect(afterSales).toContain("取消申请");
+    expect(afterSales).toContain('data-surface="admin"');
+    expect(admin).toContain('href="/admin/messages"');
+    const messagesResponse = await fetch(`${origin}/admin/messages`);
+    const messages = await messagesResponse.text();
+    expect(messagesResponse.status).toBe(200);
+    expect(messages).toContain("消息管理");
+    expect(messages).toContain("待回复");
+    const unread = await fetch(`${origin}/admin/notifications/unread-count`);
+    expect(await unread.json()).toMatchObject({
+      unread: expect.any(Number),
+      messages: expect.any(Number),
+    });
   });
 
   it("versions Admin-only seller identity and payment instructions", async () => {
@@ -885,9 +902,7 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(orders.status).toBe(200);
     expect(ordersHtml).toContain("ticket05.owner@example.com");
     expect(ordersHtml).not.toContain("ticket05.other@example.com");
-    expect(renderedText(ordersHtml)).toContain(
-      "No paid and confirmed orders yet. Quote requests and unpaid PIs do not appear here.",
-    );
+    expect(renderedText(ordersHtml)).toContain("No confirmed orders yet.");
     for (const label of [
       "Overview",
       "Quote List",
@@ -4976,6 +4991,13 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(available).not.toMatch(/product-quote-command[^>]*disabled/);
     expect(available).toContain("14 calendar days");
     expect(available).toContain("10% restocking fee");
+    expect(available).toContain('href="/policies/returns"');
+    const policyResponse = await fetch(`${origin}/policies/returns`);
+    const policy = await policyResponse.text();
+    expect(policyResponse.status).toBe(200);
+    expect(policy).toContain("Returns and Refunds");
+    expect(policy).toContain("11:59 PM ET on day 14");
+    expect(policy).not.toContain("No restocking fee");
 
     const lengthBasedAdd = new FormData();
     lengthBasedAdd.set("intent", "add");
@@ -6151,7 +6173,7 @@ describe("Cloudflare Worker route surfaces", () => {
     });
     const ordersText = renderedText(await orders.text());
     expect(orders.status).toBe(200);
-    expect(ordersText).toContain("No paid and confirmed orders yet");
+    expect(ordersText).toContain("No confirmed orders yet.");
     expect(ordersText).not.toContain("QR-20260821");
 
     const repeated = await submit(idempotencyKey ?? "", true);
@@ -6231,7 +6253,7 @@ describe("Cloudflare Worker route surfaces", () => {
         recipientEmail: "individual-request@example.com",
         recipientName: "Individual Buyer",
         recipientPhone: "+1 212 555 0144",
-        stateProvince: "New York",
+        stateProvince: "NY",
       },
       importResponsibility: {
         fulfillmentTerm: "DDP",
@@ -7061,7 +7083,7 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(queueText).toContain("Admin Review Buyer");
     expect(queueText).toContain("New York, NY, 10005, US");
     expect(queueText).toContain("$432.10");
-    expect(queueText).toContain("需要技术审核");
+    expect(queueText).toContain("待技术审核");
     expect(queueText).toContain("2026-09-03 11:00 北京时间");
     expect(queueHtml).toContain("/images/catalog/hose/601R1-structure.jpg");
 
@@ -7131,7 +7153,12 @@ describe("Cloudflare Worker route surfaces", () => {
     const writeAttempt = await fetch(`${origin}/admin/quotes/${requestId}`, {
       method: "POST",
     });
-    expect(writeAttempt.status).toBe(405);
+    expect(writeAttempt.status).toBe(403);
+    const sameOriginWriteAttempt = await fetch(
+      `${origin}/admin/quotes/${requestId}`,
+      { method: "POST", headers: { Origin: origin } },
+    );
+    expect(sameOriginWriteAttempt.status).toBe(400);
     expect(
       runLocalD1<{ snapshot_json: string }>(
         `SELECT snapshot_json FROM customer_quote_requests WHERE id = ${sqlText(requestId)}`,

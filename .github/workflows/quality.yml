@@ -7,9 +7,9 @@ permissions:
   contents: read
 
 jobs:
-  quality:
+  static:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
         with:
@@ -22,6 +22,43 @@ jobs:
           cache: pnpm
           node-version: 24
       - run: pnpm install --frozen-lockfile
-      - run: pnpm ci:check
+      - run: pnpm format:check
         env:
           FORMAT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm dry-run:local
+      - run: pnpm migrate
+      - run: pnpm migrate:verify
+      - run: pnpm build:production
+      - run: pnpm deploy:validate:production
+
+  tests:
+    name: tests (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          cache: pnpm
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vitest run --shard=${{ matrix.shard }}/4 --maxWorkers=1
+
+  quality:
+    if: always()
+    needs: [static, tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require static checks and every test shard
+        run: |
+          test "${{ needs.static.result }}" = success
+          test "${{ needs.tests.result }}" = success

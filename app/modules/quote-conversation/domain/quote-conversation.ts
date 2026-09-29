@@ -26,6 +26,8 @@ export interface ConversationMessage {
   // Available in the website conversation; not an email delivery receipt.
   deliveryState: "available";
   attachment: ConversationAttachment | null;
+  // After-sales Case this message is about, when one was chosen.
+  topic: { caseId: string; caseNumber: string } | null;
 }
 
 export function conversationAuthor(

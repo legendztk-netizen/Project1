@@ -251,13 +251,14 @@ describe.sequential("#63 built Worker RFQ-to-PI acceptance", () => {
         expect(revisions).toHaveLength(1);
         expect(JSON.parse(revisions[0].snapshot_json)).toMatchObject({
           source: { lines: [{ currency: "CNY", referenceUnitPrice: 99 }] },
-          prices: [{ unitPriceCents: 1500, discountBasisPoints: 1000 }],
-          totals: { totalCents: 5500 },
+          prices: [{ unitPriceCents: 1500, discountBasisPoints: 0 }],
+          totals: { totalCents: 5800 },
         });
         for (const path of [myQuotes, customer, `${customer}.data`]) {
           const content = await html(path, buyerCookie);
           privateBoundary(content);
-          if (!path.endsWith(".data")) expect(content).toContain("Quote Ready");
+          if (!path.endsWith(".data"))
+            expect(content).toContain("RFQ Submitted");
         }
       },
       beforePdf: async () => {
@@ -449,9 +450,13 @@ describe.sequential("#63 built Worker RFQ-to-PI acceptance", () => {
       snapshot_hash: pi.snapshot_hash,
     });
     expect(accepted[0].evidence_json).toContain("TEST Buyer");
-    for (const page of [myQuotes, customer, path]) {
+    for (const [page, status] of [
+      [myQuotes, "PI Accepted"],
+      [customer, "Payment Pending"],
+      [path, "PI Accepted"],
+    ]) {
       const content = await html(page, buyerCookie);
-      expect(content).toContain("PI Accepted");
+      expect(content).toContain(status);
       privateBoundary(content);
     }
     expect(await html(myQuotes, otherCookie)).not.toContain(requestId);
@@ -565,7 +570,7 @@ describe.sequential("#63 built Worker RFQ-to-PI acceptance", () => {
     expect(pi.document_version).toBe(2);
     expect(pi.quote_revision_id).not.toBe(first.quote_revision_id);
     expect(JSON.parse(pi.snapshot_json)).toMatchObject({
-      totals: { totalCents: 5600 },
+      totals: { totalCents: 5900 },
     });
     expect(await server.query("SELECT id FROM proforma_invoices")).toHaveLength(
       2,
@@ -619,7 +624,7 @@ describe.sequential("#63 built Worker RFQ-to-PI acceptance", () => {
     privateBoundary(history);
     expect(history).toContain(first.id);
     expect(history).toMatch(/Superseded|superseded/);
-    expect(await html(myQuotes, buyerCookie)).toContain("Quote Ready");
+    expect(await html(myQuotes, buyerCookie)).toContain("PI Issued");
     const unseen = confirm(formFromHtml(await acceptancePage(), "accept"));
     expect(unseen.get("viewId")).toBe("");
     await post(`${customer}/pi/${pi.id}/accept`, unseen, buyerCookie, 400);

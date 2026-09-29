@@ -29,6 +29,7 @@ export function commercialTerms(): QuoteCommercialTerms {
     taxTreatment: "Not Collected",
     taxEvidenceId: null,
     leadTime: "20 days after cleared payment for the quoted quantity",
+    readySchedule: { kind: "china_business_days", days: 20 },
     charges: {
       freight: 2000,
       insurance: 100,

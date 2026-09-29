@@ -4,8 +4,9 @@ import {
   piSha256,
   type ProformaInvoiceSnapshot,
 } from "./proforma-invoice";
+import { readyScheduleText } from "../../shipment/domain/ready-schedule";
 
-export const PI_PDF_RENDERER_VERSION = "pi-pdf-v4";
+export const PI_PDF_RENDERER_VERSION = "pi-pdf-v5";
 
 interface TextBlock {
   text: string;
@@ -129,6 +130,30 @@ export function proformaInvoicePdfContent(
       text: `Transport: ${snapshot.terms.transportMethod} | Shipment: ${snapshot.terms.shipmentMode}`,
     },
     { text: snapshot.terms.splitPlan },
+    ...(snapshot.terms.shipmentGroups ?? []).flatMap((group, index) => [
+      { text: `Shipment ${index + 1}: ${group.label}`, heading: true },
+      ...group.allocations.map((allocation) => {
+        const lineIndex = snapshot.lines.findIndex(
+          (line) => line.id === allocation.lineId,
+        );
+        const line = snapshot.lines[lineIndex];
+        const length = line?.lengthOrder
+          ? ` | ${line.lengthOrder.originalLengthValue} ${line.lengthOrder.originalLengthUnit} per piece`
+          : "";
+        return {
+          text: `Line ${lineIndex + 1} | ${line?.sku ?? allocation.lineId} | ${line?.displayName ?? allocation.lineId}${length}: ${allocation.physicalQuantity} ${line?.lineKind === "length_based_hose" ? "pieces" : (line?.salesUnit ?? "units")}`,
+        };
+      }),
+      {
+        text: `Transport: ${group.transportMethod} | ${group.incoterm} ${group.namedPlace}`,
+      },
+      ...(group.readySchedule
+        ? [{ text: readyScheduleText(group.readySchedule) }]
+        : []),
+      {
+        text: `Freight: ${usd(group.freightCents)} | Insurance: ${usd(group.insuranceCents)} | Duties/import: ${usd(group.dutiesImportCents)}`,
+      },
+    ]),
     { text: `Lead time: ${snapshot.terms.leadTime}` },
     { text: `Sales tax treatment: ${snapshot.terms.taxTreatment}` },
     ...Object.entries(snapshot.terms.charges).map(([key, value]) => ({
@@ -474,7 +499,7 @@ export async function renderProformaInvoicePdf(
   });
   y -= 50;
   for (const text of wrap(
-    `Delivery: ${snapshot.terms.incoterm} - ${snapshot.terms.namedPlace}\nLead time: ${snapshot.terms.leadTime}`,
+    `Delivery: ${snapshot.terms.incoterm} - ${snapshot.terms.namedPlace}\nLead time: ${snapshot.terms.leadTime}${snapshot.terms.readySchedule ? `\n${readyScheduleText(snapshot.terms.readySchedule)}` : ""}`,
     (value) => measure(value, face.regular, 9),
     printable,
   )) {

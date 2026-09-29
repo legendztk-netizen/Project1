@@ -46,8 +46,28 @@ export default [
     "modules/customer-identity/routes/confirmed-order-detail.tsx",
   ),
   route(
+    "account/orders/:orderId/shipments/:shipmentId/documents",
+    "modules/customer-identity/routes/shipment-documents.tsx",
+  ),
+  route(
+    "account/orders/:orderId/shipments/:shipmentId/documents/:documentId/download",
+    "modules/customer-identity/routes/shipment-document-download.ts",
+  ),
+  route(
+    "account/orders/:orderId/after-sales/files/:fileId",
+    "modules/customer-identity/routes/after-sales-file-download.ts",
+  ),
+  route(
     "account/quotes/:requestId",
     "modules/customer-identity/routes/customer-quote-detail.tsx",
+  ),
+  route(
+    "account/messages",
+    "modules/customer-identity/routes/customer-messages.tsx",
+  ),
+  route(
+    "account/messages/:requestId",
+    "modules/customer-identity/routes/customer-message-thread.tsx",
   ),
   route(
     "account/security",
@@ -61,15 +81,37 @@ export default [
     "reset-password",
     "modules/customer-identity/routes/reset-password.tsx",
   ),
+  route("policies/returns", "modules/storefront/routes/returns-policy.tsx"),
   route(
     "assembly-measurement-guide",
     "modules/storefront/routes/assembly-measurement-guide.tsx",
   ),
   route("admin", "modules/admin/routes/admin-home.tsx"),
+  route("admin/notifications", "modules/admin/routes/notifications.tsx"),
+  route(
+    "admin/notifications/unread-count",
+    "modules/admin/routes/notifications-unread-count.ts",
+  ),
+  route("admin/messages", "modules/admin/routes/messages.tsx"),
+  route("admin/messages/:requestId", "modules/admin/routes/message-thread.tsx"),
   route("admin/orders", "modules/admin/routes/confirmed-orders.tsx"),
+  route("admin/after-sales", "modules/admin/routes/after-sales.tsx"),
+  route(
+    "admin/orders/:orderId/after-sales/files/:fileId",
+    "modules/admin/routes/after-sales-file-download.ts",
+  ),
+  route("admin/china-calendar", "modules/admin/routes/china-calendar.tsx"),
   route(
     "admin/orders/:orderId",
     "modules/admin/routes/confirmed-order-detail.tsx",
+  ),
+  route(
+    "admin/orders/:orderId/shipments/:shipmentId",
+    "modules/admin/routes/shipment-documents.tsx",
+  ),
+  route(
+    "admin/orders/:orderId/shipments/:shipmentId/documents/:documentId/download",
+    "modules/admin/routes/shipment-document-download.ts",
   ),
   route("admin/quotes", "modules/admin/routes/quote-reviews.tsx"),
   route(
@@ -175,6 +217,10 @@ export default [
   route(
     "admin/settings/commercial",
     "modules/admin/routes/commercial-settings.tsx",
+  ),
+  route(
+    "admin/settings/permissions",
+    "modules/admin/routes/admin-permissions.tsx",
   ),
   route("admin/catalog/products", "modules/admin/routes/catalog-products.tsx"),
   route(

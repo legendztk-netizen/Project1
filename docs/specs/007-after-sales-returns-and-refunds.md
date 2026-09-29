@@ -1,6 +1,6 @@
 # Spec 7: After-sales, Return Inspection, and Refund
 
-> Status: Blocked by Spec 6 / Issue #8. Spec 4B / Issue #6 is completed.
+> Status: Implemented locally (tickets #102–#111). See docs/operations/spec-7-after-sales.md for the runbook and verification.
 > Spec 5 / Issue #7 is deferred and is not a first-release prerequisite.
 
 ## First-release Boundary
@@ -13,6 +13,13 @@ its source when reviewing an exceptional assembly cancellation or pre-cut hose
 cancellation; private photos, documents or external identifiers may support the
 decision. Missing website production evidence is not proof that work has not
 started, and no production history is fabricated.
+
+The cancellation review uses a required factory-status dropdown instead of a
+free-text status and separate pre-cut checkbox. Selecting confirmed not started
+(uncut hose) records the pre-cut fact; in production, completed, and unverified
+states do not authorize cut-hose cancellation. The selection applies to all
+approved cut-hose quantities in that decision. Source and review time remain
+part of the internal factory record.
 
 Production Approval remains the customer's recorded approval of fixed
 specifications, not a factory-start milestone. Existing cancellation, return,
@@ -89,17 +96,27 @@ Problem`. The customer selects lines/quantities, reason, description, and
 - Physical-product refund approval is blocked until authorized quantity is
   recorded received and Operations completes inspection. This Return Inspection
   Gate also applies to returned seller-error or Nonconforming Product claims.
-- Inspection records condition of interfaces, sealing surfaces, finish,
-  packaging/accessories, installation evidence, and fluid exposure. Decision is
+- Inspection may be completed offline; notes on interfaces, sealing surfaces,
+  finish, packaging/accessories, installation evidence, and fluid exposure are
+  optional internal records. Decision is
   Approved, Partially Approved, or Declined within 5 US business days after
   receipt. Overdue inspection creates an internal reminder only.
-- Partial or declined decisions require a customer-visible reason. Private R2
-  evidence remains Internal unless an authorized user explicitly shares selected
-  supporting files.
-- Customer disagreement continues in the original case conversation. An
+- Partial or declined inspection decisions require a customer-visible reason;
+  full inspection approval uses the system-generated result and financial
+  breakdown, with an optional additional explanation. Cancellation decisions,
+  RA declines and Case closure still require a customer-visible reason.
+  Inspection logistics/tax working notes and replacement details are optional;
+  the approved products and quantities define replacement scope when no extra
+  instructions are entered. Third-party deductions still require evidence and
+  customer confirmation. Private R2 evidence remains Internal unless an authorized user
+  explicitly shares selected supporting files; files attached to a decision are
+  shared with the customer with that decision.
+- Customer disagreement continues in Messages, labelled with the Case. An
   Inspection Decision Revision appends old/new decision, reason, actor, and time.
 - Customer-choice convenience return deducts 10% of the discounted merchandise
-  amount approved for return. Customer pays return shipping; original performed
+  amount approved for return. The same customer terms apply to an "Other
+  problem" that inspection shows the buyer caused; Admin chooses the
+  responsibility; the system discloses the deductions. Customer pays return shipping; original performed
   DDP Shipping and Import Charges are not refunded. Applicable Sales Tax is
   adjusted separately.
 - Seller error or Nonconforming Product has no restocking fee. Seller-funded
@@ -116,6 +133,27 @@ Problem`. The customer selects lines/quantities, reason, description, and
 - Refunds return through the actual receipt channel where possible to an account
   verified for the same Purchasing Context. An alternative verified account
   requires Owner approval and reason. There is no cash or Store Credit refund.
+- For an approved, payable refund, the Order header exposes `Refund account`.
+  The customer chooses bank transfer (holder, bank, account and routing details)
+  or PayPal (holder and PayPal email),
+  and confirms ownership by the same Purchasing Context. Admin shows Account
+  Provided and can use the submitted details without asking for them in Messages.
+  Full bank and PayPal details are encrypted at rest, omitted from audit/message payloads,
+  and visible to Admin identities only with refund permission. The owning customer
+  can read their saved details while the refund is payable; the Update dialog
+  prefills the selected channel and its saved fields. Order status summaries
+  show only the account mask or channel. Edits create an immutable new account
+  version; stale Admin forms cannot record remittance to a replaced version.
+  A different channel from the actual original payment is an alternative account
+  and requires existing per-refund Owner approval. Original PayPal payments
+  continue to use the original transaction where available.
+- Admin `已汇款，退款完成` records an actual external remittance of the remaining
+  amount, date and reference. Once every return and refund for that Case is
+  resolved, the same transaction closes the Case and appends its completion
+  event. Partial payments, other unpaid refunds, outstanding returns,
+  uninspected receipts, replacements and refund holds prevent automatic closure.
+  Refund deadlines remain based on the original approval, not account submission.
+  Customer interfaces remain English; Admin calls the account `退款账号`.
 - Seller-funded refunds do not deduct bank or payment-channel fees. A permitted
   customer-caused refund may deduct only documented non-refundable third-party
   costs, displayed gross-to-net for confirmation, without markup.
@@ -127,6 +165,8 @@ Problem`. The customer selects lines/quantities, reason, description, and
   double-counting the same entitlement. Authorized refunds do not invalidate an
   otherwise fully funded adjusted Order; payment-review recovery evaluates the
   same effective obligation while preserving the original PI and Order totals.
+  Positive shipping-change adjustments are handled offline at launch: an
+  accepted/effective change is not evidence of system-verified extra funds.
 
 ## Testing Decisions
 

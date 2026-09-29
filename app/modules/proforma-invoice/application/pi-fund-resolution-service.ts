@@ -1,6 +1,7 @@
 import type { AdminIdentity } from "#workers/admin-access";
 import {
   effectiveQuoteAgreementSql,
+  factoryReviewSatisfiedSql,
   unspecifiedPaymentDeadlineSql,
 } from "../infrastructure/accepted-agreement-sql";
 import { piSha256 } from "../domain/proforma-invoice";
@@ -24,6 +25,8 @@ interface Account {
   version: number;
   confirmed: number;
   current_pi_id: string | null;
+  authorized_credit_cents: number;
+  uninitiated_refund_cents: number;
 }
 
 const digest = (value: string) => piSha256(new TextEncoder().encode(value));
@@ -50,17 +53,20 @@ function available(row: Account) {
       row.allocated_in_cents -
       row.allocated_out_cents -
       row.refunded_cents -
-      (row.confirmed ? row.total_due_cents : 0),
+      (row.confirmed ? row.total_due_cents - row.authorized_credit_cents : 0) -
+      row.uninitiated_refund_cents,
   );
 }
 function shortfall(row: Account) {
   return Math.max(
     0,
     row.total_due_cents -
+      row.authorized_credit_cents -
       row.amount_received_cents -
       row.allocated_in_cents +
       row.allocated_out_cents +
-      row.refunded_cents,
+      row.refunded_cents +
+      row.uninitiated_refund_cents,
   );
 }
 
@@ -74,8 +80,12 @@ export function createPiFundResolutionService(
       .prepare(
         `SELECT pay.*,p.document_number,
       (SELECT pi_id FROM proforma_invoice_heads WHERE request_id=p.request_id) AS current_pi_id,
-      EXISTS(SELECT 1 FROM pi_payment_confirmations WHERE pi_id=p.id) AS confirmed
-      FROM pi_payment_accounts pay JOIN proforma_invoices p ON p.id=pay.pi_id WHERE pay.pi_id=?`,
+      EXISTS(SELECT 1 FROM pi_payment_confirmations WHERE pi_id=p.id) AS confirmed,
+      coalesce(contract.authorized_credit_cents,0) AS authorized_credit_cents,
+      coalesce(contract.uninitiated_refund_cents,0) AS uninitiated_refund_cents
+      FROM pi_payment_accounts pay JOIN proforma_invoices p ON p.id=pay.pi_id
+      LEFT JOIN order_change_financial_contract contract ON contract.pi_id=pay.pi_id
+      WHERE pay.pi_id=?`,
       )
       .bind(required(piId, "PI id"))
       .first<Account>();
@@ -314,9 +324,7 @@ export function createPiFundResolutionService(
                 AND a.document_version=p.document_version AND a.snapshot_hash=p.snapshot_hash
                 AND a.quote_revision_id=p.quote_revision_id)
               AND ${effectiveQuoteAgreementSql("p")}
-              AND (NOT EXISTS(SELECT 1 FROM json_each(p.snapshot_json,'$.lines') line
-                WHERE json_extract(line.value,'$.madeToOrder')=1)
-                OR json_extract(q.snapshot_json,'$.factoryReviewConfirmed')=1)
+              AND ${factoryReviewSatisfiedSql("p")}
               AND EXISTS(SELECT 1 FROM pi_fund_resolutions WHERE id=?)
             ON CONFLICT(pi_id) DO NOTHING`,
             )

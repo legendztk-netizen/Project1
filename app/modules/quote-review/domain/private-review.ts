@@ -1,6 +1,9 @@
 export const MAX_EVIDENCE_BYTES = 10 * 1024 * 1024;
 
-export async function readPrivateReviewForm(request: Request) {
+export async function readPrivateReviewForm(
+  request: Request,
+  options: { maxFiles?: number } = {},
+) {
   const limit = MAX_EVIDENCE_BYTES + 64 * 1024;
   if (Number(request.headers.get("Content-Length")) > limit)
     throw new Response("Request too large", { status: 413 });
@@ -22,13 +25,29 @@ export async function readPrivateReviewForm(request: Request) {
   } finally {
     reader.releaseLock();
   }
-  const form = await new Response(new Blob(chunks), {
-    headers: { "Content-Type": request.headers.get("Content-Type") ?? "" },
-  }).formData();
-  if (
-    [...form.values()].filter((value) => typeof value !== "string").length > 1
-  )
-    throw new Response("Only one file is permitted", { status: 400 });
+  let form: FormData;
+  try {
+    form = await new Response(new Blob(chunks), {
+      headers: { "Content-Type": request.headers.get("Content-Type") ?? "" },
+    }).formData();
+  } catch (error) {
+    if (error instanceof TypeError)
+      throw new Response("Invalid form data", { status: 400 });
+    throw error;
+  }
+  const files = [...form.values()].filter(
+    (value): value is File => typeof value !== "string",
+  );
+  const maxFiles = options.maxFiles ?? 1;
+  if (files.length > maxFiles)
+    throw new Response(
+      maxFiles === 1
+        ? "Only one file is permitted"
+        : `At most ${maxFiles} files are permitted`,
+      { status: 400 },
+    );
+  if (files.reduce((sum, file) => sum + file.size, 0) > MAX_EVIDENCE_BYTES)
+    throw new Response("Files exceed 10 MB in total", { status: 413 });
   return form;
 }
 

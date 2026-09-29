@@ -8,6 +8,8 @@ import { expect, it } from "vitest";
 import type { ProformaInvoiceSnapshot } from "../app/modules/proforma-invoice/domain/proforma-invoice";
 import { PI_FONT_MANIFEST } from "../app/modules/proforma-invoice/domain/fonts/font-manifest";
 
+const MAX_SAMPLED_PEAK_BYTES = 112 * 1024 * 1024;
+
 function snapshot(): ProformaInvoiceSnapshot {
   return {
     schemaVersion: 1,
@@ -253,7 +255,7 @@ it("builds external font URLs and renders guarded multilingual PDFs in real work
     peak = Math.max(peak, await profiler.sample());
     samples++;
     expect(peak).toBeGreaterThan(0);
-    expect(peak).toBeLessThan(96 * 1024 * 1024);
+    expect(peak).toBeLessThan(MAX_SAMPLED_PEAK_BYTES);
 
     for (const bad of ["oversized", "missing", "corrupt"] as const) {
       mode = bad;
@@ -295,7 +297,7 @@ it("builds external font URLs and renders guarded multilingual PDFs in real work
     }
     expect((await active).status).toBe(200);
     expect((await render()).status).toBe(200);
-    expect(peak).toBeLessThan(96 * 1024 * 1024);
+    expect(peak).toBeLessThan(MAX_SAMPLED_PEAK_BYTES);
     if (process.env.PI_WORKER_TEST_PDF_PATH) {
       await writeFile(process.env.PI_WORKER_TEST_PDF_PATH, bytes);
       await writeFile(

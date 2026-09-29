@@ -1,0 +1,235 @@
+.shipping-changes details {
+  border-top: 1px solid #d7dee3;
+  padding: 12px 0;
+}
+.shipping-changes summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.shipping-change-form,
+.shipping-change-accept,
+.shipping-change-withdraw {
+  display: grid;
+  gap: 12px;
+  padding: 12px 0;
+}
+.shipping-change-form fieldset {
+  border: 1px solid #d7dee3;
+  padding: 12px;
+}
+.shipping-change-form label,
+.shipping-change-withdraw label {
+  display: grid;
+  gap: 5px;
+}
+.shipping-change-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.shipping-change-choice {
+  display: flex !important;
+  align-items: flex-start;
+  gap: 9px;
+}
+.shipping-change-choice input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.shipping-change-form .shipping-change-split-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 700;
+}
+.shipping-change-split-toggle input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.shipping-change-record {
+  border-top: 1px solid #d7dee3;
+  padding: 16px 0;
+}
+.shipping-change-record-heading {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+.shipping-change-proposal {
+  border-left: 3px solid #d92d20;
+  padding: 8px 16px;
+}
+.shipping-change-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.shipping-change-summary div {
+  min-width: 0;
+}
+.shipping-change-summary dt {
+  color: #5c6972;
+  font-size: 0.875rem;
+}
+.shipping-change-summary dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+}
+.shipping-change-comparison-section {
+  border-top: 1px solid #d7dee3;
+  padding: 12px 0;
+}
+.shipping-change-comparison-section h5 {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+}
+.shipping-change-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.shipping-change-comparison > div {
+  min-width: 0;
+}
+.shipping-change-comparison .shipping-change-summary {
+  grid-template-columns: 1fr;
+}
+.shipping-change-error {
+  color: #a51d15;
+  font-weight: 700;
+}
+@media (max-width: 700px) {
+  .shipping-change-fields,
+  .shipping-change-summary,
+  .shipping-change-comparison {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-shipping-changes > .shipping-change-record {
+  margin: 16px 0;
+  padding: 24px;
+  border: 1px solid #d7e1e8;
+  border-radius: 10px;
+  background: #fff;
+  overflow-wrap: anywhere;
+}
+.admin-shipping-changes .shipping-change-record-heading {
+  align-items: center;
+  margin-bottom: 18px;
+}
+.admin-shipping-changes .shipping-change-record-heading h3 {
+  margin: 0;
+  font-size: 18px;
+}
+.shipping-change-status {
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: #eaf2f8;
+  color: #245f88;
+  font-size: 13px;
+}
+.shipping-change-request-summary {
+  padding: 14px 16px;
+  border-radius: 7px;
+  background: #f4f7f9;
+}
+.shipping-change-request-summary > span {
+  color: #62717d;
+  font-size: 12px;
+}
+.shipping-change-request-summary > p {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+}
+.shipping-change-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 20px;
+}
+.admin-shipping-changes .button-primary {
+  background: #245f88;
+  border-color: #245f88;
+  color: #fff;
+}
+.admin-shipping-changes .button-primary:hover {
+  background: #194969;
+}
+.admin-shipping-changes .button-secondary {
+  background: #eef2f5;
+  border: 1px solid #acbdc9;
+  color: #334b5e;
+}
+.admin-shipping-changes .button-secondary:hover {
+  background: #dfe8ee;
+}
+.admin-shipping-changes .shipping-change-proposal {
+  margin-top: 18px;
+  border-left-color: #245f88;
+  background: #f4f8fb;
+  border-radius: 4px;
+}
+.admin-shipping-changes .action-dialog .shipping-change-form {
+  gap: 18px;
+}
+.admin-shipping-changes .shipping-change-form fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 16px;
+  border-radius: 8px;
+}
+.admin-shipping-changes .shipping-change-form legend {
+  padding: 0 6px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.admin-shipping-changes .shipping-change-fields {
+  gap: 16px 20px;
+  align-items: start;
+}
+.admin-shipping-changes .shipping-change-form label {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  gap: 7px;
+}
+.admin-shipping-changes
+  .shipping-change-form
+  input:not([type="hidden"]):not([type="checkbox"]),
+.admin-shipping-changes .shipping-change-form select,
+.admin-shipping-changes .shipping-change-form textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #b6c4ce;
+  border-radius: 6px;
+  font: inherit;
+  font-weight: 400;
+  background: #fff;
+}
+.admin-shipping-changes .shipping-change-form small {
+  color: #62717d;
+  font-size: 12px;
+  font-weight: 400;
+}
+.admin-shipping-changes
+  .shipping-change-form
+  :is(input, select, textarea):focus-visible {
+  outline: 3px solid #c7e1f4;
+  outline-offset: 1px;
+  border-color: #245f88;
+}
+@media (max-width: 640px) {
+  .admin-shipping-changes > .shipping-change-record {
+    padding: 16px;
+  }
+  .shipping-change-review-actions > .button {
+    flex: 1;
+    justify-content: center;
+  }
+}

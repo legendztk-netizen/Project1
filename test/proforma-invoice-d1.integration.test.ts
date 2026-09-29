@@ -12,15 +12,21 @@ import {
 } from "../app/modules/proforma-invoice/application/proforma-invoice-service";
 import {
   piSha256,
+  piValidityDeadline,
   type PiConditions,
 } from "../app/modules/proforma-invoice/domain/proforma-invoice";
+import { acceptedPaymentDeadline } from "../app/modules/proforma-invoice/domain/pi-payment-terms";
 import { renderProformaInvoicePdf } from "../app/modules/proforma-invoice/domain/proforma-invoice-pdf";
 import { createD1SellerCommercialSettingsRepository } from "../app/modules/seller-settings/infrastructure/d1-seller-commercial-settings-repository";
 import {
   captureQuoteRequestProductSnapshot,
   type QuoteRequestSnapshot,
 } from "../app/modules/quote-request/domain/quote-request";
-import type { QuoteRevisionSnapshot } from "../app/modules/quote-review/domain/quote-revision";
+import {
+  requiresFactoryReview,
+  type QuoteRevisionSnapshot,
+} from "../app/modules/quote-review/domain/quote-revision";
+import { factoryReviewSatisfiedSql } from "../app/modules/proforma-invoice/infrastructure/accepted-agreement-sql";
 import { commercialTotals } from "../app/modules/quote-review/domain/quote-commercial-terms";
 import {
   commercialAddress,
@@ -39,6 +45,7 @@ import { createPiFundResolutionService } from "../app/modules/proforma-invoice/a
 import { createPiPaymentCorrectionService } from "../app/modules/proforma-invoice/application/pi-payment-correction-service";
 import { createFollowOnQuoteService } from "../app/modules/proforma-invoice/application/follow-on-quote-service";
 import { seedManagedAssemblyBaseline } from "./fixtures/managed-assembly-baseline";
+import { piFixtureDate } from "./fixtures/pi-calendar";
 import { createD1CustomerIdentityRepository } from "../app/modules/customer-identity/infrastructure/d1-customer-identity-repository";
 import {
   createCustomerSessionCookie,
@@ -55,6 +62,9 @@ import { createPiAcceptedAgreementService } from "../app/modules/proforma-invoic
 import { createD1ProformaInvoiceRepository } from "../app/modules/proforma-invoice/infrastructure/d1-proforma-invoice-repository";
 import { createPiLifecycleService } from "../app/modules/proforma-invoice/application/pi-lifecycle-service";
 import { createD1AdminQuoteReviewRepository } from "../app/modules/quote-review/infrastructure/d1-admin-quote-review-repository";
+import { createShipmentPlanService } from "../app/modules/shipment/application/shipment-plan-service";
+import { createChinaCalendarService } from "../app/modules/shipment/application/china-calendar-service";
+import { createShipmentReadyScheduleService } from "../app/modules/shipment/application/shipment-ready-schedule-service";
 
 const directory = mkdtempSync(join(tmpdir(), "pi-d1-"));
 let platform: Awaited<
@@ -71,7 +81,7 @@ const actor: AdminIdentity = {
   canManageSubaccounts: true,
   source: "local-development",
 };
-const issuedAt = "2026-09-14T10:00:00.000Z";
+const issuedAt = piFixtureDate("2026-09-14T10:00:00.000Z");
 const conditions: PiConditions = {
   cancellation: {
     version: "test-cancel-v1",
@@ -164,7 +174,7 @@ async function fixture(
   });
   const source = {
     version: 2,
-    submittedAt: "2026-09-14T08:00:00.000Z",
+    submittedAt: piFixtureDate("2026-09-14T08:00:00.000Z"),
     destination: commercialAddress,
     acknowledgements: { version: "captured-rfq-ack" },
     amounts: { manualCommercialReview: true },
@@ -205,7 +215,7 @@ async function fixture(
     prices,
     terms,
     totals: commercialTotals(source, prices, terms.charges),
-    issuedAt: "2026-09-14T09:00:00.000Z",
+    issuedAt: piFixtureDate("2026-09-14T09:00:00.000Z"),
     issuedBy: "PRIVATE-ADMIN-SENTINEL",
     factoryReviewConfirmed: true,
   };
@@ -306,7 +316,7 @@ async function acceptFixturePi(
   requestId: string,
   pi: Awaited<ReturnType<ReturnType<typeof service>["issue"]>>,
 ) {
-  const acceptedAt = "2026-09-14T11:00:00.000Z";
+  const acceptedAt = piFixtureDate("2026-09-14T11:00:00.000Z");
   const acceptance = createPiAcceptanceService(db, bucket, {
     now: () => new Date(acceptedAt),
   });
@@ -339,7 +349,15 @@ async function acceptFixturePi(
           version: conditions.generalAcknowledgement.version,
           confirmed: true,
         },
-        madeToOrder: [],
+        madeToOrder: pi.snapshot.conditions.madeToOrderAcknowledgements.map(
+          (ack) => ({
+            lineIds: [ack.lineId],
+            version: ack.version,
+            cancellationVersion: pi.snapshot.conditions.cancellation.version,
+            specificationsConfirmed: true,
+            cancellationConfirmed: true,
+          }),
+        ),
       },
     },
     { requestId: "test-accept", ipAddress: null, userAgent: null },
@@ -361,6 +379,27 @@ async function legacyFixturePi(f: Awaited<ReturnType<typeof fixture>>) {
     snapshot_hash: await piSha256(new TextEncoder().encode(json)),
   };
   // Seed a genuine old-format immutable document, without modifying any published PI.
+  await repository.reserve(intent);
+  return service().renderReserved(intent.command_id);
+}
+
+async function historicalSplitPi(f: Awaited<ReturnType<typeof fixture>>) {
+  await service().reserve(actor, f.command);
+  const repository = createD1ProformaInvoiceRepository(db);
+  const original = (await repository.intent(f.command.commandId))!;
+  const snapshot = JSON.parse(original.snapshot_json);
+  snapshot.terms.shipmentMode = "split";
+  snapshot.terms.splitPlan =
+    "First batch one of each item; second batch the remaining adapter";
+  delete snapshot.terms.shipmentGroups;
+  const json = JSON.stringify(snapshot);
+  const intent = {
+    ...original,
+    id: crypto.randomUUID(),
+    command_id: crypto.randomUUID(),
+    snapshot_json: json,
+    snapshot_hash: await piSha256(new TextEncoder().encode(json)),
+  };
   await repository.reserve(intent);
   return service().renderReserved(intent.command_id);
 }
@@ -419,7 +458,7 @@ it("retains an accepted legacy PI without inventing a deadline or clearing funds
   await acceptFixturePi(f.profileId, f.command.requestId, pi);
   const agreements = createPiAcceptedAgreementService(db);
   const payments = createPiPaymentService(db, {
-    now: () => new Date("2026-11-01T10:00:00.000Z"),
+    now: () => new Date(piFixtureDate("2026-11-01T10:00:00.000Z")),
   });
   const before = await payments.adminRead(actor, pi.id);
   const original = await db
@@ -528,7 +567,7 @@ it("binds retention to the reviewed quote head and preserves dated payment deadl
   ).rejects.toMatchObject({ status: 409 });
   await acceptFixturePi(f.profileId, f.command.requestId, pi);
   const payments = createPiPaymentService(db, {
-    now: () => new Date("2026-09-15T12:00:00.000Z"),
+    now: () => new Date(piFixtureDate("2026-09-15T12:00:00.000Z")),
   });
   const original = await payments.adminRead(actor, pi.id);
   const stale = await retainCommand(pi.id);
@@ -568,7 +607,7 @@ it("binds retention to the reviewed quote head and preserves dated payment deadl
   });
   await expect(
     createPiPaymentService(db, {
-      now: () => new Date("2026-11-01T10:00:00.000Z"),
+      now: () => new Date(piFixtureDate("2026-11-01T10:00:00.000Z")),
     }).confirmPayment(actor, {
       piId: pi.id,
       commandId: crypto.randomUUID(),
@@ -927,7 +966,7 @@ it("records exact cumulative USD receipts with guarded versions and no payment c
 it("freezes the default payment deadline exactly once on website acceptance", async () => {
   const f = await fixture();
   const pi = await service().issue(actor, f.command);
-  const acceptedAt = "2026-09-14T11:00:00.000Z";
+  const acceptedAt = piFixtureDate("2026-09-14T11:00:00.000Z");
   const acceptance = createPiAcceptanceService(db, bucket, {
     now: () => new Date(acceptedAt),
   });
@@ -969,8 +1008,12 @@ it("freezes the default payment deadline exactly once on website acceptance", as
   );
   expect(accepted.status).toBe("PI Accepted");
   const payment = await createPiPaymentService(db).adminRead(actor, pi.id);
-  expect(payment.dueDateEt).toBe("2026-09-28");
-  expect(payment.dueAt).toBe("2026-09-29T03:59:00.000Z");
+  const expectedDeadline = acceptedPaymentDeadline(
+    pi.snapshot.paymentTerms!,
+    acceptedAt,
+  );
+  expect(payment.dueDateEt).toBe(expectedDeadline.dueDateEt);
+  expect(payment.dueAt).toBe(expectedDeadline.dueAt);
   expect(
     await db
       .prepare(
@@ -1018,6 +1061,127 @@ it("freezes the default payment deadline exactly once on website acceptance", as
   expect(await payments.confirmPayment(actor, confirmCommand)).toEqual(
     confirmed,
   );
+  const plan = createShipmentPlanService(db);
+  const customerPlan = await plan.customerRead(
+    f.profileId,
+    confirmed.order!.id,
+  );
+  expect(customerPlan).toMatchObject({
+    status: "ready",
+    shipments: [
+      {
+        status: "planned",
+        allocations: [{ lineId: "line-a", physicalQuantity: 2 }],
+      },
+    ],
+  });
+  expect(JSON.stringify(customerPlan)).not.toContain("reviewNote");
+  await expect(
+    plan.customerRead("different-profile", confirmed.order!.id),
+  ).rejects.toMatchObject({ status: 404 });
+  expect(
+    await db
+      .prepare("SELECT count(*) n FROM order_shipments WHERE order_id=?")
+      .bind(confirmed.order!.id)
+      .first("n"),
+  ).toBe(1);
+  const holdId = crypto.randomUUID();
+  await db
+    .prepare(
+      `INSERT INTO order_quantity_holds(id,order_id,line_id,shipment_id,physical_quantity,kind,reason,created_at)
+       VALUES(?,?,?,?,1,'after_sales','Test quantity reservation',?)`,
+    )
+    .bind(
+      holdId,
+      confirmed.order!.id,
+      "line-a",
+      `shipment:${confirmed.order!.id}:together`,
+      acceptedAt,
+    )
+    .run();
+  await expect(
+    db.batch([
+      db
+        .prepare("DELETE FROM order_shipment_allocations WHERE order_id=?")
+        .bind(confirmed.order!.id),
+      db
+        .prepare(
+          `INSERT INTO order_shipment_allocations(shipment_id,order_id,line_id,physical_quantity)
+           VALUES(?,?,?,2)`,
+        )
+        .bind(
+          `shipment:${confirmed.order!.id}:together`,
+          confirmed.order!.id,
+          "line-a",
+        ),
+    ]),
+  ).rejects.toThrow(/versioned correction/);
+  expect(
+    await db
+      .prepare(
+        "SELECT physical_quantity FROM order_shipment_allocations WHERE order_id=? AND line_id='line-a'",
+      )
+      .bind(confirmed.order!.id)
+      .first("physical_quantity"),
+  ).toBe(2);
+  await expect(
+    db
+      .prepare(
+        "UPDATE order_shipment_allocations SET physical_quantity=1 WHERE order_id=?",
+      )
+      .bind(confirmed.order!.id)
+      .run(),
+  ).rejects.toThrow(/versioned plan command/);
+  await expect(
+    db
+      .prepare("UPDATE order_quantity_holds SET physical_quantity=2 WHERE id=?")
+      .bind(holdId)
+      .run(),
+  ).rejects.toThrow(/only be resolved/);
+  await db
+    .prepare(
+      "UPDATE order_quantity_holds SET active=0,resolved_at=? WHERE id=?",
+    )
+    .bind(acceptedAt, holdId)
+    .run();
+  await expect(
+    db
+      .prepare("UPDATE order_quantity_holds SET active=1 WHERE id=?")
+      .bind(holdId)
+      .run(),
+  ).rejects.toThrow(/only be resolved/);
+  await expect(
+    db
+      .prepare(
+        `INSERT INTO order_quantity_holds(id,order_id,line_id,shipment_id,physical_quantity,kind,reason,created_at)
+         VALUES(?,?,?,?,3,'after_sales','Impossible batch hold',?)`,
+      )
+      .bind(
+        crypto.randomUUID(),
+        confirmed.order!.id,
+        "line-a",
+        `shipment:${confirmed.order!.id}:together`,
+        acceptedAt,
+      )
+      .run(),
+  ).rejects.toThrow(/eligible shipment allocation/);
+  await db
+    .prepare("UPDATE order_release_guards SET held=1 WHERE order_id=?")
+    .bind(confirmed.order!.id)
+    .run();
+  await expect(
+    db
+      .prepare(
+        `INSERT INTO order_shipment_allocations(shipment_id,order_id,line_id,physical_quantity)
+         VALUES(?,?,?,1)`,
+      )
+      .bind(
+        `shipment:${confirmed.order!.id}:together`,
+        confirmed.order!.id,
+        "line-a",
+      )
+      .run(),
+  ).rejects.toThrow(/Payment review blocks new shipment allocation/);
   expect(
     await db
       .prepare("SELECT count(*) n FROM confirmed_order_lines WHERE order_id=?")
@@ -1040,12 +1204,406 @@ it("freezes the default payment deadline exactly once on website acceptance", as
       .bind(confirmed.order!.id)
       .first("n"),
   ).toBe(0);
+  await db.batch([
+    db
+      .prepare(
+        "UPDATE order_fulfillment_plans SET source='accepted_together' WHERE order_id=?",
+      )
+      .bind(confirmed.order!.id),
+    db
+      .prepare(
+        "UPDATE order_shipments SET accepted_terms_json=json_remove(accepted_terms_json,'$.allocations') WHERE order_id=?",
+      )
+      .bind(confirmed.order!.id),
+  ]);
+  expect(
+    (await plan.adminRead(actor, confirmed.order!.id)).shipments[0]
+      .quotedAllocations,
+  ).toMatchObject([{ lineId: "line-a", physicalQuantity: 2 }]);
+});
+
+it("creates exactly the accepted split shipments after payment and acceptance", async () => {
+  const f = await fixture((revision) => {
+    revision.version = 2;
+    revision.terms.shipmentMode = "split";
+    revision.terms.readySchedule = undefined;
+    revision.terms.splitPlan = "One item in each of two dispatches";
+    revision.terms.shipmentGroups = [
+      {
+        id: "first",
+        label: "First dispatch",
+        allocations: [{ lineId: "line-a", physicalQuantity: 1 }],
+        freightCents: 1200,
+        insuranceCents: 60,
+        dutiesImportCents: 200,
+        transportMethod: "Air freight",
+        incoterm: "DDP",
+        namedPlace: "New York, US",
+        readySchedule: { kind: "china_business_days", days: 10 },
+      },
+      {
+        id: "second",
+        label: "Second dispatch",
+        allocations: [{ lineId: "line-a", physicalQuantity: 1 }],
+        freightCents: 800,
+        insuranceCents: 40,
+        dutiesImportCents: 100,
+        transportMethod: "Air freight",
+        incoterm: "DDP",
+        namedPlace: "New York, US",
+        readySchedule: { kind: "china_business_days", days: 12 },
+      },
+    ];
+  });
+  const pi = await service().issue(actor, f.command);
+  const calendars = createChinaCalendarService(db);
+  const calendarVersion = await calendars.publish(actor, {
+    expectedCurrentVersion: null,
+    commandId: crypto.randomUUID(),
+    coverageFrom: piFixtureDate("2026-09-01"),
+    coverageThrough: piFixtureDate("2026-10-31"),
+    workingWeekdays: [1, 2, 3, 4, 5],
+    exceptions: [
+      {
+        date: piFixtureDate("2026-09-16"),
+        isWorking: false,
+        reason: "Test closure",
+      },
+      {
+        date: piFixtureDate("2026-09-20"),
+        isWorking: true,
+        reason: "Test make-up day",
+      },
+    ],
+    revisionReason: "Reviewed complete test-only China calendar coverage",
+    confirmedComplete: true,
+  });
+  const acceptedAt = piFixtureDate("2026-09-14T11:00:00.000Z");
+  const payments = createPiPaymentService(db, {
+    now: () => new Date(acceptedAt),
+  });
+  const account = await payments.adminRead(actor, pi.id);
+  const funded = await payments.updateReceived(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: account.version,
+    amount: (pi.snapshot.totals.totalCents / 100).toFixed(2),
+    currency: "USD",
+    actualChannel: "bank_transfer",
+    verificationReference: "Split plan settlement",
+  });
+  await payments.confirmPayment(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: funded.version,
+    externallyVerified: true,
+    externalReference: "Split plan bank statement",
+  });
+  const acceptance = createPiAcceptanceService(db, bucket, {
+    now: () => new Date(acceptedAt),
+  });
+  const target = {
+    piId: pi.id,
+    documentVersion: pi.snapshot.documentVersion,
+    snapshotHash: pi.snapshotHash,
+  };
+  const viewed = await acceptance.customerView(
+    f.profileId,
+    f.command.requestId,
+    target,
+    "view",
+    { requestId: "split-view", ipAddress: null, userAgent: null },
+  );
+  await acceptance.accept(
+    f.profileId,
+    new Request("https://shop.test/account/quotes/accept", {
+      method: "POST",
+      headers: { Origin: "https://shop.test" },
+    }),
+    {
+      ...target,
+      requestId: f.command.requestId,
+      commandId: crypto.randomUUID(),
+      viewId: viewed.view.id,
+      legalName: "Test Buyer",
+      acknowledgements: {
+        general: {
+          version: conditions.generalAcknowledgement.version,
+          confirmed: true,
+        },
+        madeToOrder: [],
+      },
+    },
+    { requestId: "split-accept", ipAddress: null, userAgent: null },
+  );
+  const orderId = `order:${pi.id}`;
+  const plan = await createShipmentPlanService(db).customerRead(
+    f.profileId,
+    orderId,
+  );
+  expect(plan.status).toBe("ready");
+  expect(
+    plan.shipments.map((shipment) => ({
+      key: shipment.groupKey,
+      quantity: shipment.allocations[0].physicalQuantity,
+      freightCents: shipment.freightCents,
+    })),
+  ).toEqual([
+    { key: "first", quantity: 1, freightCents: 1200 },
+    { key: "second", quantity: 1, freightCents: 800 },
+  ]);
+  expect(plan.originalCharges.freight).toBe(2000);
+  expect(
+    (
+      await db
+        .prepare(
+          `SELECT s.group_key,ready.accepted_ready_date,ready.accepted_calendar_version
+           FROM order_shipment_ready_schedules ready
+           JOIN order_shipments s ON s.id=ready.shipment_id
+           WHERE ready.order_id=? ORDER BY s.sequence_number`,
+        )
+        .bind(orderId)
+        .all<{
+          group_key: string;
+          accepted_ready_date: string;
+          accepted_calendar_version: number;
+        }>()
+    ).results,
+  ).toEqual([
+    {
+      group_key: "first",
+      accepted_ready_date: piFixtureDate("2026-09-28"),
+      accepted_calendar_version: calendarVersion,
+    },
+    {
+      group_key: "second",
+      accepted_ready_date: piFixtureDate("2026-09-30"),
+      accepted_calendar_version: calendarVersion,
+    },
+  ]);
+});
+
+it("maps an immutable legacy split PI without allocating held quantities", async () => {
+  const f = await fixture((revision) => {
+    revision.source.lines.push({
+      ...revision.source.lines[0],
+      id: "line-b",
+      quantity: 1,
+    });
+    revision.prices.push({ unitPriceCents: 1500, discountBasisPoints: 0 });
+    revision.totals = commercialTotals(
+      revision.source,
+      revision.prices,
+      revision.terms.charges,
+    );
+  });
+  const pi = await historicalSplitPi(f);
+  const eventTime = piFixtureDate("2026-09-14T11:00:00.000Z");
+  const payments = createPiPaymentService(db, {
+    now: () => new Date(eventTime),
+  });
+  const account = await payments.adminRead(actor, pi.id);
+  const funded = await payments.updateReceived(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: account.version,
+    amount: (pi.snapshot.totals.totalCents / 100).toFixed(2),
+    currency: "USD",
+    actualChannel: "bank_transfer",
+    verificationReference: "Historical split settlement",
+  });
+  await payments.confirmPayment(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: funded.version,
+    externallyVerified: true,
+    externalReference: "Historical bank statement",
+  });
+  await acceptFixturePi(f.profileId, f.command.requestId, pi);
+  const orderId = `order:${pi.id}`;
+  const plans = createShipmentPlanService(db);
+  expect(await plans.adminRead(actor, orderId)).toMatchObject({
+    status: "review",
+    source: "historical_review",
+    shipments: [],
+  });
+  const holdId = crypto.randomUUID();
+  await db
+    .prepare(
+      `INSERT INTO order_quantity_holds(id,order_id,line_id,physical_quantity,kind,reason,created_at)
+       VALUES(?,?,?,1,'after_sales','Review this item',?)`,
+    )
+    .bind(holdId, orderId, "line-a", eventTime)
+    .run();
+  const groups = [
+    {
+      id: "first",
+      label: "First dispatch",
+      allocations: [
+        { lineId: "line-a", physicalQuantity: 1 },
+        { lineId: "line-b", physicalQuantity: 1 },
+      ],
+      freightCents: 1200,
+      insuranceCents: 60,
+      dutiesImportCents: 200,
+      transportMethod: "Air freight",
+      incoterm: "DDP" as const,
+      namedPlace: "New York, US",
+    },
+    {
+      id: "second",
+      label: "Second dispatch",
+      allocations: [{ lineId: "line-a", physicalQuantity: 1 }],
+      freightCents: 800,
+      insuranceCents: 40,
+      dutiesImportCents: 100,
+      transportMethod: "Air freight",
+      incoterm: "DDP" as const,
+      namedPlace: "New York, US",
+    },
+  ];
+  const command = {
+    orderId,
+    expectedVersion: 1,
+    commandId: crypto.randomUUID(),
+    groups,
+    reviewNote:
+      "Compared batch quantities and charges to the accepted legacy PI",
+    matchesAcceptedTerms: true,
+  };
+  expect(await plans.mapHistoricalSplit(actor, command)).toBe(2);
+  expect(await plans.mapHistoricalSplit(actor, command)).toBe(2);
+  const pending = await plans.adminRead(actor, orderId);
+  expect(pending.status).toBe("review");
+  expect(pending.shipments).toHaveLength(2);
+  expect(pending.shipments[0].allocations.map((item) => item.lineId)).toEqual([
+    "line-a",
+    "line-b",
+  ]);
+  expect(pending.shipments[1].allocations).toEqual([]);
+  expect(pending.shipments[0].held).toBe(false);
+  expect(pending.shipments[1].held).toBe(true);
+  expect(
+    (await plans.customerRead(f.profileId, orderId)).shipments[0]
+      .quotedAllocations,
+  ).toMatchObject([{ lineId: "line-a" }, { lineId: "line-b" }]);
+  expect(
+    await db
+      .prepare(
+        "SELECT count(*) n FROM admin_audit_events WHERE event_type='shipment.plan_mapped' AND entity_id=?",
+      )
+      .bind(orderId)
+      .first("n"),
+  ).toBe(1);
+  await expect(
+    plans.mapHistoricalSplit(actor, {
+      ...command,
+      commandId: crypto.randomUUID(),
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  await db
+    .prepare(
+      "UPDATE order_quantity_holds SET active=0,resolved_at=? WHERE id=?",
+    )
+    .bind(eventTime, holdId)
+    .run();
+  expect(
+    await plans.mapHistoricalSplit(actor, {
+      ...command,
+      expectedVersion: 2,
+      commandId: crypto.randomUUID(),
+    }),
+  ).toBe(3);
+  const complete = await plans.adminRead(actor, orderId);
+  expect(complete.status).toBe("ready");
+  expect(complete.shipments[0].allocations).toHaveLength(2);
+  expect(complete.shipments[1].allocations).toHaveLength(1);
+  const correctedGroups = structuredClone(groups);
+  correctedGroups[0].allocations = [{ lineId: "line-a", physicalQuantity: 1 }];
+  correctedGroups[1].allocations.push({
+    lineId: "line-b",
+    physicalQuantity: 1,
+  });
+  const correction = {
+    ...command,
+    expectedVersion: 3,
+    commandId: crypto.randomUUID(),
+    groups: correctedGroups,
+    reviewNote: "Corrected the batch allocation against the accepted legacy PI",
+  };
+  expect(await plans.reviseHistoricalSplit(actor, correction)).toBe(4);
+  expect(await plans.reviseHistoricalSplit(actor, correction)).toBe(4);
+  const revised = await plans.adminRead(actor, orderId);
+  expect(revised.shipments.map((item) => item.allocations.length)).toEqual([
+    1, 2,
+  ]);
+  expect(
+    await db
+      .prepare(
+        "SELECT count(*) n FROM admin_audit_events WHERE event_type='shipment.plan_corrected' AND entity_id=?",
+      )
+      .bind(orderId)
+      .first("n"),
+  ).toBe(1);
+  await expect(
+    db
+      .prepare("DELETE FROM order_shipment_allocations WHERE order_id=?")
+      .bind(orderId)
+      .run(),
+  ).rejects.toThrow(/versioned correction/);
+  await expect(
+    plans.reviseHistoricalSplit(actor, {
+      ...correction,
+      commandId: crypto.randomUUID(),
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  const scopedHoldId = crypto.randomUUID();
+  await db
+    .prepare(
+      `INSERT INTO order_quantity_holds(id,order_id,line_id,shipment_id,physical_quantity,kind,reason,created_at)
+       VALUES(?,?,?,?,1,'shipping_change','Requested batch change',?)`,
+    )
+    .bind(scopedHoldId, orderId, "line-a", revised.shipments[0].id, eventTime)
+    .run();
+  await expect(
+    plans.reviseHistoricalSplit(actor, {
+      ...correction,
+      expectedVersion: 4,
+      commandId: crypto.randomUUID(),
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  await db
+    .prepare(
+      "UPDATE order_quantity_holds SET active=0,resolved_at=? WHERE id=?",
+    )
+    .bind(eventTime, scopedHoldId)
+    .run();
+  await db
+    .prepare(
+      "UPDATE order_shipments SET status='shipped',version=version+1 WHERE id=?",
+    )
+    .bind(revised.shipments[0].id)
+    .run();
+  await expect(
+    plans.reviseHistoricalSplit(actor, {
+      ...correction,
+      expectedVersion: 4,
+      commandId: crypto.randomUUID(),
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  await expect(
+    plans.mapHistoricalSplit(actor, {
+      ...command,
+      expectedVersion: 3,
+      commandId: crypto.randomUUID(),
+    }),
+  ).rejects.toMatchObject({ status: 409 });
 });
 
 it("holds confirmed funds until website acceptance then creates the same single order", async () => {
   const f = await fixture();
   const pi = await service().issue(actor, f.command);
-  const eventTime = "2026-09-14T11:00:00.000Z";
+  const eventTime = piFixtureDate("2026-09-14T11:00:00.000Z");
   const payments = createPiPaymentService(db, {
     now: () => new Date(eventTime),
   });
@@ -1192,28 +1750,28 @@ it("extends accepted deadlines without clearing funds or creating an order, then
   const pi = await service().issue(actor, f.command);
   await acceptFixturePi(f.profileId, f.command.requestId, pi);
   const payments = createPiPaymentService(db, {
-    now: () => new Date("2026-10-01T10:00:00.000Z"),
+    now: () => new Date(piFixtureDate("2026-10-01T10:00:00.000Z")),
   });
   const before = await payments.adminRead(actor, pi.id);
   const extension = createPiLatePaymentService(db, {
-    now: () => new Date("2026-09-30T10:00:00.000Z"),
+    now: () => new Date(piFixtureDate("2026-09-30T10:00:00.000Z")),
   });
   const commandId = crypto.randomUUID();
   const extended = await extension.extend(actor, {
     piId: pi.id,
     commandId,
     expectedVersion: before.version,
-    newDateEt: "2026-10-05",
+    newDateEt: piFixtureDate("2026-10-05"),
     reason: "Customer shipping review",
   });
-  expect(extended.dueDateEt).toBe("2026-10-05");
+  expect(extended.dueDateEt).toBe(piFixtureDate("2026-10-05"));
   expect(extended.overdue).toBe(true);
   expect(
     await extension.extend(actor, {
       piId: pi.id,
       commandId,
       expectedVersion: before.version,
-      newDateEt: "2026-10-05",
+      newDateEt: piFixtureDate("2026-10-05"),
       reason: "Customer shipping review",
     }),
   ).toEqual(extended);
@@ -1222,7 +1780,7 @@ it("extends accepted deadlines without clearing funds or creating an order, then
       piId: pi.id,
       commandId: crypto.randomUUID(),
       expectedVersion: before.version + 1,
-      newDateEt: "2026-10-04",
+      newDateEt: piFixtureDate("2026-10-04"),
       reason: "Too early",
     }),
   ).rejects.toMatchObject({ status: 409 });
@@ -1243,7 +1801,7 @@ it("extends accepted deadlines without clearing funds or creating an order, then
   });
   await expect(
     createPiPaymentService(db, {
-      now: () => new Date("2026-10-01T10:00:00.000Z"),
+      now: () => new Date(piFixtureDate("2026-10-01T10:00:00.000Z")),
     }).confirmPayment(actor, {
       piId: pi.id,
       commandId: crypto.randomUUID(),
@@ -1253,7 +1811,7 @@ it("extends accepted deadlines without clearing funds or creating an order, then
     }),
   ).rejects.toMatchObject({ status: 409 });
   const late = createPiLatePaymentService(db, {
-    now: () => new Date("2026-10-01T10:00:00.000Z"),
+    now: () => new Date(piFixtureDate("2026-10-01T10:00:00.000Z")),
   });
   const review = {
     piId: pi.id,
@@ -1295,7 +1853,7 @@ it("lets authorized unconsumed transferred funds move again without creating mon
     service().issue(actor, third.command),
   ]);
   const payments = createPiPaymentService(db, {
-    now: () => new Date("2026-09-15T10:00:00.000Z"),
+    now: () => new Date(piFixtureDate("2026-09-15T10:00:00.000Z")),
   });
   const initial = await payments.adminRead(actor, a.id);
   const paid = await payments.updateReceived(actor, {
@@ -1308,7 +1866,7 @@ it("lets authorized unconsumed transferred funds move again without creating mon
     verificationReference: "Verified bank receipt",
   });
   const funds = createPiFundResolutionService(db, {
-    now: () => new Date("2026-09-15T10:00:00.000Z"),
+    now: () => new Date(piFixtureDate("2026-09-15T10:00:00.000Z")),
   });
   const targetB = await payments.adminRead(actor, b.id);
   await funds.allocate(actor, {
@@ -1365,7 +1923,7 @@ it("allocates only authorized available USD to another current PI and creates it
     targetPi,
   );
   const payments = createPiPaymentService(db, {
-    now: () => new Date("2026-09-15T10:00:00.000Z"),
+    now: () => new Date(piFixtureDate("2026-09-15T10:00:00.000Z")),
   });
   const source = await payments.adminRead(actor, sourcePi.id);
   const received = await payments.updateReceived(actor, {
@@ -1379,7 +1937,7 @@ it("allocates only authorized available USD to another current PI and creates it
   });
   const target = await payments.adminRead(actor, targetPi.id);
   const resolutions = createPiFundResolutionService(db, {
-    now: () => new Date("2026-09-15T10:00:00.000Z"),
+    now: () => new Date(piFixtureDate("2026-09-15T10:00:00.000Z")),
   });
   const command = {
     sourcePiId: sourcePi.id,
@@ -1433,7 +1991,7 @@ it("keeps an order frozen on correction, enforces its release gate, and requires
   const f = await fixture();
   const pi = await service().issue(actor, f.command);
   await acceptFixturePi(f.profileId, f.command.requestId, pi);
-  const timestamp = "2026-09-15T10:00:00.000Z";
+  const timestamp = piFixtureDate("2026-09-15T10:00:00.000Z");
   const payments = createPiPaymentService(db, {
     now: () => new Date(timestamp),
   });
@@ -1526,7 +2084,7 @@ it("rolls back payment confirmation when accepted evidence cannot produce an ord
   const f = await fixture();
   const pi = await service().issue(actor, f.command);
   await acceptFixturePi(f.profileId, f.command.requestId, pi);
-  const timestamp = "2026-09-16T10:00:00.000Z";
+  const timestamp = piFixtureDate("2026-09-16T10:00:00.000Z");
   const payments = createPiPaymentService(db, {
     now: () => new Date(timestamp),
   });
@@ -1542,7 +2100,7 @@ it("rolls back payment confirmation when accepted evidence cannot produce an ord
   });
   await db
     .prepare(
-      "UPDATE pi_payment_accounts SET due_at='2026-09-15T03:59:59.000Z' WHERE pi_id=?",
+      `UPDATE pi_payment_accounts SET due_at='${piFixtureDate("2026-09-15T03:59:59.000Z")}' WHERE pi_id=?`,
     )
     .bind(pi.id)
     .run();
@@ -1591,7 +2149,7 @@ it("creates independent customer and Admin follow-on drafts without changing the
   const pi = await service().issue(actor, f.command);
   await acceptFixturePi(f.profileId, f.command.requestId, pi);
   const payments = createPiPaymentService(db, {
-    now: () => new Date("2026-09-15T10:00:00.000Z"),
+    now: () => new Date(piFixtureDate("2026-09-15T10:00:00.000Z")),
   });
   const initial = await payments.adminRead(actor, pi.id);
   const funded = await payments.updateReceived(actor, {
@@ -1612,7 +2170,7 @@ it("creates independent customer and Admin follow-on drafts without changing the
   });
   const orderId = `order:${pi.id}`;
   const followOn = createFollowOnQuoteService(db, {
-    now: () => new Date("2026-09-16T10:00:00.000Z"),
+    now: () => new Date(piFixtureDate("2026-09-16T10:00:00.000Z")),
   });
   const customerCommand = crypto.randomUUID();
   const first = await followOn.customerCreate(
@@ -1727,7 +2285,7 @@ it("creates independent customer and Admin follow-on drafts without changing the
 it("issues immutable exact snapshots and private PDF once; keeps current selected instructions separate", async () => {
   const f = await fixture();
   const pi = await service().issue(actor, f.command);
-  expect(pi.snapshot.validUntil).toBe("2026-09-28T10:00:00.000Z");
+  expect(pi.snapshot.validUntil).toBe(piValidityDeadline(issuedAt));
   expect(pi.snapshot.lines[0].reference).toEqual({
     currency: "CNY",
     unitPrice: 99,
@@ -1872,9 +2430,11 @@ it("fails closed on missing policy configuration, invalid sources, actors, deadl
   expect(await service().adminCurrent(actor, f.command.requestId)).toBeNull();
   const custom = await service().issue(actor, {
     ...f.command,
-    validUntil: "2026-10-01T00:00:00.000Z",
+    validUntil: piFixtureDate("2026-10-01T00:00:00.000Z"),
   });
-  expect(custom.snapshot.validUntil).toBe("2026-10-01T00:00:00.000Z");
+  expect(custom.snapshot.validUntil).toBe(
+    piFixtureDate("2026-10-01T00:00:00.000Z"),
+  );
 });
 
 it("rejects cross-owner and cross-quote reads/downloads and altered command replay", async () => {
@@ -1896,7 +2456,7 @@ it("rejects cross-owner and cross-quote reads/downloads and altered command repl
   await expect(
     service().issue(actor, {
       ...f.command,
-      validUntil: "2026-10-01T00:00:00.000Z",
+      validUntil: piFixtureDate("2026-10-01T00:00:00.000Z"),
     }),
   ).rejects.toMatchObject({ status: 409 });
   await expect(
@@ -2120,10 +2680,10 @@ it("rolls back PI, current pointer and audit together; retries preserve intent i
     await db.prepare("DROP TRIGGER pi_test_audit_failure").run();
   }
   const pi = await service({
-    now: () => new Date("2026-09-15T10:00:00.000Z"),
+    now: () => new Date(piFixtureDate("2026-09-15T10:00:00.000Z")),
   }).issue(actor, f.command);
   expect(pi.snapshot.issuedAt).toBe(issuedAt);
-  expect(pi.snapshot.validUntil).toBe("2026-09-28T10:00:00.000Z");
+  expect(pi.snapshot.validUntil).toBe(piValidityDeadline(issuedAt));
   expect(pi.id).toBe(
     `pi-${await piSha256(new TextEncoder().encode(f.command.commandId))}`,
   );
@@ -2238,10 +2798,10 @@ it("records which superseded instruction version received verified funds", async
     channel: "bank_transfer",
     instructions: "TEST NEXT BANK VERSION",
     commandId: crypto.randomUUID(),
-    now: "2026-09-15T09:00:00.000Z",
+    now: piFixtureDate("2026-09-15T09:00:00.000Z"),
   });
   const payments = createPiPaymentService(db, {
-    now: () => new Date("2026-09-15T10:00:00.000Z"),
+    now: () => new Date(piFixtureDate("2026-09-15T10:00:00.000Z")),
   });
   const initial = await payments.adminRead(actor, pi.id);
   const received = await payments.updateReceived(actor, {
@@ -2268,4 +2828,281 @@ it("records which superseded instruction version received verified funds", async
       .bind(pi.id)
       .first("received_instruction_id"),
   ).toBe(oldInstructionId);
+});
+
+it("resolves an accepted business-day commitment after calendar coverage is published", async () => {
+  const calendars = createChinaCalendarService(db);
+  const current = await calendars.adminRead(actor);
+  await calendars.publish(actor, {
+    expectedCurrentVersion: current?.version ?? null,
+    commandId: crypto.randomUUID(),
+    coverageFrom: piFixtureDate("2026-10-01"),
+    coverageThrough: piFixtureDate("2026-12-31"),
+    workingWeekdays: [1, 2, 3, 4, 5],
+    exceptions: [],
+    revisionReason: "Reviewed coverage intentionally excludes the order date",
+    confirmedComplete: true,
+  });
+  const f = await fixture((revision) => {
+    revision.terms.readySchedule = { kind: "china_business_days", days: 5 };
+  });
+  const pi = await service().issue(actor, f.command);
+  await acceptFixturePi(f.profileId, f.command.requestId, pi);
+  const payments = createPiPaymentService(db, {
+    now: () => new Date(piFixtureDate("2026-09-14T11:00:00.000Z")),
+  });
+  const account = await payments.adminRead(actor, pi.id);
+  const funded = await payments.updateReceived(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: account.version,
+    amount: (pi.snapshot.totals.totalCents / 100).toFixed(2),
+    currency: "USD",
+    actualChannel: "bank_transfer",
+    verificationReference: "Calendar coverage settlement",
+  });
+  const confirmed = await payments.confirmPayment(actor, {
+    piId: pi.id,
+    commandId: crypto.randomUUID(),
+    expectedVersion: funded.version,
+    externallyVerified: true,
+    externalReference: "Calendar coverage bank statement",
+  });
+  const orderId = confirmed.order!.id;
+  const schedules = createShipmentReadyScheduleService(db);
+  const [pending] = await schedules.adminRead(actor, orderId);
+  expect(pending.acceptedBasis).toEqual({
+    kind: "china_business_days",
+    days: 5,
+  });
+  expect(pending.acceptedReadyDate).toBeNull();
+  expect(pending.currentEstimateDate).toBeNull();
+  const command = {
+    orderId,
+    shipmentId: pending.shipmentId,
+    expectedVersion: pending.version,
+    expectedShipmentVersion: pending.shipmentVersion,
+    commandId: crypto.randomUUID(),
+  };
+  await expect(schedules.resolveAccepted(actor, command)).rejects.toMatchObject(
+    {
+      status: 409,
+    },
+  );
+  const version = await calendars.publish(actor, {
+    expectedCurrentVersion: (await calendars.adminRead(actor))!.version,
+    commandId: crypto.randomUUID(),
+    coverageFrom: piFixtureDate("2026-09-01"),
+    coverageThrough: piFixtureDate("2026-12-31"),
+    workingWeekdays: [1, 2, 3, 4, 5],
+    exceptions: [],
+    revisionReason: "Reviewed complete calendar for the accepted order",
+    confirmedComplete: true,
+  });
+  const resultingVersion = await schedules.resolveAccepted(actor, command);
+  expect(await schedules.resolveAccepted(actor, command)).toBe(
+    resultingVersion,
+  );
+  const [resolved] = await schedules.customerRead(f.profileId, orderId);
+  expect(resolved).toMatchObject({
+    acceptedReadyDate: piFixtureDate("2026-09-21"),
+    acceptedCalendarVersion: version,
+    currentEstimateDate: piFixtureDate("2026-09-21"),
+    currentEstimateSource: "accepted",
+  });
+  expect(
+    await db
+      .prepare(
+        "SELECT count(*) AS n FROM quote_notification_outbox WHERE message_id=?",
+      )
+      .bind(`shipment-ready-commitment:${command.commandId}`)
+      .first("n"),
+  ).toBe(1);
+  expect(
+    await db
+      .prepare("SELECT count(*) AS n FROM admin_audit_events WHERE id=?")
+      .bind(`shipment-ready-resolve:${command.commandId}`)
+      .first("n"),
+  ).toBe(1);
+  await expect(
+    schedules.resolveAccepted(actor, {
+      ...command,
+      commandId: crypto.randomUUID(),
+    }),
+  ).rejects.toMatchObject({ status: 409 });
+  const revised = await schedules.revise(actor, {
+    ...command,
+    commandId: crypto.randomUUID(),
+    expectedVersion: resultingVersion,
+    newDate: piFixtureDate("2026-09-22"),
+    reason: "Customer-visible revised preparation estimate",
+  });
+  expect(revised).toBe(resultingVersion + 1);
+  expect((await schedules.customerRead(f.profileId, orderId))[0]).toMatchObject(
+    {
+      acceptedReadyDate: piFixtureDate("2026-09-21"),
+      currentEstimateDate: piFixtureDate("2026-09-22"),
+      history: [
+        {
+          previousDate: piFixtureDate("2026-09-21"),
+          newDate: piFixtureDate("2026-09-22"),
+        },
+      ],
+    },
+  );
+});
+
+it.each(["acceptance-first", "payment-first"])(
+  "confirms ordinary cut-hose funds without factory review and creates the order (%s)",
+  async (sequence) => {
+    const f = await fixture((r) => {
+      r.factoryReviewConfirmed = false;
+      Object.assign(r.source.lines[0], {
+        lineKind: "length_based_hose",
+        salesUnit: "FT",
+        quantity: 2,
+        lengthOrder: {
+          normalizedLengthFt: 1,
+          originalLengthUnit: "ft",
+          originalLengthValue: 1,
+          pieceCount: 2,
+          totalFootage: 2,
+        },
+      });
+      r.totals = commercialTotals(r.source, r.prices, r.terms.charges);
+    });
+    const pi = await service({
+      conditions: {
+        ...conditions,
+        madeToOrderAcknowledgements: [
+          {
+            lineId: "line-a",
+            version: "cut-hose-v1",
+            text: "Approve the specified cut hose.",
+          },
+        ],
+      },
+    }).issue(actor, f.command);
+    expect(pi.snapshot.lines[0].madeToOrder).toBe(true);
+    if (sequence === "acceptance-first")
+      await acceptFixturePi(f.profileId, f.command.requestId, pi);
+    const payments = createPiPaymentService(db, {
+      now: () => new Date(piFixtureDate("2026-09-14T11:05:00.000Z")),
+    });
+    const initial = await payments.adminRead(actor, pi.id);
+    expect(initial.factoryReviewRequired).toBe(false);
+    const funded = await payments.updateReceived(actor, {
+      piId: pi.id,
+      commandId: crypto.randomUUID(),
+      expectedVersion: initial.version,
+      amount: (pi.snapshot.totals.totalCents / 100).toFixed(2),
+      currency: "USD",
+      actualChannel: "bank_transfer",
+      verificationReference: "Test cleared funds",
+    });
+    const command = {
+      piId: pi.id,
+      commandId: crypto.randomUUID(),
+      expectedVersion: funded.version,
+      externallyVerified: true,
+      externalReference: "Test seller account reference",
+    };
+    const result = await payments.confirmPayment(actor, command);
+    if (sequence === "payment-first") {
+      expect(result.order).toBeNull();
+      await acceptFixturePi(f.profileId, f.command.requestId, pi);
+    } else expect(result.order?.id).toBe(`order:${pi.id}`);
+    expect(
+      await db
+        .prepare("SELECT count(*) FROM confirmed_orders WHERE pi_id=?")
+        .bind(pi.id)
+        .first("count(*)"),
+    ).toBe(1);
+    await payments.confirmPayment(actor, command);
+    expect(
+      await db
+        .prepare("SELECT count(*) FROM pi_payment_confirmations WHERE pi_id=?")
+        .bind(pi.id)
+        .first("count(*)"),
+    ).toBe(1);
+  },
+  30000,
+);
+
+it("keeps transactional factory gates aligned with unresolved specifications and assembly readiness", async () => {
+  const scenarios = [
+    {
+      line: { lineKind: "length_based_hose" },
+      confirmed: false,
+      allowed: true,
+    },
+    {
+      line: {
+        lineKind: "standard",
+        quotedSpecificationOverrides: [{ label: "Marking", value: "Changed" }],
+      },
+      confirmed: false,
+      allowed: false,
+    },
+    {
+      line: {
+        lineKind: "configured_assembly",
+        configuredAssembly: { snapshot: { review: { outcome: "ready" } } },
+      },
+      confirmed: false,
+      allowed: true,
+    },
+    {
+      line: {
+        lineKind: "configured_assembly",
+        configuredAssembly: {
+          snapshot: { review: { outcome: "review_required" } },
+        },
+      },
+      confirmed: false,
+      allowed: false,
+    },
+    {
+      line: {
+        lineKind: "configured_assembly",
+        configuredAssembly: { snapshot: { review: {} } },
+      },
+      confirmed: false,
+      allowed: false,
+    },
+    {
+      line: {
+        lineKind: "configured_assembly",
+        configuredAssembly: {
+          snapshot: { review: { outcome: "review_required" } },
+        },
+      },
+      confirmed: true,
+      allowed: true,
+    },
+  ];
+  for (const scenario of scenarios) {
+    const f = await fixture((r) => {
+      r.factoryReviewConfirmed = scenario.confirmed;
+      Object.assign(r.source.lines[0], scenario.line);
+    });
+    const row = await db
+      .prepare(
+        "SELECT id,snapshot_json FROM quote_revisions WHERE request_id=?",
+      )
+      .bind(f.command.requestId)
+      .first<{ id: string; snapshot_json: string }>();
+    const snapshot = JSON.parse(row!.snapshot_json) as QuoteRevisionSnapshot;
+    expect(
+      !requiresFactoryReview(snapshot.source) ||
+        snapshot.factoryReviewConfirmed,
+    ).toBe(scenario.allowed);
+    const allowed = await db
+      .prepare(
+        `SELECT ${factoryReviewSatisfiedSql("p")} AS allowed FROM (SELECT ? AS quote_revision_id,? AS request_id) p`,
+      )
+      .bind(row!.id, f.command.requestId)
+      .first("allowed");
+    expect(allowed).toBe(Number(scenario.allowed));
+  }
 });
