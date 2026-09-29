@@ -1,6 +1,6 @@
 # Spec 6: Shipment and Customer Order Progress
 
-> Status: Implemented and locally verified on `codex/spec6-work` (#94-#99); release/deployment pending. Prerequisite: Spec 4B / Issue #6 is completed.
+> Status: Completed. Tickets #94-#99 and Issue #8 are closed; [PR #101](https://github.com/legendztk-netizen/Project1/pull/101) merged on 2026-09-25. Production deployment remains pending. Prerequisite: Spec 4B / Issue #6 is completed.
 > Spec 5 / Issue #7 is deferred and is not a first-release prerequisite.
 
 ## First-release Boundary

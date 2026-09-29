@@ -1,6 +1,13 @@
 # Spec 6 Implementation Checkpoint
 
-Status: in progress. Ticket #94 is in final verification; #95-#99 remain.
+> Historical checkpoint retained for its original verification evidence.
+> Superseded by the [completed Spec 6](../specs/006-shipment-and-customer-order-progress.md)
+> and [operations handoff](spec-6-order-to-delivery.md): tickets #94-#99 are closed
+> and [PR #101](https://github.com/legendztk-netizen/Project1/pull/101) is merged.
+> The remaining-work list below is historical, not the current backlog.
+
+Status at this checkpoint: in progress. Ticket #94 was in final verification;
+#95-#99 remained.
 
 Baseline: `62d0373` on `main`. Work branch: `codex/spec6-work`.
 

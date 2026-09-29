@@ -1,6 +1,6 @@
 # Spec 7: After-sales, Return Inspection, and Refund
 
-> Status: Implemented locally (tickets #102–#111). See docs/operations/spec-7-after-sales.md for the runbook and verification.
+> Status: Completed. Tickets #102-#111 are closed; [PR #112](https://github.com/legendztk-netizen/Project1/pull/112) merged on 2026-09-28. See the [final verification](../reviews/spec-007-final-handoff-2026-09-28.md) and [operations handoff](../operations/spec-7-after-sales.md). Production deployment remains pending.
 > Spec 5 / Issue #7 is deferred and is not a first-release prerequisite.
 
 ## First-release Boundary
@@ -220,4 +220,4 @@ evidence, US Business Calendar, Payment Channel, and Admin Audit contracts.
 
 - Project PRD: https://github.com/legendztk-netizen/Project1/issues/1
 - Published Spec: https://github.com/legendztk-netizen/Project1/issues/9
-- Blocked by: https://github.com/legendztk-netizen/Project1/issues/6 and https://github.com/legendztk-netizen/Project1/issues/8
+- Completed prerequisites: https://github.com/legendztk-netizen/Project1/issues/6 and https://github.com/legendztk-netizen/Project1/issues/8
