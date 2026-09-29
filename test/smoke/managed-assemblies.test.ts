@@ -1,3 +1,4 @@
+import { adminSmokeSession } from "../fixtures/admin-smoke-session";
 import * as XLSX from "@e965/xlsx";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -8,6 +9,8 @@ import { getPlatformProxy } from "wrangler";
 import { beforeAll, afterAll, expect, it } from "vitest";
 import { seedManagedAssemblyBaseline } from "../fixtures/managed-assembly-baseline";
 
+const adminSession = adminSmokeSession();
+const fetch = adminSession.fetch;
 const directory = mkdtempSync(join(tmpdir(), "item-worker-"));
 let origin: string;
 let assemblyDraft: unknown;
@@ -81,6 +84,7 @@ beforeAll(async () => {
     remoteBindings: false,
   });
   try {
+    await platform.env.DB.exec(adminSession.sql);
     await seedManagedAssemblyBaseline(platform.env.DB);
   } finally {
     await platform.dispose();

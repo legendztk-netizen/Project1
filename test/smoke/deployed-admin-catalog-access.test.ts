@@ -62,6 +62,7 @@ function deployedRequest(path: string, body = "") {
     const request = httpsRequest(
       {
         headers: {
+          origin: `https://127.0.0.1:${port}`,
           "content-length": Buffer.byteLength(body),
           "content-type": "application/x-www-form-urlencoded",
         },

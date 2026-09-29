@@ -1,3 +1,4 @@
+import { adminSmokeSession } from "../fixtures/admin-smoke-session";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,6 +14,8 @@ type ProductResponse = {
     catalogBasis: { skuRevisionId: string | null };
   };
 };
+const adminSession = adminSmokeSession();
+const fetch = adminSession.fetch;
 const directory = mkdtempSync(join(tmpdir(), "cutover-worker-"));
 let origin: string;
 let preview: ChildProcess;
@@ -90,6 +93,7 @@ beforeAll(async () => {
     remoteBindings: false,
   });
   try {
+    await platform.env.DB.exec(adminSession.sql);
     await seedCatalogItemBaseline(platform.env.DB);
   } finally {
     await platform.dispose();
@@ -201,7 +205,7 @@ it("switches a legacy Worker, blocks retired writes and keeps item prices live",
     expect(payload.ipAddress).toBeTruthy();
   }
   const overview = await (await fetch(origin + "/admin")).text();
-  expect(overview).toContain("条目级发布");
+  expect(overview).toContain("后台总览");
   expect(overview).not.toContain("No catalog release yet");
   const diagnostic = await (
     await fetch(origin + "/admin/diagnostics/catalog-release")
