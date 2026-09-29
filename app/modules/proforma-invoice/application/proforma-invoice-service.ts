@@ -150,10 +150,14 @@ export function createProformaInvoiceService(
       row,
       await customerPaymentActionable(row),
     );
+    // Issued instructions belong to the immutable PDF, not the live customer
+    // payload: they may be superseded even while this PI is still current.
+    const snapshot = { ...record.snapshot };
+    delete snapshot.issuedPaymentInstructions;
     // Rendering the projection may yield while a replacement publishes.
     if (record.paymentInstructions && !(await customerPaymentActionable(row)))
       record.paymentInstructions = null;
-    return record;
+    return { ...record, snapshot };
   }
 
   async function bytes(row: PiRow, disposition: "inline" | "attachment") {

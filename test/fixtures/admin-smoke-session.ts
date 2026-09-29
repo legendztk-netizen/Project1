@@ -7,6 +7,7 @@ export function adminSmokeSession() {
   const digest = createHash("sha256").update(token).digest("hex");
   const expires = new Date(Date.now() + 3600000).toISOString();
   return {
+    cookie: `hs_admin_session=${token}`,
     sql: `INSERT INTO admin_identities(id,email,username,display_name,account_type,status,created_at,updated_at) VALUES('local-owner','owner@local.invalid','admin','Smoke Owner','owner','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
 INSERT INTO admin_password_sessions(token_hash,admin_id,credential_version,expires_at) VALUES('${digest}','local-owner',1,'${expires}');`,
     fetch(input: string | URL, init?: RequestInit) {

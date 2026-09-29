@@ -7166,9 +7166,13 @@ describe("Cloudflare Worker route surfaces", () => {
       expect(detailText).not.toContain(hiddenLabel);
     }
 
-    const writeAttempt = await fetch(`${origin}/admin/quotes/${requestId}`, {
-      method: "POST",
-    });
+    const writeAttempt = await globalThis.fetch(
+      `${origin}/admin/quotes/${requestId}`,
+      {
+        method: "POST",
+        headers: { Cookie: adminSession.cookie, Connection: "close" },
+      },
+    );
     expect(writeAttempt.status).toBe(403);
     const sameOriginWriteAttempt = await fetch(
       `${origin}/admin/quotes/${requestId}`,

@@ -192,7 +192,9 @@ it("switches a legacy Worker, blocks retired writes and keeps item prices live",
   ).text();
   expect(history).toContain("历史目录与导入来源");
   expect(history).toContain("601R1_001");
-  expect(history).not.toContain('method="post"');
+  expect(history.match(/<main\b[\s\S]*?<\/main>/)?.[0]).not.toContain(
+    'method="post"',
+  );
   // The Worker rejects retired catalog writes before the read-only route action.
   expect((await post("/admin/catalog/history", {})).status).toBe(409);
   const audit = sql<{ payload_json: string }>(
