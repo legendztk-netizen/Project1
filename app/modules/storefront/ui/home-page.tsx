@@ -11,6 +11,7 @@ import { useEffect, useRef } from "react";
 import { Form, Link } from "react-router";
 
 import { ClickToPlayVideo } from "./click-to-play-video";
+import { homePosterUrl, homeVideoUrl } from "./home-media";
 import { StorefrontFooter } from "./storefront-footer";
 import { StorefrontHeader } from "./storefront-header";
 import "../styles/home.css";
@@ -391,8 +392,8 @@ export function HomePage({ appName }: { appName: string }) {
             <ClickToPlayVideo
               caption="Watch the walkthrough"
               label="Build a Hose walkthrough, from choosing a hose to requesting a quote"
-              poster="/video/customhoseco-build-poster.jpg"
-              src="/video/customhoseco-build.mp4"
+              poster={homePosterUrl("customhoseco-build-poster.jpg")}
+              src={homeVideoUrl("customhoseco-build.mp4")}
             />
           </div>
         </section>
@@ -480,8 +481,8 @@ export function HomePage({ appName }: { appName: string }) {
               <ClickToPlayVideo
                 label="Hose being pressure tested in a test chamber"
                 muted
-                poster="/video/pressure-poster.jpg"
-                src="/video/pressure.mp4"
+                poster={homePosterUrl("pressure-poster.jpg")}
+                src={homeVideoUrl("pressure.mp4")}
               />
             </div>
             <div className="home-video-copy" data-reveal>
