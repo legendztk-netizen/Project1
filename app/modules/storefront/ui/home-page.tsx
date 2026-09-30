@@ -482,7 +482,7 @@ export function HomePage({ appName }: { appName: string }) {
                 label="Hose being pressure tested in a test chamber"
                 muted
                 poster={homePosterUrl("pressure-poster.jpg")}
-                src={homeVideoUrl("pressure.mp4")}
+                src={homeVideoUrl("pressure-clip.mp4")}
               />
             </div>
             <div className="home-video-copy" data-reveal>

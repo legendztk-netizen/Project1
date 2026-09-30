@@ -100,7 +100,7 @@ describe("Storefront home page", () => {
       videos.map((v) => v.querySelector("source")?.getAttribute("src")),
     ).toEqual([
       homeVideoUrl("customhoseco-build.mp4"),
-      homeVideoUrl("pressure.mp4"),
+      homeVideoUrl("pressure-clip.mp4"),
     ]);
     for (const video of videos) {
       expect(video.getAttribute("preload")).toBe("none");
