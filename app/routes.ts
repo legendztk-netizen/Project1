@@ -1,7 +1,8 @@
 import { index, route, type RouteConfig } from "@react-router/dev/routes";
 
 export default [
-  index("modules/storefront/routes/catalog-home.tsx"),
+  index("modules/storefront/routes/home.tsx"),
+  route("catalog", "modules/storefront/routes/catalog-home.tsx"),
   route("catalog/:category", "modules/storefront/routes/catalog-category.tsx"),
   route(
     "catalog/:category/:familyKey",

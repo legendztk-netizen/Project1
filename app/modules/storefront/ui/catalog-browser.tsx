@@ -7,6 +7,7 @@ import {
 } from "../../catalog/domain/catalog-family";
 import type { PublicCatalogFamily } from "../../catalog/domain/public-catalog";
 import { CatalogMedia } from "./catalog-media";
+import { StorefrontFooter } from "./storefront-footer";
 import { StorefrontHeader } from "./storefront-header";
 import "../styles/catalog.css";
 
@@ -35,7 +36,7 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
     : "All Products";
   return (
     <div className="storefront-shell" data-surface="storefront">
-      <StorefrontHeader />
+      <StorefrontHeader floating />
       <main>
         <section className="catalog-toolbar" aria-labelledby="catalog-title">
           <div>
@@ -65,7 +66,10 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
             <h2>Categories</h2>
             <ul>
               <li>
-                <Link className={!data.activeCategory ? "active" : ""} to="/">
+                <Link
+                  className={!data.activeCategory ? "active" : ""}
+                  to="/catalog"
+                >
                   All Products
                 </Link>
               </li>
@@ -158,7 +162,7 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
                   to={
                     data.activeCategory
                       ? `/catalog/${data.activeCategory}`
-                      : "/"
+                      : "/catalog"
                   }
                 >
                   Clear search
@@ -168,6 +172,7 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
           </div>
         </section>
       </main>
+      <StorefrontFooter appName={data.appName} />
     </div>
   );
 }
