@@ -1884,7 +1884,7 @@ describe("Cloudflare Worker route surfaces", () => {
       credential_version: 1,
       hash_bytes: 32,
       normalization: "NFC",
-      work_factor: 600000,
+      work_factor: 100000,
     });
     expect(JSON.stringify(storedCredential)).not.toContain(initialPassword);
     expect(storedCredential?.salt).toBeTruthy();

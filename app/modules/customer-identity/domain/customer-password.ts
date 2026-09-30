@@ -1,7 +1,11 @@
 import { decodeBase64Url, encodeBase64Url } from "./base64-url";
 
 export const customerPasswordAlgorithm = "PBKDF2-HMAC-SHA-256";
-export const customerPasswordWorkFactor = 600_000;
+// Cloudflare Workers rejects PBKDF2 requests above 100,000 iterations
+// ("iteration counts above 100000 are not supported"), so this is the maximum
+// the deployed runtime accepts. Local workerd does not enforce the limit, so
+// a larger value would pass local tests and fail after deployment.
+export const customerPasswordWorkFactor = 100_000;
 export const customerPasswordMinimumLength = 8;
 export const customerPasswordMaximumLength = 128;
 export const customerPasswordMaximumBytes = 1024;
@@ -171,17 +175,20 @@ export async function verifyCustomerPassword(
   }
   let expected: Uint8Array;
   let salt: Uint8Array;
+  let actual: Uint8Array;
   try {
     expected = decodeBase64Url(credential.derivedKey);
     salt = decodeBase64Url(credential.salt);
+    actual = await derivePassword({
+      password: normalized,
+      salt,
+      workFactor: credential.workFactor,
+    });
   } catch {
+    // A credential the runtime cannot evaluate (malformed, or a work factor
+    // above the platform limit) never matches.
     return false;
   }
-  const actual = await derivePassword({
-    password: normalized,
-    salt,
-    workFactor: credential.workFactor,
-  });
   if (expected.byteLength !== actual.byteLength) return false;
   let difference = 0;
   for (let index = 0; index < actual.length; index += 1) {

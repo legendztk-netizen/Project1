@@ -1,4 +1,6 @@
-const workFactor = 600_000;
+// Cloudflare Workers accepts at most 100,000 PBKDF2 iterations; keep in sync with
+// customerPasswordWorkFactor in app/modules/customer-identity/domain/customer-password.ts.
+const workFactor = 100_000;
 
 /** @param {Uint8Array} bytes */
 function encodeBase64Url(bytes) {
@@ -35,7 +37,7 @@ export function validatedOwnerPassword(password) {
 
 /**
  * Builds the JSON credential the Worker stores in admin_identities.password_hash
- * (PBKDF2-HMAC-SHA-256, 600,000 iterations, 16-byte random salt).
+ * (PBKDF2-HMAC-SHA-256, 100,000 iterations, 16-byte random salt).
  * @param {string} password
  * @returns {Promise<string>}
  */

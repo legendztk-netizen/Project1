@@ -6,6 +6,7 @@ import {
   validatedOwnerPassword,
 } from "../scripts/admin-owner-credential.mjs";
 import {
+  customerPasswordWorkFactor,
   verifyCustomerPassword,
   type PasswordCredentialHash,
 } from "../app/modules/customer-identity/domain/customer-password";
@@ -41,4 +42,26 @@ describe("admin Owner credential script", () => {
     expect(insert).toMatch(/^INSERT INTO admin_identities/u);
     expect(insert).toContain("'owner'");
   });
+
+  it("stays within the Cloudflare Workers PBKDF2 iteration limit", async () => {
+    // Deployed Workers reject more than 100,000 iterations; local workerd does not.
+    expect(customerPasswordWorkFactor).toBeLessThanOrEqual(100_000);
+    const hash = JSON.parse(
+      await ownerPasswordHash("Correct-Horse-7"),
+    ) as PasswordCredentialHash;
+    expect(hash.workFactor).toBe(customerPasswordWorkFactor);
+  }, 30_000);
+
+  it("treats a credential it cannot evaluate as a non-match", async () => {
+    const hash = JSON.parse(
+      await ownerPasswordHash("Correct-Horse-7"),
+    ) as PasswordCredentialHash;
+
+    expect(
+      await verifyCustomerPassword("Correct-Horse-7", {
+        ...hash,
+        derivedKey: "!!!not-base64!!!",
+      }),
+    ).toBe(false);
+  }, 30_000);
 });
