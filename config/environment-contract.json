@@ -57,14 +57,14 @@
       "vars": {
         "APP_ENV": "preview",
         "PUBLIC_APP_NAME": "Hydraulic Supply Preview",
-        "PUBLIC_STOREFRONT_ORIGIN": "https://storefront.preview.example.invalid",
-        "ADMIN_ORIGIN": "https://admin.preview.example.invalid",
+        "PUBLIC_STOREFRONT_ORIGIN": "https://preview.customhoseco.com",
+        "ADMIN_ORIGIN": "https://admin-preview.customhoseco.com",
         "ADMIN_AUTH_MODE": "cloudflare-access",
         "CLOUDFLARE_ACCESS_TEAM_DOMAIN": "https://replace-with-preview-team.cloudflareaccess.com",
         "CLOUDFLARE_ACCESS_AUD": "replace-with-preview-access-aud",
         "EMAIL_DELIVERY_MODE": "resend",
-        "EMAIL_FROM": "quotes@preview.example.invalid",
-        "EMAIL_REPLY_DOMAIN": "reply.preview.example.invalid"
+        "EMAIL_FROM": "quotes@preview.customhoseco.com",
+        "EMAIL_REPLY_DOMAIN": "reply-preview.customhoseco.com"
       }
     },
     "production": {

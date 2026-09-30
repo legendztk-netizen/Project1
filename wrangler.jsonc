@@ -68,14 +68,14 @@
       "vars": {
         "APP_ENV": "preview",
         "PUBLIC_APP_NAME": "Hydraulic Supply Preview",
-        "PUBLIC_STOREFRONT_ORIGIN": "https://storefront.preview.example.invalid",
-        "ADMIN_ORIGIN": "https://admin.preview.example.invalid",
+        "PUBLIC_STOREFRONT_ORIGIN": "https://preview.customhoseco.com",
+        "ADMIN_ORIGIN": "https://admin-preview.customhoseco.com",
         "ADMIN_AUTH_MODE": "cloudflare-access",
         "CLOUDFLARE_ACCESS_TEAM_DOMAIN": "https://replace-with-preview-team.cloudflareaccess.com",
         "CLOUDFLARE_ACCESS_AUD": "replace-with-preview-access-aud",
         "EMAIL_DELIVERY_MODE": "resend",
-        "EMAIL_FROM": "quotes@preview.example.invalid",
-        "EMAIL_REPLY_DOMAIN": "reply.preview.example.invalid"
+        "EMAIL_FROM": "quotes@preview.customhoseco.com",
+        "EMAIL_REPLY_DOMAIN": "reply-preview.customhoseco.com"
       },
       "secrets": {
         "required": ["PREVIEW_SESSION_SIGNING_KEY", "PREVIEW_RESEND_API_KEY", "PREVIEW_NOTIFICATION_ENCRYPTION_KEY"]
@@ -84,7 +84,7 @@
         {
           "binding": "DB",
           "database_name": "hydraulic-hose-rfq-preview",
-          "database_id": "replace-with-preview-d1-database-id",
+          "database_id": "4ad2581b-8739-45ca-a32e-6f3d471f1dec",
           "migrations_dir": "migrations",
           "migrations_table": "d1_migrations"
         }
