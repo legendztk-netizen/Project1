@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createMemoryRouter, Outlet, RouterProvider } from "react-router";
 
 import type { RootLoaderData } from "../app/root";
+import { homeVideoUrl } from "../app/modules/storefront/ui/home-media";
 import { HomePage } from "../app/modules/storefront/ui/home-page";
 
 function renderHome() {
@@ -97,7 +98,10 @@ describe("Storefront home page", () => {
     const videos = Array.from(container.querySelectorAll("video"));
     expect(
       videos.map((v) => v.querySelector("source")?.getAttribute("src")),
-    ).toEqual(["/video/customhoseco-build.mp4", "/video/pressure.mp4"]);
+    ).toEqual([
+      homeVideoUrl("customhoseco-build.mp4"),
+      homeVideoUrl("pressure-clip.mp4"),
+    ]);
     for (const video of videos) {
       expect(video.getAttribute("preload")).toBe("none");
       expect(video.hasAttribute("autoplay")).toBe(false);
