@@ -110,7 +110,7 @@ export function CustomerQuoteList({
                 : "No quotes in this status."}
             </p>
             {quoteRequests.length === 0 ? (
-              <Link className="button button-secondary" to="/">
+              <Link className="button button-secondary" to="/catalog">
                 Browse products
               </Link>
             ) : null}

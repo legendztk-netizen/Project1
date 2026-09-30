@@ -82,7 +82,7 @@ export default function QuoteRequestConfirmation({
             >
               View My Quotes
             </Link>
-            <Link className="button button-secondary" to="/">
+            <Link className="button button-secondary" to="/catalog">
               Continue browsing
             </Link>
           </div>

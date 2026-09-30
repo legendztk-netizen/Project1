@@ -135,8 +135,9 @@ Fittings`, `Adapters`, and `Quick Couplings`.
   Quote List as a Standard Product. It does not describe a ferrule as universal
   or interchangeable outside its stated system.
 - `Build a Hose` is a prominent primary workflow, not a secondary contact form.
-- The first storefront viewport provides product search and direct access to
-  `Build a Hose`; launch does not use a marketing-only landing screen.
+- The storefront home page (`/`) is a marketing landing page whose first
+  viewport provides direct access to `Build a Hose` and product search (ADR
+  0053). Product browsing and search live at `/catalog`.
 - Search indexes SKU, product name and aliases, SAE and EN standards, interface
   families including JIC, NPT, ORFS, and BSP, dash size, angle, and working
   pressure. Search and category filters use Catalog Master Data.

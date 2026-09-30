@@ -747,7 +747,7 @@ describe("Cloudflare Worker route surfaces", () => {
       "payment_instructions.version_created",
     ]);
 
-    const storefront = await (await fetch(origin)).text();
+    const storefront = await (await fetch(`${origin}/catalog`)).text();
     expect(storefront).not.toContain("Beneficiary: Test Two");
     expect(storefront).not.toContain("542 Haggard St, Suite 506");
     expect(storefront).not.toContain("Dallas Return Location");
@@ -2714,7 +2714,7 @@ describe("Cloudflare Worker route surfaces", () => {
       ),
     ).toEqual([{ count: 0 }]);
 
-    const storefront = await (await fetch(origin)).text();
+    const storefront = await (await fetch(`${origin}/catalog`)).text();
     expect(storefront).not.toContain("Cost Basis");
     expect(storefront).not.toContain("factory_unit_price");
     const publicCostBasis = await fetch(
@@ -4243,7 +4243,7 @@ describe("Cloudflare Worker route surfaces", () => {
     );
     expect(publishResponse.status, await publishResponse.text()).toBe(302);
 
-    const storefrontResponse = await fetch(origin);
+    const storefrontResponse = await fetch(`${origin}/catalog`);
     const storefront = await storefrontResponse.text();
     expect(storefrontResponse.status).toBe(200);
     expect(storefront).toContain('href="/catalog/hydraulic-hose/');

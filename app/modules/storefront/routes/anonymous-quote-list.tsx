@@ -995,7 +995,7 @@ export function QuoteListContent({
 
   return (
     <div className="quote-list-page">
-      <Link className="product-back-link" to="/">
+      <Link className="product-back-link" to="/catalog">
         <ArrowLeft size={17} /> Continue browsing
       </Link>
 
@@ -1374,7 +1374,7 @@ export function QuoteListContent({
           <FileText size={31} />
           <h2>Your Quote List is empty</h2>
           <p>Choose an exact product size, then use Add to Quote.</p>
-          <Link className="button button-primary" to="/">
+          <Link className="button button-primary" to="/catalog">
             Browse products
           </Link>
         </section>

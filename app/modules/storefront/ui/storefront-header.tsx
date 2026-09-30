@@ -4,22 +4,21 @@ import { Link, useLocation, useRouteLoaderData } from "react-router";
 import { BrandMark } from "../../shared/ui/brand-mark";
 import type { RootLoaderData } from "../../../root";
 
-export function StorefrontHeader() {
+export function StorefrontHeader({ floating = false }: { floating?: boolean }) {
   const location = useLocation();
   const rootData = useRouteLoaderData<RootLoaderData>("root");
   const isAuthenticated = Boolean(rootData?.customer);
   return (
-    <header className="storefront-header">
+    <header
+      className={
+        floating ? "storefront-header is-floating" : "storefront-header"
+      }
+    >
       <BrandMark />
       <nav aria-label="Customer navigation">
         <Link
-          className={
-            location.pathname === "/" ||
-            location.pathname.startsWith("/catalog")
-              ? "active"
-              : ""
-          }
-          to="/"
+          className={location.pathname.startsWith("/catalog") ? "active" : ""}
+          to="/catalog"
         >
           Products
         </Link>

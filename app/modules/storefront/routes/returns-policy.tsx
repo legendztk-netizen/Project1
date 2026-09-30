@@ -58,7 +58,7 @@ export default function ReturnsPolicy() {
     <div className="storefront-shell" data-surface="storefront">
       <StorefrontHeader />
       <main className="measurement-guide-page">
-        <Link className="product-back-link" to="/">
+        <Link className="product-back-link" to="/catalog">
           <ArrowLeft size={17} /> Back to products
         </Link>
         <header className="measurement-guide-heading">

@@ -101,7 +101,7 @@ function renderPage(
         ),
         path: "/build-a-hose",
       },
-      { element: <h1>Products destination</h1>, path: "/" },
+      { element: <h1>Products destination</h1>, path: "/catalog" },
       { element: <h1>Quote List destination</h1>, path: "/quote-list" },
       { element: <h1>Saved Configurations destination</h1>, path: "/account" },
       {
