@@ -65,6 +65,10 @@
       "triggers": {
         "crons": ["17 * * * *", "* * * * *"]
       },
+      "routes": [
+        { "pattern": "preview.customhoseco.com", "custom_domain": true },
+        { "pattern": "admin-preview.customhoseco.com", "custom_domain": true }
+      ],
       "vars": {
         "APP_ENV": "preview",
         "PUBLIC_APP_NAME": "Hydraulic Supply Preview",
@@ -119,17 +123,21 @@
       "triggers": {
         "crons": ["17 * * * *", "* * * * *"]
       },
+      "routes": [
+        { "pattern": "customhoseco.com", "custom_domain": true },
+        { "pattern": "admin.customhoseco.com", "custom_domain": true }
+      ],
       "vars": {
         "APP_ENV": "production",
         "PUBLIC_APP_NAME": "Hydraulic Supply",
-        "PUBLIC_STOREFRONT_ORIGIN": "https://storefront.example.invalid",
-        "ADMIN_ORIGIN": "https://admin.example.invalid",
+        "PUBLIC_STOREFRONT_ORIGIN": "https://customhoseco.com",
+        "ADMIN_ORIGIN": "https://admin.customhoseco.com",
         "ADMIN_AUTH_MODE": "cloudflare-access",
         "CLOUDFLARE_ACCESS_TEAM_DOMAIN": "https://replace-with-production-team.cloudflareaccess.com",
         "CLOUDFLARE_ACCESS_AUD": "replace-with-production-access-aud",
         "EMAIL_DELIVERY_MODE": "resend",
-        "EMAIL_FROM": "quotes@example.invalid",
-        "EMAIL_REPLY_DOMAIN": "reply.example.invalid"
+        "EMAIL_FROM": "quotes@customhoseco.com",
+        "EMAIL_REPLY_DOMAIN": "reply.customhoseco.com"
       },
       "secrets": {
         "required": [
@@ -142,7 +150,7 @@
         {
           "binding": "DB",
           "database_name": "hydraulic-hose-rfq-production",
-          "database_id": "replace-with-production-d1-database-id",
+          "database_id": "0a362737-8016-469d-8b5e-95bd1871466c",
           "migrations_dir": "migrations",
           "migrations_table": "d1_migrations"
         }
