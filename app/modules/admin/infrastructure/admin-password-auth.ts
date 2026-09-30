@@ -1,4 +1,5 @@
 import {
+  customerPasswordWorkFactor,
   hashCustomerPassword,
   verifyCustomerPassword,
   validatedCustomerPassword,
@@ -142,7 +143,7 @@ async function verifyAdminCredentials(
     salt: "AAAAAAAAAAAAAAAAAAAAAA",
     hashBytes: 32,
     normalization: "NFC",
-    workFactor: 600000,
+    workFactor: customerPasswordWorkFactor,
   };
   const valid = await verifyCustomerPassword(
     password,
