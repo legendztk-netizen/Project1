@@ -191,10 +191,11 @@ describe("environment configuration contract", () => {
 
       expect(result.status).toBe(1);
       expect(result.stderr).toContain(`Deployment blocked for ${environment}`);
-      // D1 ids and origins are real now; the Access settings stay placeholders
-      // until Cloudflare Access applications exist.
+      // Every placeholder is replaced; deployment is now blocked only until
+      // the account variables and secrets are supplied by the shell or CI.
+      expect(result.stderr).not.toContain("still a placeholder");
       expect(result.stderr).toContain(
-        "CLOUDFLARE_ACCESS_TEAM_DOMAIN is still a placeholder",
+        "Missing deployment secret CLOUDFLARE_API_TOKEN",
       );
       expect(result.stderr).toContain(
         `Missing deployment secret ${environment.toUpperCase()}_RESEND_API_KEY`,
