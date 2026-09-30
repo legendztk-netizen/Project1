@@ -20,15 +20,24 @@ all their sessions and redirects to login. Subaccount account-management APIs
 are forbidden. Module checks protect both HTML and `.data` resource requests;
 all unsafe admin requests require the same Origin.
 
-Preview and production remain configured with `cloudflare-access` until an
-explicit deployment migration. In that mode the Worker requires the configured
-Admin origin and `Cf-Access-Jwt-Assertion`, validates signature, issuer,
-audience, expiration, and subject, then maps email to an active D1 identity.
-Its module grants remain enforced. Password mode is also supported outside
-local development with HTTPS and the configured Admin origin; switching modes
-requires configuration review and independently provisioning an Owner in the
-target environment. Neither mode accepts `local-stub` as an authentication
-bypass.
+Preview and production use `ADMIN_AUTH_MODE=password` (decision 2026-09-30):
+the account and module-permission system (Owner plus Subaccounts with a
+username and password) only works in this mode. `/admin/login` is served over
+HTTPS on the configured Admin origin and the rate limits, opaque sessions and
+Owner-only account management described above apply. The Owner is provisioned
+in each remote D1 with `node scripts/set-admin-owner-password.mjs <preview|production>`,
+which asks for the password in a hidden prompt (or reads `ADMIN_OWNER_PASSWORD`)
+and stores only the salted PBKDF2 hash. Any Cloudflare Access application in
+front of the Admin origin is optional extra protection; with it in place the
+visitor passes Access first and then signs in with the username and password.
+
+The `cloudflare-access` mode remains supported. In that mode the Worker
+requires the configured Admin origin and `Cf-Access-Jwt-Assertion`, validates
+signature, issuer, audience, expiration, and subject, then maps email to an
+active D1 identity. Its module grants remain enforced, but Subaccount usernames
+and passwords are not usable. Switching modes requires configuration review
+and independently provisioning an Owner in the target environment. Neither mode
+accepts `local-stub` as an authentication bypass.
 
 Missing assertions return HTTP 401. Invalid assertions, incomplete claims,
 wrong-host requests, and identities absent or disabled in D1 return HTTP 403.
