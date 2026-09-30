@@ -191,12 +191,10 @@ describe("environment configuration contract", () => {
 
       expect(result.status).toBe(1);
       expect(result.stderr).toContain(`Deployment blocked for ${environment}`);
-      // Preview already has a real D1 database id; its remaining blockers are
-      // the Access placeholders. Production still has the D1 placeholder.
+      // D1 ids and origins are real now; the Access settings stay placeholders
+      // until Cloudflare Access applications exist.
       expect(result.stderr).toContain(
-        environment === "preview"
-          ? "CLOUDFLARE_ACCESS_TEAM_DOMAIN is still a placeholder"
-          : "D1 database_id",
+        "CLOUDFLARE_ACCESS_TEAM_DOMAIN is still a placeholder",
       );
       expect(result.stderr).toContain(
         `Missing deployment secret ${environment.toUpperCase()}_RESEND_API_KEY`,
