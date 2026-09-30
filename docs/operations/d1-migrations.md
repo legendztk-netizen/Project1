@@ -32,6 +32,14 @@ The local script deletes any inherited `CLOUDFLARE_ENV` before invoking
 Wrangler. Preview and production have no shared or inferred command. Their
 placeholder database IDs must be replaced before a remote migration can run.
 
+Remote D1 rejects `CREATE TRIGGER ... BEGIN ... END;` statements sent through
+`wrangler d1 migrations apply --remote` (`incomplete input: SQLITE_ERROR`),
+although local D1 accepts them. For preview and production,
+`scripts/d1-migrations.mjs apply` therefore builds one script from every pending
+migration, each followed by its `d1_migrations` record, and runs it with
+`wrangler d1 execute --file --remote`. The import is all-or-nothing, so a failed
+run leaves the database unchanged. Local D1 still uses `migrations apply`.
+
 `deploy:preview` and `deploy:production` run environment validation, migration,
 build, and deployment with shell `&&` ordering. A nonzero migration exit stops
 before the new Worker is deployed.
