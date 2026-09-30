@@ -3,6 +3,7 @@
   "include": [
     ".react-router/types/**/*",
     "app/**/*",
+    "scripts/admin-owner-credential.mjs",
     "scripts/deployment-pipeline.mjs",
     "scripts/remote-migration-sql.mjs",
     "workers/**/*",
