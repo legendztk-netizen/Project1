@@ -1,8 +1,16 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { remoteMigrationSql } from "./remote-migration-sql.mjs";
 
 const projectRoot = new URL("../", import.meta.url);
 const wranglerBin = fileURLToPath(
@@ -136,7 +144,54 @@ function verifyDatabase(environment) {
   );
 }
 
+// The same table Wrangler keeps, so `wrangler d1 migrations` stays compatible.
+const migrationsTableSql = `CREATE TABLE IF NOT EXISTS d1_migrations(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT UNIQUE,
+  applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`;
+
+function applyRemoteMigrations(environment) {
+  query(environment, migrationsTableSql);
+  const applied = query(
+    environment,
+    "SELECT name FROM d1_migrations ORDER BY id",
+  ).map(({ name }) => name);
+  const pending = [...schemaContract.migrations]
+    .sort()
+    .filter((name) => !applied.includes(name));
+  if (pending.length === 0) {
+    process.stdout.write(`database=${environment} pendingMigrations=0\n`);
+  } else {
+    const directory = mkdtempSync(
+      join(tmpdir(), "hydraulic-hose-remote-migrations-"),
+    );
+    try {
+      const file = join(directory, "pending-migrations.sql");
+      writeFileSync(
+        file,
+        remoteMigrationSql(pending, (name) =>
+          readFileSync(
+            new URL(`../migrations/${name}`, import.meta.url),
+            "utf8",
+          ),
+        ),
+      );
+      process.stdout.write(
+        `database=${environment} applying ${pending.length} migration(s) in one atomic import\n`,
+      );
+      runWrangler(environment, ["d1", "execute", "--file", file], {
+        stdio: ["ignore", "inherit", "inherit"],
+      });
+    } finally {
+      rmSync(directory, { force: true, recursive: true });
+    }
+  }
+  verifyDatabase(environment);
+}
+
 function applyMigrations(environment) {
+  if (environment !== "local") return applyRemoteMigrations(environment);
   const output = runWrangler(environment, ["d1", "migrations", "apply"], {
     stdio: ["ignore", "pipe", "inherit"],
   });
@@ -171,21 +226,23 @@ function validateMigrationPlan(environment) {
   }
 }
 
-const [, , command, environment] = process.argv;
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const [, , command, environment] = process.argv;
 
-try {
-  if (command === "apply") applyMigrations(environment);
-  else if (command === "verify") verifyDatabase(environment);
-  else if (command === "validate") validateMigrationPlan(environment);
-  else {
-    throw new Error(
-      "Usage: d1-migrations.mjs <apply|verify|validate> <local|preview|production>",
-    );
+  try {
+    if (command === "apply") applyMigrations(environment);
+    else if (command === "verify") verifyDatabase(environment);
+    else if (command === "validate") validateMigrationPlan(environment);
+    else {
+      throw new Error(
+        "Usage: d1-migrations.mjs <apply|verify|validate> <local|preview|production>",
+      );
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`[d1-migrations] ${message}\n`);
+    process.exitCode = 1;
   }
-} catch (error) {
-  const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`[d1-migrations] ${message}\n`);
-  process.exitCode = 1;
 }
 
 export { applyMigrations, validateMigrationPlan, verifyDatabase };

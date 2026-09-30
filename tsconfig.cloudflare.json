@@ -4,6 +4,7 @@
     ".react-router/types/**/*",
     "app/**/*",
     "scripts/deployment-pipeline.mjs",
+    "scripts/remote-migration-sql.mjs",
     "workers/**/*",
     "test/**/*",
     "worker-configuration.d.ts"
