@@ -5,8 +5,8 @@
 `customhoseco.com` 的 Email Routing 只有一条 catch-all，指向账号级分发 Worker
 `hydraulic-hose-email-dispatcher`（`workers/email-dispatcher/`）。分发 Worker 按收件人域名转交：
 
-| 收件域名                         | 服务绑定                   | 目标 Worker                               |
-| -------------------------------- | -------------------------- | ----------------------------------------- |
+| 收件域名                         | 服务绑定                   | 目标 Worker                              |
+| -------------------------------- | -------------------------- | ---------------------------------------- |
 | `reply.customhoseco.com`         | `PRODUCTION_INBOUND_EMAIL` | `hydraulic-hose-rfq-platform-production` |
 | `reply-preview.customhoseco.com` | `PREVIEW_INBOUND_EMAIL`    | `hydraulic-hose-rfq-platform-preview`    |
 
