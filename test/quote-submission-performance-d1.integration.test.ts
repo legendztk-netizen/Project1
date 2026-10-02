@@ -159,7 +159,7 @@ it("submits selected snapshots, preserves other lines and replays without creati
     const queryCount = queries.length;
     counts.push(queryCount);
     expect(
-      queries.filter((sql) => sql.includes("WITH active_catalog_runtime_skus")),
+      queries.filter((sql) => sql.includes("public catalog scan")),
     ).toHaveLength(1);
     expect(
       queries.filter((sql) => sql.includes("FROM quote_reference_discounts")),
@@ -373,7 +373,7 @@ it("validates selected assemblies afresh without validating unselected broken as
     record.snapshot.lines.every((line) => line.refresh?.status === "ready"),
   ).toBe(true);
   expect(
-    queries.filter((sql) => sql.includes("WITH active_catalog_runtime_skus")),
+    queries.filter((sql) => sql.includes("public catalog scan")),
   ).toHaveLength(3);
   if (process.env.QUOTE_SUBMIT_BENCHMARK)
     process.stdout.write(

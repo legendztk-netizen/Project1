@@ -3,8 +3,11 @@ import { componentImportFixtures } from "./component-item-import";
 import { createD1CatalogItemRepository } from "../../app/modules/catalog/infrastructure/d1-catalog-item-repository";
 import { createD1ItemImportReview } from "../../app/modules/catalog/infrastructure/d1-item-import-review";
 
-export async function seedManagedAssemblyBaseline(db: D1Database) {
-  await seedCatalogItemBaseline(db);
+export async function seedManagedAssemblyBaseline(
+  db: D1Database,
+  bulkHoseSkus = 0,
+) {
+  await seedCatalogItemBaseline(db, null, bulkHoseSkus);
   const items = createD1CatalogItemRepository(db);
   await items.enable({ environment: "local", actorId: "owner-1" });
   const payload = (await items.findPayload("sku", "601R1_001"))!;

@@ -85,6 +85,102 @@ function variantDimensions(payload: CatalogItemPayload): string {
         .join(" · ");
   }
 }
+// One row per SKU of the active import for the admin product list. The former single statement joined the
+// facts CTE against five runtime views, so SQLite rescanned each view once per SKU (~850k rows read for 645
+// SKUs, billed by D1). Each view is read once and joined here by key; the keys are unique per import, so the
+// rows are identical to the former join (`e.hidden_at IS NULL` still hides removed items).
+export function managedSkuRowStatements(
+  database: D1Database,
+  importId: string,
+): D1PreparedStatement[] {
+  return [
+    database.prepare(facts).bind(importId),
+    database
+      .prepare(
+        "SELECT sku, catalog_publication_status, technical_data_status FROM catalog_runtime_skus WHERE import_id=?1",
+      )
+      .bind(importId),
+    database.prepare(
+      "SELECT code, current_revision_id, draft_revision_id, hidden_at FROM catalog_product_entities WHERE kind='sku'",
+    ),
+    database
+      .prepare(
+        "SELECT sku, id, currency, reference_price_usd FROM catalog_runtime_sku_price_packaging WHERE import_id=?1",
+      )
+      .bind(importId),
+    database
+      .prepare(
+        "SELECT base_sku, currency, reference_price_usd, sales_unit FROM catalog_runtime_sales_offers WHERE import_id=?1",
+      )
+      .bind(importId),
+    database
+      .prepare(
+        "SELECT sku, media_version_id FROM catalog_runtime_product_main_images WHERE import_id=?1",
+      )
+      .bind(importId),
+    database.prepare(
+      "SELECT hose_series, invalidated_sequence>generated_sequence AS dirty FROM catalog_item_assembly_state",
+    ),
+  ];
+}
+export const managedSkuRowStatementCount = 7;
+
+export function composeManagedSkuRows(
+  results: Array<D1Result<Record<string, unknown>>>,
+): Array<Record<string, unknown>> {
+  const [skuFacts, skus, entities, prices, offers, images, assembly] = results;
+  const index = (rows: Array<Record<string, unknown>>, key: string) =>
+    new Map(rows.map((row) => [String(row[key]), row]));
+  const factBySku = index(skuFacts.results, "sku");
+  const entityByCode = index(entities.results, "code");
+  const priceBySku = index(prices.results, "sku");
+  const offerBySku = index(offers.results, "base_sku");
+  const imageBySku = index(images.results, "sku");
+  const assemblyBySeries = index(assembly.results, "hose_series");
+  const rows: Array<Record<string, unknown>> = [];
+  // Driven by the SKU view so the order matches the former join (catalog order, edited items last).
+  for (const sku of skus.results) {
+    const key = String(sku.sku);
+    const fact = factBySku.get(key);
+    if (!fact) continue;
+    const entity = entityByCode.get(key);
+    if (entity?.hidden_at != null) continue;
+    const price = priceBySku.get(key);
+    const offer = offerBySku.get(key);
+    const state =
+      fact.type === "hose" && fact.series_code != null
+        ? assemblyBySeries.get(String(fact.series_code))
+        : undefined;
+    rows.push({
+      ...fact,
+      catalog_publication_status: sku.catalog_publication_status,
+      currency: price?.currency ?? offer?.currency ?? "USD",
+      amount:
+        price?.id != null
+          ? (price.reference_price_usd ?? null)
+          : (offer?.reference_price_usd ?? null),
+      media_version_id: imageBySku.get(key)?.media_version_id ?? null,
+      current_revision_id: entity?.current_revision_id ?? null,
+      draft_revision_id: entity?.draft_revision_id ?? null,
+      sales_unit: offer?.sales_unit ?? null,
+      technical_data_status: sku.technical_data_status,
+      dirty: state ? state.dirty : null,
+    });
+  }
+  return rows;
+}
+
+export async function readManagedSkuRows(
+  database: D1Database,
+  importId: string,
+) {
+  return composeManagedSkuRows(
+    await database.batch<Record<string, unknown>>(
+      managedSkuRowStatements(database, importId),
+    ),
+  );
+}
+
 export function createD1ProductManagementRepository(database: D1Database) {
   const items = createD1CatalogItemRepository(database);
   async function all(): Promise<ManagedProduct[]> {
@@ -94,25 +190,10 @@ export function createD1ProductManagementRepository(database: D1Database) {
       )
       .first<{ source_import_id: string }>();
     if (!active) return [];
-    // Prevent SQLite from flattening the five-category UNION and rebuilding the
-    // large runtime views once per category. This is per-query work, not a cache.
-    const [rows, series, extras] = await database.batch<
-      Record<string, unknown>
-    >([
-      database
-        .prepare(
-          `WITH product_facts AS MATERIALIZED (${facts})
-    SELECT f.*,s.catalog_publication_status,COALESCE(p.currency,o.currency,'USD') AS currency,CASE WHEN p.id IS NOT NULL THEN p.reference_price_usd ELSE o.reference_price_usd END AS amount,image.media_version_id,
-    e.current_revision_id,e.draft_revision_id,o.sales_unit,s.technical_data_status,d.invalidated_sequence>d.generated_sequence AS dirty
-    FROM product_facts f JOIN catalog_runtime_skus s ON s.sku=f.sku AND s.import_id=?1
-    LEFT JOIN catalog_product_entities e ON e.kind='sku' AND e.code=f.sku
-    LEFT JOIN catalog_runtime_sku_price_packaging p ON p.sku=f.sku AND p.import_id=?1
-    LEFT JOIN catalog_runtime_sales_offers o ON o.base_sku=f.sku AND o.import_id=?1
-    LEFT JOIN catalog_runtime_product_main_images image ON image.sku=f.sku AND image.import_id=?1
-    LEFT JOIN catalog_item_assembly_state d ON d.hose_series=f.series_code AND f.type='hose'
-    WHERE e.hidden_at IS NULL`,
-        )
-        .bind(active.source_import_id),
+    // Each runtime view is read once (see readManagedSkuRows); nothing here is cached. One batch keeps
+    // the SKU rows and the item revisions below on the same snapshot.
+    const results = await database.batch<Record<string, unknown>>([
+      ...managedSkuRowStatements(database, active.source_import_id),
       database
         .prepare(
           `SELECT 'hose' AS type,series_code,series_name,representative_media_version_id AS image_id FROM catalog_runtime_hose_series WHERE import_id=?1
@@ -123,7 +204,11 @@ export function createD1ProductManagementRepository(database: D1Database) {
         `SELECT e.*,r.payload_json,r.target_state FROM catalog_product_entities e LEFT JOIN catalog_product_revisions r ON r.id=COALESCE(e.current_revision_id,e.draft_revision_id)`,
       ),
     ]);
-    const result: ManagedProduct[] = rows.results.map((r) => ({
+    const rows = composeManagedSkuRows(
+      results.slice(0, managedSkuRowStatementCount),
+    );
+    const [series, extras] = results.slice(managedSkuRowStatementCount);
+    const result: ManagedProduct[] = rows.map((r) => ({
       kind: "sku",
       productType: r.type as CommercialProductType,
       code: String(r.sku),

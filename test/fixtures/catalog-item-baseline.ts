@@ -1,6 +1,9 @@
+// `bulkHoseSkus` adds that many generated hose SKUs (variant, offer, price, image) to the same
+// published import, so read-cost tests can see work that grows with the catalog size.
 export async function seedCatalogItemBaseline(
   database: D1Database,
   privateCost: number | null = null,
+  bulkHoseSkus = 0,
 ) {
   const now = "2026-09-04T00:00:00.000Z";
   const summary = JSON.stringify({
@@ -17,6 +20,48 @@ export async function seedCatalogItemBaseline(
     salesOfferCount: 1,
     skuCount: 1,
   });
+  const bulk = (sql: string) =>
+    database.prepare(
+      `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ${bulkHoseSkus}) ${sql}`,
+    );
+  const bulkStatements =
+    bulkHoseSkus > 0
+      ? [
+          bulk(`INSERT INTO catalog_skus (id, import_id, sku, source_worksheet, product_type, hose_series,
+                  catalog_publication_status, rfq_eligibility, technical_data_status, supply_availability)
+                SELECT 'bulk-sku-' || i, import_id, '601R1_B' || printf('%04d', i), source_worksheet, product_type,
+                  hose_series, catalog_publication_status, rfq_eligibility, technical_data_status, supply_availability
+                FROM n, catalog_skus WHERE id = 'active-sku'`),
+          bulk(`INSERT INTO catalog_hose_variants (id, import_id, sku, hose_series, primary_standard, equivalent_standard,
+                  dash, nominal_id_in, id_mm, od_mm, working_bar, working_psi, burst_bar, bend_radius_mm, weight_kg_m,
+                  temp_min_c, temp_max_c, tube_material, reinforcement, cover_material, cover_color, cover_finish,
+                  skive_requirement, msha_marking, fluid_compatibility, origin, source, notes)
+                SELECT 'bulk-hose-' || i, import_id, '601R1_B' || printf('%04d', i), hose_series, primary_standard,
+                  equivalent_standard, dash, nominal_id_in, id_mm, od_mm, working_bar, working_psi, burst_bar,
+                  bend_radius_mm, weight_kg_m, temp_min_c, temp_max_c, tube_material, reinforcement, cover_material,
+                  cover_color, cover_finish, skive_requirement, msha_marking, fluid_compatibility, origin, source, notes
+                FROM n, catalog_hose_variants WHERE id = 'active-hose'`),
+          bulk(`INSERT INTO catalog_sales_offers (id, import_id, base_sku, sales_sku, product_type, sales_unit,
+                  package_length_ft, units_per_sales_pack, moq, net_unit_weight_kg, lead_time_days, country_of_origin,
+                  currency, reference_price_usd, catalog_publication_status, rfq_eligibility, technical_data_status,
+                  quantity_input_mode, minimum_length_per_piece_ft, length_increment_ft, preset_length_1_ft,
+                  preset_length_2_ft, preset_length_3_ft)
+                SELECT 'bulk-offer-' || i, import_id, '601R1_B' || printf('%04d', i), '601R1_B' || printf('%04d', i),
+                  product_type, sales_unit, package_length_ft, units_per_sales_pack, moq, net_unit_weight_kg,
+                  lead_time_days, country_of_origin, currency, reference_price_usd + i, catalog_publication_status,
+                  rfq_eligibility, technical_data_status, quantity_input_mode, minimum_length_per_piece_ft,
+                  length_increment_ft, preset_length_1_ft, preset_length_2_ft, preset_length_3_ft
+                FROM n, catalog_sales_offers WHERE id = 'active-offer'`),
+          bulk(`INSERT INTO catalog_product_main_images (id, import_id, sku, media_version_id, assigned_at, assigned_by,
+                  assignment_kind)
+                SELECT 'bulk-image-' || i, import_id, '601R1_B' || printf('%04d', i), media_version_id, assigned_at,
+                  assigned_by, assignment_kind
+                FROM n, catalog_product_main_images WHERE id = 'active-image'`),
+          bulk(`INSERT INTO catalog_cost_bases (id, import_id, sales_sku, currency, factory_unit_price)
+                SELECT 'bulk-cost-' || i, import_id, '601R1_B' || printf('%04d', i), currency, factory_unit_price
+                FROM n, catalog_cost_bases WHERE id = 'active-cost'`),
+        ]
+      : [];
   await database.batch([
     database
       .prepare(
@@ -125,6 +170,7 @@ export async function seedCatalogItemBaseline(
     database.prepare(`INSERT INTO catalog_series_commercial_rules
     (id,import_id,product_type,series_code,sales_unit,moq,lead_time_days,country_of_origin,quantity_input_mode,minimum_length_per_piece_ft,length_increment_ft)
     VALUES ('rule','active-import','hose','601R1','ft',1,14,'China','Length x Pieces',1,1)`),
+    ...bulkStatements,
     database
       .prepare(
         `INSERT INTO catalog_releases (

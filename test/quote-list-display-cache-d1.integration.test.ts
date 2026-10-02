@@ -114,15 +114,13 @@ it("reuses persisted results across service instances without catalog validation
   const { req } = await list();
   queries.length = 0;
   const cold = await service().read(req);
-  expect(
-    queries.some((sql) => sql.includes("WITH active_catalog_runtime_skus")),
-  ).toBe(true);
+  expect(queries.some((sql) => sql.includes("public catalog scan"))).toBe(true);
   queries.length = 0;
   const warm = await service().read(req);
   expect(warm.lines).toEqual(cold.lines);
-  expect(
-    queries.some((sql) => sql.includes("WITH active_catalog_runtime_skus")),
-  ).toBe(false);
+  expect(queries.some((sql) => sql.includes("public catalog scan"))).toBe(
+    false,
+  );
   expect(warm.lines.every((line) => line.refresh?.status === "ready")).toBe(
     true,
   );
@@ -168,9 +166,7 @@ it("invalidates cached prices when fee rules change", async () => {
     .run();
   queries.length = 0;
   const after = await service().read(req);
-  expect(
-    queries.some((sql) => sql.includes("WITH active_catalog_runtime_skus")),
-  ).toBe(true);
+  expect(queries.some((sql) => sql.includes("public catalog scan"))).toBe(true);
   expect(after.lines[0].refresh!.current.serviceFeeAmount).toBe(
     before.lines[0].refresh!.current.serviceFeeAmount! + 1,
   );
@@ -279,9 +275,7 @@ it("always performs fresh validation for authenticated RFQ submission", async ()
   queries.length = 0;
   const submission = await service().readForSubmission(req);
   expect(submission?.lines).toHaveLength(1);
-  expect(
-    queries.some((sql) => sql.includes("WITH active_catalog_runtime_skus")),
-  ).toBe(true);
+  expect(queries.some((sql) => sql.includes("public catalog scan"))).toBe(true);
 });
 
 it("keeps warm read query counts constant for 10 and 50 lines", async () => {
@@ -297,9 +291,9 @@ it("keeps warm read query counts constant for 10 and 50 lines", async () => {
     const warmMs = performance.now() - warmStart;
     counts.push(queries.length);
     expect(warm.lines).toHaveLength(count);
-    expect(
-      queries.some((sql) => sql.includes("WITH active_catalog_runtime_skus")),
-    ).toBe(false);
+    expect(queries.some((sql) => sql.includes("public catalog scan"))).toBe(
+      false,
+    );
     if (process.env.QUOTE_CACHE_BENCHMARK)
       process.stdout.write(
         JSON.stringify({
