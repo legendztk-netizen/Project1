@@ -260,6 +260,27 @@ function ProductEditor({
               ))}
             </select>
           </label>
+          <label>
+            Upload New Image / 上传新图片
+            <input
+              name="mainImageUpload"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+            />
+            <small>
+              A new image creates a new image version and replaces the choice
+              above / 上传会创建新的图片版本，并取代上面的选择；JPEG、PNG 或
+              WebP，最大 12 MB。
+            </small>
+          </label>
+          <label>
+            Image Source Notes / 图片来源备注（可选）
+            <input name="imageSourceNotes" type="text" />
+          </label>
+          <label>
+            Image License Notes / 图片授权备注（可选）
+            <input name="imageLicenseNotes" type="text" />
+          </label>
         </fieldset>
         {kind === "sku" && (
           <fieldset disabled={!canEdit || busy} className="product-field-grid">
@@ -981,7 +1002,12 @@ export function ProductManagementPage(props: PageData) {
             onClose={() => setEditorOpen(false)}
             error={mutation.data?.error ?? null}
             busy={busy}
-            submit={(form) => void mutation.submit(form, { method: "post" })}
+            submit={(form) =>
+              void mutation.submit(form, {
+                method: "post",
+                encType: "multipart/form-data",
+              })
+            }
           />
         )}
         {deleteOpen && (

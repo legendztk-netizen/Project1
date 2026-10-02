@@ -1,5 +1,11 @@
-import type { PreparedCatalogImage } from "../domain/catalog-product-image";
-import { uploadedCatalogImageReference } from "../domain/catalog-product-image";
+import type {
+  CatalogImageProcessor,
+  PreparedCatalogImage,
+} from "../domain/catalog-product-image";
+import {
+  prepareCatalogImage,
+  uploadedCatalogImageReference,
+} from "../domain/catalog-product-image";
 
 export interface StoreCatalogImageInput {
   actorId: string;
@@ -99,4 +105,40 @@ export function createD1R2CatalogImageRepository(
       };
     },
   };
+}
+
+export interface StoreItemMainImageInput {
+  actorId: string;
+  bytes: Uint8Array;
+  licenseNotes: string | null;
+  sourceNotes: string | null;
+}
+
+// Item-level editors upload a new main image as a new media version, then
+// attach its id to the item through the normal item edit command.
+export async function storeItemMainImage(
+  dependencies: {
+    bucket: R2Bucket;
+    database: D1Database;
+    processor: CatalogImageProcessor;
+  },
+  input: StoreItemMainImageInput,
+) {
+  const prepared = await prepareCatalogImage(
+    dependencies.processor,
+    input.bytes,
+  );
+  const stored = await createD1R2CatalogImageRepository(
+    dependencies.database,
+    dependencies.bucket,
+  ).storeUploadedVersion({
+    actorId: input.actorId,
+    licenseNotes: input.licenseNotes,
+    lineageId: null,
+    mediaVersionId: crypto.randomUUID(),
+    occurredAt: new Date().toISOString(),
+    prepared,
+    sourceNotes: input.sourceNotes,
+  });
+  return stored.mediaVersionId;
 }

@@ -9,6 +9,8 @@ import {
   type ProductSelection,
 } from "../../catalog/infrastructure/d1-product-management-repository";
 import { createD1CatalogItemRepository } from "../../catalog/infrastructure/d1-catalog-item-repository";
+import { storeItemMainImage } from "../../catalog/infrastructure/d1-r2-catalog-image-repository";
+import { createCloudflareCatalogImageProcessor } from "../../catalog/infrastructure/cloudflare-catalog-image-processor";
 import {
   commercialProductTypes,
   type CommercialProductType,
@@ -122,19 +124,37 @@ export async function action({ context, request }: Route.ActionArgs) {
       : null;
     const optionalNumber = (key: string) =>
       text(key) ? Number(text(key)) : null;
+    // A newly uploaded file becomes a new media version that replaces the dropdown choice.
+    const upload = form.get("mainImageUpload");
+    const mediaVersionId =
+      upload instanceof File && upload.size > 0
+        ? await storeItemMainImage(
+            {
+              bucket: env.PRIVATE_FILES,
+              database: env.DB,
+              processor: createCloudflareCatalogImageProcessor(env.IMAGES),
+            },
+            {
+              actorId: adminIdentity.id,
+              bytes: new Uint8Array(await upload.arrayBuffer()),
+              licenseNotes: text("imageLicenseNotes") || null,
+              sourceNotes: text("imageSourceNotes") || null,
+            },
+          )
+        : text("mediaVersionId") || null;
     const payload = (kind === "series"
       ? {
           kind,
           productType,
           series: { ...values, representativeImageReference: "" },
           commercialRule: base?.kind === "series" ? base.commercialRule : null,
-          mediaVersionId: text("mediaVersionId") || null,
+          mediaVersionId,
         }
       : {
           kind,
           productType,
           variant: values,
-          mediaVersionId: text("mediaVersionId") || null,
+          mediaVersionId,
           price: {
             amount: optionalNumber("amount"),
             currency: text("currency") || "USD",
