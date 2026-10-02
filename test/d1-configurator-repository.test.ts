@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   compatibleHoseEndCandidateFromRow,
@@ -102,32 +102,173 @@ describe("D1 configurator repository", () => {
     ).toBe("ORFS Female Swivel 90° Medium Hose End");
   });
 
-  it("queries only exact eligible tuples and all three available components", async () => {
-    const all = vi.fn().mockResolvedValue({ results: [row] });
-    const bind = vi.fn().mockReturnValue({ all });
-    const prepare = vi.fn().mockReturnValue({ bind });
-    const database = { prepare } as unknown as D1Database;
+  // End A options come from several small reads; these fake their results by table and check the rules.
+  function fakeDatabase(overrides: Record<string, unknown[]> = {}) {
+    const listed = {
+      catalog_publication_status: "Published",
+      rfq_eligibility: "Eligible",
+    };
+    const available = { ...listed, supply_availability: "available_for_quote" };
+    const compatibility = (id: string, end: string) => ({
+      ...listed,
+      compatibility_id: id,
+      hose_sku: "601R1_002",
+      hose_end_sku: end,
+      ferrule_sku: "601R1_1WB_002",
+      assembly_working_bar: 250,
+    });
+    const combination = (a: string, endA: string, b: string, endB: string) => ({
+      release_id: "catalog-release-7",
+      hose_sku: "601R1_002",
+      identity: JSON.stringify([
+        "601R1_002",
+        endA,
+        "601R1_1WB_002",
+        endB,
+        "601R1_1WB_002",
+      ]),
+      end_a_compatibility_id: a,
+      end_a_hose_end_sku: endA,
+      end_a_ferrule_sku: "601R1_1WB_002",
+      end_b_compatibility_id: b,
+      end_b_hose_end_sku: endB,
+      end_b_ferrule_sku: "601R1_1WB_002",
+    });
+    const end = (sku: string, series: string, dash: string) => ({
+      ...row,
+      sku,
+      fitting_series: series,
+      connection_dash: dash,
+    });
+    const tables: Record<string, unknown[]> = {
+      catalog_releases: [{ status: "published" }],
+      catalog_runtime_assembly_combinations: [
+        combination("C1", "JIC_04", "C2", "ORFS_04"),
+        combination("C3", "JIC_08", "C3", "JIC_08"),
+      ],
+      catalog_runtime_compatibilities: [
+        compatibility("C1", "JIC_04"),
+        compatibility("C2", "ORFS_04"),
+        compatibility("C3", "JIC_08"),
+        compatibility("C4", "JIC_12"),
+      ],
+      catalog_runtime_skus: [
+        { ...available, sku: "601R1_002", product_type: "hose" },
+        { ...available, sku: "601R1_1WB_002", product_type: "ferrule" },
+        ...["JIC_04", "ORFS_04", "JIC_08", "JIC_12"].map((sku) => ({
+          ...available,
+          sku,
+          product_type: "hose_end",
+        })),
+      ],
+      catalog_item_unavailable_hoses: [],
+      catalog_assembly_exclusions: [],
+      catalog_runtime_hose_ends: [
+        end("JIC_04", "FJX", "04"),
+        end("ORFS_04", "FFX", "04"),
+        end("JIC_08", "FJX", "08"),
+        end("JIC_12", "FJX", "12"),
+      ],
+      catalog_runtime_hose_end_series: [
+        { ...row, series_code: "FJX", interface_family: "JIC 37°" },
+        { ...row, series_code: "FFX", interface_family: "ORFS" },
+      ],
+      catalog_runtime_ferrules: [
+        {
+          sku: "601R1_1WB_002",
+          ferrule_series: "601R1",
+          hose_construction: "1-wire braid",
+          hose_tail_dash: "04",
+          skive_requirement: "Other",
+        },
+      ],
+      ...overrides,
+    };
+    const tableOf = (sql: string) =>
+      Object.keys(tables)
+        .filter((name) => sql.includes(`FROM ${name}`))
+        .sort((x, y) => sql.indexOf(`FROM ${x}`) - sql.indexOf(`FROM ${y}`))[0];
+    const binds: unknown[][] = [];
+    const statement = (sql: string) => ({
+      sql,
+      bind(...values: unknown[]) {
+        binds.push(values);
+        return this;
+      },
+    });
+    return {
+      binds,
+      database: {
+        prepare: statement,
+        async batch(statements: Array<{ sql: string }>) {
+          return statements.map(({ sql }) => ({
+            results: tables[tableOf(sql)] ?? [],
+          }));
+        },
+      } as unknown as D1Database,
+    };
+  }
+  const endA = (database: D1Database) =>
+    createD1ConfiguratorRepository(database).findCompatibleEndA(
+      "catalog-release-7",
+      "601R1_002",
+    );
 
-    const result = await createD1ConfiguratorRepository(
-      database,
-    ).findCompatibleEndA("catalog-release-7", "601R1_002");
+  it("lists the ends of available assemblies of the requested release, in catalog order", async () => {
+    const { database, binds } = fakeDatabase();
+    const result = await endA(database);
+    expect(binds).toContainEqual(["catalog-release-7", "601R1_002"]);
+    // C4 is compatible but occurs in no assembly; ORFS sorts after JIC.
+    expect(result.map((end) => end.compatibilityId)).toEqual([
+      "C1",
+      "C3",
+      "C2",
+    ]);
+    expect(result[0]).toMatchObject({
+      assemblyWorkingBar: 250,
+      maximumWorkingBar: 300,
+    });
+  });
 
-    expect(bind).toHaveBeenCalledWith("catalog-release-7", "601R1_002");
-    expect(result).toHaveLength(1);
-    const sql = prepare.mock.calls[0]?.[0] as string;
-    expect(sql).not.toContain("catalog_active_release");
-    expect(sql).toContain("r.id = ?");
-    expect(sql).toContain("r.status IN ('published', 'superseded')");
-    expect(sql).toContain("c.hose_sku = ?");
-    expect(sql).toContain("c.catalog_publication_status = 'Published'");
-    expect(sql).toContain("c.rfq_eligibility = 'Eligible'");
-    expect(sql).toContain("c.assembly_working_bar");
-    expect(sql).toContain("e.max_working_bar");
-    expect(sql).toContain("e.fitting_series");
-    expect(sql).toContain("catalog_runtime_hose_ends e");
-    expect(sql).toContain("catalog_runtime_ferrules f");
+  it("drops assemblies whose release, components, listing or exclusion make them unavailable", async () => {
     expect(
-      sql.match(/supply_availability = 'available_for_quote'/g),
-    ).toHaveLength(3);
+      await endA(
+        fakeDatabase({ catalog_releases: [{ status: "draft" }] }).database,
+      ),
+    ).toEqual([]);
+    expect(
+      await endA(
+        fakeDatabase({ catalog_item_unavailable_hoses: [{ blocked: 1 }] })
+          .database,
+      ),
+    ).toEqual([]);
+    const unavailableEnd = fakeDatabase();
+    const skus = (
+      await unavailableEnd.database.batch([
+        { sql: "FROM catalog_runtime_skus" } as never,
+      ])
+    )[0].results as Array<Record<string, unknown>>;
+    skus.find((sku) => sku.sku === "ORFS_04")!.supply_availability =
+      "temporarily_unavailable";
+    // ORFS_04 is no longer available, so the C1+C2 assembly and both of its ends drop out.
+    expect(
+      (await endA(unavailableEnd.database)).map((end) => end.compatibilityId),
+    ).toEqual(["C3"]);
+    const excluded = fakeDatabase({
+      catalog_assembly_exclusions: [
+        {
+          identity: JSON.stringify([
+            "601R1_002",
+            "JIC_08",
+            "601R1_1WB_002",
+            "JIC_08",
+            "601R1_1WB_002",
+          ]),
+        },
+      ],
+    });
+    expect(
+      (await endA(excluded.database)).map((end) => end.compatibilityId),
+    ).toEqual(["C1", "C2"]);
   });
 });
