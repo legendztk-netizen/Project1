@@ -28,6 +28,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm dry-run:local
+      - run: pnpm dry-run:email-dispatcher
       - run: pnpm migrate
       - run: pnpm migrate:verify
       - run: pnpm build:production
