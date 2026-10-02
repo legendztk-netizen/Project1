@@ -11,11 +11,11 @@ export type AdminThreadFilter = "all" | "unread" | "awaiting";
 
 // Latest message per conversation. Window functions keep one pass over the
 // append-only message table instead of a correlated lookup per column.
-const lastMessage = `last AS (
+const lastMessage = (scope = "") => `last AS (
   SELECT m.request_id,m.body,m.author_role,m.created_at,
     (SELECT 1 FROM quote_conversation_attachments a WHERE a.message_id=m.id) AS has_attachment,
     row_number() OVER (PARTITION BY m.request_id ORDER BY m.created_at DESC,m.id DESC) AS rn
-  FROM quote_conversation_messages m)`;
+  FROM quote_conversation_messages m ${scope})`;
 
 function unreadSql(role: "customer" | "admin") {
   // Only messages actually returned to this reader count as read.
@@ -85,13 +85,15 @@ export function createD1MessageCenter(database: D1Database) {
     async customerThreads(profileId: string, page: number) {
       const rows = await database
         .prepare(
-          `WITH ${lastMessage}
+          `WITH owned AS MATERIALIZED (
+             SELECT request.* FROM customer_quote_requests request
+             ${ownedQuoteRequestWhere}
+           ), ${lastMessage("WHERE m.request_id IN (SELECT id FROM owned)")}
            SELECT ${threadColumns("customer")}
-           FROM customer_quote_requests request
+           FROM owned request
            JOIN last ON last.request_id=request.id AND last.rn=1
            LEFT JOIN customer_profiles profile ON profile.id=request.profile_id
            LEFT JOIN confirmed_orders o ON o.request_id=request.id
-           ${ownedQuoteRequestWhere}
            ORDER BY last.created_at DESC,request.id DESC
            LIMIT ? OFFSET ?`,
         )
@@ -135,7 +137,7 @@ export function createD1MessageCenter(database: D1Database) {
       const like = `%${query.replace(/[\\%_]/g, (value) => `\\${value}`)}%`;
       const rows = await database
         .prepare(
-          `WITH ${lastMessage},
+          `WITH ${lastMessage()},
            threads AS (
              SELECT request_id FROM quote_conversation_messages
              UNION SELECT request_id FROM message_internal_notes)

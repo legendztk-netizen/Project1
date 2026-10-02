@@ -120,11 +120,16 @@ function useUnreadNotifications(known: number | undefined, enabled = true) {
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
+    let inFlight = false;
+    const controller = new AbortController();
     const refresh = async () => {
-      if (document.visibilityState !== "visible") return;
+      if (cancelled || inFlight || document.visibilityState !== "visible")
+        return;
+      inFlight = true;
       try {
         const response = await fetch("/admin/notifications/unread-count", {
           headers: { Accept: "application/json" },
+          signal: controller.signal,
         });
         if (!response.ok) return;
         const body = (await response.json()) as {
@@ -137,6 +142,8 @@ function useUnreadNotifications(known: number | undefined, enabled = true) {
           setMessages(body.messages);
       } catch {
         // The badge is advisory; the notifications page remains authoritative.
+      } finally {
+        inFlight = false;
       }
     };
     void refresh();
@@ -145,6 +152,7 @@ function useUnreadNotifications(known: number | undefined, enabled = true) {
     document.addEventListener("visibilitychange", refresh);
     return () => {
       cancelled = true;
+      controller.abort();
       clearInterval(timer);
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);

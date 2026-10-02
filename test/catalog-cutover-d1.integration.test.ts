@@ -302,3 +302,47 @@ it("reads retained release sections after cutover without changing legacy data",
       .first(),
   ).toEqual(epochBefore);
 });
+
+it("scans inventory pages linearly while preserving OFFSET page contents and large sparse rowids", async () => {
+  const { catalogTablePages } =
+    await import("../app/modules/catalog/infrastructure/d1-catalog-cutover");
+  const { metered } = await import("./fixtures/metered-d1");
+  // An unrelated scratch table avoids changing the catalog during the lifecycle tests above.
+  await db
+    .prepare("CREATE TABLE inventory_scan_fixture (value TEXT NOT NULL)")
+    .run();
+  await db
+    .prepare(
+      `WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<5000)
+    INSERT INTO inventory_scan_fixture(rowid,value) SELECT x*3-20, 'value-'||x FROM n`,
+    )
+    .run();
+  await db
+    .prepare(
+      "INSERT INTO inventory_scan_fixture(rowid,value) VALUES (9007199254740993,'large'),(9007199254740995,'larger')",
+    )
+    .run();
+  const reference = metered(db);
+  const expected = [];
+  for (let offset = 0; offset < 5002; offset += 1000)
+    expected.push(
+      (
+        await reference.binding
+          .prepare(
+            "SELECT * FROM inventory_scan_fixture ORDER BY rowid LIMIT 1000 OFFSET ?",
+          )
+          .bind(offset)
+          .all()
+      ).results,
+    );
+  const measured = metered(db);
+  const actual = [];
+  for await (const page of catalogTablePages(
+    measured.binding,
+    "inventory_scan_fixture",
+  ))
+    actual.push(page);
+  expect(actual).toEqual(expected);
+  expect(measured.counter.reads).toBeLessThan(5100);
+  expect(reference.counter.reads).toBeGreaterThan(measured.counter.reads * 3);
+});

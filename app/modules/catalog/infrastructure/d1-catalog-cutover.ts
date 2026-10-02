@@ -36,6 +36,28 @@ async function hash(value: unknown) {
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
+
+// Seek by rowid instead of rescanning all previous pages with OFFSET. Preserve
+// the original row order and 1,000-row hash boundaries, including sparse/negative
+// rowids. Keep the cursor as text so SQLite's 64-bit rowids are not rounded by JS.
+export async function* catalogTablePages(db: D1Database, name: string) {
+  const table = `"${name.replaceAll('"', '""')}"`;
+  let after: string | null = null;
+  for (;;) {
+    const sql = `SELECT CAST(rowid AS TEXT) AS __cutover_rowid, * FROM ${table}
+      ${after === null ? "" : "WHERE rowid > ?"} ORDER BY rowid LIMIT 1000`;
+    const statement = db.prepare(sql);
+    const rows: Array<LegacyRow & { __cutover_rowid: string }> = (
+      await (after === null ? statement : statement.bind(after)).all<
+        LegacyRow & { __cutover_rowid: string }
+      >()
+    ).results;
+    if (!rows.length) return;
+    after = rows[rows.length - 1].__cutover_rowid;
+    yield rows.map(({ __cutover_rowid: _cursor, ...row }) => row);
+    if (rows.length < 1000) return;
+  }
+}
 export interface CutoverRun {
   id: string;
   expected_epoch: number;
@@ -324,16 +346,7 @@ export function createD1CatalogCutover(
     for (const { name } of tableNames) {
       let count = 0,
         digest = await hash([]);
-      for (;;) {
-        const rows = (
-          await db
-            .prepare(
-              `SELECT * FROM "${name}" ORDER BY rowid LIMIT 1000 OFFSET ?`,
-            )
-            .bind(count)
-            .all<LegacyRow>()
-        ).results;
-        if (!rows.length) break;
+      for await (const rows of catalogTablePages(db, name)) {
         digest = await hash({ previous: digest, rows });
         count += rows.length;
       }

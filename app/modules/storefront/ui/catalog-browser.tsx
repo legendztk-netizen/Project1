@@ -107,7 +107,7 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
 
             {data.families.length ? (
               <div className="product-family-grid">
-                {data.families.map((family) => {
+                {data.families.map((family, index) => {
                   const familyUrl = `/catalog/${family.category}/${family.familyKey}`;
                   return (
                     <article
@@ -115,7 +115,11 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
                       key={`${family.category}:${family.familyKey}`}
                     >
                       <Link className="product-family-media" to={familyUrl}>
-                        <CatalogMedia compact item={family.representative} />
+                        <CatalogMedia
+                          compact
+                          item={family.representative}
+                          loading={index < 3 ? "eager" : "lazy"}
+                        />
                       </Link>
                       <div className="product-family-copy">
                         <div className="family-card-topline">

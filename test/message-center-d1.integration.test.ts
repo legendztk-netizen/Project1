@@ -299,3 +299,35 @@ it("audits internal notes with the request command and IP without exposing note 
     JSON.stringify(await center.customer("buyer").thread(order.requestId)),
   ).not.toContain(input.body);
 });
+
+it("does not scan other customers' message histories when loading a customer inbox", async () => {
+  const { createD1MessageCenter } =
+    await import("../app/modules/message-center/infrastructure/d1-message-center");
+  const { metered } = await import("./fixtures/metered-d1");
+  const measured = metered(db);
+  const inbox = createD1MessageCenter(measured.binding);
+  const before = await inbox.customerThreads("other", 1);
+  const readsBefore = measured.counter.reads;
+  const order = await seedAfterSalesOrder(db, "message-read-cost");
+  await db
+    .prepare(
+      "INSERT INTO quote_conversations(request_id,created_at) VALUES (?,?)",
+    )
+    .bind(order.requestId, "2026-09-24")
+    .run();
+  await db
+    .prepare(
+      `WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<1200)
+    INSERT INTO quote_conversation_messages(id,request_id,author_role,author_id,body,created_at,command_id,payload_hash,source,delivery_state)
+    SELECT 'read-cost-'||x,?,'customer','buyer','unrelated history','2026-09-24','read-cost-'||x,'fixture','website','available' FROM n`,
+    )
+    .bind(order.requestId)
+    .run();
+  measured.counter.reads = 0;
+  expect(await inbox.customerThreads("other", 1)).toEqual(before);
+  expect(measured.counter.reads).toBeLessThan(readsBefore + 100);
+  const ownerInbox = await inbox.customerThreads("buyer", 1);
+  expect(
+    ownerInbox.threads.some((thread) => thread.requestId === order.requestId),
+  ).toBe(true);
+});
