@@ -14,3 +14,4 @@ database field inventories, or deployment instructions.
 | [0050](0050-retain-original-reference-price-currencies.md)          | Original-currency reference prices and manual mixed-currency pricing   |
 | [0053](0053-add-marketing-home-page-and-move-catalog-to-catalog.md) | Marketing home page at `/`; catalog browsing moves to `/catalog`       |
 | [0054](0054-limit-pbkdf2-iterations-to-the-workers-maximum.md)      | Password hashing uses the Workers PBKDF2 maximum of 100,000 iterations |
+| [0055](0055-route-reply-email-through-one-dispatcher-worker.md)     | One dispatcher Worker relays each reply domain to its environment      |

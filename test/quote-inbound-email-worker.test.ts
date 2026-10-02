@@ -19,7 +19,9 @@ import {
   quoteInboundEmail,
   receiveQuoteEmail,
   receiveQuoteEmailEvent,
+  receiveRoutedQuoteEmail,
 } from "../workers/quote-inbound-email";
+import { INBOUND_EMAIL_RETRY_REASON } from "../workers/inbound-email-rpc";
 
 const env = {
   APP_ENV: "local",
@@ -86,5 +88,51 @@ it("explicitly rejects a receive failure without exposing internal errors or cla
   expect(message.setReject.mock.calls[0][0]).not.toContain(
     "private infrastructure",
   );
+  expect(mocks.dispatch).not.toHaveBeenCalled();
+});
+
+it("receives a dispatcher-relayed reply through the same receipt path", async () => {
+  const raw = new ReadableStream<Uint8Array>();
+  const verify = vi.fn();
+  mocks.receive.mockResolvedValue({ receiptId: "receipt", state: "pending" });
+  expect(
+    await receiveRoutedQuoteEmail(
+      {
+        from: "customer@example.com",
+        to: "r-token@reply.local.invalid",
+        rawSize: 42,
+        headers: [["subject", "Re: Quote"]],
+      },
+      raw,
+      env,
+      verify,
+    ),
+  ).toEqual({ accepted: true });
+  const message = mocks.receive.mock.calls[0][0];
+  expect(message).toMatchObject({
+    from: "customer@example.com",
+    to: "r-token@reply.local.invalid",
+    rawSize: 42,
+    raw,
+  });
+  expect(message.headers.get("subject")).toBe("Re: Quote");
+  expect(mocks.factory).toHaveBeenCalledWith(
+    expect.objectContaining({ verifyPlatformEmail: verify }),
+  );
+  expect(mocks.dispatch).toHaveBeenCalledWith(env.ASYNC_JOBS);
+});
+
+it("returns a relayed receive failure as the same resend rejection", async () => {
+  mocks.receive.mockRejectedValue(new Error("private infrastructure failure"));
+  const outcome = await receiveRoutedQuoteEmail(
+    { from: "customer@example.com", to: "r@x", rawSize: 0, headers: [] },
+    new ReadableStream<Uint8Array>(),
+    env,
+    vi.fn(),
+  );
+  expect(outcome).toEqual({
+    accepted: false,
+    reason: INBOUND_EMAIL_RETRY_REASON,
+  });
   expect(mocks.dispatch).not.toHaveBeenCalled();
 });

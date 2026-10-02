@@ -2,6 +2,7 @@ import {
   canAccessAdminPath,
   adminPathModule,
 } from "../app/modules/admin/domain/admin-module-access";
+import { WorkerEntrypoint } from "cloudflare:workers";
 import { RouterContextProvider, createRequestHandler } from "react-router";
 
 import { cloudflareContext } from "./context";
@@ -28,8 +29,13 @@ import {
   dispatchInboundEmail,
   quoteInboundEmail,
   receiveQuoteEmailEvent,
+  receiveRoutedQuoteEmail,
 } from "./quote-inbound-email";
 import { createInboundEmailVerifier } from "./inbound-email-verifier";
+import type {
+  InboundEmailEnvelope,
+  InboundEmailReceiver,
+} from "./inbound-email-rpc";
 import { piPdfJobs } from "./proforma-invoice";
 import {
   consumePiAcceptanceCopy,
@@ -40,6 +46,26 @@ const requestHandler = createRequestHandler(
   () => import("virtual:react-router/server-build"),
   import.meta.env.MODE,
 );
+
+// Reply email relayed by the account-wide email dispatcher Worker. Named
+// entrypoints are reachable only through service bindings, never over HTTP.
+export class InboundEmail
+  extends WorkerEntrypoint<ApplicationBindings>
+  implements InboundEmailReceiver
+{
+  async receive(
+    envelope: InboundEmailEnvelope,
+    raw: ReadableStream<Uint8Array>,
+  ) {
+    validateRuntimeEnvironment(this.env);
+    return receiveRoutedQuoteEmail(
+      envelope,
+      raw,
+      this.env,
+      createInboundEmailVerifier(),
+    );
+  }
+}
 
 export default {
   async fetch(request, env, ctx) {
