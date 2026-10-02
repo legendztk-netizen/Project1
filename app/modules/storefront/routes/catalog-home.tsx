@@ -17,7 +17,9 @@ export function meta() {
 export async function loader({ context, request }: Route.LoaderArgs) {
   const { env } = context.get(cloudflareContext);
   const query = new URL(request.url).searchParams.get("q")?.trim() ?? "";
-  const result = await createD1PublicCatalogRepository(env.DB).browse({
+  const result = await createD1PublicCatalogRepository(env.DB, {
+    sharedCache: true,
+  }).browse({
     query,
   });
   return {

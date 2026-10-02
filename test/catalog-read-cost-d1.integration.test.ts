@@ -8,6 +8,7 @@ import { seedCatalogItemBaseline } from "./fixtures/catalog-item-baseline";
 import { seedManagedAssemblyBaseline } from "./fixtures/managed-assembly-baseline";
 import { legacyPublicCatalogSql } from "./fixtures/legacy-public-catalog-sql";
 import { legacyManagedSkuRowsSql } from "./fixtures/legacy-managed-products-sql";
+import { metered } from "./fixtures/metered-d1";
 import {
   createD1PublicCatalogRepository,
   readPublicCatalogRows,
@@ -43,56 +44,6 @@ async function openDatabase(label: string) {
   });
   platforms.push(platform);
   return platform.env.DB;
-}
-
-// Counts the rows D1 reports as read by every statement run through the returned binding.
-function metered(database: D1Database) {
-  const counter = { reads: 0 };
-  const add = (meta: { rows_read?: number } | undefined) => {
-    counter.reads += meta?.rows_read ?? 0;
-  };
-  const statement = (target: D1PreparedStatement): D1PreparedStatement =>
-    new Proxy(target, {
-      get(object, key) {
-        if (key === "bind")
-          return (...values: unknown[]) => statement(object.bind(...values));
-        if (key === "all" || key === "run")
-          return async () => {
-            const result = await (
-              object as never as Record<
-                string,
-                () => Promise<{ meta?: { rows_read?: number } }>
-              >
-            )[key]();
-            add(result.meta);
-            return result;
-          };
-        if (key === "first")
-          return async (column?: string) => {
-            const result = await object.all<Record<string, unknown>>();
-            add(result.meta as { rows_read?: number });
-            const row = result.results[0] ?? null;
-            return column ? (row ? row[column] : null) : row;
-          };
-        const value = Reflect.get(object, key);
-        return typeof value === "function" ? value.bind(object) : value;
-      },
-    });
-  const binding = new Proxy(database, {
-    get(object, key) {
-      if (key === "prepare")
-        return (sql: string) => statement(object.prepare(sql));
-      if (key === "batch")
-        return async (statements: D1PreparedStatement[]) => {
-          const results = await object.batch(statements);
-          for (const result of results) add(result.meta);
-          return results;
-        };
-      const value = Reflect.get(object, key);
-      return typeof value === "function" ? value.bind(object) : value;
-    },
-  });
-  return { counter, binding };
 }
 
 async function legacyRows(database: D1Database, sku?: string) {
@@ -136,10 +87,10 @@ describe("public catalog read before the cutover (legacy baseline)", () => {
     for (const sku of skusOfEveryType(
       reference as Array<{ sku: string; product_type: string }>,
     ))
-      expect(await readPublicCatalogRows(db, sku)).toEqual(
+      expect(await readPublicCatalogRows(db, { sku })).toEqual(
         (await legacyRows(db, sku)).results,
       );
-    expect(await readPublicCatalogRows(db, "NO_SUCH_SKU")).toEqual([]);
+    expect(await readPublicCatalogRows(db, { sku: "NO_SUCH_SKU" })).toEqual([]);
   }, 120000);
 
   it("reads each runtime view once instead of once per SKU", async () => {
@@ -192,7 +143,7 @@ describe("catalog reads after the cutover (item mode with edited items)", () => 
         reference as Array<{ sku: string; product_type: string }>,
       ),
     ])
-      expect(await readPublicCatalogRows(db, sku)).toEqual(
+      expect(await readPublicCatalogRows(db, { sku })).toEqual(
         (await legacyRows(db, sku)).results,
       );
   }, 120000);

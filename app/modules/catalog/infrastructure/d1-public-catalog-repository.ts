@@ -535,18 +535,117 @@ function byCode(rows: Record_[]) {
   return new Map(rows.map((row) => [`${row.product_type}:${row.code}`, row]));
 }
 
+export interface PublicCatalogFilter {
+  sku?: string;
+  productTypes?: readonly PublicProductType[];
+}
+
+// Type-specific detail views; a filtered read skips the views of other product types.
+const detailViews: Record<PublicProductType, readonly string[]> = {
+  hose: ["hose_variants", "hose_series"],
+  hose_end: ["hose_ends", "hose_end_series"],
+  ferrule: ["ferrules"],
+  adapter: ["adapters"],
+  quick_coupler: ["quick_couplers"],
+};
+
 export async function readPublicCatalogRows(
   database: D1Database,
-  sku?: string,
+  filter: PublicCatalogFilter = {},
 ): Promise<PublicCatalogRow[]> {
+  const { sku } = filter;
   const single = sku !== undefined;
-  const view = (name: string, skuColumn: string | null = "sku") =>
+  const types = filter.productTypes ? [...new Set(filter.productTypes)] : null;
+  if (types?.some((type) => !(type in detailViews)))
+    throw new Error("Unknown product type");
+  if (types?.length === 0) return [];
+  // Product types are validated identifiers from the closed set above.
+  const typeList = types?.map((type) => `'${type}'`).join(", ");
+  const typeFilter = (column: string) =>
+    typeList ? ` AND ${column} IN (${typeList})` : "";
+  // SKUs of the requested types, from the baseline and from items edited or added since the cutover.
+  const typeSkus = typeList
+    ? `(SELECT sku FROM catalog_skus WHERE import_id = ${activeImport} AND product_type IN (${typeList})
+        UNION SELECT code FROM catalog_product_entities WHERE kind = 'sku' AND product_type IN (${typeList}))`
+    : null;
+  const needs = (name: string) =>
+    !types || types.some((type) => detailViews[type].includes(name));
+  // `sharedByTypes` views hold rows of every product type, so a filtered read restricts them to the SKUs of
+  // the requested types; type-specific views already contain only their own type.
+  const view = (
+    name: string,
+    skuColumn: string | null = "sku",
+    sharedByTypes = false,
+  ) =>
     database
       .prepare(
         `SELECT * FROM catalog_runtime_${name}
-         WHERE import_id = ${activeImport}${single && skuColumn ? ` AND ${skuColumn} = ?1` : ""}`,
+         WHERE import_id = ${activeImport}${single && skuColumn ? ` AND ${skuColumn} = ?1` : ""}${
+           !single && sharedByTypes && typeSkus
+             ? ` AND ${skuColumn} IN ${typeSkus}`
+             : ""
+         }`,
       )
       .bind(...(single && skuColumn ? [sku] : []));
+  const statements: Record<string, D1PreparedStatement | null> = {
+    release: database.prepare(
+      `SELECT r.id AS release_id, r.release_number
+       FROM catalog_active_release ar
+       INNER JOIN catalog_releases r ON r.id = ar.release_id
+       WHERE ar.singleton = 1 AND r.status = 'published'`,
+    ),
+    skus: database
+      .prepare(
+        `/* public catalog scan */ SELECT * FROM catalog_runtime_skus
+         WHERE import_id = ${activeImport}
+           AND catalog_publication_status = 'Published'${single ? " AND sku = ?1" : ""}${typeFilter("product_type")}
+         ORDER BY product_type, sku`,
+      )
+      .bind(...(single ? [sku] : [])),
+    itemState: database.prepare(
+      "SELECT mode, generation FROM catalog_item_publication_state WHERE singleton = 1",
+    ),
+    skuEntities: database
+      .prepare(
+        `SELECT product_type, code, current_revision_id FROM catalog_product_entities
+         WHERE kind = 'sku'${single ? " AND code = ?1" : ""}${typeFilter("product_type")}`,
+      )
+      .bind(...(single ? [sku] : [])),
+    seriesEntities: database.prepare(
+      `SELECT e.product_type, e.code, e.current_revision_id, r.media_version_id
+       FROM catalog_product_entities e
+       LEFT JOIN catalog_product_revisions r ON r.id = e.current_revision_id
+       WHERE e.kind = 'series'${typeFilter("e.product_type")}`,
+    ),
+    offers: view("sales_offers", "base_sku", true),
+    images: view("product_main_images", "sku", true),
+    hoses: needs("hose_variants") ? view("hose_variants") : null,
+    hoseSeries: needs("hose_series") ? view("hose_series", null) : null,
+    hoseEnds: needs("hose_ends") ? view("hose_ends") : null,
+    hoseEndSeries: needs("hose_end_series")
+      ? view("hose_end_series", null)
+      : null,
+    ferrules: needs("ferrules") ? view("ferrules") : null,
+    adapters: needs("adapters") ? view("adapters") : null,
+    couplers: needs("quick_couplers") ? view("quick_couplers") : null,
+    rules: database.prepare(
+      `SELECT * FROM catalog_runtime_series_commercial_rules
+       WHERE import_id = ${activeImport}${typeFilter("product_type")}`,
+    ),
+    prices: view("sku_price_packaging", "sku", true),
+    fees: database.prepare(
+      "SELECT scope_key, rate_per_piece, version FROM cutting_labeling_fee_rates",
+    ),
+    media: database.prepare(
+      "SELECT id, approved_reference FROM catalog_media_versions",
+    ),
+  };
+  const names = Object.keys(statements).filter((name) => statements[name]);
+  const batch = await database.batch<Record_>(
+    names.map((name) => statements[name]!),
+  );
+  const result = (name: string) =>
+    batch[names.indexOf(name)] ?? { results: [] as Record_[] };
   const [
     release,
     skus,
@@ -566,54 +665,7 @@ export async function readPublicCatalogRows(
     prices,
     fees,
     media,
-  ] = await database.batch<Record_>([
-    database.prepare(
-      `SELECT r.id AS release_id, r.release_number
-       FROM catalog_active_release ar
-       INNER JOIN catalog_releases r ON r.id = ar.release_id
-       WHERE ar.singleton = 1 AND r.status = 'published'`,
-    ),
-    database
-      .prepare(
-        `/* public catalog scan */ SELECT * FROM catalog_runtime_skus
-         WHERE import_id = ${activeImport}
-           AND catalog_publication_status = 'Published'${single ? " AND sku = ?1" : ""}
-         ORDER BY product_type, sku`,
-      )
-      .bind(...(single ? [sku] : [])),
-    database.prepare(
-      "SELECT mode, generation FROM catalog_item_publication_state WHERE singleton = 1",
-    ),
-    database
-      .prepare(
-        `SELECT product_type, code, current_revision_id FROM catalog_product_entities
-         WHERE kind = 'sku'${single ? " AND code = ?1" : ""}`,
-      )
-      .bind(...(single ? [sku] : [])),
-    database.prepare(
-      `SELECT e.product_type, e.code, e.current_revision_id, r.media_version_id
-       FROM catalog_product_entities e
-       LEFT JOIN catalog_product_revisions r ON r.id = e.current_revision_id
-       WHERE e.kind = 'series'`,
-    ),
-    view("sales_offers", "base_sku"),
-    view("product_main_images"),
-    view("hose_variants"),
-    view("hose_series", null),
-    view("hose_ends"),
-    view("hose_end_series", null),
-    view("ferrules"),
-    view("adapters"),
-    view("quick_couplers"),
-    view("series_commercial_rules", null),
-    view("sku_price_packaging"),
-    database.prepare(
-      "SELECT scope_key, rate_per_piece, version FROM cutting_labeling_fee_rates",
-    ),
-    database.prepare(
-      "SELECT id, approved_reference FROM catalog_media_versions",
-    ),
-  ]);
+  ] = Object.keys(statements).map(result); // same order as `statements`
   const activeRelease = release.results[0];
   if (!activeRelease) return [];
   const state = itemState.results[0];
@@ -841,23 +893,106 @@ function normalizeFerrule(
   return row;
 }
 
+// Everything that can change a public catalog row moves one of these: a legacy publication moves the active
+// release pointer, every item revision or deletion moves the item generation, and fee rates carry versions.
+// Reading it costs a few rows, so storefront requests can reuse a cached catalog only while it is unchanged.
+const catalogFreshnessSql = `
+  SELECT ar.release_id, ar.version, ps.mode, ps.generation,
+    (SELECT COALESCE(group_concat(scope_key || '=' || rate_per_piece || '@' || version || '@' || updated_at, ','), '')
+       FROM (SELECT * FROM cutting_labeling_fee_rates ORDER BY scope_key)) AS fees
+  FROM catalog_active_release ar
+  LEFT JOIN catalog_item_publication_state ps ON ps.singleton = 1
+  WHERE ar.singleton = 1`;
+
+// Cached items are shared by concurrent requests; freezing them once at load makes any accidental
+// mutation throw instead of silently changing what other requests see.
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const entry of Object.values(value)) deepFreeze(entry);
+  }
+  return value;
+}
+
+interface SharedCatalogCache {
+  token: string;
+  scopes: Map<string, Promise<PublicCatalogItem[]>>;
+}
+
+// Per isolate and per D1 binding. Entries are tied to one freshness token; a new token replaces them all.
+let sharedCatalogCaches = new WeakMap<D1Database, SharedCatalogCache>();
+
+export function clearPublicCatalogCache() {
+  sharedCatalogCaches = new WeakMap();
+}
+
+function productTypesOf(category: CatalogFamilyId) {
+  return (Object.keys(categoryByProductType) as PublicProductType[]).filter(
+    (type) => categoryByProductType[type] === category,
+  );
+}
+
+// `sharedCache` is for storefront pages: it reuses the catalog across requests after checking the freshness
+// token. Quoting keeps the default request-scoped reads (`cacheItems` only dedupes lookups in one request).
 export function createD1PublicCatalogRepository(
   database: D1Database,
-  options: { cacheItems?: boolean } = {},
+  options: { cacheItems?: boolean; sharedCache?: boolean } = {},
 ) {
   const cachedItems = new Map<string, Promise<PublicCatalogItem | null>>();
+  let freshness: Promise<string> | null = null;
 
-  async function loadAllItems() {
-    const rows = await readPublicCatalogRows(database);
+  async function loadItems(filter: PublicCatalogFilter) {
+    const rows = await readPublicCatalogRows(database, filter);
     return rows.map(normalizeFerrule).map(publicCatalogItemFromRow);
   }
 
   async function loadItem(sku: string) {
-    const [row] = await readPublicCatalogRows(database, sku);
+    const [row] = await readPublicCatalogRows(database, { sku });
     return row ? publicCatalogItemFromRow(normalizeFerrule(row)) : null;
   }
 
-  function cachedFindItem(sku: string) {
+  // The token is read once per repository, i.e. once per request.
+  async function sharedCache() {
+    freshness ??= database
+      .prepare(catalogFreshnessSql)
+      .first()
+      .then((row) => JSON.stringify(row ?? null));
+    const token = await freshness;
+    let cache = sharedCatalogCaches.get(database);
+    if (cache?.token !== token) {
+      cache = { token, scopes: new Map() };
+      sharedCatalogCaches.set(database, cache);
+    }
+    return cache;
+  }
+
+  // Items of one category (or all), read on demand; a cached full catalog also serves every category.
+  async function itemsOf(category?: CatalogFamilyId | null) {
+    const filter = category ? { productTypes: productTypesOf(category) } : {};
+    if (!options.sharedCache) return loadItems(filter);
+    const cache = await sharedCache();
+    const all = cache.scopes.get("all");
+    if (all && category)
+      return (await all).filter((item) => item.category === category);
+    const scope = category ?? "all";
+    let pending = cache.scopes.get(scope);
+    if (!pending) {
+      pending = loadItems(filter).then(deepFreeze);
+      cache.scopes.set(scope, pending);
+      pending.catch(() => cache.scopes.delete(scope));
+    }
+    return pending;
+  }
+
+  async function findItem(sku: string) {
+    if (options.sharedCache) {
+      const cache = await sharedCache();
+      for (const scope of cache.scopes.values()) {
+        const items = await scope.catch(() => []);
+        const item = items.find((candidate) => candidate.sku === sku);
+        if (item) return item;
+      }
+    }
     if (!options.cacheItems) return loadItem(sku);
     const existing = cachedItems.get(sku);
     if (existing) return existing;
@@ -874,10 +1009,8 @@ export function createD1PublicCatalogRepository(
       category?: CatalogFamilyId | null;
       query?: string | null;
     }) {
-      const items = (await loadAllItems()).filter(
-        (item) =>
-          (!input.category || item.category === input.category) &&
-          matchesCatalogQuery(item, input.query ?? ""),
+      const items = (await itemsOf(input.category)).filter((item) =>
+        matchesCatalogQuery(item, input.query ?? ""),
       );
       return { families: groupCatalogFamilies(items), items };
     },
@@ -889,7 +1022,7 @@ export function createD1PublicCatalogRepository(
       family: PublicCatalogFamily;
       selected: PublicCatalogItem;
     } | null> {
-      const family = groupCatalogFamilies(await loadAllItems()).find(
+      const family = groupCatalogFamilies(await itemsOf(input.category)).find(
         (candidate) =>
           candidate.category === input.category &&
           candidate.familyKey === input.familyKey,
@@ -900,9 +1033,7 @@ export function createD1PublicCatalogRepository(
         : family.variants[0];
       return selected ? { family, selected } : null;
     },
-    async findItem(sku: string) {
-      return cachedFindItem(sku);
-    },
+    findItem,
     async wasHosePublishedInSupersededRelease(sku: string) {
       const row = await database
         .prepare(

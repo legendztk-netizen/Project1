@@ -8,7 +8,9 @@ export async function loader({ context, params, request }: Route.LoaderArgs) {
   const { env } = context.get(cloudflareContext);
   const activeCategory = requireCatalogFamilyId(params.category);
   const query = new URL(request.url).searchParams.get("q")?.trim() ?? "";
-  const result = await createD1PublicCatalogRepository(env.DB).browse({
+  const result = await createD1PublicCatalogRepository(env.DB, {
+    sharedCache: true,
+  }).browse({
     category: activeCategory,
     query,
   });

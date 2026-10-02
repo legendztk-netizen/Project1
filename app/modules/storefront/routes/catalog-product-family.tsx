@@ -107,7 +107,9 @@ export async function loader({ context, params, request }: Route.LoaderArgs) {
   const { env } = context.get(cloudflareContext);
   const activeCategory = requireCatalogFamilyId(params.category);
   const sku = new URL(request.url).searchParams.get("sku");
-  const result = await createD1PublicCatalogRepository(env.DB).findFamily({
+  const result = await createD1PublicCatalogRepository(env.DB, {
+    sharedCache: true,
+  }).findFamily({
     category: activeCategory,
     familyKey: params.familyKey,
     sku,
