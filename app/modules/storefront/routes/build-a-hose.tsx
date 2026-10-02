@@ -130,7 +130,9 @@ function directSelectionCopy(
 export async function loader({ context, request }: Route.LoaderArgs) {
   const { env } = context.get(cloudflareContext);
   const url = new URL(request.url);
-  const repository = createD1PublicCatalogRepository(env.DB);
+  const repository = createD1PublicCatalogRepository(env.DB, {
+    sharedCache: true,
+  });
   const referenceRepository = createD1ConfiguratorReferenceRepository(env.DB);
   const result = await repository.browse({ category: "hydraulic-hose" });
   const hoses = result.items.filter((item) => item.productType === "hose");
