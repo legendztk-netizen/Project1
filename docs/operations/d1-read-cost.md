@@ -124,28 +124,3 @@ D1_READ_COST_REPORT=.scratch/read-cost-scale-report.json pnpm exec vitest run te
 ```
 
 该测试按普通 `pnpm test` 纳入 CI；报告只有测量值，成功与否以 Vitest 退出码为准。
-
-## 预览发布与验收状态（2026-10-02）
-
-PR #125 的运行时代码 `00b6c5f34ab313a1f5a39bc6dd1690b46cec52ae` 已部署到 preview，Worker 版本为 `516ee25f-8361-45c9-828f-fc55fb6ec767`。生产环境未部署，PR 尚未合并。`build:preview`、Wrangler dry-run 和实际部署成功；该提交的 GitHub CI（static、四个测试分片、quality）全部通过：[运行记录](https://github.com/legendztk-netizen/Project1/actions/runs/36988942808)。没有新增数据库迁移，部署前健康检查确认 schema version 132。
-
-部署后匿名 HTTP 验证：
-
-| 检查 | 结果 |
-| --- | --- |
-| 前台首页、后台登录页 | 200 |
-| 后台首页、产品、消息、询价及产品 `.data` 接口 | 401，匿名请求被拒绝 |
-| 前台域名访问后台产品路由 | 403 |
-| 目录、转接头分类和三个系列、Build a Hose、商品资源接口 | 500，D1 当日读取额度耗尽 |
-| `/health` | 503，无法读取 D1 schema metadata |
-
-Worker tail 对上述目录请求明确记录 `D1_ERROR: Your account has exceeded D1's free tier daily row read limit`，并标明本次部署版本；定时任务也出现同一错误。健康检查的 schema metadata 不可用不能解释为迁移丢失。此前 `SELECT 1` 或少量查询成功，也不能证明完整页面仍可使用额度。
-
-线上验收目前未完成。用户选择不升级套餐，等待北京时间 2026-10-03 08:00（UTC 00:00）重置。重置后仍需验证：
-
-- 目录数量、三个转接头系列及各类商品价格与发布基线一致，配置器可完成部件选择。
-- 已登录后台的产品筛选/编辑器、询价分页、消息筛选/未读和权限隔离；匿名拒绝结果不能替代已登录权限验证。
-- 使用隔离的预览测试商品检查价格修改、发布、下架后的缓存失效，并清理测试数据。
-- 记录真实预览数据上的冷/热读取及重点查询 `rows_read`；本地合成数据的节省比例不能作为线上实测结果。
-
-原始 HTTP 结果及过滤后的错误证据保存在本地 `.scratch/preview-validation-step5/`，不提交包含请求元数据的原始 tail 日志。未在额度耗尽期间反复压测或改动真实商品。
