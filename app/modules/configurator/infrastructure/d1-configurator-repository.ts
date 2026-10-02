@@ -118,24 +118,14 @@ export function compatibleHoseEndCandidateFromRow(
   };
 }
 
-function compatibleHoseEndSql(selectedOnly = false) {
-  const compatibilities = selectedOnly
-    ? "scoped_compatibilities"
-    : "catalog_runtime_compatibilities";
-  const skus = selectedOnly ? "scoped_skus" : "catalog_runtime_skus";
-  const ends = selectedOnly ? "scoped_ends" : "catalog_runtime_hose_ends";
-  const series = selectedOnly
-    ? "scoped_series"
-    : "catalog_runtime_hose_end_series";
-  const ferrules = selectedOnly
-    ? "scoped_ferrules"
-    : "catalog_runtime_ferrules";
+// The selected-ends read: both chosen ends of one hose, scoped before the joins.
+function selectedHoseEndSql() {
   return `
   WITH scoped_compatibilities AS MATERIALIZED (
     SELECT * FROM catalog_runtime_compatibilities
     WHERE import_id = (SELECT source_import_id FROM catalog_releases WHERE id = ?1)
       AND hose_sku = ?2
-      ${selectedOnly ? "AND hose_end_sku IN (?3, ?4)" : ""}
+      AND hose_end_sku IN (?3, ?4)
   ), scoped_skus AS MATERIALIZED (
     SELECT * FROM catalog_runtime_skus
     WHERE import_id = (SELECT source_import_id FROM catalog_releases WHERE id = ?1)
@@ -155,21 +145,10 @@ function compatibleHoseEndSql(selectedOnly = false) {
     WHERE import_id = (SELECT source_import_id FROM catalog_releases WHERE id = ?1)
       AND sku IN (SELECT ferrule_sku FROM scoped_compatibilities)
   ), eligible_endpoint AS (
-    ${
-      selectedOnly
-        ? `
     SELECT ?1 AS release_id, hose_sku, compatibility_id
     FROM scoped_compatibilities
     WHERE import_id = (SELECT source_import_id FROM catalog_releases WHERE id = ?1)
       AND hose_sku = ?2 AND hose_end_sku IN (?3, ?4)
-    `
-        : `
-    SELECT DISTINCT release_id,hose_sku,end_a_compatibility_id AS compatibility_id FROM catalog_available_assembly_combinations
-    WHERE release_id = ?1 AND hose_sku = ?2
-    UNION SELECT DISTINCT release_id,hose_sku,end_b_compatibility_id FROM catalog_available_assembly_combinations
-    WHERE release_id = ?1 AND hose_sku = ?2
-    `
-    }
   )
   SELECT c.compatibility_id, c.hose_end_sku, c.ferrule_sku,
          c.assembly_working_bar,
@@ -184,21 +163,21 @@ function compatibleHoseEndSql(selectedOnly = false) {
   FROM catalog_releases r
   INNER JOIN eligible_endpoint derived
     ON derived.release_id = r.id
-  INNER JOIN ${compatibilities} c
+  INNER JOIN scoped_compatibilities c
     ON c.import_id = r.source_import_id
    AND c.hose_sku = derived.hose_sku
    AND c.compatibility_id = derived.compatibility_id
-  INNER JOIN ${skus} hs
+  INNER JOIN scoped_skus hs
     ON hs.import_id = c.import_id AND hs.sku = c.hose_sku
-  INNER JOIN ${ends} e
+  INNER JOIN scoped_ends e
     ON e.import_id = c.import_id AND e.sku = c.hose_end_sku
-  INNER JOIN ${series} series
+  INNER JOIN scoped_series series
     ON series.import_id = e.import_id AND series.series_code = e.fitting_series
-  INNER JOIN ${skus} es
+  INNER JOIN scoped_skus es
     ON es.import_id = e.import_id AND es.sku = e.sku
-  INNER JOIN ${ferrules} f
+  INNER JOIN scoped_ferrules f
     ON f.import_id = c.import_id AND f.sku = c.ferrule_sku
-  INNER JOIN ${skus} fs
+  INNER JOIN scoped_skus fs
     ON fs.import_id = f.import_id AND fs.sku = f.sku
   WHERE r.id = ?1
     AND r.status IN ('published', 'superseded')
@@ -222,14 +201,248 @@ function compatibleHoseEndSql(selectedOnly = false) {
            e.connection_dash, e.hose_tail_dash, e.sku`;
 }
 
+type Row = Record<string, unknown>;
+
+const listedForQuote = (row: Row | undefined) =>
+  row?.catalog_publication_status === "Published" &&
+  row.rfq_eligibility === "Eligible";
+const availableForQuote = (row: Row | undefined) =>
+  listedForQuote(row) && row?.supply_availability === "available_for_quote";
+
+// SQLite ORDER BY semantics for the columns used here: NULL first, numbers before text, text by code unit.
+function compareSqlValues(left: unknown, right: unknown) {
+  if (left === right) return 0;
+  if (left == null) return -1;
+  if (right == null) return 1;
+  if (typeof left === "number" && typeof right === "number")
+    return left - right;
+  if (typeof left === "number") return -1;
+  if (typeof right === "number") return 1;
+  const a = String(left);
+  const b = String(right);
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+// End A options for one hose: the compatibility rows of the hose that occur in at least one available
+// assembly. The former single query reached this through catalog_available_assembly_combinations, which
+// validates every derived combination of the hose against whole runtime views (~6M rows read per call on
+// the preview data). This reads only the hose's combinations, compatibility rows and their components once
+// and applies the same rules here: release published or superseded; both ends' compatibility rows exist and
+// are Published/Eligible; every component SKU is Published/Eligible/available; the combination is not
+// excluded; the hose is not blocked.
+async function readCompatibleEndARows(
+  database: D1Database,
+  releaseId: string,
+  hoseSku: string,
+): Promise<CompatibleHoseEndRow[]> {
+  const importId =
+    "(SELECT source_import_id FROM catalog_releases WHERE id = ?1)";
+  const hoseCompatibilities = `SELECT * FROM catalog_runtime_compatibilities
+    WHERE import_id = ${importId} AND hose_sku = ?2`;
+  const [
+    release,
+    combinations,
+    compatibilities,
+    skus,
+    blocked,
+    exclusions,
+    ends,
+    endSeries,
+    ferrules,
+  ] = await database.batch<Row>([
+    database
+      .prepare("SELECT status FROM catalog_releases WHERE id = ?1")
+      .bind(releaseId),
+    database
+      .prepare(
+        "SELECT * FROM catalog_runtime_assembly_combinations WHERE release_id = ?1 AND hose_sku = ?2",
+      )
+      .bind(releaseId, hoseSku),
+    database.prepare(hoseCompatibilities).bind(releaseId, hoseSku),
+    database
+      .prepare(
+        `SELECT sku, product_type, catalog_publication_status, rfq_eligibility, supply_availability
+         FROM catalog_runtime_skus
+         WHERE import_id = ${importId} AND sku IN (
+           SELECT hose_sku FROM (${hoseCompatibilities})
+           UNION SELECT hose_end_sku FROM (${hoseCompatibilities})
+           UNION SELECT ferrule_sku FROM (${hoseCompatibilities}))`,
+      )
+      .bind(releaseId, hoseSku),
+    database
+      .prepare(
+        "SELECT 1 AS blocked FROM catalog_item_unavailable_hoses WHERE sku = ?1",
+      )
+      .bind(hoseSku),
+    database
+      .prepare(
+        `SELECT x.identity FROM catalog_assembly_exclusions x
+         JOIN catalog_item_publication_state state
+           ON state.mode = 'items' AND state.baseline_release_id = ?1
+         WHERE x.disabled = 1`,
+      )
+      .bind(releaseId),
+    database
+      .prepare(
+        `SELECT * FROM catalog_runtime_hose_ends
+         WHERE import_id = ${importId} AND sku IN (SELECT hose_end_sku FROM (${hoseCompatibilities}))`,
+      )
+      .bind(releaseId, hoseSku),
+    database
+      .prepare(
+        `SELECT * FROM catalog_runtime_hose_end_series WHERE import_id = ${importId}`,
+      )
+      .bind(releaseId),
+    database
+      .prepare(
+        `SELECT * FROM catalog_runtime_ferrules
+         WHERE import_id = ${importId} AND sku IN (SELECT ferrule_sku FROM (${hoseCompatibilities}))`,
+      )
+      .bind(releaseId, hoseSku),
+  ]);
+  const status = release.results[0]?.status;
+  if (
+    (status !== "published" && status !== "superseded") ||
+    blocked.results.length
+  )
+    return [];
+  const key = (...parts: unknown[]) => JSON.stringify(parts);
+  const listedEnds = new Set(
+    compatibilities.results
+      .filter(listedForQuote)
+      .map((row) =>
+        key(row.compatibility_id, row.hose_end_sku, row.ferrule_sku),
+      ),
+  );
+  const skuByCode = new Map(skus.results.map((row) => [String(row.sku), row]));
+  const excluded = new Set(
+    exclusions.results.map((row) => String(row.identity)),
+  );
+  const eligible = new Set<string>();
+  for (const combination of combinations.results) {
+    if (
+      !listedEnds.has(
+        key(
+          combination.end_a_compatibility_id,
+          combination.end_a_hose_end_sku,
+          combination.end_a_ferrule_sku,
+        ),
+      ) ||
+      !listedEnds.has(
+        key(
+          combination.end_b_compatibility_id,
+          combination.end_b_hose_end_sku,
+          combination.end_b_ferrule_sku,
+        ),
+      ) ||
+      excluded.has(String(combination.identity))
+    )
+      continue;
+    const components = new Set(
+      [
+        combination.hose_sku,
+        combination.end_a_hose_end_sku,
+        combination.end_a_ferrule_sku,
+        combination.end_b_hose_end_sku,
+        combination.end_b_ferrule_sku,
+      ]
+        .filter((value) => value != null)
+        .map(String),
+    );
+    const available = [...components].filter((sku) =>
+      availableForQuote(skuByCode.get(sku)),
+    ).length;
+    const identity = new Set(
+      (JSON.parse(String(combination.identity)) as unknown[])
+        .filter((value) => value != null)
+        .map((value) => JSON.stringify(value)),
+    );
+    if (available !== identity.size) continue;
+    eligible.add(String(combination.end_a_compatibility_id));
+    eligible.add(String(combination.end_b_compatibility_id));
+  }
+  const hose = skuByCode.get(hoseSku);
+  if (hose?.product_type !== "hose" || !availableForQuote(hose)) return [];
+  const endBySku = new Map(ends.results.map((row) => [String(row.sku), row]));
+  const seriesByCode = new Map(
+    endSeries.results.map((row) => [String(row.series_code), row]),
+  );
+  const ferruleBySku = new Map(
+    ferrules.results.map((row) => [String(row.sku), row]),
+  );
+  const rows: Array<{ row: CompatibleHoseEndRow; order: unknown[] }> = [];
+  for (const compatibility of compatibilities.results) {
+    if (
+      !eligible.has(String(compatibility.compatibility_id)) ||
+      !listedForQuote(compatibility)
+    )
+      continue;
+    const end = endBySku.get(String(compatibility.hose_end_sku));
+    const series = end && seriesByCode.get(String(end.fitting_series));
+    const ferrule = ferruleBySku.get(String(compatibility.ferrule_sku));
+    const endSku = end && skuByCode.get(String(end.sku));
+    const ferruleSku = ferrule && skuByCode.get(String(ferrule.sku));
+    if (
+      !end ||
+      !series ||
+      !ferrule ||
+      endSku?.product_type !== "hose_end" ||
+      !availableForQuote(endSku) ||
+      ferruleSku?.product_type !== "ferrule" ||
+      !availableForQuote(ferruleSku)
+    )
+      continue;
+    rows.push({
+      row: {
+        compatibility_id: compatibility.compatibility_id,
+        hose_end_sku: compatibility.hose_end_sku,
+        ferrule_sku: compatibility.ferrule_sku,
+        assembly_working_bar: compatibility.assembly_working_bar,
+        competitor_part_number: end.competitor_part_number,
+        fitting_series: end.fitting_series,
+        interface_family: series.interface_family,
+        connection_standard: series.connection_standard,
+        gender: series.gender,
+        swivel_form: series.swivel_form,
+        angle: series.angle,
+        sealing_form: series.sealing_form,
+        thread: end.thread,
+        connection_dash: end.connection_dash,
+        hose_tail_dash: end.hose_tail_dash,
+        max_working_bar: end.max_working_bar,
+        ferrule_series: ferrule.ferrule_series,
+        ferrule_hose_construction: ferrule.hose_construction,
+        ferrule_hose_tail_dash: ferrule.hose_tail_dash,
+        ferrule_skive_requirement: ferrule.skive_requirement,
+      } as CompatibleHoseEndRow,
+      order: [
+        series.interface_family,
+        series.angle,
+        series.gender,
+        series.swivel_form,
+        end.connection_dash,
+        end.hose_tail_dash,
+        end.sku,
+      ],
+    });
+  }
+  return rows
+    .sort((left, right) => {
+      for (let index = 0; index < left.order.length; index++) {
+        const order = compareSqlValues(left.order[index], right.order[index]);
+        if (order) return order;
+      }
+      return 0;
+    })
+    .map(({ row }) => row);
+}
+
 export function createD1ConfiguratorRepository(database: D1Database) {
   return {
     async findCompatibleEndA(releaseId: string, hoseSku: string) {
-      const rows = await database
-        .prepare(compatibleHoseEndSql())
-        .bind(releaseId, hoseSku)
-        .all<CompatibleHoseEndRow>();
-      return rows.results.map(compatibleHoseEndCandidateFromRow);
+      return (await readCompatibleEndARows(database, releaseId, hoseSku)).map(
+        compatibleHoseEndCandidateFromRow,
+      );
     },
 
     async findSelectedEnds(
@@ -239,7 +452,7 @@ export function createD1ConfiguratorRepository(database: D1Database) {
       endB: string,
     ) {
       const rows = await database
-        .prepare(compatibleHoseEndSql(true))
+        .prepare(selectedHoseEndSql())
         .bind(releaseId, hoseSku, endA, endB)
         .all<CompatibleHoseEndRow>();
       return rows.results.map(compatibleHoseEndCandidateFromRow);
