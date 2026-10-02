@@ -6,6 +6,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "#workers": fileURLToPath(new URL("./workers", import.meta.url)),
+      "cloudflare:workers": fileURLToPath(
+        new URL("./test/fixtures/cloudflare-workers.ts", import.meta.url),
+      ),
     },
   },
   test: {

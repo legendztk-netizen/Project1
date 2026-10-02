@@ -1,5 +1,10 @@
 import type { ApplicationBindings } from "./environment";
 import {
+  INBOUND_EMAIL_RETRY_REASON,
+  type InboundEmailEnvelope,
+  type InboundEmailOutcome,
+} from "./inbound-email-rpc";
+import {
   createQuoteInboundEmail,
   type PlatformEmailVerifier,
   type InboundEmailMessage,
@@ -45,10 +50,34 @@ export async function receiveQuoteEmailEvent(
   } catch {
     // Do not silently accept a reply that could not be durably received. A later
     // resend is safe even after an uncertain commit because ingress is idempotent.
-    message.setReject(
-      "We could not confirm receipt of this reply. Please resend later or use the website quote conversation.",
-    );
+    message.setReject(INBOUND_EMAIL_RETRY_REASON);
   }
+}
+
+// Same receipt path for a message the email dispatcher Worker relays over RPC;
+// the dispatcher applies the returned rejection to the original message.
+export async function receiveRoutedQuoteEmail(
+  envelope: InboundEmailEnvelope,
+  raw: ReadableStream<Uint8Array>,
+  env: ApplicationBindings,
+  verify: PlatformEmailVerifier,
+): Promise<InboundEmailOutcome> {
+  let reason: string | null = null;
+  await receiveQuoteEmailEvent(
+    {
+      from: envelope.from,
+      to: envelope.to,
+      rawSize: envelope.rawSize,
+      raw,
+      headers: new Headers(envelope.headers),
+      setReject: (value) => {
+        reason = value;
+      },
+    },
+    env,
+    verify,
+  );
+  return reason === null ? { accepted: true } : { accepted: false, reason };
 }
 
 export async function dispatchInboundEmail(env: ApplicationBindings) {
