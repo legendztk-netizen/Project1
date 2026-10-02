@@ -34,8 +34,22 @@ const basisSelect = `SELECT r.id, r.snapshot_json, d.version, d.source_snapshot_
  LEFT JOIN quote_revisions q ON q.id=(SELECT id FROM quote_revisions WHERE request_id=r.id ORDER BY revision_number DESC LIMIT 1)
  `;
 
-export async function technicalReviewContexts(db: D1Database) {
-  const rows = await db.prepare(basisSelect).all<BasisRow>();
+export async function technicalReviewContexts(
+  db: D1Database,
+  requestIds?: string[],
+) {
+  if (requestIds?.length === 0)
+    return new Map<
+      string,
+      Awaited<ReturnType<typeof technicalReviewContext>>
+    >();
+  const statement = db.prepare(
+    basisSelect +
+      (requestIds ? " WHERE r.id IN (SELECT value FROM json_each(?))" : ""),
+  );
+  const rows = await (
+    requestIds ? statement.bind(JSON.stringify(requestIds)) : statement
+  ).all<BasisRow>();
   return new Map(
     await Promise.all(
       rows.results.map(

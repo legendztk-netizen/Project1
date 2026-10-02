@@ -1,6 +1,6 @@
 import { AlertTriangle, FileText, Search } from "lucide-react";
 import { Link, useRevalidator } from "react-router";
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import type { Route } from "./+types/quote-reviews";
 import {
@@ -21,11 +21,13 @@ export function meta() {
 
 export async function loader({ context, request }: Route.LoaderArgs) {
   const { adminIdentity, env } = requireAdminRequestContext(context);
-  const filters = parseAdminQuoteReviewFilters(new URL(request.url));
-  const reviews = await createD1AdminQuoteReviewRepository(env.DB).list(
+  const url = new URL(request.url);
+  const filters = parseAdminQuoteReviewFilters(url);
+  const result = await createD1AdminQuoteReviewRepository(env.DB).listPage(
     filters,
+    Number(url.searchParams.get("page") ?? 1),
   );
-  return { adminIdentity, environment: env.APP_ENV, filters, reviews };
+  return { adminIdentity, environment: env.APP_ENV, filters, ...result };
 }
 
 const technicalLabels = adminTechnicalReviewLabels;
@@ -41,15 +43,23 @@ function money(value: number | null) {
 
 export default function QuoteReviews({ loaderData }: Route.ComponentProps) {
   const revalidator = useRevalidator();
+  const inFlight = useRef(false);
+  const refresh = useCallback(async () => {
+    if (
+      document.visibilityState !== "visible" ||
+      revalidator.state !== "idle" ||
+      inFlight.current
+    )
+      return;
+    inFlight.current = true;
+    try {
+      await revalidator.revalidate();
+    } finally {
+      inFlight.current = false;
+    }
+  }, [revalidator]);
   useEffect(() => {
-    const refresh = () => {
-      if (
-        document.visibilityState === "visible" &&
-        revalidator.state === "idle"
-      )
-        void revalidator.revalidate();
-    };
-    const timer = setInterval(refresh, 10000);
+    const timer = setInterval(refresh, 30000);
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {
@@ -57,7 +67,15 @@ export default function QuoteReviews({ loaderData }: Route.ComponentProps) {
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [revalidator]);
+  }, [refresh]);
+  const pageLink = (page: number) =>
+    "?" +
+    new URLSearchParams({
+      review: loaderData.filters.reviewState,
+      technical: loaderData.filters.technicalReview,
+      sort: loaderData.filters.sort,
+      page: String(page),
+    }).toString();
   const requiredCount = loaderData.reviews.filter(
     ({ technicalReview }) => technicalReview.state === "required",
   ).length;
@@ -85,16 +103,16 @@ export default function QuoteReviews({ loaderData }: Route.ComponentProps) {
           </span>
         </header>
 
-        <section className="admin-quote-metrics" aria-label="当前筛选结果">
+        <section className="admin-quote-metrics" aria-label="本页筛选结果">
           <article>
-            <span>当前结果</span>
+            <span>本页结果</span>
             <strong>{loaderData.reviews.length}</strong>
             <small>条询价请求</small>
           </article>
           <article>
             <span>待技术审核</span>
             <strong>{requiredCount}</strong>
-            <small>当前配置尚未完成审核</small>
+            <small>本页尚未完成审核</small>
           </article>
           <article>
             <span>技术审核已完成</span>
@@ -115,6 +133,17 @@ export default function QuoteReviews({ loaderData }: Route.ComponentProps) {
           </article>
         </section>
 
+        <div className="admin-quote-refresh">
+          <span>可见页面每 30 秒自动刷新</span>{" "}
+          <button
+            type="button"
+            className="button button-secondary"
+            disabled={revalidator.state !== "idle"}
+            onClick={() => void refresh()}
+          >
+            立即刷新
+          </button>
+        </div>
         <section className="admin-quote-filters">
           <div>
             <Search aria-hidden="true" size={20} />
@@ -254,6 +283,25 @@ export default function QuoteReviews({ loaderData }: Route.ComponentProps) {
             </table>
           </section>
         )}
+        <nav aria-label="询价列表分页">
+          {loaderData.page > 1 && (
+            <Link
+              className="button button-secondary"
+              to={pageLink(loaderData.page - 1)}
+            >
+              上一页
+            </Link>
+          )}
+          <span>第 {loaderData.page} 页 · 每页最多 25 条</span>
+          {loaderData.hasNext && (
+            <Link
+              className="button button-secondary"
+              to={pageLink(loaderData.page + 1)}
+            >
+              下一页
+            </Link>
+          )}
+        </nav>
       </main>
     </div>
   );
