@@ -400,9 +400,17 @@ export function ProductManagementPage(props: PageData) {
   const editor = useFetcher<typeof editorLoader>();
   const mutation = useFetcher<typeof action>();
   const plan = useFetcher<typeof pageLoader>();
+  // Filtered results open every series; computed for the first render and on each URL change.
+  const expandedFor = (data: PageData) =>
+    data.query || data.status || data.attention
+      ? data.page.items
+          .filter((g) => g.item.kind === "series")
+          .map((g) => key(g.item))
+      : [];
   const [selected, setSelected] = useState<ProductSelection[]>([]);
-  const [expanded, setExpanded] = useState<string[]>([]);
+  const [expanded, setExpanded] = useState<string[]>(() => expandedFor(props));
   const [query, setQuery] = useState(props.query);
+  const syncedSearch = useRef(location.search);
   const [editorOpen, setEditorOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -416,15 +424,14 @@ export function ProductManagementPage(props: PageData) {
     props.attention
   );
   useEffect(() => {
+    // Reset selection, search text and expansion only when the URL actually changed. On
+    // mount the state is already initialized, and resetting it here would erase anything
+    // the user did before this effect ran.
+    if (syncedSearch.current === location.search) return;
+    syncedSearch.current = location.search;
     setSelected([]);
     setQuery(props.query);
-    setExpanded(
-      props.query || props.status || props.attention
-        ? props.page.items
-            .filter((g) => g.item.kind === "series")
-            .map((g) => key(g.item))
-        : [],
-    );
+    setExpanded(expandedFor(props));
   }, [location.search, props.query, props.status, props.attention]);
   useEffect(() => {
     if (mutation.state === "idle" && mutation.data?.ok) {
