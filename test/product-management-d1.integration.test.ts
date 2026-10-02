@@ -729,3 +729,60 @@ it("searches names and specifications and combines SKU status with missing-price
       .some((r) => r.code === "601R1_1WB_TEST"),
   ).toBe(true);
 });
+
+it("preserves editor series names and states for published, draft and hidden products", async () => {
+  const manager = createD1ProductManagementRepository(database);
+  const full = await manager.all();
+  for (const type of [
+    "hose",
+    "hose_end",
+    "ferrule",
+    "adapter",
+    "quick_coupler",
+  ] as const) {
+    const expected = full.filter((r) => r.productType === type);
+    expect(await manager.all({ types: [type] })).toEqual(expected);
+    const options = await manager.editorOptions(type);
+    expect(options.series).toEqual(
+      expected
+        .filter((r) => r.kind === "series")
+        .map(({ code, name, state }) => ({ code, name, state })),
+    );
+    expect(options.states).toEqual(
+      expected.map(({ kind, code, state }) => ({ kind, code, state })),
+    );
+    for (const sku of expected.filter((r) => r.kind === "sku"))
+      expect(await manager.findSku(sku.code, type)).toEqual(sku);
+  }
+});
+
+it("keeps grouped search, counters and filters equivalent when reading selected categories", async () => {
+  const manager = createD1ProductManagementRepository(database);
+  for (const filters of [
+    { query: "", status: "", attention: "" },
+    { query: "", status: "draft", attention: "missing_price" },
+    { query: "filter", status: "", attention: "" },
+    { query: "", status: "", attention: "technical_pending" },
+  ]) {
+    const input = { ...filters, page: 1, pageSize: 50 as const };
+    const all = await manager.list({ ...input, types: [] });
+    expect(all.pages).toBe(1);
+    const page = await manager.list({
+      ...input,
+      types: ["ferrule", "hose_end"],
+    });
+    const expected = all.items.filter((g) =>
+      ["ferrule", "hose_end"].includes(g.item.productType),
+    );
+    expect(page.items).toEqual(expected);
+    expect(page.total).toBe(expected.length);
+    const skus = expected.flatMap((g) =>
+      g.item.kind === "sku" ? [g.item] : g.children,
+    );
+    expect(page.summary).toEqual({
+      skuCount: skus.length,
+      onlineCount: skus.filter((r) => r.state === "online").length,
+      missingPriceCount: skus.filter((r) => r.amount === null).length,
+    });
+  }
+});

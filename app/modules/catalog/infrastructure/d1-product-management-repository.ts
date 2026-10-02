@@ -37,12 +37,44 @@ export interface ProductGroup {
   children: ManagedProduct[];
   totalChildren?: number;
 }
-const facts = `
- SELECT 'hose' AS type,m.sku,m.hose_series AS series_code,COALESCE(CAST(m.nominal_id_in AS TEXT)||' in','')||COALESCE(' · '||m.working_bar||' bar','') AS dimensions FROM catalog_runtime_hose_variants m WHERE m.import_id=?1
- UNION ALL SELECT 'hose_end',m.sku,m.fitting_series,COALESCE(m.connection_dash,'?')||' / '||COALESCE(m.hose_tail_dash,'?')||COALESCE(' · '||m.thread,'') FROM catalog_runtime_hose_ends m WHERE m.import_id=?1
- UNION ALL SELECT 'ferrule',m.sku,m.ferrule_series,COALESCE(m.hose_tail_dash,'?')||' / '||COALESCE(m.hose_construction,'') FROM catalog_runtime_ferrules m WHERE m.import_id=?1
- UNION ALL SELECT 'adapter',m.sku,m.adapter_family_id,m.interface_1||' '||COALESCE(m.size_1,'')||' / '||m.interface_2||' '||COALESCE(m.size_2,'') FROM catalog_runtime_adapters m WHERE m.import_id=?1
- UNION ALL SELECT 'quick_coupler',m.sku,m.coupler_series,COALESCE(m.body_size,'?')||' / '||COALESCE(m.port_thread,'?')||COALESCE(' · '||m.max_working_bar||' bar','') FROM catalog_runtime_quick_couplers m WHERE m.import_id=?1`;
+const factsByType: Record<CommercialProductType, string> = {
+  hose: `SELECT 'hose' AS type,m.sku,m.hose_series AS series_code,COALESCE(CAST(m.nominal_id_in AS TEXT)||' in','')||COALESCE(' · '||m.working_bar||' bar','') AS dimensions FROM catalog_runtime_hose_variants m WHERE m.import_id=?1`,
+  hose_end: `SELECT 'hose_end' AS type,m.sku,m.fitting_series AS series_code,COALESCE(m.connection_dash,'?')||' / '||COALESCE(m.hose_tail_dash,'?')||COALESCE(' · '||m.thread,'') AS dimensions FROM catalog_runtime_hose_ends m WHERE m.import_id=?1`,
+  ferrule: `SELECT 'ferrule' AS type,m.sku,m.ferrule_series AS series_code,COALESCE(m.hose_tail_dash,'?')||' / '||COALESCE(m.hose_construction,'') AS dimensions FROM catalog_runtime_ferrules m WHERE m.import_id=?1`,
+  adapter: `SELECT 'adapter' AS type,m.sku,m.adapter_family_id AS series_code,m.interface_1||' '||COALESCE(m.size_1,'')||' / '||m.interface_2||' '||COALESCE(m.size_2,'') AS dimensions FROM catalog_runtime_adapters m WHERE m.import_id=?1`,
+  quick_coupler: `SELECT 'quick_coupler' AS type,m.sku,m.coupler_series AS series_code,COALESCE(m.body_size,'?')||' / '||COALESCE(m.port_thread,'?')||COALESCE(' · '||m.max_working_bar||' bar','') AS dimensions FROM catalog_runtime_quick_couplers m WHERE m.import_id=?1`,
+};
+const facts = commercialProductTypes
+  .map((type) => factsByType[type])
+  .join(" UNION ALL ");
+interface ManagedReadScope {
+  types?: CommercialProductType[];
+  sku?: string;
+  identitiesOnly?: boolean;
+}
+function managedScope(scope: ManagedReadScope) {
+  const types = scope.types?.length
+    ? [...new Set(scope.types)]
+    : [...commercialProductTypes];
+  if (types.some((type) => !commercialProductTypes.includes(type)))
+    throw new Error("Unknown product type");
+  // Only validated closed-set identifiers are interpolated; SKU values stay bound.
+  const typeList = types.map((type) => `'${type}'`).join(",");
+  const typeFilter = (column: string) => ` AND ${column} IN (${typeList})`;
+  const typeSkus = `(SELECT sku FROM catalog_skus WHERE import_id=?1${typeFilter("product_type")}
+    UNION SELECT code FROM catalog_product_entities WHERE kind='sku'${typeFilter("product_type")})`;
+  const skuFilter = (column: string, shared = false) =>
+    scope.sku !== undefined
+      ? ` AND ${column}=?2`
+      : shared && types.length < commercialProductTypes.length
+        ? ` AND ${column} IN ${typeSkus}`
+        : "";
+  const selectedFacts = commercialProductTypes
+    .filter((type) => types.includes(type))
+    .map((type) => factsByType[type] + skuFilter("m.sku"))
+    .join(" UNION ALL ");
+  return { types, typeFilter, skuFilter, selectedFacts };
+}
 function variantDimensions(payload: CatalogItemPayload): string {
   if (payload.kind !== "sku") return "";
   const v = payload.variant as unknown as Record<
@@ -92,35 +124,44 @@ function variantDimensions(payload: CatalogItemPayload): string {
 export function managedSkuRowStatements(
   database: D1Database,
   importId: string,
+  scope: ManagedReadScope = {},
 ): D1PreparedStatement[] {
+  const { typeFilter, skuFilter, selectedFacts, types } = managedScope(scope);
+  const prepare = (sql: string) =>
+    database
+      .prepare(sql)
+      .bind(importId, ...(sql.includes("?2") ? [scope.sku!] : []));
+  const empty = () => database.prepare("SELECT NULL WHERE 0");
   return [
-    database.prepare(facts).bind(importId),
-    database
-      .prepare(
-        "SELECT sku, catalog_publication_status, technical_data_status FROM catalog_runtime_skus WHERE import_id=?1",
-      )
-      .bind(importId),
-    database.prepare(
-      "SELECT code, current_revision_id, draft_revision_id, hidden_at FROM catalog_product_entities WHERE kind='sku'",
+    prepare(selectedFacts),
+    prepare(
+      `SELECT sku, catalog_publication_status, technical_data_status FROM catalog_runtime_skus WHERE import_id=?1${typeFilter("product_type")}${skuFilter("sku")}`,
     ),
     database
       .prepare(
-        "SELECT sku, id, currency, reference_price_usd FROM catalog_runtime_sku_price_packaging WHERE import_id=?1",
+        `SELECT code, current_revision_id, draft_revision_id, hidden_at FROM catalog_product_entities WHERE kind='sku'${typeFilter("product_type")}${scope.sku !== undefined ? " AND code=?" : ""}`,
       )
-      .bind(importId),
-    database
-      .prepare(
-        "SELECT base_sku, currency, reference_price_usd, sales_unit FROM catalog_runtime_sales_offers WHERE import_id=?1",
-      )
-      .bind(importId),
-    database
-      .prepare(
-        "SELECT sku, media_version_id FROM catalog_runtime_product_main_images WHERE import_id=?1",
-      )
-      .bind(importId),
-    database.prepare(
-      "SELECT hose_series, invalidated_sequence>generated_sequence AS dirty FROM catalog_item_assembly_state",
-    ),
+      .bind(...(scope.sku !== undefined ? [scope.sku] : [])),
+    scope.identitiesOnly
+      ? empty()
+      : prepare(
+          `SELECT sku, id, currency, reference_price_usd FROM catalog_runtime_sku_price_packaging WHERE import_id=?1${skuFilter("sku", true)}`,
+        ),
+    scope.identitiesOnly
+      ? empty()
+      : prepare(
+          `SELECT base_sku, currency, reference_price_usd, sales_unit FROM catalog_runtime_sales_offers WHERE import_id=?1${skuFilter("base_sku", true)}`,
+        ),
+    scope.identitiesOnly
+      ? empty()
+      : prepare(
+          `SELECT sku, media_version_id FROM catalog_runtime_product_main_images WHERE import_id=?1${skuFilter("sku", true)}`,
+        ),
+    scope.identitiesOnly || !types.includes("hose")
+      ? empty()
+      : database.prepare(
+          "SELECT hose_series, invalidated_sequence>generated_sequence AS dirty FROM catalog_item_assembly_state",
+        ),
   ];
 }
 export const managedSkuRowStatementCount = 7;
@@ -183,7 +224,8 @@ export async function readManagedSkuRows(
 
 export function createD1ProductManagementRepository(database: D1Database) {
   const items = createD1CatalogItemRepository(database);
-  async function all(): Promise<ManagedProduct[]> {
+  async function all(scope: ManagedReadScope = {}): Promise<ManagedProduct[]> {
+    const { types, typeFilter } = managedScope(scope);
     const active = await database
       .prepare(
         "SELECT r.source_import_id FROM catalog_active_release a JOIN catalog_releases r ON r.id=a.release_id WHERE a.singleton=1",
@@ -193,16 +235,29 @@ export function createD1ProductManagementRepository(database: D1Database) {
     // Each runtime view is read once (see readManagedSkuRows); nothing here is cached. One batch keeps
     // the SKU rows and the item revisions below on the same snapshot.
     const results = await database.batch<Record<string, unknown>>([
-      ...managedSkuRowStatements(database, active.source_import_id),
+      ...managedSkuRowStatements(database, active.source_import_id, scope),
       database
         .prepare(
-          `SELECT 'hose' AS type,series_code,series_name,representative_media_version_id AS image_id FROM catalog_runtime_hose_series WHERE import_id=?1
-     UNION ALL SELECT 'hose_end',series_code,series_name,representative_media_version_id FROM catalog_runtime_hose_end_series WHERE import_id=?1`,
+          [
+            ...(scope.sku === undefined && types.includes("hose")
+              ? [
+                  "SELECT 'hose' AS type,series_code,series_name,representative_media_version_id AS image_id FROM catalog_runtime_hose_series WHERE import_id=?1",
+                ]
+              : []),
+            ...(scope.sku === undefined && types.includes("hose_end")
+              ? [
+                  "SELECT 'hose_end' AS type,series_code,series_name,representative_media_version_id AS image_id FROM catalog_runtime_hose_end_series WHERE import_id=?1",
+                ]
+              : []),
+          ].join(" UNION ALL ") || "SELECT NULL WHERE ?1 IS NULL",
         )
         .bind(active.source_import_id),
-      database.prepare(
-        `SELECT e.*,r.payload_json,r.target_state FROM catalog_product_entities e LEFT JOIN catalog_product_revisions r ON r.id=COALESCE(e.current_revision_id,e.draft_revision_id)`,
-      ),
+      database
+        .prepare(
+          `SELECT e.*,r.payload_json,r.target_state FROM catalog_product_entities e LEFT JOIN catalog_product_revisions r ON r.id=COALESCE(e.current_revision_id,e.draft_revision_id)
+         WHERE 1=1${typeFilter("e.product_type")}${scope.sku !== undefined ? " AND e.kind='sku' AND e.code=?" : ""}`,
+        )
+        .bind(...(scope.sku !== undefined ? [scope.sku] : [])),
     ]);
     const rows = composeManagedSkuRows(
       results.slice(0, managedSkuRowStatementCount),
@@ -558,6 +613,24 @@ export function createD1ProductManagementRepository(database: D1Database) {
   }
   return {
     all,
+    async findSku(code: string, productType?: CommercialProductType) {
+      const rows = await all({
+        sku: code,
+        types: productType ? [productType] : undefined,
+      });
+      return rows.find((r) => r.kind === "sku" && r.code === code) ?? null;
+    },
+    // Preserve draft/current precedence and synthesized family names using the same
+    // projection, but omit price, offer, image and assembly-state reads.
+    async editorOptions(productType: CommercialProductType) {
+      const rows = await all({ types: [productType], identitiesOnly: true });
+      return {
+        series: rows
+          .filter((r) => r.kind === "series")
+          .map(({ code, name, state }) => ({ code, name, state })),
+        states: rows.map(({ kind, code, state }) => ({ kind, code, state })),
+      };
+    },
     seriesOptions,
     deletionPlan,
     remove,
@@ -569,9 +642,7 @@ export function createD1ProductManagementRepository(database: D1Database) {
       status?: string;
       attention?: string;
     }) {
-      const rows = (await all()).filter(
-        (r) => !input.types.length || input.types.includes(r.productType),
-      );
+      const rows = await all({ types: input.types });
       const q = input.query.toLocaleLowerCase().trim();
       const matchesText = (r: ManagedProduct) =>
         !q ||
