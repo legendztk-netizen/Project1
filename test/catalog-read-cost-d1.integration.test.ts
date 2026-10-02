@@ -183,3 +183,60 @@ describe("catalog reads after the cutover (item mode with edited items)", () => 
     expect(counter.reads).toBeLessThan(40 * (BULK + 1) + 3000);
   }, 120000);
 });
+
+it("scopes admin list and editor reads while preserving the full projection", async () => {
+  for (const db of platforms.map((platform) => platform.env.DB)) {
+    const reference = metered(db);
+    const full = await createD1ProductManagementRepository(
+      reference.binding,
+    ).all();
+    const types = [
+      "hose",
+      "hose_end",
+      "ferrule",
+      "adapter",
+      "quick_coupler",
+    ] as const;
+    for (const type of types) {
+      const measured = metered(db);
+      const manager = createD1ProductManagementRepository(measured.binding);
+      expect(await manager.all({ types: [type] })).toEqual(
+        full.filter((r) => r.productType === type),
+      );
+      // A small category must not pay for the hundreds of unrelated hose variants.
+      if (type !== "hose")
+        expect(measured.counter.reads).toBeLessThan(reference.counter.reads);
+      measured.counter.reads = 0;
+      const options = await manager.editorOptions(type);
+      expect(options.series).toEqual(
+        full
+          .filter((r) => r.productType === type && r.kind === "series")
+          .map(({ code, name, state }) => ({ code, name, state })),
+      );
+      expect(options.states).toEqual(
+        full
+          .filter((r) => r.productType === type)
+          .map(({ kind, code, state }) => ({ kind, code, state })),
+      );
+      expect(measured.counter.reads).toBeLessThan(reference.counter.reads);
+    }
+    for (const row of full
+      .filter((r) => r.kind === "sku")
+      .filter((_, index) => index % 71 === 0)) {
+      const measured = metered(db);
+      expect(
+        await createD1ProductManagementRepository(measured.binding).findSku(
+          row.code,
+          row.productType,
+        ),
+      ).toEqual(row);
+      expect(measured.counter.reads).toBeLessThan(reference.counter.reads);
+    }
+    const manager = createD1ProductManagementRepository(db);
+    expect(await manager.findSku("NO-SUCH-SKU")).toBeNull();
+    const hose = full.find(
+      (r) => r.kind === "sku" && r.productType === "hose",
+    )!;
+    expect(await manager.findSku(hose.code, "adapter")).toBeNull();
+  }
+}, 120000);

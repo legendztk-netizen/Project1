@@ -53,13 +53,22 @@ export function catalogMediaPath(item: PublicCatalogItem) {
 export function CatalogMedia({
   item,
   compact = false,
+  loading = "eager",
 }: {
   item: PublicCatalogItem;
   compact?: boolean;
+  loading?: "eager" | "lazy";
 }) {
   const path = catalogMediaPath(item);
   if (path) {
-    return <img alt={`Representative view of ${item.familyName}`} src={path} />;
+    return (
+      <img
+        alt={`Representative view of ${item.familyName}`}
+        src={path}
+        loading={loading}
+        decoding="async"
+      />
+    );
   }
   return (
     <div className="catalog-media-fallback" data-compact={compact || undefined}>

@@ -90,7 +90,7 @@ function Field({
   field: CatalogFieldContract;
   defaultValue?: string | number | null;
   readOnly?: boolean;
-  series?: ManagedProduct[];
+  series?: Array<Pick<ManagedProduct, "code" | "name">>;
 }) {
   return (
     <label>

@@ -102,9 +102,10 @@ export async function loader({ context, request }: Route.LoaderArgs) {
   const sku = (url.searchParams.get("sku") ?? "").trim().toUpperCase();
   const items = createD1CatalogItemRepository(env.DB);
   if ((await items.state()).mode === "items") {
-    const rows = await createD1ProductManagementRepository(env.DB).all();
-    const skuRow = rows.find((r) => r.kind === "sku" && r.code === sku);
+    const manager = createD1ProductManagementRepository(env.DB);
+    const skuRow = sku ? await manager.findSku(sku) : null;
     const actualType = skuRow?.productType ?? selectedProductType;
+    const options = await manager.editorOptions(actualType);
     const seriesPayload = selectedSeries
       ? await items.findProductPayload(
           actualType,
@@ -130,13 +131,11 @@ export async function loader({ context, request }: Route.LoaderArgs) {
       rule:
         seriesPayload?.kind === "series" ? seriesPayload.commercialRule : null,
       selectedSeries,
-      series: rows
-        .filter((r) => r.kind === "series" && r.productType === actualType)
-        .map((r) => ({
-          productType: actualType,
-          seriesCode: r.code,
-          seriesName: r.name,
-        })),
+      series: options.series.map((r) => ({
+        productType: actualType,
+        seriesCode: r.code,
+        seriesName: r.name,
+      })),
       sku,
       skuRecord: skuRow
         ? {
@@ -202,11 +201,9 @@ export async function action({ context, request }: Route.ActionArgs) {
       } else throw new Error("Invalid product command / 产品提交无效");
       const target =
         payload.kind === "sku"
-          ? (await createD1ProductManagementRepository(env.DB).all()).find(
-              (row) =>
-                row.kind === "sku" &&
-                row.code === payload.variant.sku &&
-                row.productType === payload.productType,
+          ? await createD1ProductManagementRepository(env.DB).findSku(
+              payload.variant.sku,
+              payload.productType,
             )
           : null;
       await items.apply({

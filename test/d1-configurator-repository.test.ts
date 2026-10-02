@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { scopedAssemblyCombinationsSql } from "../app/modules/configurator/infrastructure/scoped-assembly-combinations-sql";
 
 import {
   compatibleHoseEndCandidateFromRow,
@@ -185,9 +186,13 @@ describe("D1 configurator repository", () => {
       ...overrides,
     };
     const tableOf = (sql: string) =>
-      Object.keys(tables)
-        .filter((name) => sql.includes(`FROM ${name}`))
-        .sort((x, y) => sql.indexOf(`FROM ${x}`) - sql.indexOf(`FROM ${y}`))[0];
+      sql === scopedAssemblyCombinationsSql
+        ? "catalog_runtime_assembly_combinations"
+        : Object.keys(tables)
+            .filter((name) => sql.includes(`FROM ${name}`))
+            .sort(
+              (x, y) => sql.indexOf(`FROM ${x}`) - sql.indexOf(`FROM ${y}`),
+            )[0];
     const binds: unknown[][] = [];
     const statement = (sql: string) => ({
       sql,

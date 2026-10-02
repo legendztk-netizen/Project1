@@ -190,3 +190,30 @@ it("shows assembly parameter configuration independently of product management",
   expect(screen.queryByRole("button", { name: "产品数据维护" })).toBeNull();
   expect(screen.queryByRole("link", { name: "产品审核与发布" })).toBeNull();
 });
+
+it("coalesces focus and visibility refreshes while a badge request is in flight and aborts on unmount", async () => {
+  let finish!: (response: Response) => void;
+  fetchUnread.mockImplementationOnce(
+    () =>
+      new Promise<Response>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const view = render(
+    <MemoryRouter>
+      <AdminNavigation active="overview" />
+    </MemoryRouter>,
+  );
+  await waitFor(() => expect(fetchUnread).toHaveBeenCalledTimes(1));
+  fireEvent.focus(window);
+  fireEvent(document, new Event("visibilitychange"));
+  expect(fetchUnread).toHaveBeenCalledTimes(1);
+  const signal = (
+    fetchUnread.mock.calls[0] as unknown as [string, RequestInit]
+  )[1].signal!;
+  expect(signal.aborted).toBe(false);
+  finish(Response.json({ unread: 5, messages: 0 }));
+  await waitFor(() => expect(screen.getByText("5")).toBeTruthy());
+  view.unmount();
+  expect(signal.aborted).toBe(true);
+});

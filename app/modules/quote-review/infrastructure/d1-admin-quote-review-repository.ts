@@ -92,20 +92,71 @@ export function createD1AdminQuoteReviewRepository(database: D1Database) {
       return row ? project(row) : null;
     },
 
-    async list(filters: AdminQuoteReviewFilters) {
-      const technical = await technicalReviewContexts(database);
-      const result = await database
-        .prepare(
-          `${reviewSelect}
-           ORDER BY request.submitted_at DESC, request.id DESC`,
-        )
-        .all<AdminQuoteReviewRow>();
-      return filterAdminQuoteReviews(
-        await Promise.all(
-          result.results.map((row) => project(row, technical.get(row.id))),
-        ),
-        filters,
+    list,
+    async listPage(filters: AdminQuoteReviewFilters, requestedPage = 1) {
+      const page =
+        Number.isSafeInteger(requestedPage) && requestedPage > 0
+          ? Math.min(requestedPage, 10000)
+          : 1;
+      const pageSize = 25;
+      const offset = (page - 1) * pageSize;
+      // Technical state depends on signed review fingerprints and current draft
+      // contents. Do not filter/sort an already paginated subset and lose matches.
+      if (
+        filters.technicalReview !== "all" ||
+        filters.sort === "technical_first"
+      ) {
+        const matches = await list(filters);
+        return {
+          reviews: matches.slice(offset, offset + pageSize),
+          page,
+          hasNext: matches.length > offset + pageSize,
+        };
+      }
+      const rows = (await filteredRows(filters, pageSize + 1, offset)).results;
+      const visible = rows.slice(0, pageSize);
+      const technical = await technicalReviewContexts(
+        database,
+        visible.map((row) => row.id),
       );
+      return {
+        reviews: await Promise.all(
+          visible.map((row) => project(row, technical.get(row.id))),
+        ),
+        page,
+        hasNext: rows.length > pageSize,
+      };
     },
   };
+
+  function filteredRows(
+    filters: AdminQuoteReviewFilters,
+    limit?: number,
+    offset = 0,
+  ) {
+    const statement = database.prepare(`SELECT * FROM (${reviewSelect})
+      WHERE (? = 'all' OR review_state = ?)
+      ORDER BY julianday(submitted_at) DESC, id DESC
+      ${limit === undefined ? "" : "LIMIT ? OFFSET ?"}`);
+    const values: (string | number)[] = [
+      filters.reviewState,
+      filters.reviewState,
+    ];
+    if (limit !== undefined) values.push(limit, offset);
+    return statement.bind(...values).all<AdminQuoteReviewRow>();
+  }
+
+  async function list(filters: AdminQuoteReviewFilters) {
+    const result = await filteredRows(filters);
+    const technical = await technicalReviewContexts(
+      database,
+      result.results.map((row) => row.id),
+    );
+    return filterAdminQuoteReviews(
+      await Promise.all(
+        result.results.map((row) => project(row, technical.get(row.id))),
+      ),
+      filters,
+    );
+  }
 }

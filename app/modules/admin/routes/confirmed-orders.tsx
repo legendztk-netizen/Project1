@@ -271,6 +271,8 @@ export default function ConfirmedOrders({
                                 key={index}
                                 src={src}
                                 alt={line.displayName}
+                                loading="lazy"
+                                decoding="async"
                               />
                             ) : (
                               <span key={index} aria-label="暂无商品图片">
