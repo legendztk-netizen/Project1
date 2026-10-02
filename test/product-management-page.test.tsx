@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
+  configure,
   fireEvent,
   render,
   screen,
@@ -15,6 +16,8 @@ import {
 } from "react-router";
 import { ProductManagementPage } from "../app/modules/admin/ui/product-management-page";
 import type { ManagedProduct } from "../app/modules/catalog/infrastructure/d1-product-management-repository";
+// Loaders, fetchers and the modal open asynchronously; a loaded CI runner can exceed the 1 s default.
+configure({ asyncUtilTimeout: 5000 });
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -161,7 +164,7 @@ describe("manage all products", () => {
     fireEvent.click(screen.getByRole("button", { name: /03 套筒/ }));
     fireEvent.click(screen.getByRole("button", { name: "下一步：填写资料 →" }));
     const amount = await screen.findByLabelText("Retail Unit Price / 零售单价");
-    const dialog = screen.getByRole("dialog");
+    const dialog = await screen.findByRole("dialog");
     fireEvent.change(amount, { target: { value: "25" } });
     fireEvent.change(within(dialog).getByLabelText("Currency / 币种"), {
       target: { value: "EUR" },
@@ -173,6 +176,30 @@ describe("manage all products", () => {
     );
     expect(saved).not.toHaveBeenCalled();
     expect(window.confirm).toHaveBeenCalled();
+  });
+  it("offers an image upload and submits the editor as multipart form data", async () => {
+    const { saved } = setup();
+    const add = await screen.findByRole("button", { name: "＋ 新增产品" });
+    fireEvent.focus(add);
+    fireEvent.click(add);
+    fireEvent.click(screen.getByRole("button", { name: /03 套筒/ }));
+    fireEvent.click(screen.getByRole("button", { name: "下一步：填写资料 →" }));
+    const upload = (await screen.findByLabelText(
+      /Upload New Image/,
+    )) as HTMLInputElement;
+    const dialog = await screen.findByRole("dialog");
+    expect(upload.type).toBe("file");
+    expect(upload.accept).toBe("image/jpeg,image/png,image/webp");
+    expect(upload.name).toBe("mainImageUpload");
+    expect(within(dialog).getByLabelText(/Image Source Notes/)).toBeTruthy();
+    const file = new File(["png"], "adapter.png", { type: "image/png" });
+    fireEvent.change(upload, { target: { files: [file] } });
+    fireEvent.submit(upload.closest("form")!);
+    await waitFor(() => expect(saved).toHaveBeenCalled());
+    const call = saved.mock.calls[0] as unknown as [{ request: Request }];
+    expect(call[0].request.headers.get("content-type")).toMatch(
+      /^multipart\/form-data/,
+    );
   });
   it("disables write actions for view permission", async () => {
     setup(false);
@@ -207,9 +234,22 @@ describe("manage all products", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "清空筛选" }));
     await waitFor(() => expect(search).toHaveProperty("value", ""));
+    // Wait for the clearing navigation itself before going back in history.
+    await waitFor(() => expect(router.state.location.search).toBe(""));
     await router.navigate(-1);
-    await waitFor(() => expect(search).toHaveProperty("value", "SKU-A"));
-    expect(screen.getByLabelText("发布状态")).toHaveProperty("value", "draft");
+    // Re-query: navigation may re-render the filter form with new elements.
+    await waitFor(() =>
+      expect(screen.getByLabelText("查找产品")).toHaveProperty(
+        "value",
+        "SKU-A",
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText("发布状态")).toHaveProperty(
+        "value",
+        "draft",
+      ),
+    );
   });
   it("shows currency-specific ranges and expands all without flagging inherited data as missing", async () => {
     setup();
@@ -217,15 +257,17 @@ describe("manage all products", () => {
     expect(screen.getByText("EUR 35")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "展开全部" }));
     expect(
-      screen.getByRole("checkbox", { name: "选择SKU SKU-B" }),
+      await screen.findByRole("checkbox", { name: "选择SKU SKU-B" }),
     ).toBeTruthy();
     expect(
       within(screen.getByRole("table")).queryByText("技术资料待完善"),
     ).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "收起全部" }));
-    expect(
-      screen.queryByRole("checkbox", { name: "选择SKU SKU-B" }),
-    ).toBeNull();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("checkbox", { name: "选择SKU SKU-B" }),
+      ).toBeNull(),
+    );
   });
   it("shows loading feedback then prefills the parent when adding a SKU", async () => {
     const { editorCalls, releaseEditor } = setup(true, true);

@@ -43,3 +43,11 @@ Active 建立不可变实体修订及来源映射。已有条目修改优先；�
 - 本轮开始前一致性备份为 `.scratch/spec11-final/pre-final.sqlite`；73 张业务表内容校验保持一致，schema/内部元数据变化另行记录于 `data-preservation.json`。原 369 个目录版本保持可读。
 
 本轮验证结果见 [本地验收记录](spec-11-local-acceptance.md)。日志和含原始业务数据的备份只留 `.scratch/`，不提交 Git。
+
+## 切换后新增产品图片（迁移 0131）
+
+切换提交后，旧目录表仍由触发器禁止写入，但“图片替换创建新版本”（Spec 11 第十三节）必须继续可用。迁移 `0131_item_mode_media_upload.sql` 只重新开放 `catalog_media_lineages` 与 `catalog_media_versions` 的 INSERT：冻结且未在提交中时仍拒绝，UPDATE/DELETE 继续关闭，已发布媒体版本仍不可变，其他旧目录表不受影响。
+
+“管理所有产品”的编辑弹窗新增“上传新图片”（JPEG/PNG/WebP，最大 12 MB）及可选来源、授权备注。保存时先用与旧流程相同的标准化管线生成 master/storefront/thumbnail 三个版本并写入 R2，再把新的媒体版本 ID 交给条目编辑命令，因此图片替换同样产生不可变修订和审计。上传后若条目校验失败，已保存的媒体版本及对象保持一致并可在下拉列表中复用，不会产生缺对象的记录。
+
+发布到 preview/production 时必须先应用 0131，再部署新 Worker；健康检查会拒绝 schemaVersion 低于 132 的库。

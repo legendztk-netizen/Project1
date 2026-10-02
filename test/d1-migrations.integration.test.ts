@@ -1825,6 +1825,8 @@ describe("real local D1 migration lifecycle", () => {
       "0060_catalog_cutover_freeze_ownership.sql",
       "0061_catalog_cutover_request_audit.sql",
       "0080_quote_list_display_cache.sql",
+      // Reopens image inserts by replacing guards created in 0059.
+      "0131_item_mode_media_upload.sql",
     ];
     for (const migration of cutoverMigrations)
       rmSync(join(fixture.directory, "migrations", migration));

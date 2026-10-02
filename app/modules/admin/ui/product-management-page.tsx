@@ -260,6 +260,27 @@ function ProductEditor({
               ))}
             </select>
           </label>
+          <label>
+            Upload New Image / 上传新图片
+            <input
+              name="mainImageUpload"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+            />
+            <small>
+              A new image creates a new image version and replaces the choice
+              above / 上传会创建新的图片版本，并取代上面的选择；JPEG、PNG 或
+              WebP，最大 12 MB。
+            </small>
+          </label>
+          <label>
+            Image Source Notes / 图片来源备注（可选）
+            <input name="imageSourceNotes" type="text" />
+          </label>
+          <label>
+            Image License Notes / 图片授权备注（可选）
+            <input name="imageLicenseNotes" type="text" />
+          </label>
         </fieldset>
         {kind === "sku" && (
           <fieldset disabled={!canEdit || busy} className="product-field-grid">
@@ -379,9 +400,17 @@ export function ProductManagementPage(props: PageData) {
   const editor = useFetcher<typeof editorLoader>();
   const mutation = useFetcher<typeof action>();
   const plan = useFetcher<typeof pageLoader>();
+  // Filtered results open every series; computed for the first render and on each URL change.
+  const expandedFor = (data: PageData) =>
+    data.query || data.status || data.attention
+      ? data.page.items
+          .filter((g) => g.item.kind === "series")
+          .map((g) => key(g.item))
+      : [];
   const [selected, setSelected] = useState<ProductSelection[]>([]);
-  const [expanded, setExpanded] = useState<string[]>([]);
+  const [expanded, setExpanded] = useState<string[]>(() => expandedFor(props));
   const [query, setQuery] = useState(props.query);
+  const syncedSearch = useRef(location.search);
   const [editorOpen, setEditorOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -395,15 +424,14 @@ export function ProductManagementPage(props: PageData) {
     props.attention
   );
   useEffect(() => {
+    // Reset selection, search text and expansion only when the URL actually changed. On
+    // mount the state is already initialized, and resetting it here would erase anything
+    // the user did before this effect ran.
+    if (syncedSearch.current === location.search) return;
+    syncedSearch.current = location.search;
     setSelected([]);
     setQuery(props.query);
-    setExpanded(
-      props.query || props.status || props.attention
-        ? props.page.items
-            .filter((g) => g.item.kind === "series")
-            .map((g) => key(g.item))
-        : [],
-    );
+    setExpanded(expandedFor(props));
   }, [location.search, props.query, props.status, props.attention]);
   useEffect(() => {
     if (mutation.state === "idle" && mutation.data?.ok) {
@@ -981,7 +1009,12 @@ export function ProductManagementPage(props: PageData) {
             onClose={() => setEditorOpen(false)}
             error={mutation.data?.error ?? null}
             busy={busy}
-            submit={(form) => void mutation.submit(form, { method: "post" })}
+            submit={(form) =>
+              void mutation.submit(form, {
+                method: "post",
+                encType: "multipart/form-data",
+              })
+            }
           />
         )}
         {deleteOpen && (
