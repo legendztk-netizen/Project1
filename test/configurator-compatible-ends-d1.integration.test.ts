@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { scopedAssemblyCombinationsSql } from "../app/modules/configurator/infrastructure/scoped-assembly-combinations-sql";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -52,7 +53,24 @@ async function reference(hoseSku: string) {
 }
 
 async function expectSameAsReference(label: string) {
-  for (const hoseSku of hoses)
+  for (const hoseSku of hoses) {
+    const scoped = (
+      await db
+        .prepare(scopedAssemblyCombinationsSql)
+        .bind("active-release", hoseSku)
+        .all<{ identity: string }>()
+    ).results;
+    const original = (
+      await db
+        .prepare(
+          "SELECT * FROM catalog_runtime_assembly_combinations WHERE release_id=?1 AND hose_sku=?2",
+        )
+        .bind("active-release", hoseSku)
+        .all<{ identity: string }>()
+    ).results;
+    const sort = (rows: typeof scoped) =>
+      rows.sort((a, b) => a.identity.localeCompare(b.identity));
+    expect(sort(scoped), label).toEqual(sort(original));
     expect(
       await createD1ConfiguratorRepository(db).findCompatibleEndA(
         "active-release",
@@ -60,6 +78,7 @@ async function expectSameAsReference(label: string) {
       ),
       `${label} ${hoseSku}`,
     ).toEqual(await reference(hoseSku));
+  }
 }
 
 it("lists exactly the reference End A candidates through every availability state", async () => {
@@ -90,6 +109,10 @@ it("lists exactly the reference End A candidates through every availability stat
     command(),
   );
   await expectSameAsReference("re-enabled");
+  await assemblies.add(combination, command());
+  await expectSameAsReference("manual override pending");
+  await assemblies.update(command());
+  await expectSameAsReference("manual override regenerated");
 
   // A component taken off sale removes the assembly; its lifecycle change marks the series for an
   // assembly update, so it returns only after the update.

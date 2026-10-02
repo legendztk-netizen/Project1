@@ -1,3 +1,4 @@
+import { scopedAssemblyCombinationsSql } from "./scoped-assembly-combinations-sql";
 import { interfaceGroup } from "../../catalog/domain/public-catalog";
 import { normalizeDashSize } from "../../catalog/domain/dash-size";
 import type { CompatibleHoseEndCandidate } from "../domain/compatible-end-a";
@@ -253,11 +254,7 @@ async function readCompatibleEndARows(
     database
       .prepare("SELECT status FROM catalog_releases WHERE id = ?1")
       .bind(releaseId),
-    database
-      .prepare(
-        "SELECT * FROM catalog_runtime_assembly_combinations WHERE release_id = ?1 AND hose_sku = ?2",
-      )
-      .bind(releaseId, hoseSku),
+    database.prepare(scopedAssemblyCombinationsSql).bind(releaseId, hoseSku),
     database.prepare(hoseCompatibilities).bind(releaseId, hoseSku),
     database
       .prepare(

@@ -9,8 +9,8 @@ export const MESSAGE_THREAD_PAGE_SIZE = 30;
 
 export type AdminThreadFilter = "all" | "unread" | "awaiting";
 
-// Latest message per conversation. Window functions keep one pass over the
-// append-only message table instead of a correlated lookup per column.
+// Customer inbox: rank messages only within the owned request set. The admin
+// inbox below probes the latest indexed row without ranking all message history.
 const lastMessage = (scope = "") => `last AS (
   SELECT m.request_id,m.body,m.author_role,m.created_at,
     (SELECT 1 FROM quote_conversation_attachments a WHERE a.message_id=m.id) AS has_attachment,
@@ -76,7 +76,7 @@ const threadColumns = (role: "customer" | "admin") => `
   o.id AS order_id,o.order_number,
   CASE WHEN o.id IS NULL THEN NULL ELSE ${orderStageSql} END AS order_stage,
   last.body AS last_body,last.author_role AS last_role,last.created_at AS last_at,
-  last.has_attachment AS last_has_attachment,
+  ${role === "admin" ? "(SELECT 1 FROM quote_conversation_attachments a WHERE a.message_id=last.id)" : "last.has_attachment"} AS last_has_attachment,
   ${unreadSql(role)} AS unread,
   (SELECT count(*) FROM after_sales_cases c WHERE c.order_id=o.id AND c.status='open') AS open_cases`;
 
@@ -135,31 +135,45 @@ export function createD1MessageCenter(database: D1Database) {
     ) {
       const query = options.query.trim().slice(0, 100);
       const like = `%${query.replace(/[\\%_]/g, (value) => `\\${value}`)}%`;
+      // Indexed latest-row probes avoid sorting every historical message. Materialize
+      // the page before counting unread messages and projecting order/case details.
       const rows = await database
         .prepare(
-          `WITH ${lastMessage()},
-           threads AS (
-             SELECT request_id FROM quote_conversation_messages
-             UNION SELECT request_id FROM message_internal_notes)
-           SELECT * FROM (
-             SELECT ${threadColumns("admin")},
-               coalesce(last.created_at,(SELECT max(n.created_at) FROM message_internal_notes n
-                 WHERE n.request_id=request.id)) AS activity_at
-             FROM threads
-             JOIN customer_quote_requests request ON request.id=threads.request_id
-             LEFT JOIN last ON last.request_id=request.id AND last.rn=1
+          `WITH candidates AS MATERIALIZED (
+             SELECT request.id,
+               (SELECT m.id FROM quote_conversation_messages m
+                WHERE m.request_id=request.id ORDER BY m.created_at DESC,m.id DESC LIMIT 1) AS last_message_id,
+               (SELECT n.created_at FROM message_internal_notes n
+                WHERE n.request_id=request.id ORDER BY n.created_at DESC,n.id DESC LIMIT 1) AS note_at
+             FROM customer_quote_requests request
              LEFT JOIN customer_profiles profile ON profile.id=request.profile_id
              LEFT JOIN confirmed_orders o ON o.request_id=request.id
              WHERE (?='' OR request.reference_number LIKE ? ESCAPE '\\'
                OR o.order_number LIKE ? ESCAPE '\\'
-               OR profile.email_display LIKE ? ESCAPE '\\'))
-           WHERE ?='all' OR (?='unread' AND unread>0)
-             OR (?='awaiting' AND last_role='customer')
-           ORDER BY activity_at DESC,request_id DESC
-           LIMIT ? OFFSET ?`,
+               OR profile.email_display LIKE ? ESCAPE '\\')
+           ), page AS MATERIALIZED (
+             SELECT candidate.id,candidate.last_message_id
+             FROM candidates candidate
+             LEFT JOIN quote_conversation_messages last ON last.id=candidate.last_message_id
+             WHERE (candidate.last_message_id IS NOT NULL OR candidate.note_at IS NOT NULL)
+               AND (?='all' OR (?='awaiting' AND last.author_role='customer')
+                 OR (?='unread' AND EXISTS (
+                   SELECT 1 FROM quote_conversation_messages unread
+                   WHERE unread.request_id=candidate.id AND unread.author_role='customer'
+                     AND NOT EXISTS (SELECT 1 FROM message_reads r
+                       WHERE r.message_id=unread.id AND r.reader_role='admin' AND r.reader_id=?))))
+             ORDER BY coalesce(last.created_at,candidate.note_at) DESC,candidate.id DESC
+             LIMIT ? OFFSET ?
+           )
+           SELECT ${threadColumns("admin")}
+           FROM page JOIN customer_quote_requests request ON request.id=page.id
+           LEFT JOIN quote_conversation_messages last ON last.id=page.last_message_id
+           LEFT JOIN customer_profiles profile ON profile.id=request.profile_id
+           LEFT JOIN confirmed_orders o ON o.request_id=request.id
+           ORDER BY coalesce(last.created_at,(SELECT n.created_at FROM message_internal_notes n
+             WHERE n.request_id=request.id ORDER BY n.created_at DESC,n.id DESC LIMIT 1)) DESC,request.id DESC`,
         )
         .bind(
-          adminId,
           query,
           like,
           like,
@@ -167,8 +181,10 @@ export function createD1MessageCenter(database: D1Database) {
           options.filter,
           options.filter,
           options.filter,
+          adminId,
           MESSAGE_THREAD_PAGE_SIZE + 1,
           (options.page - 1) * MESSAGE_THREAD_PAGE_SIZE,
+          adminId,
         )
         .all<ThreadRow>();
       return {
@@ -182,10 +198,11 @@ export function createD1MessageCenter(database: D1Database) {
     async adminUnreadThreads(adminId: string) {
       const row = await database
         .prepare(
-          `SELECT count(DISTINCT m.request_id) AS count FROM quote_conversation_messages m
-           WHERE m.author_role='customer'
-             AND NOT EXISTS(SELECT 1 FROM message_reads r
-               WHERE r.message_id=m.id AND r.reader_role='admin' AND r.reader_id=?)`,
+          `SELECT count(*) AS count FROM quote_conversations conversation
+           WHERE EXISTS (SELECT 1 FROM quote_conversation_messages m
+             WHERE m.request_id=conversation.request_id AND m.author_role='customer'
+               AND NOT EXISTS(SELECT 1 FROM message_reads r
+                 WHERE r.message_id=m.id AND r.reader_role='admin' AND r.reader_id=?))`,
         )
         .bind(adminId)
         .first<{ count: number }>();

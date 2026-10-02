@@ -331,3 +331,49 @@ it("does not scan other customers' message histories when loading a customer inb
     ownerInbox.threads.some((thread) => thread.requestId === order.requestId),
   ).toBe(true);
 });
+
+it("matches the old admin inbox across filters, readers, search and pagination", async () => {
+  const { createD1MessageCenter } =
+    await import("../app/modules/message-center/infrastructure/d1-message-center");
+  const { legacyAdminThreads } =
+    await import("./fixtures/legacy-admin-message-threads");
+  const inbox = createD1MessageCenter(db);
+  // Include a note-only conversation and an empty request, both absent from message history.
+  const noteOnly = await seedAfterSalesOrder(db, "note-only");
+  await seedAfterSalesOrder(db, "empty-conversation");
+  await createMessageCenter(db, bucket).admin(owner).addNote({
+    request: post(),
+    requestId: noteOnly.requestId,
+    body: "Private note only",
+    commandId: crypto.randomUUID(),
+  });
+  for (const adminId of [owner.id, reviewer.id]) {
+    for (const filter of ["all", "unread", "awaiting"] as const) {
+      for (const query of [
+        "",
+        "buyer@example.test",
+        "note-only",
+        "%",
+        "_",
+        "\\",
+        "does-not-exist",
+      ]) {
+        for (const page of [1, 2]) {
+          const options = { filter, query, page };
+          expect(await inbox.adminThreads(adminId, options)).toEqual(
+            await legacyAdminThreads(db, adminId, options),
+          );
+        }
+      }
+    }
+    const expected = await db
+      .prepare(
+        `SELECT count(DISTINCT m.request_id) AS count FROM quote_conversation_messages m
+      WHERE m.author_role='customer' AND NOT EXISTS (SELECT 1 FROM message_reads r
+      WHERE r.message_id=m.id AND r.reader_role='admin' AND r.reader_id=?)`,
+      )
+      .bind(adminId)
+      .first<number>("count");
+    expect(await inbox.adminUnreadThreads(adminId)).toBe(expected);
+  }
+}, 60000);
