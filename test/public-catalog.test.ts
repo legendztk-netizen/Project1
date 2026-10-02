@@ -72,17 +72,19 @@ function hoseEnd(overrides: Record<string, unknown> = {}) {
 describe("public catalog read model", () => {
   it("can reuse one catalog scan for repeated SKU lookups in a request", async () => {
     let scans = 0;
+    const statement = {
+      bind() {
+        return this;
+      },
+    };
     const database = {
       prepare() {
-        return {
-          bind() {
-            return this;
-          },
-          async first() {
-            scans += 1;
-            return null;
-          },
-        };
+        return statement;
+      },
+      // One catalog read is one batch; there is no active release, so no rows come back.
+      async batch(statements: unknown[]) {
+        scans += 1;
+        return statements.map(() => ({ results: [] }));
       },
     } as unknown as D1Database;
     const catalog = createD1PublicCatalogRepository(database, {

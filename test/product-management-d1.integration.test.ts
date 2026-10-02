@@ -1,3 +1,4 @@
+import { trackStatements } from "./fixtures/tracked-d1";
 import { seedCatalogItemBaseline } from "./fixtures/catalog-item-baseline";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -307,11 +308,16 @@ it("rejects series deletion when a child publishes after impact planning", async
   };
   await repository.apply(command(proposed, "draft"));
   let injected = false;
+  const tracked = trackStatements(database);
   const wrapped = {
-    prepare: database.prepare.bind(database),
+    prepare: tracked.prepare,
     async batch(statements: D1PreparedStatement[]) {
-      const result = await database.batch(statements);
-      if (!injected && statements.length === 3) {
+      const result = await tracked.batch(statements);
+      // Right after the product list read that the impact plan is based on.
+      if (
+        !injected &&
+        tracked.sqls(statements).some((sql) => sql.includes("r.target_state"))
+      ) {
         injected = true;
         await repository.apply(command(proposed, "online", "edit"));
       }
@@ -352,15 +358,22 @@ it("rejects deletion if a pending target request arrives after the plan", async 
   } as CatalogItemCommand["payload"];
   await repository.apply(command(parent));
   let pendingId = "";
+  const tracked = trackStatements(database);
   const wrapped = {
-    prepare: database.prepare.bind(database),
+    prepare: tracked.prepare,
     async batch(statements: D1PreparedStatement[]) {
-      if (statements.length > 3 && !pendingId)
+      // Just before the deletion transaction itself is committed.
+      if (
+        !pendingId &&
+        tracked
+          .sqls(statements)
+          .some((sql) => sql.includes("INSERT INTO catalog_product_deletions"))
+      )
         pendingId = await repository.createRequest(
           command(parent, "online", "edit"),
           { row: "race" },
         );
-      return database.batch(statements);
+      return tracked.batch(statements);
     },
   } as D1Database;
   await expect(
