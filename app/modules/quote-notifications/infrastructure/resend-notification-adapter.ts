@@ -20,7 +20,9 @@ export function createResendNotificationAdapter(
           },
           body: JSON.stringify(email),
           signal: AbortSignal.timeout(20_000),
-          redirect: "error",
+          // Never send the API key on to another host. Workers reject
+          // redirect "error", so a redirect is returned and rejected below.
+          redirect: "manual",
         });
         if (response.ok) {
           const data = (await response.json()) as { id?: unknown };

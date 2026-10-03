@@ -26,7 +26,7 @@ it("sends the identical external idempotency header and payload through the repl
   expect(url).toBe("https://api.resend.com/emails");
   expect(init).toMatchObject({
     method: "POST",
-    redirect: "error",
+    redirect: "manual",
     body: JSON.stringify(email),
     headers: {
       "Idempotency-Key": "quote-conversation/message",
@@ -42,6 +42,7 @@ it("classifies transient, permanent, conflicting and uncertain provider response
     [503, "SECRET", "retry", "provider_unavailable"],
     [401, "SECRET", "permanent", "provider_auth"],
     [422, "SECRET", "permanent", "provider_rejected"],
+    [302, "SECRET", "permanent", "provider_rejected"],
     [
       409,
       '{"name":"concurrent_idempotent_requests"}',
