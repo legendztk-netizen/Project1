@@ -1,3 +1,4 @@
+import { unavailableHoseSql } from "./unavailable-hose-sql";
 import { availableAssemblySql } from "./available-assembly-sql";
 import { scopedAssemblyCombinationsSql } from "./scoped-assembly-combinations-sql";
 import { interfaceGroup } from "../../catalog/domain/public-catalog";
@@ -184,7 +185,7 @@ function selectedHoseEndSql() {
   WHERE r.id = ?1
     AND r.status IN ('published', 'superseded')
     AND c.hose_sku = ?2
-    AND NOT EXISTS (SELECT 1 FROM catalog_item_unavailable_hoses blocked WHERE blocked.sku = c.hose_sku)
+    AND NOT EXISTS (${unavailableHoseSql("?2")})
     AND c.catalog_publication_status = 'Published'
     AND c.rfq_eligibility = 'Eligible'
     AND hs.product_type = 'hose'
@@ -267,11 +268,7 @@ async function readCompatibleEndARows(
            UNION SELECT ferrule_sku FROM (${hoseCompatibilities}))`,
       )
       .bind(releaseId, hoseSku),
-    database
-      .prepare(
-        "SELECT 1 AS blocked FROM catalog_item_unavailable_hoses WHERE sku = ?1",
-      )
-      .bind(hoseSku),
+    database.prepare(unavailableHoseSql("?1")).bind(hoseSku),
     database
       .prepare(
         `SELECT x.identity FROM catalog_assembly_exclusions x

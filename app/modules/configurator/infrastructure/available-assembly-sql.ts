@@ -1,3 +1,4 @@
+import { unavailableHoseSql } from "./unavailable-hose-sql";
 import { assemblyCombinationsSql } from "./scoped-assembly-combinations-sql";
 
 // Point validation equivalent to catalog_available_assembly_combinations. Scope the
@@ -41,12 +42,7 @@ export function availableAssemblySql({
           WHERE c.end_a_compatibility_id=${endACompatibilityId} AND c.end_b_compatibility_id=${endBCompatibilityId}
             AND a.catalog_publication_status = 'Published' AND a.rfq_eligibility = 'Eligible'
             AND b.catalog_publication_status = 'Published' AND b.rfq_eligibility = 'Eligible'
-            AND NOT EXISTS (
-              SELECT 1 FROM catalog_item_publication_state state
-              JOIN catalog_runtime_hose_variants h ON h.import_id=r.source_import_id AND h.sku=c.hose_sku
-              WHERE state.mode='items' AND state.baseline_release_id=r.id
-                AND h.hose_series IN (SELECT hose_series FROM catalog_assembly_pending_series)
-            )
+            AND NOT EXISTS (${unavailableHoseSql(hoseSku)})
             AND (SELECT COUNT(*) FROM skus p WHERE p.import_id = r.source_import_id
               AND p.catalog_publication_status = 'Published' AND p.rfq_eligibility = 'Eligible'
               AND p.supply_availability = 'available_for_quote')

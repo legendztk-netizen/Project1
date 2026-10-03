@@ -714,6 +714,10 @@ describe("Build a Hose view", () => {
       screen.getByRole("button", { name: "Continue to End B" }),
     );
     expect(actionButtons[0].classList.contains("configurator-back")).toBe(true);
+    fireEvent.click(actionButtons[1]);
+    await screen.findByRole("heading", { name: "Choose End B" });
+    expect(screen.getByText("2 of 2 compatible fittings")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("stores different End A and End B selections with their own compatibility", async () => {

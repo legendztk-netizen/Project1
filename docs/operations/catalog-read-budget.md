@@ -36,8 +36,8 @@ live preview quote writes.
 
 | Operation on the same saved snapshot                               | Before (rows read) | After (rows read) |
 | ------------------------------------------------------------------ | -----------------: | ----------------: |
-| Add one assembly to a new anonymous Quote List                     |             89,678 |            10,269 |
-| Exact ordered-pair availability check                              |              2,650 |             1,063 |
+| Add one assembly to a new anonymous Quote List                     |             89,678 |             8,394 |
+| Exact ordered-pair availability check                              |              2,650 |               906 |
 | Direct adapter SKU lookup                                          |              1,149 |               205 |
 | Uncached full catalog repository read                              |             29,493 |            29,493 |
 | Catalog summaries, simulated new isolate with populated edge cache |                  — |                 4 |

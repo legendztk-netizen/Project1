@@ -166,6 +166,9 @@ export function CompatibleHoseEndStage({
 
   useEffect(() => {
     setFilters(emptyHoseEndFilters);
+  }, [endRole, hoseSku, releaseId]);
+
+  useEffect(() => {
     if (
       candidateSnapshot?.hoseSku === hoseSku &&
       candidateSnapshot.releaseId === releaseId

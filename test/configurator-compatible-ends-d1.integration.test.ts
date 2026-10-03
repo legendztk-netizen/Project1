@@ -1,3 +1,4 @@
+import { unavailableHoseSql } from "../app/modules/configurator/infrastructure/unavailable-hose-sql";
 import { spawnSync } from "node:child_process";
 import { scopedAssemblyCombinationsSql } from "../app/modules/configurator/infrastructure/scoped-assembly-combinations-sql";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -54,6 +55,17 @@ async function reference(hoseSku: string) {
 
 async function expectSameAsReference(label: string) {
   for (const hoseSku of hoses) {
+    expect(
+      (await db.prepare(unavailableHoseSql("?1")).bind(hoseSku).all()).results,
+      `${label} current baseline block`,
+    ).toEqual(
+      (
+        await db
+          .prepare("SELECT sku FROM catalog_item_unavailable_hoses WHERE sku=?")
+          .bind(hoseSku)
+          .all()
+      ).results,
+    );
     const scoped = (
       await db
         .prepare(scopedAssemblyCombinationsSql)

@@ -1,3 +1,4 @@
+import { unavailableHoseSql } from "../app/modules/configurator/infrastructure/unavailable-hose-sql";
 import { describe, expect, it } from "vitest";
 import { scopedAssemblyCombinationsSql } from "../app/modules/configurator/infrastructure/scoped-assembly-combinations-sql";
 
@@ -188,11 +189,13 @@ describe("D1 configurator repository", () => {
     const tableOf = (sql: string) =>
       sql === scopedAssemblyCombinationsSql
         ? "catalog_runtime_assembly_combinations"
-        : Object.keys(tables)
-            .filter((name) => sql.includes(`FROM ${name}`))
-            .sort(
-              (x, y) => sql.indexOf(`FROM ${x}`) - sql.indexOf(`FROM ${y}`),
-            )[0];
+        : sql === unavailableHoseSql("?1")
+          ? "catalog_item_unavailable_hoses"
+          : Object.keys(tables)
+              .filter((name) => sql.includes(`FROM ${name}`))
+              .sort(
+                (x, y) => sql.indexOf(`FROM ${x}`) - sql.indexOf(`FROM ${y}`),
+              )[0];
     const binds: unknown[][] = [];
     const statement = (sql: string) => ({
       sql,
