@@ -35,7 +35,14 @@ function show(state: "queued" | "failed" | null) {
                 paymentHistory: [],
                 readiness: {
                   pdfJobs: state
-                    ? [{ commandId: "saved", state, attempts: 0 }]
+                    ? [
+                        {
+                          commandId: "saved",
+                          state,
+                          attempts: 0,
+                          failureCode: null,
+                        },
+                      ]
                     : [],
                   quoteRevision: null,
                   seller: null,

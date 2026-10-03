@@ -18,6 +18,7 @@ import {
 } from "#workers/proforma-invoice";
 import { AdminNavigation } from "../ui/admin-navigation";
 import { PiReplacementForm } from "../ui/pi-lifecycle-replacement-form";
+import { piPdfPermanentFailureText } from "../ui/pi-pdf-job-failure";
 import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
 import { requireAdminRequestContext } from "../infrastructure/admin-request-context";
 import {
@@ -186,7 +187,10 @@ export default function ProformaInvoiceLifecycle({
                 : "替换 PI 的 PDF 正在生成"}
             </h2>
             <p>操作编号： {job.commandId}</p>
-            {job.state === "failed" && (
+            {job.failureCode && (
+              <p role="status">{piPdfPermanentFailureText(job.failureCode)}</p>
+            )}
+            {job.state === "failed" && !job.failureCode && (
               <Form method="post">
                 <input type="hidden" name="intent" value="retry-pdf" />
                 <input type="hidden" name="commandId" value={job.commandId} />

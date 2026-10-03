@@ -13,6 +13,7 @@ import {
 import {
   piSha256,
   piValidityDeadline,
+  PiValidationError,
   type PiConditions,
 } from "../app/modules/proforma-invoice/domain/proforma-invoice";
 import { acceptedPaymentDeadline } from "../app/modules/proforma-invoice/domain/pi-payment-terms";
@@ -736,6 +737,107 @@ it("retains failed PDF jobs for manual review after bounded retries", async () =
       .bind(reserved.piId)
       .first("n"),
   ).toBe(1);
+});
+
+it("fails a PDF job at once when its PI can no longer be produced", async () => {
+  const f = await fixture();
+  const reserved = await service().reserve(actor, f.command);
+  const dispatched: PiPdfJob[] = [];
+  const job = () =>
+    db
+      .prepare(
+        "SELECT state,attempts,failure_code AS failureCode FROM proforma_invoice_pdf_jobs WHERE command_id=?",
+      )
+      .bind(reserved.commandId)
+      .first();
+  const jobs = createPiPdfJobs(
+    db,
+    {
+      send: async (body) => {
+        dispatched.push(body);
+      },
+    },
+    (id) => service().renderReserved(id),
+    () => new Date(issuedAt),
+  );
+  // The admin replaces the bank transfer instructions after issuing the PI.
+  await createD1SellerCommercialSettingsRepository(db).savePaymentInstructions({
+    id: `pi-test-bank_transfer-${crypto.randomUUID()}`,
+    actorId: actor.id,
+    channel: "bank_transfer",
+    instructions: "TEST ONLY bank_transfer\nUpdated payment reference.",
+    commandId: crypto.randomUUID(),
+    now: issuedAt,
+  });
+  expect(
+    await jobs.consume({ type: "pi-pdf", commandId: reserved.commandId }),
+  ).toBe(true);
+  expect(await job()).toEqual({
+    state: "failed",
+    attempts: 1,
+    failureCode: "inputs_changed",
+  });
+  await jobs.dispatch();
+  expect(dispatched.some((item) => item.commandId === reserved.commandId)).toBe(
+    false,
+  );
+  expect(
+    (await service().readiness(actor, f.command.requestId)).pdfJobs,
+  ).toEqual([
+    {
+      commandId: reserved.commandId,
+      state: "failed",
+      attempts: 1,
+      failureCode: "inputs_changed",
+    },
+  ]);
+  await service().retryPdf(actor, f.command.requestId, reserved.commandId);
+  expect(await job()).toEqual({
+    state: "pending",
+    attempts: 0,
+    failureCode: null,
+  });
+});
+
+it("fails an invalid PI's PDF job at once but keeps retrying transient errors", async () => {
+  const f = await fixture();
+  const reserved = await service().reserve(actor, f.command);
+  let failure: Error = new Error("private renderer failure");
+  const jobs = createPiPdfJobs(
+    db,
+    { send: async () => {} },
+    async () => {
+      throw failure;
+    },
+    () => new Date(issuedAt),
+  );
+  const message: PiPdfJob = { type: "pi-pdf", commandId: reserved.commandId };
+  const job = () =>
+    db
+      .prepare(
+        "SELECT state,attempts,failure_code AS failureCode FROM proforma_invoice_pdf_jobs WHERE command_id=?",
+      )
+      .bind(reserved.commandId)
+      .first();
+  await jobs.consume(message);
+  expect(await job()).toEqual({
+    state: "pending",
+    attempts: 1,
+    failureCode: null,
+  });
+  failure = new PiValidationError("PI validity deadline must be in the future");
+  await db
+    .prepare(
+      "UPDATE proforma_invoice_pdf_jobs SET next_attempt_at=? WHERE command_id=?",
+    )
+    .bind(issuedAt, reserved.commandId)
+    .run();
+  await jobs.consume(message);
+  expect(await job()).toEqual({
+    state: "failed",
+    attempts: 2,
+    failureCode: "invalid",
+  });
 });
 
 it("resolves trusted conditions from captured lines once and preserves them on replay", async () => {

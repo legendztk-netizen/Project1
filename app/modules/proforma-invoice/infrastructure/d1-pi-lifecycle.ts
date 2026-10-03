@@ -1,5 +1,6 @@
 import { ownedQuoteRequestWhere } from "../../quote-request/infrastructure/d1-quote-request-repository";
 import type { PiRow } from "./d1-proforma-invoice-repository";
+import type { PiPdfFailureCode } from "../application/pi-pdf-jobs";
 
 export interface PiReplacementIntentRow {
   pi_id: string;
@@ -79,13 +80,18 @@ export function createD1PiLifecycle(db: D1Database) {
       return (
         await db
           .prepare(
-            `SELECT j.command_id AS commandId,j.state,j.attempts FROM proforma_invoice_pdf_jobs j
+            `SELECT j.command_id AS commandId,j.state,j.attempts,j.failure_code AS failureCode FROM proforma_invoice_pdf_jobs j
         JOIN proforma_invoice_intents i ON i.command_id=j.command_id JOIN pi_replacement_intents r ON r.pi_id=i.id
         WHERE i.request_id=? AND j.state<>'completed' AND NOT EXISTS(SELECT 1 FROM proforma_invoices p WHERE p.id=i.id)
         ORDER BY i.issued_at DESC`,
           )
           .bind(requestId)
-          .all<{ commandId: string; state: string; attempts: number }>()
+          .all<{
+            commandId: string;
+            state: string;
+            attempts: number;
+            failureCode: PiPdfFailureCode | null;
+          }>()
       ).results;
     },
     intent(piId: string) {

@@ -256,7 +256,12 @@ it("shows a durable failed PDF job with an explicit retry command", () => {
         paymentHistory: [],
         readiness: {
           pdfJobs: [
-            { commandId: "saved-command", state: "failed", attempts: 5 },
+            {
+              commandId: "saved-command",
+              state: "failed",
+              attempts: 5,
+              failureCode: null,
+            },
           ],
           quoteRevision: null,
           seller: null,
@@ -270,6 +275,40 @@ it("shows a durable failed PDF job with an explicit retry command", () => {
   expect(html).toContain("PDF 生成失败");
   expect(html).toContain('value="retry-pdf"');
   expect(html).toContain('value="saved-command"');
+});
+
+it("explains a PI that can no longer be produced instead of offering a retry", () => {
+  const job = {
+    commandId: "stale-command",
+    state: "failed",
+    attempts: 1,
+    failureCode: "inputs_changed" as const,
+  };
+  const page = (current: PiReadiness["current"]) =>
+    render(
+      <AdminPi
+        loaderData={{
+          requestId: "request",
+          commandId: "new-command",
+          paymentHistory: [],
+          readiness: {
+            pdfJobs: [job],
+            quoteRevision: null,
+            seller: null,
+            payments: [],
+            conditionsConfigured: true,
+            current,
+          },
+        }}
+      />,
+    );
+  const html = page(null);
+  expect(html).toContain("付款说明已变更");
+  expect(html).toContain("请核对后重新签发");
+  expect(html).not.toContain("PDF 生成失败");
+  expect(html).not.toContain('value="retry-pdf"');
+  // A PI issued afterwards supersedes the one that could not be produced.
+  expect(page(invoice)).not.toContain("此 PI 无法生成");
 });
 
 it("prioritizes current payment instructions above order details and never falls back to the PDF account", () => {
