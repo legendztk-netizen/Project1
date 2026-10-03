@@ -187,7 +187,8 @@ function resolverFor(
       try {
         response = await fetcher(url, {
           headers: { Accept: "application/dns-json" },
-          redirect: "error",
+          // Workers reject redirect "error"; a redirect fails the lookup below.
+          redirect: "manual",
           signal: AbortSignal.any([
             signal,
             AbortSignal.timeout(DNS_TIMEOUT_MS),

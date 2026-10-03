@@ -102,7 +102,7 @@ it("verifies an actual RSA signature via bounded fixed-endpoint TXT DNS and exac
   expect(String(url)).toBe(
     "https://cloudflare-dns.com/dns-query?name=fixture._domainkey.customer.test&type=TXT",
   );
-  expect(init?.redirect).toBe("error");
+  expect(init?.redirect).toBe("manual");
   expect(
     await createInboundEmailVerifier({ fetcher })({
       ...request,
