@@ -1,3 +1,5 @@
+import { createD1CatalogItemRepository } from "../app/modules/catalog/infrastructure/d1-catalog-item-repository";
+import { meterD1 } from "../workers/d1-read-metrics";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -36,6 +38,7 @@ const now = new Date();
 let platform: Awaited<ReturnType<typeof getPlatformProxy<{ DB: D1Database }>>>;
 let db: D1Database;
 let env: ApplicationBindings;
+let usage: ReturnType<typeof meterD1>["metrics"];
 const queries: string[] = [];
 
 beforeAll(async () => {
@@ -50,10 +53,12 @@ beforeAll(async () => {
     remoteBindings: false,
   });
   db = platform.env.DB;
-  await seedManagedAssemblyBaseline(db);
+  await seedManagedAssemblyBaseline(db, 200);
+  const measured = meterD1(db);
+  usage = measured.metrics;
   env = {
     APP_ENV: "local",
-    DB: new Proxy(db, {
+    DB: new Proxy(measured.binding, {
       get(target, key) {
         if (key === "prepare")
           return (sql: string) => {
@@ -153,6 +158,7 @@ it("submits selected snapshots, preserves other lines and replays without creati
       selectedLineIds: lines.slice(0, selectedCount).map((line) => line.id),
     };
     queries.length = 0;
+    usage.rowsRead = 0;
     const start = performance.now();
     const record = await createQuoteRequestService(env).submitIndividual(input);
     const elapsedMs = performance.now() - start;
@@ -217,7 +223,10 @@ it("still rejects changed selected products and preserves the list", async () =>
   ).rejects.toMatchObject({ code: "NO_LINES_SELECTED" });
 });
 
-function beforeSubmission(change: () => Promise<unknown>) {
+function beforeSubmission(
+  change: () => Promise<unknown>,
+  trigger = "INSERT INTO customer_quote_request_submission_guards",
+) {
   let changed = false;
   let submitting = false;
   return {
@@ -226,12 +235,7 @@ function beforeSubmission(change: () => Promise<unknown>) {
       get(target, key) {
         if (key === "prepare")
           return (sql: string) => {
-            if (
-              sql.includes(
-                "INSERT INTO customer_quote_request_submission_guards",
-              )
-            )
-              submitting = true;
+            if (sql.includes(trigger)) submitting = true;
             return target.prepare(sql);
           };
         if (key === "batch")
@@ -349,7 +353,13 @@ it("validates selected assemblies afresh without validating unselected broken as
       protection: draft.installedProtection!,
       schedule: references.assemblyEstimateSchedule,
     });
+    usage.rowsRead = 0;
     await lists.addConfiguredAssembly(request, draft, 4);
+    if (process.env.QUOTE_SUBMIT_BENCHMARK)
+      console.log(
+        JSON.stringify({ kind: "add-assembly", rowsRead: usage.rowsRead }),
+      );
+    expect(usage.rowsRead).toBeLessThan(20000);
   }
   const lines = (await lists.read(request)).lines;
   await db
@@ -359,6 +369,7 @@ it("validates selected assemblies afresh without validating unselected broken as
     .bind(lines[9].id)
     .run();
   queries.length = 0;
+  usage.rowsRead = 0;
   const start = performance.now();
   const record = await createQuoteRequestService(env).submitIndividual({
     request,
@@ -383,6 +394,7 @@ it("validates selected assemblies afresh without validating unselected broken as
         selectedCount: 3,
         elapsedMs,
         queryCount: queries.length,
+        rowsRead: usage.rowsRead,
       }) + "\n",
     );
   expect((await lists.read(request)).lines).toHaveLength(7);
@@ -413,4 +425,52 @@ it("validates selected assemblies afresh without validating unselected broken as
     }),
   ).rejects.toMatchObject({ code: "LIST_CHANGED" });
   expect((await lists.read(request)).lines).toHaveLength(7);
+
+  // Change the actual current price after preparation, immediately before the
+  // guarded quote-list batch. The old prepared generation must not be written.
+  await db
+    .prepare(
+      "UPDATE configurator_global_registry_entries SET record_version=record_version-1 WHERE registry_type='installed_protection' AND entry_key='NONE'",
+    )
+    .run();
+  const previousLines = await db
+    .prepare(
+      "SELECT id,quantity,configured_snapshot_json FROM anonymous_quote_lines ORDER BY id",
+    )
+    .all();
+  const items = createD1CatalogItemRepository(db);
+  const payload = (await items.findPayload("sku", hose.sku))!;
+  if (payload.kind !== "sku" || !payload.price)
+    throw new Error("Missing price");
+  payload.price.amount = (payload.price.amount ?? 0) + 1;
+  const priceRace = beforeSubmission(
+    () =>
+      items.apply({
+        payload,
+        targetState: "online",
+        mode: "edit",
+        commandId: crypto.randomUUID(),
+        actorId: "owner-1",
+        ipAddress: "local",
+        baselineRevisionId: null,
+        source: { channel: "manual" },
+      }),
+    "INSERT INTO anonymous_quote_lines",
+  );
+  await expect(
+    createAnonymousQuoteListService(priceRace).addConfiguredAssembly(
+      request,
+      draft,
+      4,
+    ),
+  ).rejects.toMatchObject({ code: "CONFIGURATION_INVALID" });
+  expect(
+    (
+      await db
+        .prepare(
+          "SELECT id,quantity,configured_snapshot_json FROM anonymous_quote_lines ORDER BY id",
+        )
+        .all()
+    ).results,
+  ).toEqual(previousLines.results);
 }, 60000);

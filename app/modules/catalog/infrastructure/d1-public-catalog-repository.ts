@@ -1,9 +1,19 @@
+import {
+  catalogCacheBinding,
+  recordCatalogCache,
+} from "#workers/d1-read-metrics";
+import {
+  catalogCacheKey,
+  type PublicCatalogEdgeCache,
+} from "./public-catalog-edge-cache";
 import { publicCatalogMainImageUrl } from "../domain/catalog-main-image";
 import type { CatalogFamilyId } from "../domain/catalog-family";
 import { normalizeDashSize } from "../domain/dash-size";
 import {
   categoryByProductType,
   groupCatalogFamilies,
+  summarizeCatalogFamilies,
+  type PublicCatalogFamilySummary,
   interfaceGroup,
   matchesCatalogQuery,
   slug,
@@ -555,7 +565,39 @@ export async function readPublicCatalogRows(
 ): Promise<PublicCatalogRow[]> {
   const { sku } = filter;
   const single = sku !== undefined;
-  const types = filter.productTypes ? [...new Set(filter.productTypes)] : null;
+  // A point lookup must not read every series and every product subtype.
+  const point = single
+    ? await database
+        .prepare(
+          `SELECT product_type FROM catalog_runtime_skus WHERE import_id=${activeImport} AND sku=?`,
+        )
+        .bind(sku)
+        .first<{ product_type: PublicProductType }>()
+    : null;
+  if (single && !point) return [];
+  if (
+    point &&
+    filter.productTypes &&
+    !filter.productTypes.includes(point.product_type)
+  )
+    return [];
+  const types = point
+    ? [point.product_type]
+    : filter.productTypes
+      ? [...new Set(filter.productTypes)]
+      : null;
+  const seriesColumns: Record<PublicProductType, [string, string]> = {
+    hose: ["hose_variants", "hose_series"],
+    hose_end: ["hose_ends", "fitting_series"],
+    ferrule: ["ferrules", "ferrule_series"],
+    adapter: ["adapters", "adapter_family_id"],
+    quick_coupler: ["quick_couplers", "coupler_series"],
+  };
+  const seriesSource = point && seriesColumns[point.product_type];
+  const pointSeries = seriesSource
+    ? `(SELECT ${seriesSource[1]} FROM catalog_runtime_${seriesSource[0]} WHERE import_id=${activeImport} AND sku=?1)`
+    : null;
+
   if (types?.some((type) => !(type in detailViews)))
     throw new Error("Unknown product type");
   if (types?.length === 0) return [];
@@ -580,13 +622,13 @@ export async function readPublicCatalogRows(
     database
       .prepare(
         `SELECT * FROM catalog_runtime_${name}
-         WHERE import_id = ${activeImport}${single && skuColumn ? ` AND ${skuColumn} = ?1` : ""}${
+         WHERE import_id = ${activeImport}${single ? (skuColumn ? ` AND ${skuColumn} = ?1` : ` AND series_code IN ${pointSeries}`) : ""}${
            !single && sharedByTypes && typeSkus
              ? ` AND ${skuColumn} IN ${typeSkus}`
              : ""
          }`,
       )
-      .bind(...(single && skuColumn ? [sku] : []));
+      .bind(...(single ? [sku] : []));
   const statements: Record<string, D1PreparedStatement | null> = {
     release: database.prepare(
       `SELECT r.id AS release_id, r.release_number
@@ -611,12 +653,14 @@ export async function readPublicCatalogRows(
          WHERE kind = 'sku'${single ? " AND code = ?1" : ""}${typeFilter("product_type")}`,
       )
       .bind(...(single ? [sku] : [])),
-    seriesEntities: database.prepare(
-      `SELECT e.product_type, e.code, e.current_revision_id, r.media_version_id
+    seriesEntities: database
+      .prepare(
+        `SELECT e.product_type, e.code, e.current_revision_id, r.media_version_id
        FROM catalog_product_entities e
        LEFT JOIN catalog_product_revisions r ON r.id = e.current_revision_id
-       WHERE e.kind = 'series'${typeFilter("e.product_type")}`,
-    ),
+       WHERE e.kind = 'series'${typeFilter("e.product_type")}${single ? ` AND e.code IN ${pointSeries}` : ""}`,
+      )
+      .bind(...(single ? [sku] : [])),
     offers: view("sales_offers", "base_sku", true),
     images: view("product_main_images", "sku", true),
     hoses: needs("hose_variants") ? view("hose_variants") : null,
@@ -628,10 +672,12 @@ export async function readPublicCatalogRows(
     ferrules: needs("ferrules") ? view("ferrules") : null,
     adapters: needs("adapters") ? view("adapters") : null,
     couplers: needs("quick_couplers") ? view("quick_couplers") : null,
-    rules: database.prepare(
-      `SELECT * FROM catalog_runtime_series_commercial_rules
-       WHERE import_id = ${activeImport}${typeFilter("product_type")}`,
-    ),
+    rules: database
+      .prepare(
+        `SELECT * FROM catalog_runtime_series_commercial_rules
+       WHERE import_id = ${activeImport}${typeFilter("product_type")}${single ? ` AND series_code IN ${pointSeries}` : ""}`,
+      )
+      .bind(...(single ? [sku] : [])),
     prices: view("sku_price_packaging", "sku", true),
     fees: database.prepare(
       "SELECT scope_key, rate_per_piece, version FROM cutting_labeling_fee_rates",
@@ -917,6 +963,8 @@ function deepFreeze<T>(value: T): T {
 interface SharedCatalogCache {
   token: string;
   scopes: Map<string, Promise<PublicCatalogItem[]>>;
+  items: Map<string, Promise<PublicCatalogItem | null>>;
+  summaries: Map<string, Promise<PublicCatalogFamilySummary[]>>;
 }
 
 // Per isolate and per D1 binding. Entries are tied to one freshness token; a new token replaces them all.
@@ -936,7 +984,11 @@ function productTypesOf(category: CatalogFamilyId) {
 // token. Quoting keeps the default request-scoped reads (`cacheItems` only dedupes lookups in one request).
 export function createD1PublicCatalogRepository(
   database: D1Database,
-  options: { cacheItems?: boolean; sharedCache?: boolean } = {},
+  options: {
+    cacheItems?: boolean;
+    sharedCache?: boolean;
+    edgeCache?: PublicCatalogEdgeCache;
+  } = {},
 ) {
   const cachedItems = new Map<string, Promise<PublicCatalogItem | null>>();
   let freshness: Promise<string> | null = null;
@@ -958,12 +1010,69 @@ export function createD1PublicCatalogRepository(
       .first()
       .then((row) => JSON.stringify(row ?? null));
     const token = await freshness;
-    let cache = sharedCatalogCaches.get(database);
+    let cache = sharedCatalogCaches.get(catalogCacheBinding(database));
     if (cache?.token !== token) {
-      cache = { token, scopes: new Map() };
-      sharedCatalogCaches.set(database, cache);
+      cache = {
+        token,
+        scopes: new Map(),
+        items: new Map(),
+        summaries: new Map(),
+      };
+      sharedCatalogCaches.set(catalogCacheBinding(database), cache);
     }
     return cache;
+  }
+
+  async function edgeRead<T>(
+    scope: string,
+    token: string,
+    load: () => Promise<T>,
+    parent?: { scope: string; select: (value: T) => T },
+  ): Promise<T> {
+    const edge = options.edgeCache;
+    if (!edge) {
+      recordCatalogCache(database, "miss");
+      return load();
+    }
+    const key = await catalogCacheKey(edge.origin, token, scope);
+    try {
+      const cached = await edge.cache.match(key);
+      if (cached) {
+        recordCatalogCache(database, "edge");
+        return (await cached.json()) as T;
+      }
+      if (parent) {
+        const all = await edge.cache.match(
+          await catalogCacheKey(edge.origin, token, parent.scope),
+        );
+        if (all) {
+          recordCatalogCache(database, "edge");
+          return parent.select((await all.json()) as T);
+        }
+      }
+    } catch {
+      /* A cache outage must not take down the catalog. */
+    }
+    recordCatalogCache(database, "miss");
+    const result = await load();
+    // Never label a concurrently changed catalog with the earlier token. All
+    // commerce commands continue to read D1 directly and revalidate atomically.
+    const current = JSON.stringify(
+      (await database.prepare(catalogFreshnessSql).first()) ?? null,
+    );
+    if (current === token && result !== null) {
+      edge.waitUntil(
+        edge.cache
+          .put(
+            key,
+            Response.json(result, {
+              headers: { "Cache-Control": "public, max-age=3600" },
+            }),
+          )
+          .catch(() => {}),
+      );
+    }
+    return result;
   }
 
   // Items of one category (or all), read on demand; a cached full catalog also serves every category.
@@ -972,15 +1081,28 @@ export function createD1PublicCatalogRepository(
     if (!options.sharedCache) return loadItems(filter);
     const cache = await sharedCache();
     const all = cache.scopes.get("all");
-    if (all && category)
+    if (all && category) {
+      recordCatalogCache(database, "memory");
       return (await all).filter((item) => item.category === category);
+    }
     const scope = category ?? "all";
     let pending = cache.scopes.get(scope);
     if (!pending) {
-      pending = loadItems(filter).then(deepFreeze);
+      pending = edgeRead(
+        `items:${scope}`,
+        cache.token,
+        () => loadItems(filter),
+        category
+          ? {
+              scope: "items:all",
+              select: (items) =>
+                items.filter((item) => item.category === category),
+            }
+          : undefined,
+      ).then(deepFreeze);
       cache.scopes.set(scope, pending);
       pending.catch(() => cache.scopes.delete(scope));
-    }
+    } else recordCatalogCache(database, "memory");
     return pending;
   }
 
@@ -990,8 +1112,22 @@ export function createD1PublicCatalogRepository(
       for (const scope of cache.scopes.values()) {
         const items = await scope.catch(() => []);
         const item = items.find((candidate) => candidate.sku === sku);
-        if (item) return item;
+        if (item) {
+          recordCatalogCache(database, "memory");
+          return item;
+        }
       }
+      let pending = cache.items.get(sku);
+      if (!pending) {
+        pending = edgeRead(`sku:${sku}`, cache.token, () => loadItem(sku)).then(
+          deepFreeze,
+        );
+        if (cache.items.size >= 128)
+          cache.items.delete(cache.items.keys().next().value!);
+        cache.items.set(sku, pending);
+        pending.catch(() => cache.items.delete(sku));
+      } else recordCatalogCache(database, "memory");
+      return pending;
     }
     if (!options.cacheItems) return loadItem(sku);
     const existing = cachedItems.get(sku);
@@ -1013,6 +1149,43 @@ export function createD1PublicCatalogRepository(
         matchesCatalogQuery(item, input.query ?? ""),
       );
       return { families: groupCatalogFamilies(items), items };
+    },
+    async browseSummaries(input: {
+      category?: CatalogFamilyId | null;
+      query?: string | null;
+    }) {
+      const load = async () =>
+        summarizeCatalogFamilies(
+          groupCatalogFamilies(
+            (await itemsOf(input.category)).filter((item) =>
+              matchesCatalogQuery(item, input.query ?? ""),
+            ),
+          ),
+        );
+      // Arbitrary searches retain variant-level matching but don't create unbounded cache keys.
+      if (!options.sharedCache || input.query?.trim()) return load();
+      const cache = await sharedCache();
+      const scope = input.category ?? "all";
+      let pending = cache.summaries.get(scope);
+      if (!pending) {
+        pending = edgeRead(
+          `summaries:${scope}`,
+          cache.token,
+          load,
+          input.category
+            ? {
+                scope: "summaries:all",
+                select: (families) =>
+                  families.filter(
+                    (family) => family.category === input.category,
+                  ),
+              }
+            : undefined,
+        ).then(deepFreeze);
+        cache.summaries.set(scope, pending);
+        pending.catch(() => cache.summaries.delete(scope));
+      } else recordCatalogCache(database, "memory");
+      return pending;
     },
     async findFamily(input: {
       category: CatalogFamilyId;

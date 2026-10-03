@@ -1563,7 +1563,7 @@ describe("Build a Hose view", () => {
     ).not.toMatch(/M0[1-7]/);
   });
 
-  it("does not offer Same as End A when the exact SKU is unavailable", async () => {
+  it("reuses candidates when advancing from End A to End B", async () => {
     const [jic, npt] = compatibleCandidates();
     const fetchMock = vi
       .fn()
@@ -1589,13 +1589,12 @@ describe("Build a Hose view", () => {
 
     await screen.findByRole("heading", { name: "Choose End B" });
     expect(
-      screen.queryByRole("button", { name: "Use Same as End A" }),
-    ).toBeNull();
-    expect(
-      screen.getByRole("button", {
-        name: /Select NPTF Male Fixed Straight Hose End/,
-      }),
+      screen.getByRole("button", { name: "Use Same as End A" }),
     ).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Back to End A" }));
+    await screen.findByRole("heading", { name: "Choose End A" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("explains an invalid deep-linked End A after exact compatibility loads", async () => {

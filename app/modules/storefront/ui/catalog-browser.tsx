@@ -5,7 +5,7 @@ import {
   launchCatalogFamilies,
   type CatalogFamilyId,
 } from "../../catalog/domain/catalog-family";
-import type { PublicCatalogFamily } from "../../catalog/domain/public-catalog";
+import type { PublicCatalogFamilySummary } from "../../catalog/domain/public-catalog";
 import { CatalogMedia } from "./catalog-media";
 import { StorefrontFooter } from "./storefront-footer";
 import { StorefrontHeader } from "./storefront-header";
@@ -14,18 +14,14 @@ import "../styles/catalog.css";
 export interface CatalogBrowserData {
   activeCategory: CatalogFamilyId | null;
   appName: string;
-  families: PublicCatalogFamily[];
+  families: PublicCatalogFamilySummary[];
   query: string;
   releaseNumber: string | null;
 }
 
-function price(family: PublicCatalogFamily) {
-  const values = family.variants.flatMap((variant) => {
-    const value = variant.offer?.referencePrice;
-    return value === null || value === undefined ? [] : [value];
-  });
-  return values.length
-    ? `From USD ${Math.min(...values).toFixed(2)}`
+function price(family: PublicCatalogFamilySummary) {
+  return family.minimumReferencePrice !== null
+    ? `From USD ${family.minimumReferencePrice.toFixed(2)}`
     : "Price on quote";
 }
 
@@ -128,7 +124,7 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
                               family.category.replaceAll("-", " ")}
                           </span>
                           <span className="variant-count">
-                            {family.variants.length} variants
+                            {family.variantCount} variants
                           </span>
                         </div>
                         <h3>

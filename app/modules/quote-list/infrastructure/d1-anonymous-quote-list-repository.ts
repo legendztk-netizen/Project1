@@ -1,3 +1,4 @@
+import { availableAssemblySql } from "../../configurator/infrastructure/available-assembly-sql";
 import type { PublicCatalogItem } from "../../catalog/domain/public-catalog";
 import type {
   AnonymousQuoteLine,
@@ -177,15 +178,27 @@ const activeLengthBasedHoseGuard = `
 `;
 
 const activeConfiguredAssemblyGuard = `
-  ${activeQuotedProductGuard}
-    AND s.product_type = 'hose'
-    AND NOT EXISTS (SELECT 1 FROM catalog_item_unavailable_hoses blocked WHERE blocked.sku = s.sku)
-    AND EXISTS (
-      SELECT 1 FROM catalog_available_assembly_combinations c
-      WHERE c.release_id=r.id AND c.hose_sku=s.sku
-        AND c.end_a_compatibility_id=? AND c.end_a_hose_end_sku=? AND c.end_a_ferrule_sku=?
-        AND c.end_b_compatibility_id=? AND c.end_b_hose_end_sku=? AND c.end_b_ferrule_sku=?
-    )
+  WITH requested AS MATERIALIZED (
+    SELECT ? AS release_id, ? AS hose_sku, ? AS generation,
+      ? AS end_a_id, ? AS end_a_sku, ? AS end_a_ferrule,
+      ? AS end_b_id, ? AS end_b_sku, ? AS end_b_ferrule
+  )
+  SELECT 1 FROM requested q
+  JOIN catalog_active_release ar ON ar.singleton=1 AND ar.release_id=q.release_id
+  JOIN catalog_releases r ON r.id=ar.release_id AND r.status='published'
+  WHERE (SELECT CASE WHEN mode='items' THEN generation ELSE -1 END
+    FROM catalog_item_publication_state WHERE singleton=1)=q.generation
+    AND EXISTS (SELECT 1 FROM catalog_runtime_skus p
+      WHERE p.import_id=(SELECT source_import_id FROM catalog_releases WHERE id=(SELECT release_id FROM requested))
+        AND p.sku=(SELECT hose_sku FROM requested) AND p.product_type='hose')
+    AND EXISTS (${availableAssemblySql({
+      releaseId: "(SELECT release_id FROM requested)",
+      hoseSku: "(SELECT hose_sku FROM requested)",
+      endACompatibilityId: "(SELECT end_a_id FROM requested)",
+      endBCompatibilityId: "(SELECT end_b_id FROM requested)",
+      identity:
+        "json_array((SELECT hose_sku FROM requested),(SELECT end_a_sku FROM requested),(SELECT end_a_ferrule FROM requested),(SELECT end_b_sku FROM requested),(SELECT end_b_ferrule FROM requested))",
+    })})
     AND EXISTS (
       SELECT 1 FROM configurator_global_registry_entries e
       WHERE e.registry_type = 'installed_protection'

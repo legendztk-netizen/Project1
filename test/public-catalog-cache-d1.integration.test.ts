@@ -1,3 +1,4 @@
+import { meterD1 } from "../workers/d1-read-metrics";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,6 +14,7 @@ import {
 import { createD1CatalogItemRepository } from "../app/modules/catalog/infrastructure/d1-catalog-item-repository";
 import {
   groupCatalogFamilies,
+  summarizeCatalogFamilies,
   type PublicCatalogItem,
 } from "../app/modules/catalog/domain/public-catalog";
 
@@ -60,6 +62,12 @@ it("reads only the requested category and returns exactly that category", async 
     ).browse({ category });
     const expected = full.filter((item) => item.category === category);
     expect(items).toEqual(expected);
+    for (const item of [expected[0], expected.at(-1)]) {
+      if (item)
+        expect(
+          await createD1PublicCatalogRepository(db).findItem(item.sku),
+        ).toEqual(item);
+    }
     expect(families).toEqual(groupCatalogFamilies(expected));
     if (category !== "hydraulic-hose")
       expect(counter.reads).toBeLessThan(all.counter.reads / 2);
@@ -167,3 +175,170 @@ it("keeps request-scoped reads (quoting) off the shared cache", async () => {
   ).toEqual(expected);
   expect(counter.reads).toBeGreaterThan(50);
 }, 120000);
+
+it("serves compact summaries across isolate resets and invalidates edge data on fee changes", async () => {
+  const storage = new Map<string, Response>();
+  const writes: Promise<unknown>[] = [];
+  const edgeCache = {
+    origin: "https://preview.customhoseco.com",
+    cache: {
+      match: async (request: RequestInfo | URL) =>
+        storage.get((request as Request).url)?.clone(),
+      put: async (request: RequestInfo | URL, response: Response) => {
+        storage.set((request as Request).url, response.clone());
+      },
+    },
+    waitUntil: (promise: Promise<unknown>) => {
+      writes.push(promise);
+    },
+  };
+  const firstMeter = meterD1(db);
+  const first = await createD1PublicCatalogRepository(firstMeter.binding, {
+    sharedCache: true,
+    edgeCache,
+  }).browseSummaries({});
+  expect(first).toEqual(
+    summarizeCatalogFamilies(
+      groupCatalogFamilies(
+        (await createD1PublicCatalogRepository(db).browse({})).items,
+      ),
+    ),
+  );
+  expect(first[0]).not.toHaveProperty("variants");
+  await Promise.all(writes);
+  clearPublicCatalogCache(); // Another isolate, with a fresh per-request metering wrapper.
+  const next = meterD1(db);
+  expect(
+    await createD1PublicCatalogRepository(next.binding, {
+      sharedCache: true,
+      edgeCache,
+    }).browseSummaries({}),
+  ).toEqual(first);
+  expect(next.metrics.rowsRead).toBeLessThan(50);
+  expect(next.metrics.catalogCache.edge).toBe(1);
+  const memory = meterD1(db);
+  expect(
+    await createD1PublicCatalogRepository(memory.binding, {
+      sharedCache: true,
+      edgeCache,
+    }).browseSummaries({}),
+  ).toEqual(first);
+  expect(memory.metrics.rowsRead).toBeLessThan(50);
+  expect(memory.metrics.catalogCache.memory).toBe(1);
+  await db
+    .prepare(
+      "UPDATE cutting_labeling_fee_rates SET version=version+1, rate_per_piece=rate_per_piece+0.01 WHERE scope_key='global'",
+    )
+    .run();
+  clearPublicCatalogCache();
+  const changed = meterD1(db);
+  const refreshed = await createD1PublicCatalogRepository(changed.binding, {
+    sharedCache: true,
+    edgeCache,
+  }).browseSummaries({});
+  expect(changed.metrics.rowsRead).toBeGreaterThan(1000);
+  expect(refreshed).not.toEqual(first);
+  await Promise.all(writes);
+  // Arbitrary search still matches variants and has the same count/minimum-price semantics.
+  const query = full[0].sku;
+  const search = await createD1PublicCatalogRepository(db, {
+    sharedCache: true,
+    edgeCache,
+  }).browseSummaries({ query });
+  expect(search).toEqual(
+    summarizeCatalogFamilies(
+      (await createD1PublicCatalogRepository(db).browse({ query })).families,
+    ),
+  );
+});
+
+it("caches direct SKU reads but quoting bypasses both public caches", async () => {
+  const sku = full[0].sku;
+  const first = meterD1(db);
+  const expected = await createD1PublicCatalogRepository(first.binding, {
+    sharedCache: true,
+  }).findItem(sku);
+  const next = meterD1(db);
+  expect(
+    await createD1PublicCatalogRepository(next.binding, {
+      sharedCache: true,
+    }).findItem(sku),
+  ).toEqual(expected);
+  expect(next.metrics.rowsRead).toBeLessThan(50);
+  const quote = meterD1(db);
+  expect(
+    await createD1PublicCatalogRepository(quote.binding, {
+      cacheItems: true,
+    }).findItem(sku),
+  ).toEqual(expected);
+  expect(quote.metrics.rowsRead).toBeGreaterThan(50);
+});
+
+it("does not persist data read across a publication change, and survives an edge-cache outage", async () => {
+  const storage = new Map<string, Response>();
+  const writes: Promise<unknown>[] = [];
+  let changed = false;
+  const racing = new Proxy(db, {
+    get(target, key) {
+      if (key === "batch")
+        return async (statements: D1PreparedStatement[]) => {
+          const result = await target.batch(statements);
+          if (!changed) {
+            changed = true;
+            await db
+              .prepare(
+                "UPDATE cutting_labeling_fee_rates SET version=version+1 WHERE scope_key='global'",
+              )
+              .run();
+          }
+          return result;
+        };
+      const value = Reflect.get(target, key);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const edgeCache = {
+    origin: "https://preview.customhoseco.com",
+    cache: {
+      match: async (request: RequestInfo | URL) =>
+        storage.get((request as Request).url)?.clone(),
+      put: async (request: RequestInfo | URL, response: Response) => {
+        storage.set((request as Request).url, response.clone());
+      },
+    },
+    waitUntil: (promise: Promise<unknown>) => {
+      writes.push(promise);
+    },
+  };
+  const before = await createD1PublicCatalogRepository(racing, {
+    sharedCache: true,
+    edgeCache,
+  }).browseSummaries({});
+  await Promise.all(writes);
+  expect(storage.size).toBe(0);
+  const after = await createD1PublicCatalogRepository(racing, {
+    sharedCache: true,
+    edgeCache,
+  }).browseSummaries({});
+  expect(after).not.toEqual(before);
+  await Promise.all(writes);
+  clearPublicCatalogCache();
+  const unavailable = {
+    ...edgeCache,
+    cache: {
+      match: async () => {
+        throw new Error("cache unavailable");
+      },
+      put: async () => {
+        throw new Error("cache unavailable");
+      },
+    },
+  };
+  expect(
+    await createD1PublicCatalogRepository(db, {
+      sharedCache: true,
+      edgeCache: unavailable,
+    }).browseSummaries({}),
+  ).toEqual(after);
+  await Promise.all(writes);
+});

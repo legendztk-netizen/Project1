@@ -68,6 +68,30 @@ async function expectSameAsReference(label: string) {
         .bind("active-release", hoseSku)
         .all<{ identity: string }>()
     ).results;
+    // Validate every ordered pair against the original availability view through
+    // generation, exclusion, manual override, pending and discontinued states.
+    for (const pair of original as Array<{
+      identity: string;
+      end_a_compatibility_id: string;
+      end_b_compatibility_id: string;
+    }>) {
+      const expected = await db
+        .prepare(
+          "SELECT 1 FROM catalog_available_assembly_combinations WHERE release_id=? AND identity=?",
+        )
+        .bind("active-release", pair.identity)
+        .first();
+      expect(
+        await createD1ConfiguratorRepository(db).hasDerivedAssemblyCombination({
+          releaseId: "active-release",
+          hoseSku,
+          identity: pair.identity,
+          endACompatibilityId: pair.end_a_compatibility_id,
+          endBCompatibilityId: pair.end_b_compatibility_id,
+        }),
+        `${label} point ${pair.identity}`,
+      ).toBe(Boolean(expected));
+    }
     const sort = (rows: typeof scoped) =>
       rows.sort((a, b) => a.identity.localeCompare(b.identity));
     expect(sort(scoped), label).toEqual(sort(original));
