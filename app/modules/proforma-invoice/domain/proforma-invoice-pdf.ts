@@ -241,31 +241,86 @@ export function proformaInvoicePdfContent(
   return blocks.filter((block) => block.text !== "");
 }
 
-function wrap(text: string, measure: (text: string) => number, width: number) {
+// Tracks the width of the line being wrapped.
+interface LineWidth {
+  of(grapheme: string): number;
+  with(line: string, grapheme: string): number;
+  append(grapheme: string): void;
+  clear(): void;
+}
+
+// Embedded PI fonts have 1000 units per em and pdf-lib sums their glyph
+// advances without kerning, so a line's width is the sum of its graphemes'
+// widths, grouped into the same per-font runs and added in the same order as
+// measuring the whole line. Extending this running width replaces re-measuring
+// every candidate line, which was quadratic and used most of the rendering CPU.
+function runningLineWidth(
+  grapheme: (value: string) => { font: object; units: number },
+  size: number,
+): LineWidth {
+  const scale = size / 1000;
+  let closedRuns = 0;
+  let runFont: object | null = null;
+  let runUnits = 0;
+  return {
+    of: (value) => grapheme(value).units * scale,
+    with(_line, value) {
+      const { font, units } = grapheme(value);
+      if (!runFont) return units * scale;
+      return font === runFont
+        ? closedRuns + (runUnits + units) * scale
+        : closedRuns + runUnits * scale + units * scale;
+    },
+    append(value) {
+      const { font, units } = grapheme(value);
+      if (font !== runFont) {
+        if (runFont) closedRuns += runUnits * scale;
+        runFont = font;
+        runUnits = 0;
+      }
+      runUnits += units;
+    },
+    clear() {
+      closedRuns = 0;
+      runFont = null;
+      runUnits = 0;
+    },
+  };
+}
+
+// Standard 14 fonts kern letter pairs, so their widths are not additive.
+function measuredLineWidth(measure: (text: string) => number): LineWidth {
+  return {
+    of: measure,
+    with: (line, value) => measure(line + value),
+    append() {},
+    clear() {},
+  };
+}
+
+function wrap(text: string, widths: LineWidth, width: number) {
   const lines: string[] = [];
   for (const paragraph of text
     .replaceAll("\r\n", "\n")
     .replaceAll("\r", "\n")
     .split("\n")) {
     let line = "";
+    widths.clear();
     for (const { segment: character } of graphemes.segment(
       paragraph.replaceAll("\t", "    "),
     )) {
-      if (measure(character) > width)
+      if (widths.of(character) > width)
         throw new Error("PDF glyph exceeds printable width");
-      const candidate = line + character;
-      if (measure(candidate) <= width) {
-        line = candidate;
+      if (widths.with(line, character) <= width) {
+        widths.append(character);
+        line += character;
         continue;
       }
       const space = line.lastIndexOf(" ");
-      if (space > 0) {
-        lines.push(line.slice(0, space));
-        line = line.slice(space + 1) + character;
-      } else {
-        lines.push(line);
-        line = character;
-      }
+      lines.push(space > 0 ? line.slice(0, space) : line);
+      line = (space > 0 ? line.slice(space + 1) : "") + character;
+      widths.clear();
+      for (const { segment } of graphemes.segment(line)) widths.append(segment);
     }
     lines.push(line);
   }
@@ -323,6 +378,34 @@ export async function renderProformaInvoicePdf(
       (width, run) => width + run.font.widthOfTextAtSize(run.text, size),
       0,
     );
+  // The covering font and width at size 1000 of one grapheme.
+  const graphemeWidths = new Map<
+    PDFFont,
+    Map<string, { font: PDFFont; units: number }>
+  >();
+  const graphemeIn = (preferred: PDFFont) => {
+    let cache = graphemeWidths.get(preferred);
+    if (!cache) graphemeWidths.set(preferred, (cache = new Map()));
+    const known = cache;
+    return (value: string) => {
+      let entry = known.get(value);
+      if (!entry) {
+        const [run] = runs(value, preferred);
+        entry = {
+          font: run.font,
+          units: run.font.widthOfTextAtSize(value, 1000),
+        };
+        known.set(value, entry);
+      }
+      return entry;
+    };
+  };
+  // Fonts passed in are embedded TrueType fonts (piUnicodeFonts); the
+  // Helvetica fallback is a standard font.
+  const lineWidth = (font: PDFFont, size: number) =>
+    fonts
+      ? runningLineWidth(graphemeIn(font), size)
+      : measuredLineWidth((text) => measure(text, font, size));
   function draw(
     page: PDFPage,
     text: string,
@@ -387,11 +470,7 @@ export async function renderProformaInvoicePdf(
     available: number,
     size = 9,
   ) {
-    const lines = wrap(
-      text,
-      (value) => measure(value, face.regular, size),
-      available,
-    );
+    const lines = wrap(text, lineWidth(face.regular, size), available);
     for (const [index, value] of lines.entries())
       draw(page!, value, face.regular, size, x, top - index * 13);
     return lines.length * 13;
@@ -440,11 +519,7 @@ export async function renderProformaInvoicePdf(
     highlight = false,
   ) {
     const font = strong ? face.bold : face.regular;
-    for (const value of wrap(
-      text,
-      (value) => measure(value, font, size),
-      printable - 20,
-    )) {
+    for (const value of wrap(text, lineWidth(font, size), printable - 20)) {
       if (y < 70) {
         nextPage();
         band("PAYMENT INSTRUCTIONS - CONTINUED");
@@ -498,7 +573,7 @@ export async function renderProformaInvoicePdf(
   const partyColumns = [
     `SELLER\n${snapshot.seller.legalName}\n${snapshot.seller.registeredAddressEn}`,
     `BUYER / SHIP TO\n${buyer.legalName || buyer.contactName}${buyer.legalName && buyer.contactName !== buyer.legalName ? `\n${buyer.contactName}` : ""}${buyer.tradeName ? `\n${buyer.tradeName}` : ""}\n${buyer.contactEmail}${buyer.registrationOrTaxId ? `\nTax ID: ${buyer.registrationOrTaxId}` : ""}\nSHIP TO: ${destination.recipientName}\n${destination.addressLine1}\n${destination.addressLine2 || ""}\n${destination.city}, ${destination.stateProvince} ${destination.postalCode}\n${destination.countryCode}\n${destination.recipientEmail}\n${destination.recipientPhone}`,
-  ].map((text) => wrap(text, (value) => measure(value, face.regular, 9), col));
+  ].map((text) => wrap(text, lineWidth(face.regular, 9), col));
   for (
     let row = 0;
     row < Math.max(...partyColumns.map((lines) => lines.length));
@@ -541,7 +616,7 @@ export async function renderProformaInvoicePdf(
     ].map((text, column) =>
       wrap(
         text,
-        (value) => measure(value, face.regular, 9),
+        lineWidth(face.regular, 9),
         [260, 60, 77, printable - 428][column],
       ),
     );
@@ -624,7 +699,7 @@ export async function renderProformaInvoicePdf(
   y -= 50;
   for (const text of wrap(
     `Delivery: ${snapshot.terms.incoterm} - ${snapshot.terms.namedPlace}\nLead time: ${snapshot.terms.leadTime}${snapshot.terms.readySchedule ? `\n${readyScheduleText(snapshot.terms.readySchedule)}` : ""}`,
-    (value) => measure(value, face.regular, 9),
+    lineWidth(face.regular, 9),
     printable,
   )) {
     if (y < 65) nextPage();
@@ -641,11 +716,7 @@ export async function renderProformaInvoicePdf(
     const size = block.heading ? 11 : 8.5;
     let lines: string[];
     try {
-      lines = wrap(
-        block.text,
-        (text) => measure(text, font, size),
-        width - margin * 2,
-      );
+      lines = wrap(block.text, lineWidth(font, size), width - margin * 2);
     } catch {
       throw new Error(
         "PI text cannot be rendered with the selected font; supply an embedded font covering all document characters",
