@@ -188,7 +188,12 @@ it("blocks issuance without a newer quote or while another replacement PDF is pe
     if (kind === "quote") basis.issuance.quoteRevision!.id = "quote-old";
     else
       basis.replacement.pdfJobs = [
-        { commandId: "pending", state: "processing", attempts: 1 },
+        {
+          commandId: "pending",
+          state: "processing",
+          attempts: 1,
+          failureCode: null,
+        },
       ];
     await show(basis);
     completeReview();
@@ -198,6 +203,21 @@ it("blocks issuance without a newer quote or while another replacement PDF is pe
     ).toBe(true);
     cleanup();
   }
+});
+it("explains a replacement PDF that can no longer be produced without offering a retry", async () => {
+  const basis = fixture();
+  basis.replacement.pdfJobs = [
+    {
+      commandId: "stale",
+      state: "failed",
+      attempts: 1,
+      failureCode: "inputs_changed",
+    },
+  ];
+  await show(basis);
+  expect(screen.getByText(/付款说明已变更/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /重试 PDF/ })).toBeNull();
+  cleanup();
 });
 it("converts explicit Beijing validity to UTC and rejects malformed dates", () => {
   expect(replacementDeadline("2026-10-01T08:30")).toBe(

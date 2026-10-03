@@ -3,8 +3,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PDFDocument } from "pdf-lib";
-import { afterAll, expect, it } from "vitest";
+import { PDFDocument, PDFFont } from "pdf-lib";
+import { afterAll, expect, it, vi } from "vitest";
 import {
   createProformaInvoiceSnapshot,
   piSha256,
@@ -19,6 +19,7 @@ import {
   piUnicodeFonts,
   selectPiFontAssets,
 } from "../app/modules/proforma-invoice/domain/pi-unicode-font";
+import { PI_FONT_MANIFEST } from "../app/modules/proforma-invoice/domain/fonts/font-manifest";
 import {
   captureQuoteRequestProductSnapshot,
   type QuoteRequestSnapshot,
@@ -537,4 +538,90 @@ it("renders a fixed payment date in customer format and keeps long payment instr
     expect(extracted.stdout).toContain("FINAL-PAYMENT-INSTRUCTION");
     expect(extracted.stdout).toContain("PAYMENT INSTRUCTIONS - CONTINUED");
   }
+});
+
+// The renderer wraps lines by adding cached grapheme widths instead of
+// re-measuring each candidate line; that is exact only while these hold.
+type FontkitFont = {
+  unitsPerEm: number;
+  layout(
+    text: string,
+    features?: Record<string, boolean>,
+  ): { glyphs: Array<{ id: number }> };
+};
+const fontkitModule = () =>
+  createRequire(import.meta.url)("@pdf-lib/fontkit") as Parameters<
+    PDFDocument["registerFontkit"]
+  >[0] & { create(bytes: Uint8Array): FontkitFont };
+const fontFile = (filename: string) =>
+  readFileSync(
+    new URL(
+      `../app/modules/proforma-invoice/domain/fonts/${filename === PI_NOTO_SANS_FONT.filename ? "" : "chunks/"}${filename}`,
+      import.meta.url,
+    ),
+  );
+
+it("uses whole-unit glyph advances in every embedded PI font", () => {
+  const fontkit = fontkitModule();
+  for (const asset of [PI_FONT_MANIFEST.latin, ...PI_FONT_MANIFEST.chunks])
+    expect([
+      asset.filename,
+      fontkit.create(fontFile(asset.filename)).unitsPerEm,
+    ]).toEqual([asset.filename, 1000]);
+});
+
+it("keeps glyph choice and widths additive across graphemes", async () => {
+  const fontkit = fontkitModule();
+  const substitutions = { liga: false, clig: false };
+  const embedded = {
+    ...substitutions,
+    kern: false,
+    mark: false,
+    mkmk: false,
+    curs: false,
+  };
+  const noto = fontkit.create(fontFile(PI_NOTO_SANS_FONT.filename));
+  const document = await PDFDocument.create();
+  document.registerFontkit(fontkit);
+  const font = await document.embedFont(fontFile(PI_NOTO_SANS_FONT.filename), {
+    subset: false,
+    features: embedded,
+  });
+  const characters = [
+    ...Array.from({ length: 95 }, (_, i) => String.fromCharCode(32 + i)),
+    ..."\u00c0\u00c9\u00ce\u00d5\u00dc\u00df\u00e0\u00e9\u00ee\u00f5\u00fc\u00e7\u00f1\u00b1\u00b0\u00b7\u20ac\u00a3\u00a5\u2013\u2014\u201c\u201d\u2018\u2019\u2026\u0141\u0142\u0130\u0131\u0416\u0436\u03a9\u03c9",
+  ];
+  const ids = (text: string, features: Record<string, boolean>) =>
+    noto.layout(text, features).glyphs.map((glyph) => glyph.id);
+  for (const a of characters)
+    for (const b of characters) {
+      expect(font.widthOfTextAtSize(a + b, 1000)).toBe(
+        font.widthOfTextAtSize(a, 1000) + font.widthOfTextAtSize(b, 1000),
+      );
+      expect(ids(a + b, embedded)).toEqual(ids(a + b, substitutions));
+    }
+});
+
+it("measures wrapped text in time linear to its length", async () => {
+  const input = fixture();
+  input.conditions.refund.text = Array.from(
+    { length: 400 },
+    (_, i) => `Refund clause ${i} applies`,
+  ).join(" ");
+  const snapshot = createProformaInvoiceSnapshot(input);
+  let measured = 0;
+  const width = PDFFont.prototype.widthOfTextAtSize;
+  const spy = vi
+    .spyOn(PDFFont.prototype, "widthOfTextAtSize")
+    .mockImplementation(function (this: PDFFont, text: string, size: number) {
+      measured += text.length;
+      return width.call(this, text, size);
+    });
+  try {
+    await renderProformaInvoicePdf(snapshot, unicodeFonts(snapshot));
+  } finally {
+    spy.mockRestore();
+  }
+  // Re-measuring every candidate line measured about 750,000 characters here.
+  expect(measured).toBeLessThan(4 * JSON.stringify(snapshot).length);
 });

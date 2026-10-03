@@ -21,6 +21,7 @@ import {
 } from "#workers/proforma-invoice";
 import { requireAdminRequestContext } from "../infrastructure/admin-request-context";
 import { AdminNavigation } from "../ui/admin-navigation";
+import { piPdfPermanentFailureText } from "../ui/pi-pdf-job-failure";
 import {
   readPrivateReviewForm,
   requireReviewMutation,
@@ -237,28 +238,33 @@ export default function ProformaInvoice({
           PI 接受回执
         </Link>
         {actionData?.error && <p role="alert">{actionData.error}</p>}
-        {(readiness.pdfJobs ?? []).map((job) => (
-          <section key={job.commandId} className="admin-quote-section">
-            <p role="status">
-              {job.state === "failed"
-                ? "PDF 生成失败，需要人工处理。"
-                : "PDF 正在生成或等待重试，完成后本页会自动更新。"}
-            </p>
-            {job.state === "failed" && (
-              <Form method="post">
-                <input type="hidden" name="intent" value="retry-pdf" />
-                <input type="hidden" name="commandId" value={job.commandId} />
-                <button
-                  className="button button-secondary"
-                  type="submit"
-                  disabled={pending}
-                >
-                  重试 PDF
-                </button>
-              </Form>
-            )}
-          </section>
-        ))}
+        {(readiness.pdfJobs ?? [])
+          // Once a PI is published, earlier PIs that can never be produced are moot.
+          .filter((job) => !(job.failureCode && current))
+          .map((job) => (
+            <section key={job.commandId} className="admin-quote-section">
+              <p role="status">
+                {job.failureCode
+                  ? piPdfPermanentFailureText(job.failureCode)
+                  : job.state === "failed"
+                    ? "PDF 生成失败，需要人工处理。"
+                    : "PDF 正在生成或等待重试，完成后本页会自动更新。"}
+              </p>
+              {job.state === "failed" && !job.failureCode && (
+                <Form method="post">
+                  <input type="hidden" name="intent" value="retry-pdf" />
+                  <input type="hidden" name="commandId" value={job.commandId} />
+                  <button
+                    className="button button-secondary"
+                    type="submit"
+                    disabled={pending}
+                  >
+                    重试 PDF
+                  </button>
+                </Form>
+              )}
+            </section>
+          ))}
         {current ? (
           <section className="admin-quote-section">
             <h2>

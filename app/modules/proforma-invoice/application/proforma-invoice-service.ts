@@ -14,6 +14,7 @@ import {
   type ProformaInvoiceSnapshot,
 } from "../domain/proforma-invoice";
 import { renderProformaInvoicePdf } from "../domain/proforma-invoice-pdf";
+import type { PiPdfFailureCode } from "./pi-pdf-jobs";
 import {
   createD1ProformaInvoiceRepository,
   type PiIntentRow,
@@ -411,7 +412,7 @@ export function createProformaInvoiceService(
       const results = await db.batch([
         db
           .prepare(
-            `UPDATE proforma_invoice_pdf_jobs SET state='pending',attempts=0,next_attempt_at=?,lease_token=NULL,lease_until=NULL
+            `UPDATE proforma_invoice_pdf_jobs SET state='pending',attempts=0,failure_code=NULL,next_attempt_at=?,lease_token=NULL,lease_until=NULL
          WHERE command_id=? AND state='failed' AND EXISTS
            (SELECT 1 FROM proforma_invoice_intents i WHERE i.command_id=proforma_invoice_pdf_jobs.command_id AND i.request_id=?)`,
           )
@@ -457,12 +458,17 @@ export function createProformaInvoiceService(
         pdfJobs: (
           await db
             .prepare(
-              `SELECT j.command_id AS commandId,j.state,j.attempts FROM proforma_invoice_pdf_jobs j
+              `SELECT j.command_id AS commandId,j.state,j.attempts,j.failure_code AS failureCode FROM proforma_invoice_pdf_jobs j
            JOIN proforma_invoice_intents i ON i.command_id=j.command_id
            WHERE i.request_id=? AND j.state<>'completed' ORDER BY i.issued_at DESC`,
             )
             .bind(requestId)
-            .all<{ commandId: string; state: string; attempts: number }>()
+            .all<{
+              commandId: string;
+              state: string;
+              attempts: number;
+              failureCode: PiPdfFailureCode | null;
+            }>()
         ).results,
         quoteRevision: revision
           ? { id: revision.id, hash: revision.snapshot_hash }

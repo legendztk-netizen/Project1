@@ -1,6 +1,20 @@
+import { PiValidationError } from "../domain/proforma-invoice";
+
 export interface PiPdfJob {
   type: "pi-pdf";
   commandId: string;
+}
+
+export type PiPdfFailureCode = "inputs_changed" | "invalid";
+
+// Failures that no retry can fix. A 409 means the PI's quote, seller or payment
+// instructions changed after issue, or another PI was published; a validation
+// error means the PI itself is no longer valid (for example it expired).
+function permanentFailure(error: unknown): PiPdfFailureCode | null {
+  if (error instanceof Response && error.status === 409)
+    return "inputs_changed";
+  if (error instanceof PiValidationError) return "invalid";
+  return null;
 }
 
 export function createPiPdfJobs(
@@ -72,6 +86,7 @@ export function createPiPdfJobs(
           .bind(now().toISOString(), value.commandId, lease)
           .run();
       } catch (error) {
+        const permanent = permanentFailure(error);
         console.error(
           "PI PDF generation failed",
           value.commandId,
@@ -83,11 +98,12 @@ export function createPiPdfJobs(
         );
         await db
           .prepare(
-            `UPDATE proforma_invoice_pdf_jobs SET state=?,next_attempt_at=?,lease_token=NULL,lease_until=NULL
+            `UPDATE proforma_invoice_pdf_jobs SET state=?,failure_code=?,next_attempt_at=?,lease_token=NULL,lease_until=NULL
            WHERE command_id=? AND lease_token=?`,
           )
           .bind(
-            row.attempts >= 5 ? "failed" : "pending",
+            permanent || row.attempts >= 5 ? "failed" : "pending",
+            permanent,
             new Date(
               now().getTime() + Math.min(3600, 30 * 2 ** row.attempts) * 1000,
             ).toISOString(),

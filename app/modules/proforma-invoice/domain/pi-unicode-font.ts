@@ -70,7 +70,17 @@ export function piUnicodeFonts(source: PiUnicodeFontSource) {
           // corrupts CJK outlines even when semantic extraction succeeds.
           subset: false,
           customName: `PiUnicode-${asset.sha256.slice(0, 16)}`,
-          features: { liga: false, clig: false },
+          // pdf-lib reads only glyph ids and advance widths from fontkit, never
+          // positions, so skipping the positioning-only (GPOS) features leaves
+          // the PDF unchanged and saves layout CPU on every measured string.
+          features: {
+            liga: false,
+            clig: false,
+            kern: false,
+            mark: false,
+            mkmk: false,
+            curs: false,
+          },
         }),
       );
     }
