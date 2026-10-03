@@ -212,13 +212,34 @@ export default function ProformaInvoice({
         channel: item.channel,
       }) === selected,
   );
-  const blocked =
-    (readiness.pdfJobs ?? []).some((job) => job.state !== "failed") ||
-    !quoteRevision ||
-    !sellerIdentityReadyForPi(seller) ||
-    !readiness.conditionsConfigured ||
-    !payment;
-  const base = `/admin/quotes/${encodeURIComponent(requestId)}/pi`;
+  const quoteBase = `/admin/quotes/${encodeURIComponent(requestId)}`;
+  // Each reason the issue button is disabled, shown next to the button.
+  const blockers: Array<{ text: string; to?: string; action?: string }> = [];
+  if (generating)
+    blockers.push({ text: "PDF 正在生成或等待重试，完成后才能签发。" });
+  if (!quoteRevision)
+    blockers.push({
+      text: "尚未发布正式报价。PI 必须基于已发布的正式报价。",
+      to: `${quoteBase}/issue`,
+      action: "发布正式报价",
+    });
+  if (!sellerIdentityReadyForPi(seller))
+    blockers.push({
+      text: "卖方信息缺少有效的中国注册英文地址。",
+      to: "/admin/settings/commercial",
+      action: "配置卖方信息",
+    });
+  if (!readiness.conditionsConfigured)
+    blockers.push({ text: "取消、退款与确认条款尚未配置。" });
+  if (!payments.length)
+    blockers.push({
+      text: "无有效付款说明。",
+      to: "/admin/settings/commercial",
+      action: "配置付款说明",
+    });
+  else if (!payment) blockers.push({ text: "请选择付款渠道及说明版本。" });
+  const blocked = blockers.length > 0;
+  const base = `${quoteBase}/pi`;
   return (
     <div className="admin-shell" data-surface="admin">
       <AdminNavigation active="quotes" />
@@ -428,9 +449,28 @@ export default function ProformaInvoice({
               固定付款截止日（美国东部日期；留空为接受后 10 个美国银行工作日）
               <input type="date" name="fixedPaymentDueDateEt" />
             </label>
+            {blocked && (
+              <div role="status" id="pi-issue-blockers">
+                <p>暂时无法签发：</p>
+                <ul>
+                  {blockers.map((blocker) => (
+                    <li key={blocker.text}>
+                      {blocker.text}
+                      {blocker.to && (
+                        <>
+                          {" "}
+                          <Link to={blocker.to}>{blocker.action}</Link>
+                        </>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <button
               className="button button-primary"
               disabled={pending || blocked}
+              aria-describedby={blocked ? "pi-issue-blockers" : undefined}
             >
               <Send size={18} />
               {pending ? "正在签发" : "签发固定 USD 形式发票"}
