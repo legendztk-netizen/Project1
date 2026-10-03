@@ -165,6 +165,7 @@ export function CompatibleHoseEndStage({
     : false;
 
   useEffect(() => {
+    setFilters(emptyHoseEndFilters);
     if (
       candidateSnapshot?.hoseSku === hoseSku &&
       candidateSnapshot.releaseId === releaseId
@@ -174,13 +175,13 @@ export function CompatibleHoseEndStage({
     }
     const controller = new AbortController();
     setLoadState({ kind: "loading" });
-    setFilters(emptyHoseEndFilters);
     fetchCompatibleHoseEndCandidates({
       hoseSku,
       releaseId,
       signal: controller.signal,
     })
       .then((loadedCandidates) => {
+        if (controller.signal.aborted) return;
         setLoadState({ candidates: loadedCandidates, kind: "ready" });
         onCandidatesLoaded?.({
           candidates: loadedCandidates,

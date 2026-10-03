@@ -34,6 +34,21 @@ measurement Not Sure, and creates a new anonymous quote list. Counts are D1
 `meta.rows_read` / `meta.rows_written`, not returned-row counts. There were no
 live preview quote writes.
 
+| Operation on the same saved snapshot                               | Before (rows read) | After (rows read) |
+| ------------------------------------------------------------------ | -----------------: | ----------------: |
+| Add one assembly to a new anonymous Quote List                     |             89,678 |            10,269 |
+| Exact ordered-pair availability check                              |              2,650 |             1,063 |
+| Direct adapter SKU lookup                                          |              1,149 |               205 |
+| Uncached full catalog repository read                              |             29,493 |            29,493 |
+| Catalog summaries, simulated new isolate with populated edge cache |                  — |                 4 |
+
+The add operation writes 9 rows in both versions. Family payload JSON decreases
+from 1,153,149 to 107,574 bytes on this snapshot, before HTTP compression and
+excluding the page shell. The cold summary fill reads 29,505 rows because it also
+checks freshness before and after filling. The cross-isolate measurements clear
+the isolate map and use an in-memory implementation of Cache API match/put with
+real local D1; they prove repository reuse, not actual Cloudflare edge retention.
+
 The committed integration suites also use independent synthetic catalogs,
 including 200 additional hose SKUs, and compare availability through generated,
 manual, excluded, pending and discontinued states. Run:
