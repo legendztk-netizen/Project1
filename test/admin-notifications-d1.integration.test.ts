@@ -1,3 +1,4 @@
+import { meterD1 } from "../workers/d1-read-metrics";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -357,4 +358,22 @@ it("opens an authorized notification for a read-only user and rejects forged or 
     pattern: "/admin/notifications/unread-count",
   });
   expect(await badge.json()).toMatchObject({ messages: 0 });
+});
+
+it("reads a notification page and both counts in two queries without losing per-admin unread state", async () => {
+  const { binding, metrics } = meterD1(db);
+  const result = await createD1AdminNotifications(binding).list("owner", {
+    filter: "unread",
+    page: 1,
+  });
+  expect(metrics.queries).toBe(2);
+  expect(result.unread).toBe(
+    await createD1AdminNotifications(db).unreadCount("owner"),
+  );
+  expect(result.all).toBe(
+    (await db
+      .prepare("SELECT COUNT(*) AS count FROM admin_notifications")
+      .first<{ count: number }>())!.count,
+  );
+  expect(result.notifications.every((item) => !item.read)).toBe(true);
 });

@@ -71,6 +71,37 @@ The [Cloudflare Cache API documentation](https://developers.cloudflare.com/worke
 describes its data-center-local behavior. Do not convert an optimistic cache-hit
 count into a guaranteed number of daily configurations.
 
+## Admin idle-read reductions
+
+RFQ submission creates an Admin notification through the `admin_notifications_rfq_submitted`
+trigger. Its link opens the corresponding request detail. The queue now reloads
+on navigation, filtering/pagination or explicit refresh, without a 30-second timer
+or focus/visibility revalidation. An idle visible queue therefore avoids about
+120 scheduled **loader reloads per hour**; this is not a count of D1 queries or rows.
+The filter header includes the refresh button, a server-generated last-load time,
+busy feedback and a single-flight guard.
+
+Admin navigation keeps its 30-second visible-page unread check and navigation
+refresh, since there is no push channel. Focus/visibility bursts within one second
+share a check, including when the first request has already completed. Notification
+listing now uses two repository queries instead of three: page rows and a combined
+total/unread aggregate. The real D1 integration test checks the query count and the
+existing per-admin permission, read-state and pagination cases. This does not claim
+a one-third reduction in all Admin rows read; row cost depends on the data.
+
+PI PDF status checks remain active while a job is generating and the page is
+visible. Hidden tabs cancel the timer and resume checks on return. Completed or
+failed jobs do not poll. The overview already uses manual refresh, and queue/message
+pagination was already bounded. Exact dashboard/badge counts can still grow with
+history. Authentication, permission checks and command-time validation remain live;
+private responses are not put in the public catalog cache.
+
+Focused verification:
+
+```sh
+pnpm exec vitest run test/admin-quote-pagination-ui.test.tsx test/admin-navigation.test.tsx test/admin-notifications-d1.integration.test.ts test/admin-notifications-ui.test.tsx test/admin-quote-pagination-d1.integration.test.ts test/proforma-invoice-route-ui.test.tsx test/admin-pi-refresh.test.tsx
+```
+
 ## Verify after an authorized preview deployment
 
 Filter Worker logs on `event = catalog_d1_usage`. Events have an area, method,

@@ -129,7 +129,7 @@ export function createD1AdminNotifications(database: D1Database) {
     ) {
       const where = `WHERE ${visibleToAdmin}${options.filter === "unread" ? " AND r.read_at IS NULL" : ""}`;
       const offset = (options.page - 1) * ADMIN_NOTIFICATION_PAGE_SIZE;
-      const [rows, total, unread] = await Promise.all([
+      const [rows, counts] = await Promise.all([
         database
           .prepare(
             `${notificationSelect} ${where}
@@ -140,13 +140,16 @@ export function createD1AdminNotifications(database: D1Database) {
           .all<AdminNotificationRow>(),
         database
           .prepare(
-            `SELECT COUNT(*) AS count FROM admin_notifications n WHERE ${visibleToAdmin}`,
+            `SELECT COUNT(*) AS total,
+              COALESCE(SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM admin_notification_reads r
+                WHERE r.notification_id=n.id AND r.admin_id=?1) THEN 1 ELSE 0 END),0) AS unread
+             FROM admin_notifications n WHERE ${visibleToAdmin}`,
           )
           .bind(adminId)
-          .first<{ count: number }>(),
-        unreadCount(adminId),
+          .first<{ total: number; unread: number }>(),
       ]);
-      const all = total?.count ?? 0;
+      const all = counts?.total ?? 0;
+      const unread = counts?.unread ?? 0;
       return {
         notifications: rows.results.map(project),
         all,

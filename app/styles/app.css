@@ -1068,10 +1068,54 @@ a {
   border-radius: 6px;
 }
 
-.admin-quote-filters > div:first-child {
+.admin-quote-filter-title {
   display: flex;
   align-items: center;
   gap: 11px;
+}
+
+.admin-quote-filter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.admin-quote-refresh {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.admin-quote-refresh [role="status"] {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.admin-quote-refresh-button {
+  min-height: 40px;
+  gap: 7px;
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
+.admin-quote-refresh-button:disabled svg {
+  animation: admin-refresh-spin 1s linear infinite;
+}
+
+@keyframes admin-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .admin-quote-refresh-button:disabled svg {
+    animation: none;
+  }
 }
 
 .admin-quote-filters h2,

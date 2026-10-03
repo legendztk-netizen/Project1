@@ -26,6 +26,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.useRealTimers();
   refresh.revalidate.mockReset();
+  refresh.state = "idle";
 });
 function show(page = 1, hasNext = true) {
   return render(
@@ -40,6 +41,7 @@ function show(page = 1, hasNext = true) {
               technicalReview: "all",
               sort: "newest",
             },
+            updatedAt: "2026-10-03T02:00:00.000Z",
             reviews: [],
             page,
             hasNext,
@@ -61,11 +63,8 @@ it("preserves filters in both pagination links and identifies page-local metrics
   }
   expect(screen.getByRole("region", { name: "本页筛选结果" })).toBeTruthy();
 });
-it("pauses hidden polling and coalesces manual, focus and visibility refreshes", async () => {
+it("only refreshes on demand, retaining the single-flight guard", async () => {
   vi.useFakeTimers();
-  const visibility = vi
-    .spyOn(document, "visibilityState", "get")
-    .mockReturnValue("visible");
   let finish!: () => void;
   refresh.revalidate.mockImplementation(
     () =>
@@ -74,25 +73,28 @@ it("pauses hidden polling and coalesces manual, focus and visibility refreshes",
       }),
   );
   const view = show();
-  expect(screen.queryByRole("link", { name: "上一页" })).toBeNull();
-  await act(() => vi.advanceTimersByTimeAsync(29999));
-  expect(refresh.revalidate).not.toHaveBeenCalled();
-  await act(() => vi.advanceTimersByTimeAsync(1));
-  expect(refresh.revalidate).toHaveBeenCalledTimes(1);
-  fireEvent.click(screen.getByRole("button", { name: "立即刷新" }));
+  expect(screen.getByRole("status").textContent).toContain("更新于");
+  await act(() => vi.advanceTimersByTimeAsync(120000));
   fireEvent.focus(window);
   fireEvent(document, new Event("visibilitychange"));
+  expect(refresh.revalidate).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "刷新列表" }));
+  fireEvent.click(screen.getByRole("button", { name: "刷新列表" }));
   expect(refresh.revalidate).toHaveBeenCalledTimes(1);
   await act(async () => finish());
-  visibility.mockReturnValue("hidden");
-  await act(() => vi.advanceTimersByTimeAsync(60000));
-  expect(refresh.revalidate).toHaveBeenCalledTimes(1);
-  visibility.mockReturnValue("visible");
-  fireEvent.click(screen.getByRole("button", { name: "立即刷新" }));
+  fireEvent.click(screen.getByRole("button", { name: "刷新列表" }));
   expect(refresh.revalidate).toHaveBeenCalledTimes(2);
   await act(async () => finish());
   view.unmount();
-  await act(() => vi.advanceTimersByTimeAsync(30000));
-  fireEvent.focus(window);
+  await act(() => vi.advanceTimersByTimeAsync(60000));
   expect(refresh.revalidate).toHaveBeenCalledTimes(2);
+});
+it("shows a disabled progress button during revalidation", () => {
+  refresh.state = "loading";
+  show();
+  expect(
+    (screen.getByRole("button", { name: "刷新中…" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  expect(screen.getByRole("status").textContent).toBe("正在更新队列…");
 });

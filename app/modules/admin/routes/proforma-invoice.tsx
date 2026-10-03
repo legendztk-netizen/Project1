@@ -189,10 +189,19 @@ export default function ProformaInvoice({
   );
   useEffect(() => {
     if (!generating || pending || revalidator.state !== "idle") return;
-    const timer = setTimeout(() => {
-      void revalidator.revalidate();
-    }, 3000);
-    return () => clearTimeout(timer);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = () => {
+      clearTimeout(timer);
+      if (document.visibilityState === "visible") {
+        timer = setTimeout(() => void revalidator.revalidate(), 3000);
+      }
+    };
+    schedule();
+    document.addEventListener("visibilitychange", schedule);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", schedule);
+    };
   }, [generating, pending, revalidator]);
   const payment = payments.find(
     (item) =>

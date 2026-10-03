@@ -28,6 +28,21 @@ Use the domain language in [CONTEXT.md](../../CONTEXT.md) and preserve
 - Verify semantic equivalence, invalidation, concurrency and representative read
   budgets in local workerd/D1. Keep local measurements separate from live traffic.
 
+## Admin follow-up
+
+The user additionally requested manual-only RFQ queue refresh, a clearer refresh
+button, and fewer unnecessary Admin D1 interactions without losing functionality.
+
+- Remove queue interval, focus and visibility refresh; keep initial navigation,
+  filter/page navigation and explicit refresh. Put the refresh action beside the
+  filter heading, with last-update and busy feedback and duplicate-click protection.
+- Keep visible-page notification polling: RFQ submission creates a notification,
+  but the badge still needs a request to discover it. Coalesce rapid focus and
+  visibility events without caching permissions or another administrator's data.
+- Combine notification total/unread aggregates while preserving live access scope,
+  read state and pagination. Pause PI generation polling in hidden tabs and resume
+  when visible; finished/failed jobs do not poll.
+
 ## Boundaries
 
 This PR does not merge or deploy. It does not upgrade Cloudflare or mutate preview
