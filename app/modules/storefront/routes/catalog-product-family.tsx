@@ -1,3 +1,4 @@
+import { storefrontCatalogCache } from "../../catalog/infrastructure/public-catalog-edge-cache";
 import { ArrowLeft, Check, Clock3, PackageCheck } from "lucide-react";
 import { data, Link, redirect } from "react-router";
 
@@ -109,6 +110,7 @@ export async function loader({ context, params, request }: Route.LoaderArgs) {
   const sku = new URL(request.url).searchParams.get("sku");
   const result = await createD1PublicCatalogRepository(env.DB, {
     sharedCache: true,
+    edgeCache: storefrontCatalogCache(context.get(cloudflareContext)),
   }).findFamily({
     category: activeCategory,
     familyKey: params.familyKey,

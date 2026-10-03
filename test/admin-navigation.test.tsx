@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -24,6 +25,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe("AdminNavigation", () => {
@@ -216,4 +219,32 @@ it("coalesces focus and visibility refreshes while a badge request is in flight 
   await waitFor(() => expect(screen.getByText("5")).toBeTruthy());
   view.unmount();
   expect(signal.aborted).toBe(true);
+});
+
+it("keeps notification polling but deduplicates settled focus/visibility bursts", async () => {
+  vi.useFakeTimers();
+  const visibility = vi
+    .spyOn(document, "visibilityState", "get")
+    .mockReturnValue("visible");
+  render(
+    <MemoryRouter>
+      <AdminNavigation active="quotes" />
+    </MemoryRouter>,
+  );
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  expect(fetchUnread).toHaveBeenCalledTimes(1);
+  fireEvent.focus(window);
+  fireEvent(document, new Event("visibilitychange"));
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  expect(fetchUnread).toHaveBeenCalledTimes(1);
+  await act(() => vi.advanceTimersByTimeAsync(30000));
+  expect(fetchUnread).toHaveBeenCalledTimes(2);
+  visibility.mockReturnValue("hidden");
+  await act(() => vi.advanceTimersByTimeAsync(60000));
+  expect(fetchUnread).toHaveBeenCalledTimes(2);
+  visibility.mockReturnValue("visible");
+  fireEvent(document, new Event("visibilitychange"));
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  fireEvent.focus(window);
+  expect(fetchUnread).toHaveBeenCalledTimes(3);
 });

@@ -1,3 +1,4 @@
+import { meterD1, catalogRequestArea } from "./d1-read-metrics";
 import {
   canAccessAdminPath,
   adminPathModule,
@@ -71,6 +72,9 @@ export default {
   async fetch(request, env, ctx) {
     const runtime = validateRuntimeEnvironment(env);
     const url = new URL(request.url);
+    const area = catalogRequestArea(url.pathname);
+    const meter = area ? meterD1(env.DB) : null;
+    if (meter) env = { ...env, DB: meter.binding };
     const adminPath = url.pathname.replace(/\.data$/, "");
 
     if (url.pathname === "/health") {
@@ -164,10 +168,25 @@ export default {
     const routerContext = new RouterContextProvider();
     routerContext.set(cloudflareContext, { adminIdentity, env, runtime, ctx });
 
-    const response = await requestHandler(request, routerContext);
-    if (isAdminPath(url.pathname))
-      response.headers.set("Cache-Control", "no-store");
-    return response;
+    let status = 500;
+    try {
+      const response = await requestHandler(request, routerContext);
+      status = response.status;
+      if (isAdminPath(url.pathname))
+        response.headers.set("Cache-Control", "no-store");
+      return response;
+    } finally {
+      if (meter)
+        console.info(
+          JSON.stringify({
+            event: "catalog_d1_usage",
+            area,
+            method: request.method,
+            status,
+            ...meter.metrics,
+          }),
+        );
+    }
   },
 
   async email(message, env) {

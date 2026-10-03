@@ -83,6 +83,7 @@ function RetainedEndUnavailableAlert({
 }
 
 export function CompatibleHoseEndStage({
+  candidateSnapshot = null,
   copyFromEndA = null,
   endRole,
   hoseSku,
@@ -92,6 +93,11 @@ export function CompatibleHoseEndStage({
   requestedEndSku,
   selected,
 }: {
+  candidateSnapshot?: {
+    candidates: CompatibleHoseEndCandidate[];
+    hoseSku: string;
+    releaseId: string;
+  } | null;
   copyFromEndA?: CompatibleHoseEndCandidate | null;
   endRole: "A" | "B";
   hoseSku: string;
@@ -159,15 +165,26 @@ export function CompatibleHoseEndStage({
     : false;
 
   useEffect(() => {
+    setFilters(emptyHoseEndFilters);
+  }, [endRole, hoseSku, releaseId]);
+
+  useEffect(() => {
+    if (
+      candidateSnapshot?.hoseSku === hoseSku &&
+      candidateSnapshot.releaseId === releaseId
+    ) {
+      setLoadState({ kind: "ready", candidates: candidateSnapshot.candidates });
+      return;
+    }
     const controller = new AbortController();
     setLoadState({ kind: "loading" });
-    setFilters(emptyHoseEndFilters);
     fetchCompatibleHoseEndCandidates({
       hoseSku,
       releaseId,
       signal: controller.signal,
     })
       .then((loadedCandidates) => {
+        if (controller.signal.aborted) return;
         setLoadState({ candidates: loadedCandidates, kind: "ready" });
         onCandidatesLoaded?.({
           candidates: loadedCandidates,
@@ -187,7 +204,7 @@ export function CompatibleHoseEndStage({
         });
       });
     return () => controller.abort();
-  }, [endRole, hoseSku, onCandidatesLoaded, releaseId]);
+  }, [candidateSnapshot, endRole, hoseSku, onCandidatesLoaded, releaseId]);
 
   function updateFilter(key: keyof HoseEndFilters, value: string) {
     setFilters((current) => ({ ...current, [key]: value }));

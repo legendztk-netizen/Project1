@@ -121,11 +121,18 @@ function useUnreadNotifications(known: number | undefined, enabled = true) {
     if (!enabled) return;
     let cancelled = false;
     let inFlight = false;
+    let lastStarted = -Infinity;
     const controller = new AbortController();
     const refresh = async () => {
-      if (cancelled || inFlight || document.visibilityState !== "visible")
+      if (
+        cancelled ||
+        inFlight ||
+        document.visibilityState !== "visible" ||
+        Date.now() - lastStarted < 1000
+      )
         return;
       inFlight = true;
+      lastStarted = Date.now();
       try {
         const response = await fetch("/admin/notifications/unread-count", {
           headers: { Accept: "application/json" },

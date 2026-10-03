@@ -1,6 +1,6 @@
-import { AlertTriangle, FileText, Search } from "lucide-react";
+import { AlertTriangle, FileText, Search, RefreshCw } from "lucide-react";
 import { Link, useRevalidator } from "react-router";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useRef } from "react";
 
 import type { Route } from "./+types/quote-reviews";
 import {
@@ -27,7 +27,13 @@ export async function loader({ context, request }: Route.LoaderArgs) {
     filters,
     Number(url.searchParams.get("page") ?? 1),
   );
-  return { adminIdentity, environment: env.APP_ENV, filters, ...result };
+  return {
+    adminIdentity,
+    environment: env.APP_ENV,
+    filters,
+    ...result,
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 const technicalLabels = adminTechnicalReviewLabels;
@@ -45,12 +51,7 @@ export default function QuoteReviews({ loaderData }: Route.ComponentProps) {
   const revalidator = useRevalidator();
   const inFlight = useRef(false);
   const refresh = useCallback(async () => {
-    if (
-      document.visibilityState !== "visible" ||
-      revalidator.state !== "idle" ||
-      inFlight.current
-    )
-      return;
+    if (revalidator.state !== "idle" || inFlight.current) return;
     inFlight.current = true;
     try {
       await revalidator.revalidate();
@@ -58,16 +59,6 @@ export default function QuoteReviews({ loaderData }: Route.ComponentProps) {
       inFlight.current = false;
     }
   }, [revalidator]);
-  useEffect(() => {
-    const timer = setInterval(refresh, 30000);
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", refresh);
-    return () => {
-      clearInterval(timer);
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", refresh);
-    };
-  }, [refresh]);
   const pageLink = (page: number) =>
     "?" +
     new URLSearchParams({
@@ -133,23 +124,36 @@ export default function QuoteReviews({ loaderData }: Route.ComponentProps) {
           </article>
         </section>
 
-        <div className="admin-quote-refresh">
-          <span>可见页面每 30 秒自动刷新</span>{" "}
-          <button
-            type="button"
-            className="button button-secondary"
-            disabled={revalidator.state !== "idle"}
-            onClick={() => void refresh()}
-          >
-            立即刷新
-          </button>
-        </div>
-        <section className="admin-quote-filters">
-          <div>
-            <Search aria-hidden="true" size={20} />
-            <div>
-              <h2>筛选与排序</h2>
-              <p>技术审核优先排序只改变显示顺序，不修改客户请求快照。</p>
+        <section
+          className="admin-quote-filters"
+          aria-busy={revalidator.state !== "idle"}
+        >
+          <div className="admin-quote-filter-header">
+            <div className="admin-quote-filter-title">
+              <Search aria-hidden="true" size={20} />
+              <div>
+                <h2>筛选与排序</h2>
+                <p>技术审核优先排序只改变显示顺序，不修改客户请求快照。</p>
+              </div>
+            </div>
+            <div className="admin-quote-refresh">
+              <span role="status" aria-live="polite">
+                {revalidator.state !== "idle"
+                  ? "正在更新队列…"
+                  : loaderData.updatedAt
+                    ? `更新于 ${formatBeijingDateTime(loaderData.updatedAt)}`
+                    : "按需刷新队列"}
+              </span>
+              <button
+                type="button"
+                className="button button-secondary admin-quote-refresh-button"
+                disabled={revalidator.state !== "idle"}
+                onClick={() => void refresh()}
+                title="重新获取当前筛选条件下的询价"
+              >
+                <RefreshCw aria-hidden="true" size={16} />
+                {revalidator.state !== "idle" ? "刷新中…" : "刷新列表"}
+              </button>
             </div>
           </div>
           <form method="get">
@@ -201,7 +205,7 @@ export default function QuoteReviews({ loaderData }: Route.ComponentProps) {
             <FileText aria-hidden="true" size={24} />
             <div>
               <strong>当前筛选条件下没有询价请求</strong>
-              <p>更改筛选条件，或等待客户提交新的询价请求。</p>
+              <p>更改筛选条件，或在收到新询价通知后刷新列表。</p>
             </div>
           </section>
         ) : (

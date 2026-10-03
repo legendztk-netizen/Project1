@@ -89,6 +89,31 @@ export interface PublicCatalogFamily {
   variants: PublicCatalogItem[];
 }
 
+export interface PublicCatalogFamilySummary extends Omit<
+  PublicCatalogFamily,
+  "variants"
+> {
+  variantCount: number;
+  minimumReferencePrice: number | null;
+}
+
+export function summarizeCatalogFamilies(
+  families: PublicCatalogFamily[],
+): PublicCatalogFamilySummary[] {
+  return families.map(({ variants, ...family }) => {
+    const prices = variants.flatMap((variant) =>
+      variant.offer?.referencePrice == null
+        ? []
+        : [variant.offer.referencePrice],
+    );
+    return {
+      ...family,
+      variantCount: variants.length,
+      minimumReferencePrice: prices.length ? Math.min(...prices) : null,
+    };
+  });
+}
+
 export const categoryByProductType: Record<PublicProductType, CatalogFamilyId> =
   {
     adapter: "adapters",

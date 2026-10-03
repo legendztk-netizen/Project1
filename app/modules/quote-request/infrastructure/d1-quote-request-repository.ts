@@ -1,3 +1,4 @@
+import { availableAssemblySql } from "../../configurator/infrastructure/available-assembly-sql";
 import type {
   QuoteRequestRecord,
   QuoteRequestSnapshot,
@@ -368,15 +369,16 @@ export function createD1QuoteRequestRepository(database: D1Database) {
                AND (SELECT CASE WHEN mode = 'items' THEN generation ELSE -1 END
                     FROM catalog_item_publication_state WHERE singleton = 1) = ?
                AND NOT EXISTS (SELECT 1 FROM anonymous_quote_lines l
-                 WHERE NOT EXISTS (SELECT 1 FROM catalog_available_assembly_combinations c
-                   WHERE c.release_id=l.catalog_release_id AND c.hose_sku=l.sku
-                   AND c.end_a_compatibility_id=json_extract(l.configured_snapshot_json,'$.configuration.endA.compatibilityId')
-                   AND c.end_b_compatibility_id=json_extract(l.configured_snapshot_json,'$.configuration.endB.compatibilityId')
-                   AND c.identity=json_array(l.sku,
-                     json_extract(l.configured_snapshot_json,'$.configuration.endA.hoseEnd.sku'),
-                     json_extract(l.configured_snapshot_json,'$.configuration.endA.ferrule.sku'),
-                     json_extract(l.configured_snapshot_json,'$.configuration.endB.hoseEnd.sku'),
-                     json_extract(l.configured_snapshot_json,'$.configuration.endB.ferrule.sku')))
+                 WHERE NOT EXISTS (${availableAssemblySql({
+                   releaseId: "l.catalog_release_id",
+                   hoseSku: "l.sku",
+                   endACompatibilityId:
+                     "json_extract(l.configured_snapshot_json,'$.configuration.endA.compatibilityId')",
+                   endBCompatibilityId:
+                     "json_extract(l.configured_snapshot_json,'$.configuration.endB.compatibilityId')",
+                   identity:
+                     "json_array(l.sku,json_extract(l.configured_snapshot_json,'$.configuration.endA.hoseEnd.sku'),json_extract(l.configured_snapshot_json,'$.configuration.endA.ferrule.sku'),json_extract(l.configured_snapshot_json,'$.configuration.endB.hoseEnd.sku'),json_extract(l.configured_snapshot_json,'$.configuration.endB.ferrule.sku'))",
+                 })})
                  AND l.session_id = s.id AND l.line_kind = 'configured_assembly'
                    AND l.id IN (SELECT value FROM json_each(?)))
                AND EXISTS (

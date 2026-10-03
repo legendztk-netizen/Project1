@@ -1,3 +1,4 @@
+import { storefrontCatalogCache } from "../../catalog/infrastructure/public-catalog-edge-cache";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -132,6 +133,7 @@ export async function loader({ context, request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const repository = createD1PublicCatalogRepository(env.DB, {
     sharedCache: true,
+    edgeCache: storefrontCatalogCache(context.get(cloudflareContext)),
   });
   const referenceRepository = createD1ConfiguratorReferenceRepository(env.DB);
   const result = await repository.browse({ category: "hydraulic-hose" });
@@ -1377,6 +1379,7 @@ export function BuildAHoseView({
                   </>
                 ) : stage === "end-a" ? (
                   <CompatibleHoseEndStage
+                    candidateSnapshot={compatibleCandidateSnapshot}
                     endRole="A"
                     hoseSku={hoseDraft?.hose.sku ?? ""}
                     onCandidatesLoaded={receiveCompatibleCandidates}
@@ -1388,6 +1391,7 @@ export function BuildAHoseView({
                 ) : stage === "end-b" ? (
                   <>
                     <CompatibleHoseEndStage
+                      candidateSnapshot={compatibleCandidateSnapshot}
                       copyFromEndA={selectedEndA}
                       endRole="B"
                       hoseSku={hoseDraft?.hose.sku ?? ""}
