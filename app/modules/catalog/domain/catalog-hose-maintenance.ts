@@ -11,6 +11,10 @@ import type {
   CatalogSkuDraft,
   TechnicalDataStatus,
 } from "./catalog-workbook";
+import {
+  formatAcceptedFittingLines,
+  parseAcceptedFittingLines,
+} from "./fitting-line";
 
 export interface HoseSeriesRecord {
   coverColor: string | null;
@@ -29,7 +33,12 @@ export interface HoseSeriesRecord {
 }
 
 export interface HoseVariantInput {
+  /** Fitting Lines this size accepts, such as "B,W" (ADR 0056). */
+  acceptedFittingLines?: string | null;
   bendRadiusMm: number;
+  crimpDiameterBMm?: number | null;
+  crimpDiameterJjMm?: number | null;
+  crimpDiameterWMm?: number | null;
   burstBar: number;
   dash: string;
   hoseSeries: string;
@@ -314,8 +323,14 @@ export async function validateHoseVariantMaintenance(
   >,
   input: MaintainHoseVariantInput,
 ) {
+  const acceptedFittingLines = parseAcceptedFittingLines(
+    input.variant.acceptedFittingLines,
+  );
   const variant: HoseVariantInput = {
     ...input.variant,
+    acceptedFittingLines: acceptedFittingLines
+      ? formatAcceptedFittingLines(acceptedFittingLines)
+      : null,
     dash: input.variant.dash.trim(),
     hoseSeries: normalizedCode(input.variant.hoseSeries),
     mshaMarking: normalizedText(input.variant.mshaMarking),
@@ -343,6 +358,23 @@ export async function validateHoseVariantMaintenance(
     [variant.weightKgM, "Weight kg/m / 米重"],
   ] as const) {
     requiredNumber(findings, value, field, true);
+  }
+  if (acceptedFittingLines === undefined)
+    findings.push(
+      finding(
+        "Accepted Fitting Lines / 可配接头产品线",
+        "invalid_fitting_lines",
+        "Use B, W or JJ separated by commas / 请填写 B、W、JJ，用逗号分隔",
+        variant.sku,
+      ),
+    );
+  for (const [value, field] of [
+    [variant.crimpDiameterBMm, "Crimp Diameter B mm / 编织型扣压外径"],
+    [variant.crimpDiameterWMm, "Crimp Diameter W mm / W系列扣压外径"],
+    [variant.crimpDiameterJjMm, "Crimp Diameter JJ mm / JJ系列扣压外径"],
+  ] as const) {
+    if (value !== null && value !== undefined)
+      requiredNumber(findings, value, field, true);
   }
   const override = normalizedText(input.imageOverrideReference);
   if (

@@ -9,13 +9,14 @@ export interface CompatibleHoseEndCandidate {
   connectionDash: DashSize | null;
   connectionStandard: string;
   displayName: string;
+  /** Null for a one-piece Hose End (ADR 0056). */
   ferrule: {
     hoseConstruction: string;
     hoseTailDash: DashSize | null;
     series: string;
     skiveRequirement: string;
     sku: string;
-  };
+  } | null;
   gender: string;
   hoseEndSku: string;
   hoseTailDash: DashSize | null;
@@ -48,7 +49,7 @@ export function isExactCompatibleCandidate(
   return (
     candidate.compatibilityId === selected.compatibilityId &&
     candidate.hoseEndSku === selectedHoseEndSku &&
-    candidate.ferrule.sku === selected.ferrule.sku
+    (candidate.ferrule?.sku ?? null) === (selected.ferrule?.sku ?? null)
   );
 }
 
@@ -92,7 +93,7 @@ function configuredEnd(candidate: CompatibleHoseEndCandidate) {
   return {
     assemblyWorkingBar: candidate.assemblyWorkingBar,
     compatibilityId: candidate.compatibilityId,
-    ferrule: { ...candidate.ferrule },
+    ferrule: candidate.ferrule ? { ...candidate.ferrule } : null,
     hoseEnd: {
       aliases: [...candidate.aliases],
       angle: candidate.angle,

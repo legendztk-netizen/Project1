@@ -367,7 +367,7 @@ it("compares captured assembly ends and ferrules and enforces technical confirma
     throw new Error("Invalid fixture kind");
   line.configuredAssembly.estimateBasis.hoseEndAPriceUsd = 999;
   expect(comparePiQuoteMaterial(before, after).changes).toEqual([]);
-  line.configuredAssembly.snapshot.configuration.endA!.ferrule.sku =
+  line.configuredAssembly.snapshot.configuration.endA!.ferrule!.sku =
     "replacement-ferrule";
   expect(comparePiQuoteMaterial(before, after).changes).toContain(
     "specifications",

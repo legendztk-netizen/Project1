@@ -40,7 +40,7 @@ function assemblySpecifications(configuration: HoseConfigurationDraft) {
       ? {
           sku: value.hoseEnd.sku,
           name: value.hoseEnd.displayName,
-          ferruleSku: value.ferrule.sku,
+          ferruleSku: value.ferrule?.sku ?? null,
         }
       : null;
   return {

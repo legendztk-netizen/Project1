@@ -1,3 +1,7 @@
+---
+status: partially superseded by ADR-0056 (ferrules)
+---
+
 # Prioritize Build a Hose in Storefront Navigation
 
 The storefront's primary product navigation is Build a Hose, Hydraulic Hose,

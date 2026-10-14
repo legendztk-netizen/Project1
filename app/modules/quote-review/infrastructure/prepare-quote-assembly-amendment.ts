@@ -30,9 +30,9 @@ export function assemblyAmendmentFields(
   const c = line.configuredAssembly.snapshot.configuration;
   return {
     endASku: c.endA?.hoseEnd.sku ?? "",
-    endAFerruleSku: c.endA?.ferrule.sku ?? "",
+    endAFerruleSku: c.endA?.ferrule?.sku ?? "",
     endBSku: c.endB?.hoseEnd.sku ?? "",
-    endBFerruleSku: c.endB?.ferrule.sku ?? "",
+    endBFerruleSku: c.endB?.ferrule?.sku ?? "",
     measurement:
       c.measurementSelection?.state === "selected"
         ? c.measurementSelection.method.code
@@ -78,7 +78,8 @@ export async function prepareQuoteAssemblyAmendment(
   ).findCompatibleEndA(hose.releaseId, hose.sku);
   const resolve = (sku: string, ferrule: string) => {
     const matches = candidates.filter(
-      (c) => c.hoseEndSku === sku && c.ferrule.sku === ferrule,
+      // A blank ferrule selects the one-piece Hose End (ADR 0056).
+      (c) => c.hoseEndSku === sku && (c.ferrule?.sku ?? "") === ferrule,
     );
     if (matches.length !== 1)
       throw new Error(

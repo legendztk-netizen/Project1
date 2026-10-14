@@ -84,9 +84,9 @@ export async function action({ context, request }: Route.ActionArgs) {
           {
             hoseSku: value("hoseSku"),
             endAHoseEndSku: value("endAHoseEndSku"),
-            endAFerruleSku: value("endAFerruleSku"),
+            endAFerruleSku: value("endAFerruleSku") || null,
             endBHoseEndSku: value("endBHoseEndSku"),
-            endBFerruleSku: value("endBFerruleSku"),
+            endBFerruleSku: value("endBFerruleSku") || null,
           },
           command,
         );
@@ -299,18 +299,18 @@ export default function AssemblyManagement() {
             {[
               ["hoseSku", "胶管 / Hose SKU"],
               ["endAHoseEndSku", "End A 接头 / Hose End SKU"],
-              ["endAFerruleSku", "End A 套筒 / Ferrule SKU"],
+              ["endAFerruleSku", "End A 套筒 / Ferrule SKU（一体式留空）"],
               ["endBHoseEndSku", "End B 接头 / Hose End SKU"],
-              ["endBFerruleSku", "End B 套筒 / Ferrule SKU"],
+              ["endBFerruleSku", "End B 套筒 / Ferrule SKU（一体式留空）"],
             ].map(([key, label]) => (
               <label key={key}>
                 {label}
-                <input name={key} required />
+                <input name={key} required={!key.endsWith("FerruleSku")} />
               </label>
             ))}
             <p>
-              依照现有 Dash、系列和剥胶规则校验 / Existing Dash, series and
-              skive rules apply.
+              依照现有产品线、Dash、系列和剥胶规则校验 / Existing Fitting Line,
+              Dash, series and skive rules apply.
             </p>
             <button name="intent" value="add" disabled={!d.canEdit}>
               保存手动组合
@@ -392,10 +392,12 @@ export default function AssemblyManagement() {
                     {c.hoseSeries} / {c.hoseSku}
                   </td>
                   <td>
-                    {c.endAHoseEndSku} / {c.endAFerruleSku}
+                    {c.endAHoseEndSku}
+                    {c.endAFerruleSku ? ` / ${c.endAFerruleSku}` : ""}
                   </td>
                   <td>
-                    {c.endBHoseEndSku} / {c.endBFerruleSku}
+                    {c.endBHoseEndSku}
+                    {c.endBFerruleSku ? ` / ${c.endBFerruleSku}` : ""}
                   </td>
                   <td>
                     {c.disabled ? "停用" : "启用"} ·{" "}

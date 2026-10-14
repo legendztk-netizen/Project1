@@ -187,7 +187,7 @@ function deleteGuardForInvalidConfiguredEnd(end: "A" | "B") {
                 INNER JOIN catalog_runtime_skus hose_end
                   ON hose_end.import_id = compatibility.import_id
                  AND hose_end.sku = compatibility.hose_end_sku
-                INNER JOIN catalog_runtime_skus ferrule
+                LEFT JOIN catalog_runtime_skus ferrule
                   ON ferrule.import_id = compatibility.import_id
                  AND ferrule.sku = compatibility.ferrule_sku
                 WHERE compatibility.import_id = release.source_import_id
@@ -200,7 +200,8 @@ function deleteGuardForInvalidConfiguredEnd(end: "A" | "B") {
                     line.configured_snapshot_json,
                     '$.configuration.end${end}.hoseEnd.sku'
                   )
-                  AND compatibility.ferrule_sku = json_extract(
+                  -- One-piece Hose Ends have no ferrule (ADR 0056).
+                  AND compatibility.ferrule_sku IS json_extract(
                     line.configured_snapshot_json,
                     '$.configuration.end${end}.ferrule.sku'
                   )
@@ -209,9 +210,10 @@ function deleteGuardForInvalidConfiguredEnd(end: "A" | "B") {
                   AND hose_end.catalog_publication_status = 'Published'
                   AND hose_end.rfq_eligibility = 'Eligible'
                   AND hose_end.supply_availability = 'available_for_quote'
-                  AND ferrule.catalog_publication_status = 'Published'
-                  AND ferrule.rfq_eligibility = 'Eligible'
-                  AND ferrule.supply_availability = 'available_for_quote'
+                  AND (compatibility.ferrule_sku IS NULL OR (
+                    ferrule.catalog_publication_status = 'Published'
+                    AND ferrule.rfq_eligibility = 'Eligible'
+                    AND ferrule.supply_availability = 'available_for_quote'))
               )
           )`;
 }

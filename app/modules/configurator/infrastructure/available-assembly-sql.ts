@@ -35,10 +35,10 @@ export function availableAssemblySql({
           JOIN release r ON r.id = c.release_id
           JOIN endpoints a ON a.import_id = r.source_import_id AND a.hose_sku = c.hose_sku
             AND a.compatibility_id = c.end_a_compatibility_id
-            AND a.hose_end_sku = c.end_a_hose_end_sku AND a.ferrule_sku = c.end_a_ferrule_sku
+            AND a.hose_end_sku = c.end_a_hose_end_sku AND a.ferrule_sku IS c.end_a_ferrule_sku
           JOIN endpoints b ON b.import_id = r.source_import_id AND b.hose_sku = c.hose_sku
             AND b.compatibility_id = c.end_b_compatibility_id
-            AND b.hose_end_sku = c.end_b_hose_end_sku AND b.ferrule_sku = c.end_b_ferrule_sku
+            AND b.hose_end_sku = c.end_b_hose_end_sku AND b.ferrule_sku IS c.end_b_ferrule_sku
           WHERE c.end_a_compatibility_id=${endACompatibilityId} AND c.end_b_compatibility_id=${endBCompatibilityId}
             AND a.catalog_publication_status = 'Published' AND a.rfq_eligibility = 'Eligible'
             AND b.catalog_publication_status = 'Published' AND b.rfq_eligibility = 'Eligible'

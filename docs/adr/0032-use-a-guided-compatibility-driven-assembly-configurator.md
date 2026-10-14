@@ -1,3 +1,7 @@
+---
+status: partially superseded by ADR-0056 (ferrules)
+---
+
 # Use a Guided Compatibility-driven Assembly Configurator
 
 The Hose Assembly configurator guides customers through hose, End A, End B,

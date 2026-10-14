@@ -9,7 +9,6 @@ const footerColumns = [
     links: [
       { label: "Hydraulic Hose", to: "/catalog/hydraulic-hose" },
       { label: "Hose Ends", to: "/catalog/hose-ends" },
-      { label: "Ferrules", to: "/catalog/ferrules" },
       { label: "Adapters", to: "/catalog/adapters" },
       { label: "Quick Couplers", to: "/catalog/quick-couplers" },
     ],

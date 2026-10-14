@@ -13,6 +13,10 @@ import type {
 } from "./catalog-hose-maintenance";
 import type { SeriesCommercialRule } from "./catalog-commercial-maintenance";
 import type { ProductLifecycleStatus } from "./catalog-product-lifecycle";
+import {
+  formatAcceptedFittingLines,
+  parseAcceptedFittingLines,
+} from "./fitting-line";
 
 export const itemCurrencies = [
   "USD",
@@ -176,12 +180,22 @@ export function itemCompatibilityKey(input: {
   dash: string;
   skiveRequirement: string | null;
   state: string;
+  acceptedFittingLines?: string | null;
+  crimpDiameterBMm?: number | null;
+  crimpDiameterWMm?: number | null;
+  crimpDiameterJjMm?: number | null;
 }) {
+  const lines = parseAcceptedFittingLines(input.acceptedFittingLines);
   return JSON.stringify([
     input.hoseSeries,
     input.dash,
     input.skiveRequirement,
     input.state === "online",
+    // One-piece pairing inputs (ADR 0056); generated endpoints carry the crimp diameter.
+    lines ? formatAcceptedFittingLines(lines) : null,
+    input.crimpDiameterBMm ?? null,
+    input.crimpDiameterWMm ?? null,
+    input.crimpDiameterJjMm ?? null,
   ]);
 }
 export function itemCode(payload: CatalogItemPayload) {

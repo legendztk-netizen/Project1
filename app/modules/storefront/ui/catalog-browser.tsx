@@ -69,18 +69,21 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
                   All Products
                 </Link>
               </li>
-              {launchCatalogFamilies.map((family) => (
-                <li key={family.id}>
-                  <Link
-                    className={
-                      family.id === data.activeCategory ? "active" : ""
-                    }
-                    to={`/catalog/${family.id}`}
-                  >
-                    {family.label}
-                  </Link>
-                </li>
-              ))}
+              {launchCatalogFamilies
+                // Crimp fittings are one-piece (ADR 0056); old ferrule pages keep their route.
+                .filter((family) => family.id !== "ferrules")
+                .map((family) => (
+                  <li key={family.id}>
+                    <Link
+                      className={
+                        family.id === data.activeCategory ? "active" : ""
+                      }
+                      to={`/catalog/${family.id}`}
+                    >
+                      {family.label}
+                    </Link>
+                  </li>
+                ))}
             </ul>
           </aside>
 

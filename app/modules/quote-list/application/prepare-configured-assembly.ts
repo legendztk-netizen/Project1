@@ -66,6 +66,13 @@ function stringAt(value: unknown, ...path: string[]) {
   return current;
 }
 
+// One-piece Hose Ends store `ferrule: null` (ADR 0056).
+function ferruleSkuAt(value: unknown, end: "endA" | "endB") {
+  return object(object(value)[end]).ferrule === null
+    ? null
+    : stringAt(value, end, "ferrule", "sku");
+}
+
 function integerAt(value: unknown, ...path: string[]) {
   let current: unknown = value;
   for (const key of path) current = object(current)[key];
@@ -162,12 +169,12 @@ export async function prepareConfiguredAssembly(input: {
   );
   const endAInput = {
     compatibilityId: stringAt(raw, "endA", "compatibilityId"),
-    ferrule: { sku: stringAt(raw, "endA", "ferrule", "sku") },
+    ferruleSku: ferruleSkuAt(raw, "endA"),
     hoseEndSku: stringAt(raw, "endA", "hoseEnd", "sku"),
   };
   const endBInput = {
     compatibilityId: stringAt(raw, "endB", "compatibilityId"),
-    ferrule: { sku: stringAt(raw, "endB", "ferrule", "sku") },
+    ferruleSku: ferruleSkuAt(raw, "endB"),
     hoseEndSku: stringAt(raw, "endB", "hoseEnd", "sku"),
   };
   const endA = candidates.find(
@@ -175,14 +182,14 @@ export async function prepareConfiguredAssembly(input: {
       (useCurrentReferences ||
         candidate.compatibilityId === endAInput.compatibilityId) &&
       candidate.hoseEndSku === endAInput.hoseEndSku &&
-      candidate.ferrule.sku === endAInput.ferrule.sku,
+      (candidate.ferrule?.sku ?? null) === endAInput.ferruleSku,
   );
   const endB = candidates.find(
     (candidate) =>
       (useCurrentReferences ||
         candidate.compatibilityId === endBInput.compatibilityId) &&
       candidate.hoseEndSku === endBInput.hoseEndSku &&
-      candidate.ferrule.sku === endBInput.ferrule.sku,
+      (candidate.ferrule?.sku ?? null) === endBInput.ferruleSku,
   );
   if (!endA || !endB) {
     reject(
@@ -198,9 +205,9 @@ export async function prepareConfiguredAssembly(input: {
       identity: JSON.stringify([
         currentDraft.hose.sku,
         endA.hoseEndSku,
-        endA.ferrule.sku,
+        endA.ferrule?.sku ?? null,
         endB.hoseEndSku,
-        endB.ferrule.sku,
+        endB.ferrule?.sku ?? null,
       ]),
     }))
   ) {
@@ -443,15 +450,15 @@ export async function prepareConfiguredAssembly(input: {
     await Promise.all([
       catalog.findItem(endA.hoseEndSku),
       catalog.findItem(endB.hoseEndSku),
-      catalog.findItem(endA.ferrule.sku),
-      catalog.findItem(endB.ferrule.sku),
+      endA.ferrule ? catalog.findItem(endA.ferrule.sku) : null,
+      endB.ferrule ? catalog.findItem(endB.ferrule.sku) : null,
     ]);
   const basisProducts = [
     hoseProduct,
     endAProduct,
     endBProduct,
-    ferruleAProduct,
-    ferruleBProduct,
+    ...(endA.ferrule ? [ferruleAProduct] : []),
+    ...(endB.ferrule ? [ferruleBProduct] : []),
   ];
   if (hoseProduct?.catalogBasis) {
     const generation = hoseProduct.catalogBasis.generation;
@@ -473,8 +480,13 @@ export async function prepareConfiguredAssembly(input: {
   }
   const estimateInput = {
     assemblyServiceUsd: lengthPricing.assemblyServiceUsd,
-    ferruleAPriceUsd: currentUnitPrice(ferruleAProduct, "each"),
-    ferruleBPriceUsd: currentUnitPrice(ferruleBProduct, "each"),
+    // A one-piece Hose End has no separate ferrule to price.
+    ferruleAPriceUsd: endA.ferrule
+      ? currentUnitPrice(ferruleAProduct, "each")
+      : 0,
+    ferruleBPriceUsd: endB.ferrule
+      ? currentUnitPrice(ferruleBProduct, "each")
+      : 0,
     finishedOverallLengthFeet: lengthPricing.exactLengthFeet,
     hoseCutLengthFeet: lengthPricing.exactLengthFeet,
     hoseEndAPriceUsd: currentUnitPrice(endAProduct, "each"),

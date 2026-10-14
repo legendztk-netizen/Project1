@@ -11,6 +11,7 @@ import type {
   CatalogSkuDraft,
   TechnicalDataStatus,
 } from "./catalog-workbook";
+import { isFittingLine } from "./fitting-line";
 
 export interface HoseEndSeriesRecord {
   angle: string;
@@ -24,28 +25,31 @@ export interface HoseEndSeriesRecord {
   swivelForm: string;
 }
 
+// Technical data is optional until orders justify asking the factory (ADR 0056).
 export interface HoseEndVariantInput {
-  coating: string;
+  coating: string | null;
   competitorPartNumber: string | null;
   connectionDash: string;
-  cutoffBMm: number;
-  dimensionAMm: number;
+  cutoffBMm: number | null;
+  dimensionAMm: number | null;
   drawingNumber: string | null;
   drawingRevision: string | null;
+  /** One-piece Fitting Line; blank for a legacy insert that needs a ferrule. */
+  fittingLine?: string | null;
   fittingSeries: string;
-  hex1Mm: number;
-  hex2Mm: number;
+  hex1Mm: number | null;
+  hex2Mm: number | null;
   hoseTailDash: string;
-  material: string;
-  maxWorkingBar: number;
-  minimumBoreMm: number;
+  material: string | null;
+  maxWorkingBar: number | null;
+  minimumBoreMm: number | null;
   notes: string;
-  saltSprayHours: number;
+  saltSprayHours: number | null;
   sku: string;
   source: string | null;
   technicalDataStatus: TechnicalDataStatus | null;
   thread: string;
-  unitWeightG: number;
+  unitWeightG: number | null;
 }
 
 export interface HoseEndVariantRecord extends HoseEndVariantInput {
@@ -174,13 +178,13 @@ function requiredText(
   }
 }
 
-function requiredNumber(
+function optionalNumber(
   findings: CatalogImportValidationResult[],
-  value: number,
+  value: number | null | undefined,
   field: string,
   sku: string,
 ) {
-  if (!Number.isFinite(value)) {
+  if (value !== null && value !== undefined && !Number.isFinite(value)) {
     findings.push(
       finding(
         field,
@@ -307,14 +311,16 @@ export async function validateHoseEndVariantMaintenance(
 ) {
   const variant: HoseEndVariantInput = {
     ...input.variant,
-    coating: input.variant.coating.trim(),
+    coating: normalizedText(input.variant.coating),
     competitorPartNumber: normalizedText(input.variant.competitorPartNumber),
     connectionDash: input.variant.connectionDash.trim(),
     drawingNumber: normalizedText(input.variant.drawingNumber),
     drawingRevision: normalizedText(input.variant.drawingRevision),
+    fittingLine:
+      normalizedText(input.variant.fittingLine)?.toUpperCase() ?? null,
     fittingSeries: normalizedCode(input.variant.fittingSeries),
     hoseTailDash: input.variant.hoseTailDash.trim(),
-    material: input.variant.material.trim(),
+    material: normalizedText(input.variant.material),
     notes: (input.variant.notes ?? "").trim(),
     sku: normalizedCode(input.variant.sku),
     source: normalizedText(input.variant.source),
@@ -327,11 +333,18 @@ export async function validateHoseEndVariantMaintenance(
     [variant.thread, "Thread / 螺纹"],
     [variant.connectionDash, "Connection Dash / 接口Dash"],
     [variant.hoseTailDash, "Hose Tail Dash / 胶管尾Dash"],
-    [variant.material, "Material / 材质"],
-    [variant.coating, "Coating / 表面处理"],
   ] as const) {
     requiredText(findings, value, field, variant.sku);
   }
+  if (variant.fittingLine && !isFittingLine(variant.fittingLine))
+    findings.push(
+      finding(
+        "Fitting Line / 产品线",
+        "invalid_fitting_line",
+        "Use B, W, JJ, SS or SSW / 产品线须为 B、W、JJ、SS 或 SSW",
+        variant.sku,
+      ),
+    );
   for (const [value, field] of [
     [variant.saltSprayHours, "Salt Spray h / 盐雾小时"],
     [variant.maxWorkingBar, "Max Working bar / 最大工作压力"],
@@ -342,7 +355,7 @@ export async function validateHoseEndVariantMaintenance(
     [variant.minimumBoreMm, "Minimum Bore mm / 最小通径"],
     [variant.unitWeightG, "Unit Weight g / 单重"],
   ] as const) {
-    requiredNumber(findings, value, field, variant.sku);
+    optionalNumber(findings, value, field, variant.sku);
   }
   const override = normalizedText(input.imageOverrideReference);
   if (

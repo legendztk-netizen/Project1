@@ -9,6 +9,12 @@ import {
 } from "../domain/managed-assemblies";
 import { CatalogItemRejected } from "../domain/catalog-item-publication";
 import {
+  acceptedLineFor,
+  referenceCrimpDiameterMm,
+  skiveRequirementFor,
+  type HoseFittingLineData,
+} from "../domain/fitting-line";
+import {
   validateCatalogWorksheetRecord,
   type CatalogWorkbookCell,
 } from "../domain/catalog-workbook";
@@ -39,6 +45,9 @@ export interface SourceRow {
 }
 const triple = (e: AssemblyEndpoint) =>
   JSON.stringify([e.hose_sku, e.hose_end_sku, e.ferrule_sku]);
+// A blank ferrule cell names a one-piece Hose End (ADR 0056).
+const ferruleValue = (value: unknown) =>
+  value === null || value === undefined || value === "" ? null : String(value);
 const eligible = (e: AssemblyEndpoint) =>
   e.catalog_publication_status === "Published" &&
   e.rfq_eligibility === "Eligible";
@@ -177,6 +186,8 @@ export function createD1ManagedAssemblies(
       overrides,
       revisions,
       pendingSources,
+      hoseLineData,
+      fittingLines,
     ] = await Promise.all([
       products("catalog_runtime_hose_variants", "hose", true),
       products("catalog_runtime_hose_ends", "hose_end"),
@@ -208,6 +219,29 @@ export function createD1ManagedAssemblies(
           "SELECT source_json FROM catalog_pending_relation_sources WHERE status='pending'",
         )
         .all<{ source_json: string }>(),
+      // Fitting Line fields live only in item payloads (ADR 0056).
+      database
+        .prepare(
+          `SELECT code AS sku,
+          json_extract(payload_json,'$.variant.acceptedFittingLines') AS acceptedFittingLines,
+          json_extract(payload_json,'$.variant.crimpDiameterBMm') AS crimpDiameterBMm,
+          json_extract(payload_json,'$.variant.crimpDiameterWMm') AS crimpDiameterWMm,
+          json_extract(payload_json,'$.variant.crimpDiameterJjMm') AS crimpDiameterJjMm
+          FROM catalog_item_runtime_current
+          WHERE import_id=? AND kind='sku' AND product_type='hose'
+          AND json_extract(payload_json,'$.variant.hoseSeries')=?`,
+        )
+        .bind(current.importId, series)
+        .all<HoseFittingLineData & { sku: string }>(),
+      database
+        .prepare(
+          `SELECT code AS sku,json_extract(payload_json,'$.variant.fittingLine') AS fitting_line
+          FROM catalog_item_runtime_current
+          WHERE import_id=? AND kind='sku' AND product_type='hose_end'
+          AND COALESCE(json_extract(payload_json,'$.variant.fittingLine'),'')<>''`,
+        )
+        .bind(current.importId)
+        .all<{ sku: string; fitting_line: string }>(),
     ]);
     const known = new Map<string, AssemblyEndpoint>(
       legacy.results.map((e) => [
@@ -227,8 +261,62 @@ export function createD1ManagedAssemblies(
     );
     const endpoints: AssemblyEndpoint[] = [];
     const matched: AssemblyEndpoint[] = [];
+    const lineDataBySku = new Map(hoseLineData.results.map((h) => [h.sku, h]));
+    const lineBySku = new Map(
+      fittingLines.results.map((e) => [e.sku, e.fitting_line]),
+    );
+    function consider(identity: string, generated: AssemblyEndpoint) {
+      // A previous generation's automatic endpoint is rebuilt so changed inputs,
+      // such as a reference crimp diameter, reach the new generation.
+      const previous = known.get(identity);
+      const endpoint =
+        previous && !String(previous.id).startsWith("item-auto:")
+          ? previous
+          : generated;
+      matched.push({ ...endpoint, hose_series: series });
+      if (
+        eligible(endpoint) &&
+        (known.has(identity) || !pendingTriples.has(identity))
+      )
+        endpoints.push({ ...endpoint, hose_series: series });
+    }
     for (const h of hoses)
-      for (const e of ends)
+      for (const e of ends) {
+        // One-piece Hose Ends pair by Fitting Line and equal dash, without a ferrule.
+        const fittingLine = lineBySku.get(e.sku);
+        if (fittingLine === undefined) continue;
+        const lineData = lineDataBySku.get(h.sku) ?? {};
+        const line = acceptedLineFor(lineData, fittingLine);
+        if (
+          !line ||
+          !assemblyDashMatches(
+            String(h.dash ?? ""),
+            String(e.hose_tail_dash ?? ""),
+          )
+        )
+          continue;
+        const identity = JSON.stringify([h.sku, e.sku, null]);
+        consider(identity, {
+          id: `item-auto:${identity}`,
+          compatibility_id: `AUTO:${h.sku}:${e.sku}`,
+          hose_sku: h.sku,
+          hose_end_sku: e.sku,
+          ferrule_sku: null,
+          hose_series: series,
+          source: "automatic",
+          catalog_publication_status: "Published",
+          rfq_eligibility: "Eligible",
+          technical_data_status: "Pending",
+          qualification_status: "Not Tested",
+          production_approval_status: "not_approved",
+          reference_system: "Automatic catalog compatibility rule",
+          reference_crimp_diameter_mm: referenceCrimpDiameterMm(lineData, line),
+          reference_source: `Fitting Line ${fittingLine}`,
+          skive_requirement: skiveRequirementFor(line),
+        });
+      }
+    for (const h of hoses)
+      for (const e of ends.filter((end) => !lineBySku.has(end.sku)))
         for (const f of ferrules) {
           if (
             f.ferrule_series !== h.hose_series ||
@@ -241,7 +329,7 @@ export function createD1ManagedAssemblies(
           )
             continue;
           const identity = JSON.stringify([h.sku, e.sku, f.sku]);
-          const endpoint = known.get(identity) ?? {
+          consider(identity, {
             id: `item-auto:${identity}`,
             compatibility_id: `AUTO:${h.sku}:${e.sku}:${f.sku}`,
             hose_sku: h.sku,
@@ -256,17 +344,15 @@ export function createD1ManagedAssemblies(
             production_approval_status: "not_approved",
             reference_system: "Automatic catalog compatibility rule",
             skive_requirement: h.skive_requirement,
-          };
-          matched.push({ ...endpoint, hose_series: series });
-          if (
-            eligible(endpoint) &&
-            (known.has(identity) || !pendingTriples.has(identity))
-          )
-            endpoints.push({ ...endpoint, hose_series: series });
+          });
         }
     const referenced = new Set([
       ...hoses.map((h) => h.sku),
-      ...matched.flatMap((e) => [e.hose_sku, e.hose_end_sku, e.ferrule_sku]),
+      ...matched.flatMap((e) =>
+        [e.hose_sku, e.hose_end_sku, e.ferrule_sku].filter(
+          (sku): sku is string => sku !== null,
+        ),
+      ),
     ]);
     const seriesCodes = new Set([
       series,
@@ -352,8 +438,8 @@ export function createD1ManagedAssemblies(
       EXISTS (SELECT 1 FROM catalog_assembly_pending_series p WHERE p.hose_series=c.hose_series) AS pending,
       EXISTS (SELECT 1 FROM catalog_assembly_relation_overrides o WHERE
         json_extract(o.payload_json,'$.hose_sku')=c.hose_sku AND
-        (json_extract(o.payload_json,'$.hose_end_sku')=c.end_a_hose_end_sku AND json_extract(o.payload_json,'$.ferrule_sku')=c.end_a_ferrule_sku
-        OR json_extract(o.payload_json,'$.hose_end_sku')=c.end_b_hose_end_sku AND json_extract(o.payload_json,'$.ferrule_sku')=c.end_b_ferrule_sku)) AS imported
+        (json_extract(o.payload_json,'$.hose_end_sku')=c.end_a_hose_end_sku AND json_extract(o.payload_json,'$.ferrule_sku') IS c.end_a_ferrule_sku
+        OR json_extract(o.payload_json,'$.hose_end_sku')=c.end_b_hose_end_sku AND json_extract(o.payload_json,'$.ferrule_sku') IS c.end_b_ferrule_sku)) AS imported
       FROM catalog_runtime_assembly_combinations c
       LEFT JOIN catalog_assembly_manual m ON m.identity=c.identity
       LEFT JOIN catalog_assembly_managed_series s ON s.hose_series=c.hose_series
@@ -367,9 +453,9 @@ export function createD1ManagedAssemblies(
         hose_series: string;
         hose_sku: string;
         end_a_hose_end_sku: string;
-        end_a_ferrule_sku: string;
+        end_a_ferrule_sku: string | null;
         end_b_hose_end_sku: string;
-        end_b_ferrule_sku: string;
+        end_b_ferrule_sku: string | null;
         end_a_compatibility_id: string;
         end_b_compatibility_id: string;
         manual_id: string | null;
@@ -698,7 +784,7 @@ export function createD1ManagedAssemblies(
           if (
             String(values.hoseSku) !== existing.hose_sku ||
             String(values.hoseEndSku) !== existing.hose_end_sku ||
-            String(values.ferruleSku) !== existing.ferrule_sku
+            ferruleValue(values.ferruleSku) !== existing.ferrule_sku
           )
             throw new CatalogItemRejected(
               "PartialUpdate 不可更换关系的三件套 SKU；请新增关系",
@@ -726,7 +812,7 @@ export function createD1ManagedAssemblies(
         (e) =>
           e.hose_sku === values.hoseSku &&
           e.hose_end_sku === values.hoseEndSku &&
-          e.ferrule_sku === values.ferruleSku,
+          e.ferrule_sku === ferruleValue(values.ferruleSku),
       );
       if (!candidate)
         throw new CatalogItemRejected("依赖产品未上线或不符合现有匹配规则");
@@ -741,7 +827,7 @@ export function createD1ManagedAssemblies(
         compatibility_id: String(values.compatibilityId),
         hose_sku: String(values.hoseSku),
         hose_end_sku: String(values.hoseEndSku),
-        ferrule_sku: String(values.ferruleSku),
+        ferrule_sku: ferruleValue(values.ferruleSku),
         source: "import",
         hose_series: hose.hose_series,
         production_approval_status: "not_approved",
