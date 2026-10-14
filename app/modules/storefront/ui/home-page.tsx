@@ -315,8 +315,8 @@ export function HomePage({ appName }: { appName: string }) {
                 <span className="home-eyebrow">Hydraulic Hose Fittings</span>
                 <h3>Adapters and quick couplers.</h3>
                 <p>
-                  The parts that finish the job. Our crimp hose ends are
-                  one-piece, so no separate ferrule is needed.
+                  The parts that finish the job, matched to the connections they
+                  are made for.
                 </p>
                 <ul className="home-chip-list">
                   <li>
