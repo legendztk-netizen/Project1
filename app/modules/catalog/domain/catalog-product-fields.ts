@@ -33,6 +33,10 @@ const hoseKeys = [
   "weightKgM",
   "skiveRequirement",
   "mshaMarking",
+  "acceptedFittingLines",
+  "crimpDiameterBMm",
+  "crimpDiameterWMm",
+  "crimpDiameterJjMm",
   "technicalDataStatus",
   "source",
   "notes",
@@ -40,6 +44,7 @@ const hoseKeys = [
 const endKeys = [
   "sku",
   "fittingSeries",
+  "fittingLine",
   "competitorPartNumber",
   "connectionDash",
   "hoseTailDash",
@@ -119,21 +124,12 @@ export function productFields(
       ? {
           ...field,
           key: key === "adapterSku" ? "sku" : key,
+          // Hose End technical data stays optional until orders justify
+          // asking the factory (ADR 0056).
           required:
             ["sku", "adapterSku"].includes(key) ||
             field.required ||
-            (["workingPsi"].includes(key) && type === "hose") ||
-            ([
-              "maxWorkingBar",
-              "dimensionAMm",
-              "cutoffBMm",
-              "hex1Mm",
-              "hex2Mm",
-              "minimumBoreMm",
-              "unitWeightG",
-              "saltSprayHours",
-            ].includes(key) &&
-              type === "hose_end"),
+            (["workingPsi"].includes(key) && type === "hose"),
         }
       : {
           key,

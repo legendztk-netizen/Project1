@@ -1202,8 +1202,9 @@ after the customer order is confirmed.
 _Avoid_: Locally assembled hose, stocked assembly
 
 **Crimp Specification**:
-The approved production instruction that links one Hose Size Variant, fitting,
-and ferrule combination to its required dies and final crimp diameter.
+The approved production instruction that links one Hose Size Variant and one
+one-piece Hose End to its required dies and final crimp diameter. Records made
+before ADR 0056 also name the ferrule of a two-piece fitting.
 _Avoid_: Machine setting, crimp number
 
 **Assembly Facility**:
@@ -1367,6 +1368,20 @@ A quote-line status showing that suitability cannot be concluded from the
 customer's submitted Application Requirements without human review.
 _Avoid_: Rejected configuration, Production Approval, unsafe by definition
 
+**Fitting Line**:
+The construction class of a one-piece crimp Hose End that decides which hoses it
+fits: `B` braided (Weatherhead U interchange), `W` bite-the-wire, `JJ` six-wire
+skive, `SS` stainless braided and `SSW` stainless bite-the-wire. `SS` pairs like
+`B` and `SSW` like `W`. It is the prefix of the Hose End SKU, which is also the
+factory part number.
+_Avoid_: Fitting series, crimp style name, competitor suffix
+
+**Accepted Fitting Lines**:
+The Fitting Lines (`B`, `W`, `JJ`) a Hose Size Variant can be assembled with,
+each with an optional reference crimp diameter. The launch values copy
+Hydraulax's assembly builder size by size.
+_Avoid_: Hose series default, inferred from reinforcement, compatible ferrules
+
 **Hose End Interface Family**:
 A group of hose-end connections sharing a mating and sealing standard. The
 launch configurator supports JIC 37-degree, NPT/NPTF, ORFS, and BSPP/BSPT.
@@ -1462,23 +1477,26 @@ or connection option.
 _Avoid_: Universal series default, approximate competitor copy, SKU identity
 
 **RFQ-Eligible Combination**:
-An exact Hose Size Variant, hose-end SKU, and ferrule relationship that may be
-selected in the configurator and submitted for review. It may come from an
+An exact Hose Size Variant and hose-end SKU relationship that may be selected
+in the configurator and submitted for review; relationships recorded before
+ADR 0056 also name a ferrule. It may come from an
 approved worksheet 04 source row or Automatic Compatibility Expansion, without
 implying that the combination is approved for production.
 _Avoid_: Verified combination, guaranteed compatibility, purchasable assembly
 
 **Automatic Compatibility Expansion**:
 The deterministic materialization of exact RFQ-Eligible Combinations from the
-declared Hose Dash, Hose End Hose Tail Dash, Hose Series, Ferrule Series,
-Ferrule Hose Tail Dash, Skive Requirement, and product lifecycle gates. It
-carries system-rule provenance and never supplies crimp dimensions, programs,
-pressure ratings, production qualification, or suitability certification.
+declared Hose Dash, Hose End Hose Tail Dash, the Hose End's Fitting Line, the
+Hose Size Variant's Accepted Fitting Lines, and product lifecycle gates. Hose
+Ends without a Fitting Line still match legacy ferrules by Hose Series, Ferrule
+Hose Tail Dash and Skive Requirement. It carries system-rule provenance and a
+reference crimp diameter at most; it never supplies crimp programs, pressure
+ratings, production qualification, or suitability certification.
 _Avoid_: Manual compatibility entry, name matching, thread similarity, image
 matching, Production-Approved Combination
 
 **Derived Assembly Data**:
-Versioned configurator combinations, ferrule mappings, and indexes generated
+Versioned configurator combinations and indexes generated
 from current published products and explicit RFQ-Eligible Combinations. It
 excludes customer-selected length, Clocking, Installed Protection, and pricing;
 affected stale combinations are unavailable until refreshed.
@@ -1494,9 +1512,11 @@ _Avoid_: Manually selected regeneration scope, visibly edited series only,
 unchecked partial update
 
 **Assembly Component Combination**:
-A stable ordered combination of one Hose Size Variant, End A Hose End and
-Ferrule, and End B Hose End and Ferrule, generated from RFQ-Eligible Combinations
-or explicitly maintained in Assembly Management. Reversing unlike ends changes
+A stable ordered combination of one Hose Size Variant, an End A Hose End and an
+End B Hose End, generated from RFQ-Eligible Combinations or explicitly
+maintained in Assembly Management. Its identity keeps a ferrule slot per end,
+`null` for one-piece Hose Ends and a ferrule SKU for combinations recorded
+before ADR 0056. Reversing unlike ends changes
 its identity; length, Clocking, protection, and price are not part of that identity.
 _Avoid_: Assembly SKU, unordered end pair, customer configuration, Assembly Number
 
@@ -1513,9 +1533,9 @@ authorized enable action ends its effect.
 _Avoid_: Physical deletion, generated-row identifier, production rejection
 
 **Production-Approved Combination**:
-An exact Hose Size Variant, hose-end SKU, ferrule, production method, final
-crimp diameter, and working-pressure record approved for Hose Assembly
-production.
+An exact Hose Size Variant, hose-end SKU (with its ferrule for a legacy
+two-piece fitting), production method, final crimp diameter, and
+working-pressure record approved for Hose Assembly production.
 _Avoid_: RFQ-Eligible Combination, same-size parts, assumed compatibility
 
 **Clocking**:
@@ -1781,6 +1801,6 @@ measured ISO 4406 class.
 _Avoid_: ISO-certified cleanliness, visual exterior cleaning, optional service
 
 **Loose Crimp Component**:
-A factory-approved hose end or ferrule sold separately with its compatible
+A factory-approved one-piece hose end sold separately with its compatible
 Hose Series, size, and customer crimp-data sheet for professional assembly.
 _Avoid_: Adapter, field-installable fitting, finished Hose Assembly

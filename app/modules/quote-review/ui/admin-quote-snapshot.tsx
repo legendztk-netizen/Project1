@@ -274,20 +274,26 @@ function EndSnapshot({ end, label }: { end: unknown; label: string }) {
               : missing
           }
         />
-        <SnapshotField label="套筒 SKU" value={valueText(ferrule?.sku)} />
-        <SnapshotField
-          label="套筒系列 / 胶管结构"
-          value={
-            joined([ferrule?.series, ferrule?.hoseConstruction]) ?? missing
-          }
-        />
-        <SnapshotField
-          label="套筒管尾 / 剥胶要求"
-          value={
-            joined([ferrule?.hoseTailDash, ferrule?.skiveRequirement]) ??
-            missing
-          }
-        />
+        {value?.ferrule === null ? (
+          <SnapshotField label="套筒" value="一体式接头，无单独套筒" />
+        ) : (
+          <>
+            <SnapshotField label="套筒 SKU" value={valueText(ferrule?.sku)} />
+            <SnapshotField
+              label="套筒系列 / 胶管结构"
+              value={
+                joined([ferrule?.series, ferrule?.hoseConstruction]) ?? missing
+              }
+            />
+            <SnapshotField
+              label="套筒管尾 / 剥胶要求"
+              value={
+                joined([ferrule?.hoseTailDash, ferrule?.skiveRequirement]) ??
+                missing
+              }
+            />
+          </>
+        )}
       </SnapshotFields>
     </section>
   );

@@ -297,7 +297,12 @@ export default function QuoteRevisions({
                               defaultValue={
                                 loaderData.assemblyFields[line.id]![field]
                               }
-                              required
+                              placeholder={
+                                field.endsWith("FerruleSku")
+                                  ? "一体式接头留空"
+                                  : undefined
+                              }
+                              required={!field.endsWith("FerruleSku")}
                             />
                           </label>
                         ))}

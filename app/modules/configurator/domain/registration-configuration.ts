@@ -176,7 +176,7 @@ function validConfiguredEnd(value: unknown) {
     ]) &&
     optionalNumber(value.assemblyWorkingBar) &&
     requiredString(value.compatibilityId) &&
-    validFerrule(value.ferrule) &&
+    (value.ferrule === null || validFerrule(value.ferrule)) &&
     validHoseEnd(value.hoseEnd)
   );
 }

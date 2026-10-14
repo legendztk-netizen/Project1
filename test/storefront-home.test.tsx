@@ -63,7 +63,6 @@ describe("Storefront home page", () => {
     for (const path of [
       "/catalog/hydraulic-hose",
       "/catalog/hose-ends",
-      "/catalog/ferrules",
       "/catalog/adapters",
       "/catalog/quick-couplers",
     ]) {

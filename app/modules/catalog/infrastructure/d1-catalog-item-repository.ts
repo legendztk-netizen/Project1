@@ -510,9 +510,15 @@ export function createD1CatalogItemRepository(
       ) {
         const old = await database
           .prepare(
-            `SELECT h.hose_series, h.dash, h.skive_requirement, s.catalog_publication_status
+            `SELECT h.hose_series, h.dash, h.skive_requirement, s.catalog_publication_status,
+          json_extract(n.payload_json,'$.variant.acceptedFittingLines') AS accepted_fitting_lines,
+          json_extract(n.payload_json,'$.variant.crimpDiameterBMm') AS crimp_diameter_b_mm,
+          json_extract(n.payload_json,'$.variant.crimpDiameterWMm') AS crimp_diameter_w_mm,
+          json_extract(n.payload_json,'$.variant.crimpDiameterJjMm') AS crimp_diameter_jj_mm
           FROM catalog_runtime_hose_variants h JOIN catalog_runtime_skus s ON s.import_id = h.import_id AND s.sku = h.sku
-          JOIN catalog_releases r ON r.source_import_id = h.import_id JOIN catalog_active_release a ON a.release_id = r.id WHERE h.sku = ?`,
+          JOIN catalog_releases r ON r.source_import_id = h.import_id JOIN catalog_active_release a ON a.release_id = r.id
+          LEFT JOIN catalog_item_runtime_current n ON n.kind = 'sku' AND n.product_type = 'hose' AND n.import_id = h.import_id AND n.code = h.sku
+          WHERE h.sku = ?`,
           )
           .bind(code)
           .first<{
@@ -520,12 +526,20 @@ export function createD1CatalogItemRepository(
             dash: string;
             skive_requirement: string | null;
             catalog_publication_status: string;
+            accepted_fitting_lines: string | null;
+            crimp_diameter_b_mm: number | null;
+            crimp_diameter_w_mm: number | null;
+            crimp_diameter_jj_mm: number | null;
           }>();
         const before = old
           ? itemCompatibilityKey({
               hoseSeries: old.hose_series,
               dash: old.dash,
               skiveRequirement: old.skive_requirement,
+              acceptedFittingLines: old.accepted_fitting_lines,
+              crimpDiameterBMm: old.crimp_diameter_b_mm,
+              crimpDiameterWMm: old.crimp_diameter_w_mm,
+              crimpDiameterJjMm: old.crimp_diameter_jj_mm,
               state:
                 old.catalog_publication_status === "Published"
                   ? "online"
@@ -552,7 +566,7 @@ export function createD1CatalogItemRepository(
         const old = await findProductPayload(payload.productType, "sku", code);
         const keys =
           payload.productType === "hose_end"
-            ? ["fittingSeries", "hoseTailDash"]
+            ? ["fittingSeries", "hoseTailDash", "fittingLine"]
             : [
                 "ferruleSeries",
                 "hoseTailDash",

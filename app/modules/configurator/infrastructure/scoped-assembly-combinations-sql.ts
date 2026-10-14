@@ -2,6 +2,7 @@
 // selected BEFORE pairing generated JSON endpoints. Filtering the outer view
 // alone still builds pairs across every hose in the generation (quadratic reads).
 // Keep manual overrides, legacy-release fallback and compatibility resolution.
+// Ferrule slots may be NULL (one-piece Hose Ends, migration 0133), so they compare with IS.
 // Expressions are internal SQL fragments, never user input. Runtime values stay bound.
 export function assemblyCombinationsSql(
   releaseId: string,
@@ -10,8 +11,8 @@ export function assemblyCombinationsSql(
 ) {
   const endpointFilter = identity
     ? ` AND (
- (json_extract(e.value,'$.hose_end_sku')=json_extract(${identity},'$[1]') AND json_extract(e.value,'$.ferrule_sku')=json_extract(${identity},'$[2]'))
- OR (json_extract(e.value,'$.hose_end_sku')=json_extract(${identity},'$[3]') AND json_extract(e.value,'$.ferrule_sku')=json_extract(${identity},'$[4]'))) `
+ (json_extract(e.value,'$.hose_end_sku')=json_extract(${identity},'$[1]') AND json_extract(e.value,'$.ferrule_sku') IS json_extract(${identity},'$[2]'))
+ OR (json_extract(e.value,'$.hose_end_sku')=json_extract(${identity},'$[3]') AND json_extract(e.value,'$.ferrule_sku') IS json_extract(${identity},'$[4]'))) `
     : "";
   return `WITH endpoints AS MATERIALIZED (
  SELECT s.hose_series,s.generation_id,e.value AS endpoint
@@ -38,10 +39,10 @@ WHERE json_extract(m.payload_json,'$.hoseSku')=${hoseSku}${identity ? ` AND m.id
 SELECT * FROM (
 SELECT r.id AS release_id,c.identity,c.hose_series,
  json_extract(c.payload_json,'$.hoseSku') AS hose_sku,
- (SELECT e.compatibility_id FROM catalog_runtime_compatibilities e WHERE e.import_id=r.source_import_id AND e.hose_sku=json_extract(c.payload_json,'$.hoseSku') AND e.hose_end_sku=json_extract(c.payload_json,'$.endAHoseEndSku') AND e.ferrule_sku=json_extract(c.payload_json,'$.endAFerruleSku')) AS end_a_compatibility_id,
+ (SELECT e.compatibility_id FROM catalog_runtime_compatibilities e WHERE e.import_id=r.source_import_id AND e.hose_sku=json_extract(c.payload_json,'$.hoseSku') AND e.hose_end_sku=json_extract(c.payload_json,'$.endAHoseEndSku') AND e.ferrule_sku IS json_extract(c.payload_json,'$.endAFerruleSku')) AS end_a_compatibility_id,
  json_extract(c.payload_json,'$.endAHoseEndSku') AS end_a_hose_end_sku,
  json_extract(c.payload_json,'$.endAFerruleSku') AS end_a_ferrule_sku,
- (SELECT e.compatibility_id FROM catalog_runtime_compatibilities e WHERE e.import_id=r.source_import_id AND e.hose_sku=json_extract(c.payload_json,'$.hoseSku') AND e.hose_end_sku=json_extract(c.payload_json,'$.endBHoseEndSku') AND e.ferrule_sku=json_extract(c.payload_json,'$.endBFerruleSku')) AS end_b_compatibility_id,
+ (SELECT e.compatibility_id FROM catalog_runtime_compatibilities e WHERE e.import_id=r.source_import_id AND e.hose_sku=json_extract(c.payload_json,'$.hoseSku') AND e.hose_end_sku=json_extract(c.payload_json,'$.endBHoseEndSku') AND e.ferrule_sku IS json_extract(c.payload_json,'$.endBFerruleSku')) AS end_b_compatibility_id,
  json_extract(c.payload_json,'$.endBHoseEndSku') AS end_b_hose_end_sku,
  json_extract(c.payload_json,'$.endBFerruleSku') AS end_b_ferrule_sku
 FROM scoped_combinations c JOIN catalog_item_publication_state s ON s.mode='items'
@@ -53,7 +54,7 @@ FROM catalog_releases r JOIN catalog_compatibilities a ON a.import_id=r.source_i
 JOIN catalog_compatibilities b ON b.import_id=a.import_id AND b.hose_sku=a.hose_sku
 JOIN catalog_runtime_hose_variants h ON h.import_id=a.import_id AND h.sku=a.hose_sku
 WHERE a.hose_sku=${hoseSku}
-${identity ? `AND a.hose_end_sku=json_extract(${identity},'$[1]') AND a.ferrule_sku=json_extract(${identity},'$[2]') AND b.hose_end_sku=json_extract(${identity},'$[3]') AND b.ferrule_sku=json_extract(${identity},'$[4]')` : ""}
+${identity ? `AND a.hose_end_sku=json_extract(${identity},'$[1]') AND a.ferrule_sku IS json_extract(${identity},'$[2]') AND b.hose_end_sku=json_extract(${identity},'$[3]') AND b.ferrule_sku IS json_extract(${identity},'$[4]')` : ""}
 AND NOT EXISTS (SELECT 1 FROM catalog_item_publication_state state JOIN catalog_assembly_managed_series s ON s.hose_series=h.hose_series
  WHERE state.mode='items' AND state.baseline_release_id=r.id AND s.generation_id IS NOT NULL)
 AND NOT EXISTS (SELECT 1 FROM catalog_item_publication_state state JOIN catalog_assembly_manual m

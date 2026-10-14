@@ -313,15 +313,12 @@ export function HomePage({ appName }: { appName: string }) {
             <article className="home-tile is-light is-fittings" data-reveal>
               <div className="home-tile-copy">
                 <span className="home-eyebrow">Hydraulic Hose Fittings</span>
-                <h3>Ferrules, adapters and quick couplers.</h3>
+                <h3>Adapters and quick couplers.</h3>
                 <p>
-                  The parts that finish the job, matched to the hose
-                  construction they are made for.
+                  The parts that finish the job. Our crimp hose ends are
+                  one-piece, so no separate ferrule is needed.
                 </p>
                 <ul className="home-chip-list">
-                  <li>
-                    <Link to="/catalog/ferrules">Ferrules</Link>
-                  </li>
                   <li>
                     <Link to="/catalog/adapters">Adapters</Link>
                   </li>
@@ -331,11 +328,11 @@ export function HomePage({ appName }: { appName: string }) {
                 </ul>
               </div>
               <img
-                alt="Crimp ferrule"
-                height={420}
+                alt="BSPP male fitting"
+                height={900}
                 loading="lazy"
-                src={img("fittings-ferrule.jpg")}
-                width={460}
+                src="/images/catalog/hose-ends/bspp-male-fixed-straight.jpg"
+                width={900}
               />
             </article>
           </div>

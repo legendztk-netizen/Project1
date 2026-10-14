@@ -210,7 +210,7 @@ function compatibleCandidates() {
       connectionStandard: "SAE J476 / ASME B1.20.3",
       displayName: "NPTF Male Fixed Straight Hose End",
       ferrule: {
-        ...compatibleEndAFixture().ferrule,
+        ...compatibleEndAFixture().ferrule!,
         sku: "601R1_1WB_003",
       },
       gender: "Male",

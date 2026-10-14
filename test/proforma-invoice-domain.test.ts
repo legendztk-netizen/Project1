@@ -513,7 +513,7 @@ describe("PI readiness and fixed public snapshots", () => {
     expect(() => createProformaInvoiceSnapshot(input)).toThrow(/factory/);
     revision.factoryReviewConfirmed = true;
     const snapshot = createProformaInvoiceSnapshot(input);
-    expect(snapshot.lines[0].assembly?.endA.ferrule.sku).toBe("601R1_1WB_002");
+    expect(snapshot.lines[0].assembly?.endA.ferrule?.sku).toBe("601R1_1WB_002");
     expect(
       snapshot.lines[0].assembly?.finishedLength.tolerance.scheduleVersion,
     ).toBe("1.0.0");

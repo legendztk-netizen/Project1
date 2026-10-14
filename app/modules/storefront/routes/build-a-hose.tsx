@@ -304,7 +304,7 @@ function candidateFromConfiguredEnd(
     ...end.hoseEnd,
     assemblyWorkingBar: end.assemblyWorkingBar,
     compatibilityId: end.compatibilityId,
-    ferrule: { ...end.ferrule },
+    ferrule: end.ferrule ? { ...end.ferrule } : null,
     hoseEndSku: end.hoseEnd.sku,
   };
 }

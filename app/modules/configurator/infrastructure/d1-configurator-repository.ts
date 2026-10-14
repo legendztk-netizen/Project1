@@ -12,11 +12,11 @@ interface CompatibleHoseEndRow {
   competitor_part_number: string | null;
   connection_dash: string;
   connection_standard: string;
-  ferrule_hose_construction: string;
-  ferrule_hose_tail_dash: string;
-  ferrule_series: string;
-  ferrule_skive_requirement: string;
-  ferrule_sku: string;
+  ferrule_hose_construction: string | null;
+  ferrule_hose_tail_dash: string | null;
+  ferrule_series: string | null;
+  ferrule_skive_requirement: string | null;
+  ferrule_sku: string | null;
   fitting_series: string;
   gender: string;
   hose_end_sku: string;
@@ -28,7 +28,23 @@ interface CompatibleHoseEndRow {
   thread: string;
 }
 
+// One-piece series codes are `<Fitting Line>_<code>_<gender>_<swivel>` (ADR 0056);
+// earlier codes start with the competitor family, such as `FJX90L Hydraulax ...`.
+function onePieceFittingCode(fittingSeries: string) {
+  const match = fittingSeries
+    .trim()
+    .toUpperCase()
+    .match(/^(?:B|W|JJ|SS|SSW)_([A-Z0-9]+)_[A-Z]+_[A-Z]+$/u);
+  return match?.[1] ?? null;
+}
+
 function hoseEndLengthClass(fittingSeries: string) {
+  const onePiece = onePieceFittingCode(fittingSeries);
+  if (onePiece) {
+    if (onePiece.endsWith("XL")) return "Extra Long";
+    if (onePiece.endsWith("90M")) return "Medium";
+    return onePiece.endsWith("L") ? "Long" : null;
+  }
   const code = fittingSeries.trim().split(/\s+/, 1)[0]?.toUpperCase();
   if (code === "FJX90L" || code === "FFX90L") {
     return "Long";
@@ -40,10 +56,9 @@ function hoseEndLengthClass(fittingSeries: string) {
 }
 
 function hoseEndInterface(row: CompatibleHoseEndRow) {
-  const seriesCode = row.fitting_series
-    .trim()
-    .split(/\s+/, 1)[0]
-    ?.toUpperCase();
+  const seriesCode =
+    onePieceFittingCode(row.fitting_series) ??
+    row.fitting_series.trim().split(/\s+/, 1)[0]?.toUpperCase();
   if (
     seriesCode === "FPX" ||
     row.connection_standard.toUpperCase().includes("NPSM")
@@ -51,6 +66,7 @@ function hoseEndInterface(row: CompatibleHoseEndRow) {
     return "NPSM";
   }
   if (seriesCode?.startsWith("C61")) return "SAE Code 61";
+  if (seriesCode?.startsWith("C62")) return "SAE Code 62";
   return row.interface_family;
 }
 
@@ -93,13 +109,15 @@ export function compatibleHoseEndCandidateFromRow(
     ]
       .filter(Boolean)
       .join(" "),
-    ferrule: {
-      hoseConstruction: row.ferrule_hose_construction,
-      hoseTailDash: normalizeDashSize(row.ferrule_hose_tail_dash),
-      series: row.ferrule_series,
-      skiveRequirement: row.ferrule_skive_requirement,
-      sku: row.ferrule_sku,
-    },
+    ferrule: row.ferrule_sku
+      ? {
+          hoseConstruction: row.ferrule_hose_construction ?? "",
+          hoseTailDash: normalizeDashSize(row.ferrule_hose_tail_dash ?? ""),
+          series: row.ferrule_series ?? "",
+          skiveRequirement: row.ferrule_skive_requirement ?? "",
+          sku: row.ferrule_sku,
+        }
+      : null,
     gender: row.gender,
     hoseEndSku: row.hose_end_sku,
     hoseTailDash: normalizeDashSize(row.hose_tail_dash),
@@ -178,9 +196,9 @@ function selectedHoseEndSql() {
     ON series.import_id = e.import_id AND series.series_code = e.fitting_series
   INNER JOIN scoped_skus es
     ON es.import_id = e.import_id AND es.sku = e.sku
-  INNER JOIN scoped_ferrules f
+  LEFT JOIN scoped_ferrules f
     ON f.import_id = c.import_id AND f.sku = c.ferrule_sku
-  INNER JOIN scoped_skus fs
+  LEFT JOIN scoped_skus fs
     ON fs.import_id = f.import_id AND fs.sku = f.sku
   WHERE r.id = ?1
     AND r.status IN ('published', 'superseded')
@@ -196,10 +214,11 @@ function selectedHoseEndSql() {
     AND es.catalog_publication_status = 'Published'
     AND es.rfq_eligibility = 'Eligible'
     AND es.supply_availability = 'available_for_quote'
-    AND fs.product_type = 'ferrule'
-    AND fs.catalog_publication_status = 'Published'
-    AND fs.rfq_eligibility = 'Eligible'
-    AND fs.supply_availability = 'available_for_quote'
+    AND (c.ferrule_sku IS NULL OR (
+      fs.product_type = 'ferrule'
+      AND fs.catalog_publication_status = 'Published'
+      AND fs.rfq_eligibility = 'Eligible'
+      AND fs.supply_availability = 'available_for_quote'))
   ORDER BY series.interface_family, series.angle, series.gender, series.swivel_form,
            e.connection_dash, e.hose_tail_dash, e.sku`;
 }
@@ -374,17 +393,21 @@ async function readCompatibleEndARows(
       continue;
     const end = endBySku.get(String(compatibility.hose_end_sku));
     const series = end && seriesByCode.get(String(end.fitting_series));
-    const ferrule = ferruleBySku.get(String(compatibility.ferrule_sku));
+    const onePiece = compatibility.ferrule_sku == null;
+    const ferrule = onePiece
+      ? undefined
+      : ferruleBySku.get(String(compatibility.ferrule_sku));
     const endSku = end && skuByCode.get(String(end.sku));
     const ferruleSku = ferrule && skuByCode.get(String(ferrule.sku));
     if (
       !end ||
       !series ||
-      !ferrule ||
       endSku?.product_type !== "hose_end" ||
       !availableForQuote(endSku) ||
-      ferruleSku?.product_type !== "ferrule" ||
-      !availableForQuote(ferruleSku)
+      (!onePiece &&
+        (!ferrule ||
+          ferruleSku?.product_type !== "ferrule" ||
+          !availableForQuote(ferruleSku)))
     )
       continue;
     rows.push({
@@ -405,10 +428,10 @@ async function readCompatibleEndARows(
         connection_dash: end.connection_dash,
         hose_tail_dash: end.hose_tail_dash,
         max_working_bar: end.max_working_bar,
-        ferrule_series: ferrule.ferrule_series,
-        ferrule_hose_construction: ferrule.hose_construction,
-        ferrule_hose_tail_dash: ferrule.hose_tail_dash,
-        ferrule_skive_requirement: ferrule.skive_requirement,
+        ferrule_series: ferrule?.ferrule_series ?? null,
+        ferrule_hose_construction: ferrule?.hose_construction ?? null,
+        ferrule_hose_tail_dash: ferrule?.hose_tail_dash ?? null,
+        ferrule_skive_requirement: ferrule?.skive_requirement ?? null,
       } as CompatibleHoseEndRow,
       order: [
         series.interface_family,

@@ -97,13 +97,15 @@ function end(value: HoseConfigurationDraft["endA"]) {
   return {
     assemblyWorkingBar: value.assemblyWorkingBar,
     compatibilityId: value.compatibilityId,
-    ferrule: {
-      hoseConstruction: f.hoseConstruction,
-      hoseTailDash: f.hoseTailDash,
-      series: f.series,
-      skiveRequirement: f.skiveRequirement,
-      sku: f.sku,
-    },
+    ferrule: f
+      ? {
+          hoseConstruction: f.hoseConstruction,
+          hoseTailDash: f.hoseTailDash,
+          series: f.series,
+          skiveRequirement: f.skiveRequirement,
+          sku: f.sku,
+        }
+      : null,
     hoseEnd: {
       aliases: h.aliases.map((alias) => alias),
       angle: h.angle,

@@ -4,6 +4,7 @@ import {
   hoseMainImageReference,
   isUploadedMainImageReference,
 } from "./catalog-main-image";
+import { fittingLines } from "./fitting-line";
 
 export type CatalogWorkbookCell = string | number | boolean | Date | null;
 
@@ -471,6 +472,27 @@ export const catalogWorksheetContracts: readonly CatalogWorksheetContract[] = [
         "Hose Series Main Image Reference / 胶管系列主图引用",
         false,
       ),
+      // Optional trailing columns keep earlier workbooks valid (ADR 0056).
+      textField(
+        "acceptedFittingLines",
+        "Accepted Fitting Lines / 可配接头产品线",
+        false,
+      ),
+      numberField(
+        "crimpDiameterBMm",
+        "Crimp Diameter B mm / 编织型扣压外径",
+        false,
+      ),
+      numberField(
+        "crimpDiameterWMm",
+        "Crimp Diameter W mm / W系列扣压外径",
+        false,
+      ),
+      numberField(
+        "crimpDiameterJjMm",
+        "Crimp Diameter JJ mm / JJ系列扣压外径",
+        false,
+      ),
     ],
   },
   {
@@ -498,6 +520,13 @@ export const catalogWorksheetContracts: readonly CatalogWorksheetContract[] = [
         "Japanese",
         "Other",
         "ORB",
+        "SAE 45° Flare",
+        "Inverted Flare",
+        "Flareless Compression",
+        "Caterpillar Flange",
+        "Weld",
+        "Stand Tube",
+        "Grease",
       ]),
       textField("connectionStandard", "* Interface Standard / 接口标准", true),
       textField("gender", "* Gender / 公母", true, ["Male", "Female", "N/A"]),
@@ -509,7 +538,11 @@ export const catalogWorksheetContracts: readonly CatalogWorksheetContract[] = [
       ]),
       textField("angle", "* Angle / 角度", true, [
         "0° Straight",
+        "22°",
+        "30°",
         "45°",
+        "60°",
+        "67°",
         "90°",
         "Other",
       ]),
@@ -549,6 +582,8 @@ export const catalogWorksheetContracts: readonly CatalogWorksheetContract[] = [
         "Fitting Series Main Image Reference / 接头系列主图引用",
         false,
       ),
+      // Optional trailing column keeps earlier workbooks valid (ADR 0056).
+      textField("fittingLine", "Fitting Line / 产品线", false, fittingLines),
     ],
   },
   {

@@ -16,6 +16,12 @@
 
 04 使用兼容编号定位关系。PartialUpdate 不可更换三件套 SKU；Delete 在总成管理应用后保存删除标记，更新系列后不再生成该关系，不删除部件产品。操作、字段字典和颜色含义已同步到六份模板。
 
+## 一体式接头（ADR 0056）
+
+- 02 压接接头新增 `Fitting Line / 产品线`（B、W、JJ、SS、SSW）。填写后按一体式接头配对，不再需要套筒；留空的旧接头仍按套筒规则配对。材质、表面处理、压力、尺寸、重量、盐雾时间改为选填。
+- 01 胶管新增 `Accepted Fitting Lines / 可配接头产品线`（如 `B,W`）和三列参考扣压外径（编织型、W 系列、JJ 系列）。SS 跟随 B，SSW 跟随 W。修改这些字段会让该胶管系列进入总成待更新。
+- 接口体系新增 SAE 45° Flare、Inverted Flare、Flareless Compression、Caterpillar Flange、Weld、Stand Tube、Grease；角度新增 22°、30°、60°、67°。
+
 ## 重新生成
 
 `scripts/build-catalog-import-templates.mjs` 读取实际领域字段定义，使用工作区提供的 `@oai/artifact-tool`，不向应用增加生成库依赖。设置 `ARTIFACT_TOOL_NODE_MODULES` 为该运行时的 `node_modules` 绝对路径，用配套 Node 24 运行：

@@ -1,11 +1,12 @@
 import { normalizeDashSize } from "./dash-size";
 
+// Ferrule slots are null for one-piece Hose Ends (ADR 0056).
 export interface AssemblyParts {
   hoseSku: string;
   endAHoseEndSku: string;
-  endAFerruleSku: string;
+  endAFerruleSku: string | null;
   endBHoseEndSku: string;
-  endBFerruleSku: string;
+  endBFerruleSku: string | null;
 }
 export function assemblyIdentity(parts: AssemblyParts) {
   return JSON.stringify([
@@ -20,7 +21,7 @@ export interface AssemblyEndpoint {
   compatibility_id: string;
   hose_sku: string;
   hose_end_sku: string;
-  ferrule_sku: string;
+  ferrule_sku: string | null;
   hose_series: string;
   source: "automatic" | "import" | "legacy";
   [field: string]: unknown;
@@ -68,12 +69,12 @@ export function deriveManagedCombinations(endpoints: AssemblyEndpoint[]) {
 export function assemblyDashMatches(
   hose: string,
   end: string,
-  ferrule: string,
+  ferrule: string | null = null,
 ) {
   const dash = normalizeDashSize(hose);
   return (
     dash !== null &&
     dash === normalizeDashSize(end) &&
-    dash === normalizeDashSize(ferrule)
+    (ferrule === null || dash === normalizeDashSize(ferrule))
   );
 }

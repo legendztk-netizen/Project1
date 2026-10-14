@@ -229,7 +229,13 @@ export function AssemblyReviewStage({
                 {draft.endA?.hoseEnd.displayName ?? "End A missing"}
               </strong>
               <small>SKU {draft.endA?.hoseEnd.sku ?? "Not selected"}</small>
-              {draft.endA ? <em>Matched ferrule included</em> : null}
+              {draft.endA ? (
+                <em>
+                  {draft.endA.ferrule
+                    ? "Matched ferrule included"
+                    : "One-piece crimp fitting"}
+                </em>
+              ) : null}
             </div>
             <SelectedEndThumbnail end={draft.endA} position="End A" />
             <button onClick={() => onEdit("end-a")} type="button">
@@ -243,7 +249,13 @@ export function AssemblyReviewStage({
                 {draft.endB?.hoseEnd.displayName ?? "End B missing"}
               </strong>
               <small>SKU {draft.endB?.hoseEnd.sku ?? "Not selected"}</small>
-              {draft.endB ? <em>Matched ferrule included</em> : null}
+              {draft.endB ? (
+                <em>
+                  {draft.endB.ferrule
+                    ? "Matched ferrule included"
+                    : "One-piece crimp fitting"}
+                </em>
+              ) : null}
             </div>
             <SelectedEndThumbnail end={draft.endB} position="End B" />
             <button onClick={() => onEdit("end-b")} type="button">

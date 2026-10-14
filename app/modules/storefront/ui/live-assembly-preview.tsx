@@ -339,7 +339,11 @@ export function LiveAssemblyPreview({
               {draft.endA ? (
                 <>
                   <small>SKU {draft.endA.hoseEnd.sku}</small>
-                  <small>Matched ferrule included</small>
+                  <small>
+                    {draft.endA.ferrule
+                      ? "Matched ferrule included"
+                      : "One-piece crimp fitting"}
+                  </small>
                   <small>
                     {draft.endA.hoseEnd.thread} ·{" "}
                     {draft.endA.hoseEnd.sealingForm}
@@ -355,7 +359,11 @@ export function LiveAssemblyPreview({
               {draft.endB ? (
                 <>
                   <small>SKU {draft.endB.hoseEnd.sku}</small>
-                  <small>Matched ferrule included</small>
+                  <small>
+                    {draft.endB.ferrule
+                      ? "Matched ferrule included"
+                      : "One-piece crimp fitting"}
+                  </small>
                   <small>
                     {draft.endB.hoseEnd.thread} ·{" "}
                     {draft.endB.hoseEnd.sealingForm}
