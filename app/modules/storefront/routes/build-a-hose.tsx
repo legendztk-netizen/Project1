@@ -1543,7 +1543,9 @@ export function BuildAHoseView({
                       <span>
                         <strong>End A selection ready</strong>
                         <small>
-                          Exact Hose End and Ferrule saved in this draft.
+                          {draft.endA.ferrule
+                            ? "Exact Hose End and Ferrule saved in this draft."
+                            : "Exact Hose End saved in this draft."}
                         </small>
                       </span>
                     </p>

@@ -225,6 +225,25 @@ it("pairs one-piece Hose Ends by accepted Fitting Line without a ferrule", async
 
 it("regenerates when a hose accepts another Fitting Line or an end changes line", async () => {
   const assemblies = createD1ManagedAssemblies(db, actor);
+  // Editing one field keeps the other Fitting Line fields of the saved hose.
+  await editHose({ crimpDiameterBMm: 16 });
+  const saved = await createD1CatalogItemRepository(db).findPayload(
+    "sku",
+    hose,
+  );
+  expect(saved?.kind === "sku" && saved.variant).toMatchObject({
+    acceptedFittingLines: "B",
+    crimpDiameterBMm: 16,
+  });
+  expect(await assemblies.pending()).toEqual(["601R1"]);
+  await assemblies.update(command());
+  expect(
+    await db
+      .prepare(
+        "SELECT reference_crimp_diameter_mm, skive_requirement FROM catalog_runtime_compatibilities WHERE hose_end_sku='B_JIC_F_SW_04_04'",
+      )
+      .first(),
+  ).toEqual({ reference_crimp_diameter_mm: 16, skive_requirement: "No Skive" });
   await editHose({ acceptedFittingLines: "B, W" });
   expect(await assemblies.pending()).toEqual(["601R1"]);
   await assemblies.update(command());

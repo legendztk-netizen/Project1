@@ -3,6 +3,7 @@ import { availableAssemblySql } from "./available-assembly-sql";
 import { scopedAssemblyCombinationsSql } from "./scoped-assembly-combinations-sql";
 import { interfaceGroup } from "../../catalog/domain/public-catalog";
 import { normalizeDashSize } from "../../catalog/domain/dash-size";
+import { fittingLineOfSeriesCode } from "../../catalog/domain/fitting-line";
 import type { CompatibleHoseEndCandidate } from "../domain/compatible-end-a";
 
 interface CompatibleHoseEndRow {
@@ -31,11 +32,8 @@ interface CompatibleHoseEndRow {
 // One-piece series codes are `<Fitting Line>_<code>_<gender>_<swivel>` (ADR 0056);
 // earlier codes start with the competitor family, such as `FJX90L Hydraulax ...`.
 function onePieceFittingCode(fittingSeries: string) {
-  const match = fittingSeries
-    .trim()
-    .toUpperCase()
-    .match(/^(?:B|W|JJ|SS|SSW)_([A-Z0-9]+)_[A-Z]+_[A-Z]+$/u);
-  return match?.[1] ?? null;
+  if (!fittingLineOfSeriesCode(fittingSeries)) return null;
+  return fittingSeries.trim().toUpperCase().split("_")[1] ?? null;
 }
 
 function hoseEndLengthClass(fittingSeries: string) {
@@ -393,8 +391,8 @@ async function readCompatibleEndARows(
       continue;
     const end = endBySku.get(String(compatibility.hose_end_sku));
     const series = end && seriesByCode.get(String(end.fitting_series));
-    const onePiece = compatibility.ferrule_sku == null;
-    const ferrule = onePiece
+    const withoutFerrule = compatibility.ferrule_sku == null;
+    const ferrule = withoutFerrule
       ? undefined
       : ferruleBySku.get(String(compatibility.ferrule_sku));
     const endSku = end && skuByCode.get(String(end.sku));
@@ -404,7 +402,7 @@ async function readCompatibleEndARows(
       !series ||
       endSku?.product_type !== "hose_end" ||
       !availableForQuote(endSku) ||
-      (!onePiece &&
+      (!withoutFerrule &&
         (!ferrule ||
           ferruleSku?.product_type !== "ferrule" ||
           !availableForQuote(ferruleSku)))

@@ -11,7 +11,8 @@ import { CatalogItemRejected } from "../domain/catalog-item-publication";
 import {
   acceptedLineFor,
   referenceCrimpDiameterMm,
-  type OnePieceHose,
+  skiveRequirementFor,
+  type HoseFittingLineData,
 } from "../domain/fitting-line";
 import {
   validateCatalogWorksheetRecord,
@@ -185,7 +186,7 @@ export function createD1ManagedAssemblies(
       overrides,
       revisions,
       pendingSources,
-      onePieceHoses,
+      hoseLineData,
       fittingLines,
     ] = await Promise.all([
       products("catalog_runtime_hose_variants", "hose", true),
@@ -231,7 +232,7 @@ export function createD1ManagedAssemblies(
           AND json_extract(payload_json,'$.variant.hoseSeries')=?`,
         )
         .bind(current.importId, series)
-        .all<OnePieceHose & { sku: string }>(),
+        .all<HoseFittingLineData & { sku: string }>(),
       database
         .prepare(
           `SELECT code AS sku,json_extract(payload_json,'$.variant.fittingLine') AS fitting_line
@@ -260,12 +261,18 @@ export function createD1ManagedAssemblies(
     );
     const endpoints: AssemblyEndpoint[] = [];
     const matched: AssemblyEndpoint[] = [];
-    const onePieceBySku = new Map(onePieceHoses.results.map((h) => [h.sku, h]));
+    const lineDataBySku = new Map(hoseLineData.results.map((h) => [h.sku, h]));
     const lineBySku = new Map(
       fittingLines.results.map((e) => [e.sku, e.fitting_line]),
     );
     function consider(identity: string, generated: AssemblyEndpoint) {
-      const endpoint = known.get(identity) ?? generated;
+      // A previous generation's automatic endpoint is rebuilt so changed inputs,
+      // such as a reference crimp diameter, reach the new generation.
+      const previous = known.get(identity);
+      const endpoint =
+        previous && !String(previous.id).startsWith("item-auto:")
+          ? previous
+          : generated;
       matched.push({ ...endpoint, hose_series: series });
       if (
         eligible(endpoint) &&
@@ -278,8 +285,8 @@ export function createD1ManagedAssemblies(
         // One-piece Hose Ends pair by Fitting Line and equal dash, without a ferrule.
         const fittingLine = lineBySku.get(e.sku);
         if (fittingLine === undefined) continue;
-        const onePiece = onePieceBySku.get(h.sku) ?? {};
-        const line = acceptedLineFor(onePiece, fittingLine);
+        const lineData = lineDataBySku.get(h.sku) ?? {};
+        const line = acceptedLineFor(lineData, fittingLine);
         if (
           !line ||
           !assemblyDashMatches(
@@ -303,9 +310,9 @@ export function createD1ManagedAssemblies(
           qualification_status: "Not Tested",
           production_approval_status: "not_approved",
           reference_system: "Automatic catalog compatibility rule",
-          reference_crimp_diameter_mm: referenceCrimpDiameterMm(onePiece, line),
+          reference_crimp_diameter_mm: referenceCrimpDiameterMm(lineData, line),
           reference_source: `Fitting Line ${fittingLine}`,
-          skive_requirement: h.skive_requirement,
+          skive_requirement: skiveRequirementFor(line),
         });
       }
     for (const h of hoses)

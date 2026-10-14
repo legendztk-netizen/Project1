@@ -622,7 +622,9 @@ export const catalogWorksheetContracts: readonly CatalogWorksheetContract[] = [
       textField("compatibilityId", "* Compatibility ID / 兼容编号", true),
       textField("hoseSku", "* Hose SKU / 胶管SKU", true),
       textField("hoseEndSku", "* Hose End SKU / 接头SKU", true),
-      textField("ferruleSku", "* Ferrule SKU / 套筒SKU", true),
+      // Blank for a one-piece Hose End (ADR 0056); release workbooks still
+      // require an existing ferrule through the 03 reference check.
+      textField("ferruleSku", "Ferrule SKU / 套筒SKU", false),
       textField("assemblyMethod", "Assembly Method / 装配方法", false),
       textField(
         "skiveRequirement",
@@ -986,7 +988,9 @@ function validateWorksheet(
     }
     // Retain compatibility with older templates that marked these fields required.
     const legacyOptionalHeader =
-      ["technicalDataStatus", "source", "notes"].includes(field.key) &&
+      ["technicalDataStatus", "source", "notes", "ferruleSku"].includes(
+        field.key,
+      ) &&
       typeof header[index] === "string" &&
       fieldLabel(header[index] as string) === fieldLabel(field.header);
     if (header[index] !== field.header && !legacyOptionalHeader) {

@@ -1,3 +1,7 @@
+---
+status: partially superseded by ADR-0056 (ferrules)
+---
+
 # Use a Guided Compatibility-driven Assembly Configurator
 
 The Hose Assembly configurator guides customers through hose, End A, End B,
@@ -8,7 +12,3 @@ drawings rather than arbitrary component combinations. Ferrules are resolved
 by the selected compatibility relationship rather than chosen by the customer;
 their exact SKUs remain in the production package and Assembly Record without
 being expanded as customer PI sub-lines.
-
-Since ADR 0056 (2026-10-14) new combinations use one-piece Hose Ends and carry
-no ferrule; the ferrule rule above applies only to combinations recorded before
-that change.

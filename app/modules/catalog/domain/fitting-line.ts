@@ -50,7 +50,8 @@ export const crimpDiameterKeys = {
   JJ: "crimpDiameterJjMm",
 } as const satisfies Record<AcceptedFittingLine, string>;
 
-export interface OnePieceHose {
+/** A Hose Size Variant's Accepted Fitting Lines and reference crimp diameters. */
+export interface HoseFittingLineData {
   acceptedFittingLines?: string | null;
   crimpDiameterBMm?: number | string | null;
   crimpDiameterWMm?: number | string | null;
@@ -59,7 +60,7 @@ export interface OnePieceHose {
 
 /** The accepted line a one-piece Hose End pairs through, or null when this hose does not accept it. */
 export function acceptedLineFor(
-  hose: OnePieceHose,
+  hose: HoseFittingLineData,
   fittingLine: string | null | undefined,
 ): AcceptedFittingLine | null {
   if (!isFittingLine(fittingLine)) return null;
@@ -70,11 +71,22 @@ export function acceptedLineFor(
 }
 
 export function referenceCrimpDiameterMm(
-  hose: OnePieceHose,
+  hose: HoseFittingLineData,
   line: AcceptedFittingLine,
 ) {
   const value = hose[crimpDiameterKeys[line]];
   if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+/** JJ six-wire fittings need the cover skived; braided and bite-the-wire lines do not. */
+export function skiveRequirementFor(line: AcceptedFittingLine) {
+  return line === "JJ" ? "External Skive" : "No Skive";
+}
+
+/** The Fitting Line prefix of a one-piece series code such as `W_JIC90L_F_SW`. */
+export function fittingLineOfSeriesCode(seriesCode: string) {
+  const prefix = seriesCode.trim().toUpperCase().split("_", 1)[0];
+  return isFittingLine(prefix) ? prefix : null;
 }

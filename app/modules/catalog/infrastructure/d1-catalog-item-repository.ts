@@ -195,13 +195,19 @@ export function createD1CatalogItemRepository(
         `SELECT h.*, s.technical_data_status,
       CASE WHEN p.id IS NOT NULL THEN p.units_per_sales_pack ELSE o.units_per_sales_pack END AS units_per_sales_pack, CASE WHEN p.id IS NOT NULL THEN p.net_unit_weight_kg ELSE o.net_unit_weight_kg END AS net_unit_weight_kg, CASE WHEN p.id IS NOT NULL THEN p.inner_pack_qty ELSE o.inner_pack_qty END AS inner_pack_qty, CASE WHEN p.id IS NOT NULL THEN p.master_carton_qty ELSE o.master_carton_qty END AS master_carton_qty, CASE WHEN p.id IS NOT NULL THEN p.carton_gross_weight_kg ELSE o.carton_gross_weight_kg END AS carton_gross_weight_kg, CASE WHEN p.id IS NOT NULL THEN p.carton_l_cm ELSE o.carton_l_cm END AS carton_l_cm, CASE WHEN p.id IS NOT NULL THEN p.carton_w_cm ELSE o.carton_w_cm END AS carton_w_cm, CASE WHEN p.id IS NOT NULL THEN p.carton_h_cm ELSE o.carton_h_cm END AS carton_h_cm, CASE WHEN p.id IS NOT NULL THEN p.packing_basis ELSE o.packing_basis END AS packing_basis,
       CASE WHEN p.id IS NOT NULL THEN p.reference_price_usd ELSE o.reference_price_usd END AS amount,
-      COALESCE(p.currency, o.currency) AS currency, COALESCE(p.package_length_ft, o.package_length_ft) AS package_length_ft, image.media_version_id
+      COALESCE(p.currency, o.currency) AS currency, COALESCE(p.package_length_ft, o.package_length_ft) AS package_length_ft, image.media_version_id,
+      json_extract(n.payload_json, '$.variant.acceptedFittingLines') AS accepted_fitting_lines,
+      json_extract(n.payload_json, '$.variant.crimpDiameterBMm') AS crimp_diameter_b_mm,
+      json_extract(n.payload_json, '$.variant.crimpDiameterWMm') AS crimp_diameter_w_mm,
+      json_extract(n.payload_json, '$.variant.crimpDiameterJjMm') AS crimp_diameter_jj_mm
       FROM catalog_runtime_hose_variants h
       JOIN catalog_releases r ON r.source_import_id = h.import_id JOIN catalog_active_release a ON a.release_id = r.id
       JOIN catalog_runtime_skus s ON s.import_id = h.import_id AND s.sku = h.sku
       LEFT JOIN catalog_runtime_sku_price_packaging p ON p.import_id = h.import_id AND p.sku = h.sku
       LEFT JOIN catalog_runtime_sales_offers o ON o.import_id = h.import_id AND o.base_sku = h.sku
       LEFT JOIN catalog_runtime_product_main_images image ON image.import_id = h.import_id AND image.sku = h.sku AND image.assignment_kind = 'override'
+      -- Fitting Line fields exist only in item payloads (ADR 0056).
+      LEFT JOIN catalog_item_runtime_current n ON n.kind = 'sku' AND n.product_type = 'hose' AND n.import_id = h.import_id AND n.code = h.sku
       WHERE h.sku = ?`,
       )
       .bind(code)
@@ -209,8 +215,12 @@ export function createD1CatalogItemRepository(
     if (!row) return null;
     const data = camelRow(row);
     const keys = [
+      "acceptedFittingLines",
       "bendRadiusMm",
       "burstBar",
+      "crimpDiameterBMm",
+      "crimpDiameterJjMm",
+      "crimpDiameterWMm",
       "dash",
       "hoseSeries",
       "idMm",
