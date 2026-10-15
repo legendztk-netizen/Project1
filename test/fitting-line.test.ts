@@ -5,6 +5,7 @@ import {
   referenceCrimpDiameterMm,
 } from "../app/modules/catalog/domain/fitting-line";
 import { assemblyDashMatches } from "../app/modules/catalog/domain/managed-assemblies";
+import { compatibleHoseEndCandidateFromRow } from "../app/modules/configurator/infrastructure/d1-configurator-repository";
 
 describe("Fitting Line pairing", () => {
   it("parses accepted lines in canonical order and rejects unknown lines", () => {
@@ -34,5 +35,50 @@ describe("Fitting Line pairing", () => {
     expect(assemblyDashMatches("-4", "-04")).toBe(true);
     expect(assemblyDashMatches("-4", "-6")).toBe(false);
     expect(assemblyDashMatches("-4", "-4", "-6")).toBe(false);
+  });
+});
+
+describe("one-piece hose end display names", () => {
+  const row = (fittingSeries: string, angle = "90°") => ({
+    angle,
+    assembly_working_bar: null,
+    compatibility_id: "AUTO:H:E",
+    competitor_part_number: null,
+    connection_dash: "-6",
+    connection_standard: "SAE J514 / ISO 8434-2",
+    ferrule_hose_construction: null,
+    ferrule_hose_tail_dash: null,
+    ferrule_series: null,
+    ferrule_skive_requirement: null,
+    ferrule_sku: null,
+    fitting_series: fittingSeries,
+    gender: "Female",
+    hose_end_sku: `${fittingSeries}_06_06`,
+    hose_tail_dash: "-6",
+    interface_family: "JIC 37°",
+    max_working_bar: null,
+    sealing_form: "37° cone seat",
+    swivel_form: "Swivel",
+    thread: "9/16-18 UNF",
+  });
+
+  it("tells braided, bite-the-wire, six-wire and stainless ends apart", () => {
+    const name = (series: string) =>
+      compatibleHoseEndCandidateFromRow(row(series)).displayName;
+    expect(name("B_JIC90L_F_SW")).toBe(
+      "JIC 37° Female Swivel 90° Long Hose End",
+    );
+    expect(name("W_JIC90_F_SW")).toBe(
+      "JIC 37° Female Swivel 90° Hose End (W-Series)",
+    );
+    expect(name("JJ_JIC90_F_SW")).toBe(
+      "JIC 37° Female Swivel 90° Hose End (JJ-Series)",
+    );
+    expect(name("SSW_JIC90_F_SW")).toBe(
+      "Stainless JIC 37° Female Swivel 90° Hose End (W-Series)",
+    );
+    expect(compatibleHoseEndCandidateFromRow(row("W_JIC90_F_SW")).ferrule).toBe(
+      null,
+    );
   });
 });

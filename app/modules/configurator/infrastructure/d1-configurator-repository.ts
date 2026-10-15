@@ -81,6 +81,8 @@ export function compatibleHoseEndCandidateFromRow(
 ): CompatibleHoseEndCandidate {
   const customerInterface = hoseEndInterface(row);
   const lengthClass = hoseEndLengthClass(row.fitting_series);
+  // Same-shape braided and bite-the-wire ends must read differently, as at Hydraulax.
+  const line = fittingLineOfSeriesCode(row.fitting_series);
   const group = interfaceGroup(customerInterface) ?? customerInterface;
   return {
     aliases: [
@@ -98,12 +100,18 @@ export function compatibleHoseEndCandidateFromRow(
     connectionDash: normalizeDashSize(row.connection_dash),
     connectionStandard: row.connection_standard,
     displayName: [
+      line === "SS" || line === "SSW" ? "Stainless" : null,
       customerInterface,
       row.gender === "N/A" ? null : row.gender,
       row.swivel_form,
       row.angle,
       lengthClass,
       "Hose End",
+      line === "W" || line === "SSW"
+        ? "(W-Series)"
+        : line === "JJ"
+          ? "(JJ-Series)"
+          : null,
     ]
       .filter(Boolean)
       .join(" "),
