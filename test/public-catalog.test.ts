@@ -205,25 +205,76 @@ describe("public catalog read model", () => {
     expect(
       groupCatalogFamilies(variants).map((family) => family.familyName),
     ).toEqual([
+      "BSPP Female Swivel 0° Straight Bite-the-Wire Hose End",
       "BSPP Female Swivel 0° Straight Hose End",
-      "BSPP Female Swivel 0° Straight Hose End (W-Series)",
       "BSPP Flat Face Female Swivel 0° Straight Hose End",
-      "JIC 37° Female Swivel 90° Hose End (JJ-Series)",
       "JIC 37° Female Swivel 90° Long Hose End",
       "JIC 37° Female Swivel 90° Medium Hose End",
+      "JIC 37° Female Swivel 90° Skive Hose End",
       "ORFS Female Swivel 45° Extra Long Hose End",
-      "SAE Code 61 Fixed 0° Straight Hose End (W-Series)",
-      "SAE Code 62 Fixed 0° Straight Hose End (W-Series)",
+      "SAE Code 61 Fixed 0° Straight Bite-the-Wire Hose End",
+      "SAE Code 62 Fixed 0° Straight Bite-the-Wire Hose End",
+      "Stainless JIC 37° Female Swivel 90° Bite-the-Wire Hose End",
       "Stainless JIC 37° Female Swivel 90° Hose End",
-      "Stainless JIC 37° Female Swivel 90° Hose End (W-Series)",
     ]);
     expect(variants.slice(0, 3).map((variant) => variant.familyKey)).toEqual([
       "bspp-female-swivel-0-straight",
       "bspp-female-swivel-0-straight",
-      "bspp-female-swivel-0-straight-w-series",
+      "bspp-female-swivel-0-straight-bite-the-wire",
     ]);
     expect(variants[2]?.mediaKey).toBe(variants[0]?.mediaKey);
     expect(variants.at(-1)?.interfaceGroup).toBe("SAE Flange");
+  });
+
+  it("titles a hose-end family with every hose its sizes fit", () => {
+    const r2 = { shortName: "R2", standard: "SAE 100R2AT" };
+    const variants = [
+      hoseEnd({
+        compatible_hoses: [{ shortName: "R1", standard: "SAE 100R1AT" }, r2],
+        fitting_series: "B_JIC_F_SW",
+        sku: "B_JIC_F_SW_06_06",
+      }),
+      hoseEnd({
+        compatible_hoses: [r2, { shortName: "R4", standard: "SAE 100R4" }],
+        fitting_series: "B_JIC_F_SW",
+        hose_tail_dash: "-12",
+        sku: "B_JIC_F_SW_12_12",
+      }),
+    ];
+
+    expect(groupCatalogFamilies(variants)[0]?.familyName).toBe(
+      "JIC Female Swivel Straight Hose End for R1, R2, R4 Hose",
+    );
+    expect(variants[0]?.familyName).toBe("JIC Female Swivel Straight Hose End");
+    expect(variants[1]?.variantSelection).toMatchObject({
+      compatibleHoses: [r2, { shortName: "R4", standard: "SAE 100R4" }],
+    });
+    expect(hoseEnd().variantSelection).not.toHaveProperty("compatibleHoses");
+  });
+
+  it("names hoses by standard and lists them by SAE number", () => {
+    const hose = (series: string, standard: string) =>
+      hoseEnd({
+        dash: "-4",
+        hose_series: series,
+        primary_standard: standard,
+        product_type: "hose",
+        sku: `${series}_001`,
+      });
+    const families = groupCatalogFamilies([
+      hose("EN4SH", "EN 856 4SH"),
+      hose("601R16", "SAE 100 R16"),
+      hose("601R1", "SAE 100 R1AT"),
+    ]);
+    expect(families.map((family) => family.familyName)).toEqual([
+      "SAE 100R1AT Hydraulic Hose (R1)",
+      "SAE 100R16 Hydraulic Hose (R16)",
+      "EN 856 4SH Hydraulic Hose (4SH)",
+    ]);
+    expect(families[0]?.familyKey).toBe("601r1");
+    expect(families[0]?.variants[0]?.displayName).toBe(
+      "SAE 100R1AT Hydraulic Hose (R1) -4",
+    );
   });
 
   it("presents FPX products as NPSM without changing their imported standard", () => {

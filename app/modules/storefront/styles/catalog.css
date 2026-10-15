@@ -189,6 +189,21 @@
   font-size: 0.85rem;
 }
 
+.product-sku:has(+ .product-fits) {
+  margin-bottom: 8px;
+}
+
+.product-fits {
+  margin: 0 0 28px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.product-fits strong {
+  color: var(--ink);
+}
+
 .variant-picker {
   display: grid;
   gap: 7px;

@@ -11,7 +11,7 @@ function normalizedHoseEndMediaName(value: string) {
   return value
     .replace(/\s+-\d+\s+x\s+-\d+\s*$/u, "")
     .replace(/\s+\((?:W|JJ)-Series\)\s*$/u, "")
-    .replace(/\s+Hose End\s*$/iu, "")
+    .replace(/\s+(?:(?:Bite-the-Wire|Skive)\s+)?Hose End\s*$/iu, "")
     .replace(/^\s*Stainless\s+/u, "")
     .replaceAll("-", " ")
     .replace(/\s+/gu, " ")

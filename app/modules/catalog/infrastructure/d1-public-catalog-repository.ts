@@ -11,6 +11,17 @@ import type { CatalogFamilyId } from "../domain/catalog-family";
 import { normalizeDashSize } from "../domain/dash-size";
 import { hoseEndPresentation } from "../domain/hose-end-presentation";
 import {
+  hoseFamilyName,
+  hoseStandardName,
+  sortedCompatibleHoses,
+  type CompatibleHose,
+} from "../domain/hose-name";
+import {
+  isFittingLine,
+  pairingLine,
+  parseAcceptedFittingLines,
+} from "../domain/fitting-line";
+import {
   categoryByProductType,
   groupCatalogFamilies,
   summarizeCatalogFamilies,
@@ -30,6 +41,8 @@ interface PublicCatalogRow {
   series_revision_id?: string | null;
   adapter_family_id: string | null;
   angle: string | null;
+  /** Hoses this Hose End fits by the pairing rule, from `readHoseEndFits`. */
+  compatible_hoses?: CompatibleHose[] | null;
   bend_radius_mm: number | null;
   body_material: string | null;
   body_size: string | null;
@@ -139,9 +152,10 @@ function buildPublicCatalogPresentation(row: PublicCatalogRow) {
     const series = row.hose_series ?? row.sku.split("_")[0];
     return {
       aliases: [row.primary_standard, row.equivalent_standard, row.dash],
-      displayName: `${series} Hydraulic Hose ${row.dash ?? ""}`.trim(),
+      displayName:
+        `${hoseFamilyName(series, row.primary_standard)} ${row.dash ?? ""}`.trim(),
       familyKey: slug(series),
-      familyName: `${series} Hydraulic Hose`,
+      familyName: hoseFamilyName(series, row.primary_standard),
       interface: null,
       mediaKey: series,
       specs: compactSpecs([
@@ -473,6 +487,9 @@ export function publicCatalogItemFromRow(
               hoseTailDash: normalizeDashSize(row.hose_tail_dash),
               kind: "hose_end",
               thread: row.thread,
+              ...(row.compatible_hoses
+                ? { compatibleHoses: row.compatible_hoses }
+                : {}),
             }
           : null,
   };
@@ -895,6 +912,69 @@ export async function readPublicCatalogRows(
   });
 }
 
+/** Hoses each one-piece Hose End fits by the pairing rule (ADR 0056), by Hose End SKU; one SKU or all. */
+export async function readHoseEndFits(database: D1Database, sku?: string) {
+  const [hoses, standards, ends] = await database.batch<Record_>([
+    database.prepare(
+      `SELECT json_extract(payload_json,'$.variant.hoseSeries') AS hose_series,
+         json_extract(payload_json,'$.variant.dash') AS dash,
+         json_extract(payload_json,'$.variant.acceptedFittingLines') AS accepted_fitting_lines
+       FROM catalog_item_runtime_current
+       WHERE import_id = ${activeImport} AND kind = 'sku' AND product_type = 'hose' AND target_state = 'online'
+         AND COALESCE(json_extract(payload_json,'$.variant.acceptedFittingLines'),'') <> ''`,
+    ),
+    database.prepare(
+      `SELECT series_code, primary_standard FROM catalog_runtime_hose_series WHERE import_id = ${activeImport}`,
+    ),
+    database
+      .prepare(
+        `SELECT code AS sku, json_extract(payload_json,'$.variant.fittingLine') AS fitting_line,
+           json_extract(payload_json,'$.variant.hoseTailDash') AS hose_tail_dash
+         FROM catalog_item_runtime_current
+         WHERE import_id = ${activeImport} AND kind = 'sku' AND product_type = 'hose_end'
+           AND COALESCE(json_extract(payload_json,'$.variant.fittingLine'),'') <> ''${sku === undefined ? "" : " AND code = ?1"}`,
+      )
+      .bind(...(sku === undefined ? [] : [sku])),
+  ]);
+  const standardBySeries = bySku(standards!.results, "series_code");
+  const hoseSizes = hoses!.results.map((hose) => ({
+    dash: normalizeDashSize(String(hose.dash ?? "")),
+    hose: hoseStandardName(
+      String(hose.hose_series),
+      column(
+        standardBySeries.get(String(hose.hose_series)),
+        "primary_standard",
+      ) as string | null,
+    ),
+    lines: parseAcceptedFittingLines(String(hose.accepted_fitting_lines)) ?? [],
+  }));
+  const fits = new Map<string, CompatibleHose[]>();
+  for (const end of ends!.results) {
+    const line = end.fitting_line;
+    const dash = normalizeDashSize(String(end.hose_tail_dash ?? ""));
+    if (!isFittingLine(line) || !dash) continue;
+    const accepted = pairingLine(line);
+    fits.set(
+      String(end.sku),
+      sortedCompatibleHoses(
+        hoseSizes
+          .filter((size) => size.dash === dash && size.lines.includes(accepted))
+          .map((size) => size.hose),
+      ),
+    );
+  }
+  return fits;
+}
+
+function withHoseEndFits(
+  row: PublicCatalogRow,
+  fits: Map<string, CompatibleHose[]> | null,
+): PublicCatalogRow {
+  return row.product_type === "hose_end"
+    ? { ...row, compatible_hoses: fits?.get(row.sku) ?? [] }
+    : row;
+}
+
 function normalizeFerrule(
   row: PublicCatalogRow & { ferrule_hose_tail_dash?: string | null },
 ) {
@@ -959,13 +1039,27 @@ export function createD1PublicCatalogRepository(
   let freshness: Promise<string> | null = null;
 
   async function loadItems(filter: PublicCatalogFilter) {
-    const rows = await readPublicCatalogRows(database, filter);
-    return rows.map(normalizeFerrule).map(publicCatalogItemFromRow);
+    const ends =
+      !filter.productTypes || filter.productTypes.includes("hose_end");
+    const [rows, fits] = await Promise.all([
+      readPublicCatalogRows(database, filter),
+      ends ? readHoseEndFits(database) : null,
+    ]);
+    return rows
+      .map(normalizeFerrule)
+      .map((row) => publicCatalogItemFromRow(withHoseEndFits(row, fits)));
   }
 
   async function loadItem(sku: string) {
     const [row] = await readPublicCatalogRows(database, { sku });
-    return row ? publicCatalogItemFromRow(normalizeFerrule(row)) : null;
+    if (!row) return null;
+    const fits =
+      row.product_type === "hose_end"
+        ? await readHoseEndFits(database, sku)
+        : null;
+    return publicCatalogItemFromRow(
+      withHoseEndFits(normalizeFerrule(row), fits),
+    );
   }
 
   // The token is read once per repository, i.e. once per request.

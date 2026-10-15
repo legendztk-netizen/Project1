@@ -19,7 +19,7 @@ export interface HoseEndPresentation {
   lengthClass: string | null;
   /** Reviewed-image key; same-shape ends of every line share it. */
   mediaKey: string;
-  /** Shared by every size of the series, such as `JIC 37° Female Swivel 90° Long Hose End (W-Series)`. */
+  /** Shared by every size of the series, such as `JIC 37° Female Swivel 90° Long Bite-the-Wire Hose End`. */
   name: string;
 }
 
@@ -71,25 +71,21 @@ export function hoseEndPresentation(shape: HoseEndShape): HoseEndPresentation {
     lengthClass,
   ].filter(Boolean);
   const material = line === "SS" || line === "SSW" ? "Stainless" : null;
-  const lineLabel =
+  // Customers do not know W or JJ, so the name says how the end is crimped.
+  const crimpStyle =
     line === "W" || line === "SSW"
-      ? "W-Series"
+      ? "Bite-the-Wire"
       : line === "JJ"
-        ? "JJ-Series"
+        ? "Skive"
         : null;
   return {
     familyKey: slug(
-      [material, ...shapeParts, lineLabel].filter(Boolean).join("-"),
+      [material, ...shapeParts, crimpStyle].filter(Boolean).join("-"),
     ),
     interface: exactInterface,
     lengthClass,
     mediaKey: shapeParts.join("-"),
-    name: [
-      material,
-      ...shapeParts,
-      "Hose End",
-      lineLabel ? `(${lineLabel})` : null,
-    ]
+    name: [material, ...shapeParts, crimpStyle, "Hose End"]
       .filter(Boolean)
       .join(" "),
   };

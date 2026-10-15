@@ -91,9 +91,14 @@ describe("catalog hose-end media", () => {
     ).toBe("/images/catalog/hose-ends/bspp-female-swivel-straight.jpg");
     expect(
       hoseEndMediaPathFromDisplayName(
-        "Stainless JIC 37° Female Swivel 90° Long Hose End (W-Series) -10 x -10",
+        "Stainless JIC 37° Female Swivel 90° Long Bite-the-Wire Hose End -10 x -10",
       ),
     ).toBe("/images/catalog/hose-ends/jic-female-swivel-90-long.jpg");
+    expect(
+      hoseEndMediaPathFromDisplayName(
+        "JIC 37° Female Swivel 90° Hose End (W-Series) -6 x -6",
+      ),
+    ).toBe("/images/catalog/hose-ends/jic-female-swivel-90.jpg");
   });
 
   it("only returns hose series images that exist", () => {

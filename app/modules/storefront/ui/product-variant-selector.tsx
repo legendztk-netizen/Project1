@@ -6,6 +6,7 @@ import {
   compareDashSizes,
   type DashSize,
 } from "../../catalog/domain/dash-size";
+import { formatCompatibleHoses } from "../../catalog/domain/hose-name";
 import type {
   PublicCatalogFamily,
   PublicCatalogItem,
@@ -26,6 +27,7 @@ function DashChoice({
   ariaLabel,
   dash,
   dataAttribute,
+  note,
   onSelect,
   primary,
   secondary,
@@ -35,6 +37,7 @@ function DashChoice({
   dash: DashSize | null;
   dataAttribute:
     "data-connection-dash" | "data-hose-dash" | "data-hose-tail-dash";
+  note?: string | null;
   onSelect: () => void;
   primary?: string;
   secondary: string;
@@ -51,6 +54,7 @@ function DashChoice({
       <span>
         <strong>{primary ?? displayDash(dash)}</strong>
         <small>{secondary}</small>
+        {note ? <small>{note}</small> : null}
       </span>
       {active ? <Check aria-hidden="true" size={17} /> : null}
     </button>
@@ -196,6 +200,7 @@ function HoseEndSizePicker({
           <div className="variant-choice-grid">
             {hoseTailOptions.map(({ selection, variant }) => {
               const idLabel = hoseIdLabel(null, selection.hoseTailDash);
+              const hoses = selection.compatibleHoses ?? [];
               return (
                 <DashChoice
                   active={hoseTailDash === selection.hoseTailDash}
@@ -203,6 +208,11 @@ function HoseEndSizePicker({
                   dash={selection.hoseTailDash}
                   dataAttribute="data-hose-tail-dash"
                   key={variant.sku}
+                  note={
+                    hoses.length
+                      ? `Fits ${hoses.map((hose) => hose.shortName).join(", ")}`
+                      : null
+                  }
                   onSelect={() =>
                     selectTail(selection.hoseTailDash, variant.sku)
                   }
@@ -231,9 +241,23 @@ export function ProductVariantSelector({
     <>
       <h1>{selection.guided ? family.familyName : selected.displayName}</h1>
       {selection.selectionComplete ? (
-        <p className="product-sku">
-          SKU <strong>{selected.sku}</strong>
-        </p>
+        <>
+          <p className="product-sku">
+            SKU <strong>{selected.sku}</strong>
+          </p>
+          {selected.variantSelection?.kind === "hose_end" &&
+          selected.variantSelection.compatibleHoses?.length ? (
+            <p className="product-fits">
+              Fits Dash {displayDash(selected.variantSelection.hoseTailDash)}{" "}
+              hose:{" "}
+              <strong>
+                {formatCompatibleHoses(
+                  selected.variantSelection.compatibleHoses,
+                )}
+              </strong>
+            </p>
+          ) : null}
+        </>
       ) : (
         <p className="product-sku">
           {selected.productType === "hose_end" && selection.connectionDash
