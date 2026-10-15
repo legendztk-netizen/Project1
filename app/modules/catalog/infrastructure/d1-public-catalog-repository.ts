@@ -9,6 +9,7 @@ import {
 import { publicCatalogMainImageUrl } from "../domain/catalog-main-image";
 import type { CatalogFamilyId } from "../domain/catalog-family";
 import { normalizeDashSize } from "../domain/dash-size";
+import { hoseEndPresentation } from "../domain/hose-end-presentation";
 import {
   categoryByProductType,
   groupCatalogFamilies,
@@ -133,25 +134,6 @@ function compactSpecs(entries: Array<[string, unknown]>): PublicCatalogSpec[] {
   );
 }
 
-function hoseEndLengthClass(fittingSeries: string | null) {
-  const code = fittingSeries?.trim().split(/\s+/, 1)[0]?.toUpperCase();
-  if (code === "FJX90L" || code === "FFX90L") return "Long";
-  if (code === "FJX90M" || code === "FFX90M") return "Medium";
-  return null;
-}
-
-function hoseEndInterface(row: PublicCatalogRow) {
-  const seriesCode = row.fitting_series
-    ?.trim()
-    .split(/\s+/, 1)[0]
-    ?.toUpperCase();
-  if (seriesCode === "FPX" || row.connection_standard?.includes("NPSM")) {
-    return "NPSM";
-  }
-  if (seriesCode?.startsWith("C61")) return "SAE Code 61";
-  return row.interface_family ?? "Hose End";
-}
-
 function buildPublicCatalogPresentation(row: PublicCatalogRow) {
   if (row.product_type === "hose") {
     const series = row.hose_series ?? row.sku.split("_")[0];
@@ -201,19 +183,14 @@ function buildPublicCatalogPresentation(row: PublicCatalogRow) {
     };
   }
   if (row.product_type === "hose_end") {
-    const exactInterface = hoseEndInterface(row);
-    const lengthClass = hoseEndLengthClass(row.fitting_series);
-    const displayGender = row.gender === "N/A" ? null : row.gender;
-    const familyName = [
-      exactInterface,
-      displayGender,
-      row.swivel_form,
-      row.angle,
-      lengthClass,
-      "Hose End",
-    ]
-      .filter(Boolean)
-      .join(" ");
+    const presentation = hoseEndPresentation({
+      angle: row.angle,
+      connectionStandard: row.connection_standard,
+      fittingSeries: row.fitting_series,
+      gender: row.gender,
+      interfaceFamily: row.interface_family,
+      swivelForm: row.swivel_form,
+    });
     return {
       aliases: [
         row.fitting_series,
@@ -224,25 +201,13 @@ function buildPublicCatalogPresentation(row: PublicCatalogRow) {
         row.connection_dash,
         row.hose_tail_dash,
       ],
-      displayName: `${familyName} ${row.connection_dash ?? ""} x ${row.hose_tail_dash ?? ""}`,
-      familyKey: slug(
-        [exactInterface, displayGender, row.swivel_form, row.angle, lengthClass]
-          .filter(Boolean)
-          .join("-"),
-      ),
-      familyName,
-      interface: exactInterface,
-      mediaKey: [
-        exactInterface,
-        displayGender,
-        row.swivel_form,
-        row.angle,
-        lengthClass,
-      ]
-        .filter(Boolean)
-        .join("-"),
+      displayName: `${presentation.name} ${row.connection_dash ?? ""} x ${row.hose_tail_dash ?? ""}`,
+      familyKey: presentation.familyKey,
+      familyName: presentation.name,
+      interface: presentation.interface,
+      mediaKey: presentation.mediaKey,
       specs: compactSpecs([
-        ["Interface family", exactInterface],
+        ["Interface family", presentation.interface],
         ["Connection standard", row.connection_standard],
         ["Thread", row.thread],
         ["Sealing form", row.sealing_form],
@@ -251,7 +216,7 @@ function buildPublicCatalogPresentation(row: PublicCatalogRow) {
         ["Gender", row.gender],
         ["Form", row.swivel_form],
         ["Angle", row.angle],
-        ["Length profile", lengthClass],
+        ["Length profile", presentation.lengthClass],
         ["Material", row.hose_end_material],
         ["Coating", row.hose_end_coating],
         [

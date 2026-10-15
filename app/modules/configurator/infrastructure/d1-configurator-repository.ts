@@ -3,7 +3,7 @@ import { availableAssemblySql } from "./available-assembly-sql";
 import { scopedAssemblyCombinationsSql } from "./scoped-assembly-combinations-sql";
 import { interfaceGroup } from "../../catalog/domain/public-catalog";
 import { normalizeDashSize } from "../../catalog/domain/dash-size";
-import { fittingLineOfSeriesCode } from "../../catalog/domain/fitting-line";
+import { hoseEndPresentation } from "../../catalog/domain/hose-end-presentation";
 import type { CompatibleHoseEndCandidate } from "../domain/compatible-end-a";
 
 interface CompatibleHoseEndRow {
@@ -29,45 +29,6 @@ interface CompatibleHoseEndRow {
   thread: string;
 }
 
-// One-piece series codes are `<Fitting Line>_<code>_<gender>_<swivel>` (ADR 0056);
-// earlier codes start with the competitor family, such as `FJX90L Hydraulax ...`.
-function onePieceFittingCode(fittingSeries: string) {
-  if (!fittingLineOfSeriesCode(fittingSeries)) return null;
-  return fittingSeries.trim().toUpperCase().split("_")[1] ?? null;
-}
-
-function hoseEndLengthClass(fittingSeries: string) {
-  const onePiece = onePieceFittingCode(fittingSeries);
-  if (onePiece) {
-    if (onePiece.endsWith("XL")) return "Extra Long";
-    if (onePiece.endsWith("90M")) return "Medium";
-    return onePiece.endsWith("L") ? "Long" : null;
-  }
-  const code = fittingSeries.trim().split(/\s+/, 1)[0]?.toUpperCase();
-  if (code === "FJX90L" || code === "FFX90L") {
-    return "Long";
-  }
-  if (code === "FJX90M" || code === "FFX90M") {
-    return "Medium";
-  }
-  return null;
-}
-
-function hoseEndInterface(row: CompatibleHoseEndRow) {
-  const seriesCode =
-    onePieceFittingCode(row.fitting_series) ??
-    row.fitting_series.trim().split(/\s+/, 1)[0]?.toUpperCase();
-  if (
-    seriesCode === "FPX" ||
-    row.connection_standard.toUpperCase().includes("NPSM")
-  ) {
-    return "NPSM";
-  }
-  if (seriesCode?.startsWith("C61")) return "SAE Code 61";
-  if (seriesCode?.startsWith("C62")) return "SAE Code 62";
-  return row.interface_family;
-}
-
 function nullableNumber(value: number | string | null) {
   if (value === null || (typeof value === "string" && value.trim() === "")) {
     return null;
@@ -79,11 +40,14 @@ function nullableNumber(value: number | string | null) {
 export function compatibleHoseEndCandidateFromRow(
   row: CompatibleHoseEndRow,
 ): CompatibleHoseEndCandidate {
-  const customerInterface = hoseEndInterface(row);
-  const lengthClass = hoseEndLengthClass(row.fitting_series);
-  // Same-shape braided and bite-the-wire ends must read differently, as at Hydraulax.
-  const line = fittingLineOfSeriesCode(row.fitting_series);
-  const group = interfaceGroup(customerInterface) ?? customerInterface;
+  const presentation = hoseEndPresentation({
+    angle: row.angle,
+    connectionStandard: row.connection_standard,
+    fittingSeries: row.fitting_series,
+    gender: row.gender,
+    interfaceFamily: row.interface_family,
+    swivelForm: row.swivel_form,
+  });
   return {
     aliases: [
       row.competitor_part_number,
@@ -99,22 +63,7 @@ export function compatibleHoseEndCandidateFromRow(
     compatibilityId: row.compatibility_id,
     connectionDash: normalizeDashSize(row.connection_dash),
     connectionStandard: row.connection_standard,
-    displayName: [
-      line === "SS" || line === "SSW" ? "Stainless" : null,
-      customerInterface,
-      row.gender === "N/A" ? null : row.gender,
-      row.swivel_form,
-      row.angle,
-      lengthClass,
-      "Hose End",
-      line === "W" || line === "SSW"
-        ? "(W-Series)"
-        : line === "JJ"
-          ? "(JJ-Series)"
-          : null,
-    ]
-      .filter(Boolean)
-      .join(" "),
+    displayName: presentation.name,
     ferrule: row.ferrule_sku
       ? {
           hoseConstruction: row.ferrule_hose_construction ?? "",
@@ -127,18 +76,11 @@ export function compatibleHoseEndCandidateFromRow(
     gender: row.gender,
     hoseEndSku: row.hose_end_sku,
     hoseTailDash: normalizeDashSize(row.hose_tail_dash),
-    interfaceFamily: customerInterface,
-    interfaceGroup: group,
+    interfaceFamily: presentation.interface,
+    interfaceGroup:
+      interfaceGroup(presentation.interface) ?? presentation.interface,
     maximumWorkingBar: nullableNumber(row.max_working_bar),
-    mediaKey: [
-      customerInterface,
-      row.gender === "N/A" ? null : row.gender,
-      row.swivel_form,
-      row.angle,
-      lengthClass,
-    ]
-      .filter(Boolean)
-      .join("-"),
+    mediaKey: presentation.mediaKey,
     sealingForm: row.sealing_form,
     swivelForm: row.swivel_form,
     thread: row.thread,

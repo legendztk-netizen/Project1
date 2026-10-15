@@ -143,7 +143,11 @@ export function interfaceGroup(value: string | null) {
     return "BSPP / BSPT";
   }
   if (standard.includes("ORB")) return "SAE ORB";
-  if (standard.includes("CODE 61") || standard.includes("SAE FLANGE")) {
+  if (
+    standard.includes("CODE 61") ||
+    standard.includes("CODE 62") ||
+    standard.includes("SAE FLANGE")
+  ) {
     return "SAE Flange";
   }
   return value;

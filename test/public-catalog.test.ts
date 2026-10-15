@@ -172,6 +172,60 @@ describe("public catalog read model", () => {
     ]);
   });
 
+  it("keeps each Fitting Line, length and flange code of one shape as its own family", () => {
+    const end = (series: string, overrides: Record<string, unknown> = {}) =>
+      hoseEnd({
+        angle: "0° Straight",
+        fitting_series: series,
+        interface_family: "BSPP",
+        sku: `${series}_06_06`,
+        ...overrides,
+      });
+    const jic90 = { angle: "90°", interface_family: "JIC 37°" };
+    const flange = {
+      gender: "N/A",
+      interface_family: "SAE Flange",
+      swivel_form: "Fixed",
+    };
+    const variants = [
+      end("B_BSPP_F_SW"),
+      end("B_BSPP_F_SW", { connection_dash: "-8", sku: "B_BSPP_F_SW_08_06" }),
+      end("W_BSPP_F_SW"),
+      end("B_BSPFF_F_SW"),
+      end("JJ_JIC90_F_SW", jic90),
+      end("SS_JIC90_F_SW", jic90),
+      end("SSW_JIC90_F_SW", jic90),
+      end("B_JIC90L_F_SW", jic90),
+      end("B_JIC90M_F_SW", jic90),
+      end("B_ORFS45XL_F_SW", { angle: "45°", interface_family: "ORFS" }),
+      end("W_C61_N_FX", flange),
+      end("W_C62_N_FX", flange),
+    ];
+
+    expect(
+      groupCatalogFamilies(variants).map((family) => family.familyName),
+    ).toEqual([
+      "BSPP Female Swivel 0° Straight Hose End",
+      "BSPP Female Swivel 0° Straight Hose End (W-Series)",
+      "BSPP Flat Face Female Swivel 0° Straight Hose End",
+      "JIC 37° Female Swivel 90° Hose End (JJ-Series)",
+      "JIC 37° Female Swivel 90° Long Hose End",
+      "JIC 37° Female Swivel 90° Medium Hose End",
+      "ORFS Female Swivel 45° Extra Long Hose End",
+      "SAE Code 61 Fixed 0° Straight Hose End (W-Series)",
+      "SAE Code 62 Fixed 0° Straight Hose End (W-Series)",
+      "Stainless JIC 37° Female Swivel 90° Hose End",
+      "Stainless JIC 37° Female Swivel 90° Hose End (W-Series)",
+    ]);
+    expect(variants.slice(0, 3).map((variant) => variant.familyKey)).toEqual([
+      "bspp-female-swivel-0-straight",
+      "bspp-female-swivel-0-straight",
+      "bspp-female-swivel-0-straight-w-series",
+    ]);
+    expect(variants[2]?.mediaKey).toBe(variants[0]?.mediaKey);
+    expect(variants.at(-1)?.interfaceGroup).toBe("SAE Flange");
+  });
+
   it("presents FPX products as NPSM without changing their imported standard", () => {
     const item = hoseEnd({
       connection_standard: "NPSM / ASME B1.20.1",
