@@ -221,6 +221,27 @@ it("pairs one-piece Hose Ends by accepted Fitting Line without a ferrule", async
       "B_JIC_F_SW_04_04",
     ),
   ).toEqual([expect.objectContaining({ ferrule: null })]);
+
+  // Catalog pages say which hose each end fits, from the same pairing rule.
+  const catalog = createD1PublicCatalogRepository(db);
+  const braided = await catalog.findFamily({
+    category: "hose-ends",
+    familyKey: "jic-37-female-swivel-0-straight",
+    sku: "B_JIC_F_SW_04_04",
+  });
+  expect(braided?.family.familyName).toBe(
+    "JIC 37° Female Swivel 0° Straight Hose End for R1 Hose",
+  );
+  expect(braided?.selected.variantSelection).toMatchObject({
+    compatibleHoses: [expect.objectContaining({ shortName: "R1" })],
+  });
+  const biteTheWire = await catalog.findFamily({
+    category: "hose-ends",
+    familyKey: "jic-37-female-swivel-0-straight-bite-the-wire",
+  });
+  expect(biteTheWire?.family.familyName).toBe(
+    "JIC 37° Female Swivel 0° Straight Bite-the-Wire Hose End",
+  );
 });
 
 it("regenerates when a hose accepts another Fitting Line or an end changes line", async () => {

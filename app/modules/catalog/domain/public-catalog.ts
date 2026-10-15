@@ -3,6 +3,12 @@ import type { SupplyAvailability } from "./catalog-draft-availability";
 import type { RfqEligibility } from "./catalog-workbook";
 import type { DashSize } from "./dash-size";
 import type { CatalogRevisionBasis } from "./catalog-item-publication";
+import {
+  compareHoseShortNames,
+  hoseStandardName,
+  sortedCompatibleHoses,
+  type CompatibleHose,
+} from "./hose-name";
 
 export type PublicProductType =
   "hose" | "hose_end" | "ferrule" | "adapter" | "quick_coupler";
@@ -44,6 +50,8 @@ export type PublicVariantSelection =
       reinforcement: string | null;
     }
   | {
+      /** Hoses this size fits by the pairing rule; present on catalog page reads. */
+      compatibleHoses?: CompatibleHose[];
       connectionDash: DashSize | null;
       hoseTailDash: DashSize | null;
       kind: "hose_end";
@@ -143,7 +151,11 @@ export function interfaceGroup(value: string | null) {
     return "BSPP / BSPT";
   }
   if (standard.includes("ORB")) return "SAE ORB";
-  if (standard.includes("CODE 61") || standard.includes("SAE FLANGE")) {
+  if (
+    standard.includes("CODE 61") ||
+    standard.includes("CODE 62") ||
+    standard.includes("SAE FLANGE")
+  ) {
     return "SAE Flange";
   }
   return value;
@@ -155,6 +167,34 @@ export function slug(value: string) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+/** `… Hose End for R1, R2, R16 Hose`: every hose some size of the family fits, so customers can choose by hose. */
+function familyNameWithHoses(family: PublicCatalogFamily) {
+  const hoses = sortedCompatibleHoses(
+    family.variants.flatMap((variant) =>
+      variant.variantSelection?.kind === "hose_end"
+        ? (variant.variantSelection.compatibleHoses ?? [])
+        : [],
+    ),
+  );
+  return hoses.length
+    ? `${family.familyName} for ${hoses.map((hose) => hose.shortName).join(", ")} Hose`
+    : family.familyName;
+}
+
+/** Hoses list as R1, R2, R4, R16, R17, 4SH rather than alphabetically by standard. */
+function hoseShortName(family: PublicCatalogFamily) {
+  const selection = family.representative.variantSelection;
+  return selection?.kind === "hose"
+    ? hoseStandardName(selection.hoseSeries, selection.primaryStandard)
+        .shortName
+    : null;
+}
+
+function compareHoseFamilies(a: PublicCatalogFamily, b: PublicCatalogFamily) {
+  const [left, right] = [hoseShortName(a), hoseShortName(b)];
+  return left && right ? compareHoseShortNames(left, right) : 0;
 }
 
 export function groupCatalogFamilies(items: PublicCatalogItem[]) {
@@ -178,11 +218,13 @@ export function groupCatalogFamilies(items: PublicCatalogItem[]) {
   return [...groups.values()]
     .map((family) => ({
       ...family,
+      familyName: familyNameWithHoses(family),
       variants: family.variants.toSorted((a, b) => a.sku.localeCompare(b.sku)),
     }))
     .toSorted(
       (a, b) =>
         categoryOrder[a.category] - categoryOrder[b.category] ||
+        compareHoseFamilies(a, b) ||
         a.familyName.localeCompare(b.familyName),
     );
 }

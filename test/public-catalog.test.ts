@@ -172,6 +172,111 @@ describe("public catalog read model", () => {
     ]);
   });
 
+  it("keeps each Fitting Line, length and flange code of one shape as its own family", () => {
+    const end = (series: string, overrides: Record<string, unknown> = {}) =>
+      hoseEnd({
+        angle: "0° Straight",
+        fitting_series: series,
+        interface_family: "BSPP",
+        sku: `${series}_06_06`,
+        ...overrides,
+      });
+    const jic90 = { angle: "90°", interface_family: "JIC 37°" };
+    const flange = {
+      gender: "N/A",
+      interface_family: "SAE Flange",
+      swivel_form: "Fixed",
+    };
+    const variants = [
+      end("B_BSPP_F_SW"),
+      end("B_BSPP_F_SW", { connection_dash: "-8", sku: "B_BSPP_F_SW_08_06" }),
+      end("W_BSPP_F_SW"),
+      end("B_BSPFF_F_SW"),
+      end("JJ_JIC90_F_SW", jic90),
+      end("SS_JIC90_F_SW", jic90),
+      end("SSW_JIC90_F_SW", jic90),
+      end("B_JIC90L_F_SW", jic90),
+      end("B_JIC90M_F_SW", jic90),
+      end("B_ORFS45XL_F_SW", { angle: "45°", interface_family: "ORFS" }),
+      end("W_C61_N_FX", flange),
+      end("W_C62_N_FX", flange),
+    ];
+
+    expect(
+      groupCatalogFamilies(variants).map((family) => family.familyName),
+    ).toEqual([
+      "BSPP Female Swivel 0° Straight Bite-the-Wire Hose End",
+      "BSPP Female Swivel 0° Straight Hose End",
+      "BSPP Flat Face Female Swivel 0° Straight Hose End",
+      "JIC 37° Female Swivel 90° Long Hose End",
+      "JIC 37° Female Swivel 90° Medium Hose End",
+      "JIC 37° Female Swivel 90° Skive Hose End",
+      "ORFS Female Swivel 45° Extra Long Hose End",
+      "SAE Code 61 Fixed 0° Straight Bite-the-Wire Hose End",
+      "SAE Code 62 Fixed 0° Straight Bite-the-Wire Hose End",
+      "Stainless JIC 37° Female Swivel 90° Bite-the-Wire Hose End",
+      "Stainless JIC 37° Female Swivel 90° Hose End",
+    ]);
+    expect(variants.slice(0, 3).map((variant) => variant.familyKey)).toEqual([
+      "bspp-female-swivel-0-straight",
+      "bspp-female-swivel-0-straight",
+      "bspp-female-swivel-0-straight-bite-the-wire",
+    ]);
+    expect(variants[2]?.mediaKey).toBe(variants[0]?.mediaKey);
+    expect(variants.at(-1)?.interfaceGroup).toBe("SAE Flange");
+  });
+
+  it("titles a hose-end family with every hose its sizes fit", () => {
+    const r2 = { shortName: "R2", standard: "SAE 100R2AT" };
+    const variants = [
+      hoseEnd({
+        compatible_hoses: [{ shortName: "R1", standard: "SAE 100R1AT" }, r2],
+        fitting_series: "B_JIC_F_SW",
+        sku: "B_JIC_F_SW_06_06",
+      }),
+      hoseEnd({
+        compatible_hoses: [r2, { shortName: "R4", standard: "SAE 100R4" }],
+        fitting_series: "B_JIC_F_SW",
+        hose_tail_dash: "-12",
+        sku: "B_JIC_F_SW_12_12",
+      }),
+    ];
+
+    expect(groupCatalogFamilies(variants)[0]?.familyName).toBe(
+      "JIC Female Swivel Straight Hose End for R1, R2, R4 Hose",
+    );
+    expect(variants[0]?.familyName).toBe("JIC Female Swivel Straight Hose End");
+    expect(variants[1]?.variantSelection).toMatchObject({
+      compatibleHoses: [r2, { shortName: "R4", standard: "SAE 100R4" }],
+    });
+    expect(hoseEnd().variantSelection).not.toHaveProperty("compatibleHoses");
+  });
+
+  it("names hoses by standard and lists them by SAE number", () => {
+    const hose = (series: string, standard: string) =>
+      hoseEnd({
+        dash: "-4",
+        hose_series: series,
+        primary_standard: standard,
+        product_type: "hose",
+        sku: `${series}_001`,
+      });
+    const families = groupCatalogFamilies([
+      hose("EN4SH", "EN 856 4SH"),
+      hose("601R16", "SAE 100 R16"),
+      hose("601R1", "SAE 100 R1AT"),
+    ]);
+    expect(families.map((family) => family.familyName)).toEqual([
+      "SAE 100R1AT Hydraulic Hose (R1)",
+      "SAE 100R16 Hydraulic Hose (R16)",
+      "EN 856 4SH Hydraulic Hose (4SH)",
+    ]);
+    expect(families[0]?.familyKey).toBe("601r1");
+    expect(families[0]?.variants[0]?.displayName).toBe(
+      "SAE 100R1AT Hydraulic Hose (R1) -4",
+    );
+  });
+
   it("presents FPX products as NPSM without changing their imported standard", () => {
     const item = hoseEnd({
       connection_standard: "NPSM / ASME B1.20.1",
@@ -240,6 +345,15 @@ describe("public catalog read model", () => {
       "ISO 1179 / ISO 228-1",
       "ISO 7-1",
     ]);
+  });
+
+  it("leaves out the thread of flange, weld, tube and grease ends", () => {
+    const flange = hoseEnd({ thread: "N/A (SAE Code 61 flange)" });
+    expect(flange.specs.map((spec) => spec.label)).not.toContain("Thread");
+    expect(hoseEnd().specs).toContainEqual({
+      label: "Thread",
+      value: "9/16-18 UNF",
+    });
   });
 
   it("only enables Add to Quote for eligible available products", () => {

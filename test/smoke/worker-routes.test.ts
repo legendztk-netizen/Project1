@@ -4247,10 +4247,21 @@ describe("Cloudflare Worker route surfaces", () => {
     const storefront = await storefrontResponse.text();
     expect(storefrontResponse.status).toBe(200);
     expect(storefront).toContain('href="/catalog/hydraulic-hose/');
-    expect(storefront).toContain('href="/catalog/hose-ends/');
-    expect(storefront).toContain('href="/catalog/ferrules/');
-    expect(storefront).toContain('href="/catalog/adapters/');
-    expect(storefront).toContain('href="/catalog/quick-couplers/');
+    // All Products pages 10 families at a time, so each class is checked on its own list.
+    for (const category of [
+      "hydraulic-hose",
+      "hose-ends",
+      "ferrules",
+      "adapters",
+      "quick-couplers",
+    ]) {
+      const categoryResponse = await fetch(`${origin}/catalog/${category}`);
+      const categoryPage = await categoryResponse.text();
+      expect(categoryResponse.status).toBe(200);
+      expect(categoryPage).toContain(`href="/catalog/${category}/`);
+      expect(categoryPage).not.toContain("Cost Basis");
+      expect(categoryPage).not.toContain("factory_unit_price");
+    }
     expect(storefront).not.toMatch(
       /href="\/catalog\/(?:hydraulic-hose|hose-ends)\/[^"?]+\?sku=/,
     );

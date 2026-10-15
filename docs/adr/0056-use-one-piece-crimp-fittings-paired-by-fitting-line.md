@@ -22,6 +22,15 @@ all of them omissions or typos on their pages. Hose Ends without a Fitting Line
 keep the earlier ferrule matching, so legacy data still regenerates the way it
 did.
 
+Customers do not know Fitting Lines, so the storefront tells them how to
+choose by hose. Every Fitting Line and length of one shape is its own catalog
+family, named by how it is crimped: `W` and `SSW` ends read _Bite-the-Wire_,
+`JJ` ends _Skive_, stainless ends start with _Stainless_. A family title ends
+with every hose its sizes fit under the pairing rule, by the short name printed
+on the hose (`… Hose End for R1, R2, R4, R16, R17 Hose`), and each size lists
+its own hoses with their standards. Hoses are named by standard as at Hydraulax,
+`SAE 100R2AT Hydraulic Hose (R2)`, not by our series code.
+
 The factory is Hydraulax's supplier, so Hydraulax's published sizes, threads and
 Uniflex crimp diameters are accepted as ours; crimp diameters stay reference
 values until a Production-Approved Combination exists. The factory part number

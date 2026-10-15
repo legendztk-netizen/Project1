@@ -1,24 +1,33 @@
 import { Check, CircleHelp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 
 import {
   compareDashSizes,
   type DashSize,
 } from "../../catalog/domain/dash-size";
+import { formatCompatibleHoses } from "../../catalog/domain/hose-name";
 import type {
   PublicCatalogFamily,
   PublicCatalogItem,
 } from "../../catalog/domain/public-catalog";
 import {
+  connectionSizeLabel,
   displayDash,
   hoseIdLabel,
   hoseSizeLabel,
 } from "../domain/variant-label";
 import { ProductCommercialPanel } from "./product-commercial-panel";
 
-function navigateToSku(navigate: ReturnType<typeof useNavigate>, sku: string) {
-  void navigate(`?sku=${encodeURIComponent(sku)}`);
+// Other parameters, such as the `back` list link, survive a size change.
+function navigateToSku(
+  navigate: ReturnType<typeof useNavigate>,
+  sku: string,
+  current: URLSearchParams,
+) {
+  const next = new URLSearchParams(current);
+  next.set("sku", sku);
+  void navigate(`?${next}`);
 }
 
 function DashChoice({
@@ -26,6 +35,7 @@ function DashChoice({
   ariaLabel,
   dash,
   dataAttribute,
+  note,
   onSelect,
   primary,
   secondary,
@@ -35,6 +45,7 @@ function DashChoice({
   dash: DashSize | null;
   dataAttribute:
     "data-connection-dash" | "data-hose-dash" | "data-hose-tail-dash";
+  note?: string | null;
   onSelect: () => void;
   primary?: string;
   secondary: string;
@@ -51,6 +62,7 @@ function DashChoice({
       <span>
         <strong>{primary ?? displayDash(dash)}</strong>
         <small>{secondary}</small>
+        {note ? <small>{note}</small> : null}
       </span>
       {active ? <Check aria-hidden="true" size={17} /> : null}
     </button>
@@ -174,18 +186,22 @@ function HoseEndSizePicker({
         <legend>1. Connection Dash</legend>
         <p>Select the nominal port or thread size.</p>
         <div className="variant-choice-grid">
-          {connectionOptions.map(([dash, thread]) => (
-            <DashChoice
-              active={connectionDash === dash}
-              ariaLabel={`Select ${thread ?? "connection size not specified"}, Connection Dash ${displayDash(dash)}`}
-              dash={dash}
-              dataAttribute="data-connection-dash"
-              key={dash}
-              onSelect={() => selectConnection(dash)}
-              primary={thread ?? "Thread confirmed in quote"}
-              secondary={`Connection Dash ${displayDash(dash)}`}
-            />
-          ))}
+          {connectionOptions.map(([dash, thread]) => {
+            const size =
+              connectionSizeLabel(thread, dash) ?? "Size confirmed in quote";
+            return (
+              <DashChoice
+                active={connectionDash === dash}
+                ariaLabel={`Select ${size}, Connection Dash ${displayDash(dash)}`}
+                dash={dash}
+                dataAttribute="data-connection-dash"
+                key={dash}
+                onSelect={() => selectConnection(dash)}
+                primary={size}
+                secondary={`Connection Dash ${displayDash(dash)}`}
+              />
+            );
+          })}
         </div>
       </fieldset>
 
@@ -196,6 +212,7 @@ function HoseEndSizePicker({
           <div className="variant-choice-grid">
             {hoseTailOptions.map(({ selection, variant }) => {
               const idLabel = hoseIdLabel(null, selection.hoseTailDash);
+              const hoses = selection.compatibleHoses ?? [];
               return (
                 <DashChoice
                   active={hoseTailDash === selection.hoseTailDash}
@@ -203,6 +220,11 @@ function HoseEndSizePicker({
                   dash={selection.hoseTailDash}
                   dataAttribute="data-hose-tail-dash"
                   key={variant.sku}
+                  note={
+                    hoses.length
+                      ? `Fits ${hoses.map((hose) => hose.shortName).join(", ")}`
+                      : null
+                  }
                   onSelect={() =>
                     selectTail(selection.hoseTailDash, variant.sku)
                   }
@@ -231,9 +253,23 @@ export function ProductVariantSelector({
     <>
       <h1>{selection.guided ? family.familyName : selected.displayName}</h1>
       {selection.selectionComplete ? (
-        <p className="product-sku">
-          SKU <strong>{selected.sku}</strong>
-        </p>
+        <>
+          <p className="product-sku">
+            SKU <strong>{selected.sku}</strong>
+          </p>
+          {selected.variantSelection?.kind === "hose_end" &&
+          selected.variantSelection.compatibleHoses?.length ? (
+            <p className="product-fits">
+              Fits Dash {displayDash(selected.variantSelection.hoseTailDash)}{" "}
+              hose:{" "}
+              <strong>
+                {formatCompatibleHoses(
+                  selected.variantSelection.compatibleHoses,
+                )}
+              </strong>
+            </p>
+          ) : null}
+        </>
       ) : (
         <p className="product-sku">
           {selected.productType === "hose_end" && selection.connectionDash
@@ -300,6 +336,7 @@ export function useProductVariantSelection({
   selectionRequested: boolean;
 }): ProductVariantSelectionModel {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const selectedHoseEnd =
     selected.variantSelection?.kind === "hose_end"
       ? selected.variantSelection
@@ -338,7 +375,7 @@ export function useProductVariantSelection({
 
   const beginSkuNavigation = (sku: string) => {
     setNavigationPending(true);
-    navigateToSku(navigate, sku);
+    navigateToSku(navigate, sku, searchParams);
   };
 
   return {

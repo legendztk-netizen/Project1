@@ -1373,7 +1373,9 @@ The construction class of a one-piece crimp Hose End that decides which hoses it
 fits: `B` braided (Weatherhead U interchange), `W` bite-the-wire, `JJ` six-wire
 skive, `SS` stainless braided and `SSW` stainless bite-the-wire. `SS` pairs like
 `B` and `SSW` like `W`. It is the prefix of the Hose End SKU, which is also the
-factory part number.
+factory part number. Customers never see the code: storefront names say
+"Bite-the-Wire" for `W` and `SSW`, "Skive" for `JJ` and "Stainless" for `SS` and
+`SSW`, and a hose-end page title lists the hoses its sizes fit.
 _Avoid_: Fitting series, crimp style name, competitor suffix
 
 **Accepted Fitting Lines**:

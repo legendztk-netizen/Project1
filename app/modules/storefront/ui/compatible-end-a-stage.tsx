@@ -8,6 +8,7 @@ import {
   type CompatibleHoseEndCandidate,
   type HoseEndFilters,
 } from "../../configurator/domain/compatible-end-a";
+import { connectionSizeLabel } from "../domain/variant-label";
 import { fetchCompatibleHoseEndCandidates } from "../infrastructure/compatible-hose-end-client";
 
 type HoseEndLoadState =
@@ -299,8 +300,12 @@ export function CompatibleHoseEndStage({
                 <span className="eyebrow">Exact match available</span>
                 <strong>Use the same fitting as End A</strong>
                 <p>
-                  {sameAsEndA.displayName} · {sameAsEndA.thread} · SKU{" "}
-                  {sameAsEndA.hoseEndSku}
+                  {sameAsEndA.displayName} ·{" "}
+                  {connectionSizeLabel(
+                    sameAsEndA.thread,
+                    sameAsEndA.connectionDash,
+                  )}{" "}
+                  · SKU {sameAsEndA.hoseEndSku}
                 </p>
               </div>
               <button
@@ -418,7 +423,7 @@ export function CompatibleHoseEndStage({
                 );
                 return (
                   <button
-                    aria-label={`Select ${candidate.displayName}, ${candidate.thread}, connection ${candidate.connectionDash}`}
+                    aria-label={`Select ${candidate.displayName}, ${connectionSizeLabel(candidate.thread, candidate.connectionDash)}, connection ${candidate.connectionDash}`}
                     aria-pressed={active}
                     className="end-a-choice"
                     data-hose-end-sku={candidate.hoseEndSku}
@@ -437,7 +442,11 @@ export function CompatibleHoseEndStage({
                       <div>
                         <dt>Connection</dt>
                         <dd>
-                          {candidate.connectionDash} · {candidate.thread}
+                          {candidate.connectionDash} ·{" "}
+                          {connectionSizeLabel(
+                            candidate.thread,
+                            candidate.connectionDash,
+                          )}
                         </dd>
                       </div>
                       <div>

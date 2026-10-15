@@ -69,14 +69,20 @@ describe("one-piece hose end display names", () => {
       "JIC 37° Female Swivel 90° Long Hose End",
     );
     expect(name("W_JIC90_F_SW")).toBe(
-      "JIC 37° Female Swivel 90° Hose End (W-Series)",
+      "JIC 37° Female Swivel 90° Bite-the-Wire Hose End",
     );
     expect(name("JJ_JIC90_F_SW")).toBe(
-      "JIC 37° Female Swivel 90° Hose End (JJ-Series)",
+      "JIC 37° Female Swivel 90° Skive Hose End",
     );
     expect(name("SSW_JIC90_F_SW")).toBe(
-      "Stainless JIC 37° Female Swivel 90° Hose End (W-Series)",
+      "Stainless JIC 37° Female Swivel 90° Bite-the-Wire Hose End",
     );
+    expect(
+      compatibleHoseEndCandidateFromRow({
+        ...row("B_BSPFF_F_SW", "0° Straight"),
+        interface_family: "BSPP",
+      }).displayName,
+    ).toBe("BSPP Flat Face Female Swivel 0° Straight Hose End");
     expect(compatibleHoseEndCandidateFromRow(row("W_JIC90_F_SW")).ferrule).toBe(
       null,
     );

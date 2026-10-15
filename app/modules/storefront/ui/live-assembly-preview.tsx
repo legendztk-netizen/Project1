@@ -4,7 +4,7 @@ import {
   evaluateAssemblyClockingApplicability,
 } from "../../configurator/domain/assembly-clocking";
 import type { HoseConfigurationDraft } from "../../configurator/domain/hose-configuration-draft";
-import { hoseSizeLabel } from "../domain/variant-label";
+import { connectionSizeLabel, hoseSizeLabel } from "../domain/variant-label";
 import { M08ClockingPreview } from "./m08-clocking-preview";
 
 type EndForm =
@@ -343,8 +343,11 @@ export function LiveAssemblyPreview({
                     <small>Matched ferrule included</small>
                   ) : null}
                   <small>
-                    {draft.endA.hoseEnd.thread} ·{" "}
-                    {draft.endA.hoseEnd.sealingForm}
+                    {connectionSizeLabel(
+                      draft.endA.hoseEnd.thread,
+                      draft.endA.hoseEnd.connectionDash,
+                    )}{" "}
+                    · {draft.endA.hoseEnd.sealingForm}
                   </small>
                 </>
               ) : null}
@@ -361,8 +364,11 @@ export function LiveAssemblyPreview({
                     <small>Matched ferrule included</small>
                   ) : null}
                   <small>
-                    {draft.endB.hoseEnd.thread} ·{" "}
-                    {draft.endB.hoseEnd.sealingForm}
+                    {connectionSizeLabel(
+                      draft.endB.hoseEnd.thread,
+                      draft.endB.hoseEnd.connectionDash,
+                    )}{" "}
+                    · {draft.endB.hoseEnd.sealingForm}
                   </small>
                 </>
               ) : null}

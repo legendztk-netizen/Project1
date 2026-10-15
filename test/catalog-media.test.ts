@@ -57,9 +57,9 @@ describe("catalog hose-end media", () => {
         "hose-series:601R1",
       ),
     ).toContain("/media/catalog/");
-    expect(
-      publicCatalogMainImageUrl("uploaded-v2", null),
-    ).toBe("/media/catalog/uploaded-v2/storefront");
+    expect(publicCatalogMainImageUrl("uploaded-v2", null)).toBe(
+      "/media/catalog/uploaded-v2/storefront",
+    );
     expect(
       publicCatalogMainImageUrl(
         "approved-v1:catalog-source:ferrule",
@@ -89,6 +89,16 @@ describe("catalog hose-end media", () => {
         "BSPP Female Swivel 0° Straight Hose End -4 x -4",
       ),
     ).toBe("/images/catalog/hose-ends/bspp-female-swivel-straight.jpg");
+    expect(
+      hoseEndMediaPathFromDisplayName(
+        "Stainless JIC 37° Female Swivel 90° Long Bite-the-Wire Hose End -10 x -10",
+      ),
+    ).toBe("/images/catalog/hose-ends/jic-female-swivel-90-long.jpg");
+    expect(
+      hoseEndMediaPathFromDisplayName(
+        "JIC 37° Female Swivel 90° Hose End (W-Series) -6 x -6",
+      ),
+    ).toBe("/images/catalog/hose-ends/jic-female-swivel-90.jpg");
   });
 
   it("only returns hose series images that exist", () => {

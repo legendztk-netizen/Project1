@@ -2,6 +2,7 @@ import {
   nominalInchesFromDash,
   type DashSize,
 } from "../../catalog/domain/dash-size";
+import { hoseEndThread } from "../../catalog/domain/hose-end-presentation";
 
 export function displayDash(value: DashSize | null) {
   return value ?? "Not specified";
@@ -35,4 +36,12 @@ export function hoseSizeLabel(
 ) {
   const value = nominalIdIn ?? nominalInchesFromDash(fallbackDash);
   return value === null ? null : `${formatInches(value)} in`;
+}
+
+/** The thread, or the nominal size (`1-1/2 in`) for flange, weld, tube and grease ends, as Hydraulax names them. */
+export function connectionSizeLabel(
+  thread: string | null | undefined,
+  connectionDash: DashSize | null,
+) {
+  return hoseEndThread(thread) ?? hoseSizeLabel(null, connectionDash);
 }

@@ -11,6 +11,7 @@ import {
   PRODUCT_RETURN_DISCLOSURE,
   RETURN_POLICY_PATH,
 } from "../../after-sales/domain/return-policy";
+import { catalogReturnLink } from "../domain/catalog-pagination";
 import { requireCatalogFamilyId } from "../domain/catalog-route";
 import { CatalogMedia } from "../ui/catalog-media";
 import {
@@ -107,7 +108,8 @@ export async function action({ context, request }: Route.ActionArgs) {
 export async function loader({ context, params, request }: Route.LoaderArgs) {
   const { env } = context.get(cloudflareContext);
   const activeCategory = requireCatalogFamilyId(params.category);
-  const sku = new URL(request.url).searchParams.get("sku");
+  const { searchParams } = new URL(request.url);
+  const sku = searchParams.get("sku");
   const result = await createD1PublicCatalogRepository(env.DB, {
     sharedCache: true,
     edgeCache: storefrontCatalogCache(context.get(cloudflareContext)),
@@ -120,6 +122,7 @@ export async function loader({ context, params, request }: Route.LoaderArgs) {
   return {
     ...result,
     appName: env.PUBLIC_APP_NAME,
+    backLink: catalogReturnLink(searchParams.get("back"), activeCategory),
     selectionRequested: Boolean(sku),
   };
 }
@@ -141,8 +144,8 @@ export default function CatalogProductFamily({
     <div className="storefront-shell" data-surface="storefront">
       <StorefrontHeader />
       <main className="product-page">
-        <Link className="product-back-link" to={`/catalog/${family.category}`}>
-          <ArrowLeft size={17} /> Back to {family.category.replaceAll("-", " ")}
+        <Link className="product-back-link" to={loaderData.backLink.href}>
+          <ArrowLeft size={17} /> {loaderData.backLink.label}
         </Link>
 
         <section className="product-overview">
