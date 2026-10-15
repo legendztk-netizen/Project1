@@ -178,6 +178,11 @@ function requiredText(
   }
 }
 
+// Earlier imports stored blank technical data as "", so treat it as absent.
+function blankNumber(value: number | string | null | undefined) {
+  return value === "" || value === undefined ? null : (value as number | null);
+}
+
 function optionalNumber(
   findings: CatalogImportValidationResult[],
   value: number | null | undefined,
@@ -325,6 +330,14 @@ export async function validateHoseEndVariantMaintenance(
     sku: normalizedCode(input.variant.sku),
     source: normalizedText(input.variant.source),
     thread: input.variant.thread.trim(),
+    cutoffBMm: blankNumber(input.variant.cutoffBMm),
+    dimensionAMm: blankNumber(input.variant.dimensionAMm),
+    hex1Mm: blankNumber(input.variant.hex1Mm),
+    hex2Mm: blankNumber(input.variant.hex2Mm),
+    maxWorkingBar: blankNumber(input.variant.maxWorkingBar),
+    minimumBoreMm: blankNumber(input.variant.minimumBoreMm),
+    saltSprayHours: blankNumber(input.variant.saltSprayHours),
+    unitWeightG: blankNumber(input.variant.unitWeightG),
   };
   const findings: CatalogImportValidationResult[] = [];
   for (const [value, field] of [
