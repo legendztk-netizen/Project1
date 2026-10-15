@@ -1,6 +1,6 @@
 import { Check, CircleHelp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 
 import {
   compareDashSizes,
@@ -12,14 +12,22 @@ import type {
   PublicCatalogItem,
 } from "../../catalog/domain/public-catalog";
 import {
+  connectionSizeLabel,
   displayDash,
   hoseIdLabel,
   hoseSizeLabel,
 } from "../domain/variant-label";
 import { ProductCommercialPanel } from "./product-commercial-panel";
 
-function navigateToSku(navigate: ReturnType<typeof useNavigate>, sku: string) {
-  void navigate(`?sku=${encodeURIComponent(sku)}`);
+// Other parameters, such as the `back` list link, survive a size change.
+function navigateToSku(
+  navigate: ReturnType<typeof useNavigate>,
+  sku: string,
+  current: URLSearchParams,
+) {
+  const next = new URLSearchParams(current);
+  next.set("sku", sku);
+  void navigate(`?${next}`);
 }
 
 function DashChoice({
@@ -178,18 +186,22 @@ function HoseEndSizePicker({
         <legend>1. Connection Dash</legend>
         <p>Select the nominal port or thread size.</p>
         <div className="variant-choice-grid">
-          {connectionOptions.map(([dash, thread]) => (
-            <DashChoice
-              active={connectionDash === dash}
-              ariaLabel={`Select ${thread ?? "connection size not specified"}, Connection Dash ${displayDash(dash)}`}
-              dash={dash}
-              dataAttribute="data-connection-dash"
-              key={dash}
-              onSelect={() => selectConnection(dash)}
-              primary={thread ?? "Thread confirmed in quote"}
-              secondary={`Connection Dash ${displayDash(dash)}`}
-            />
-          ))}
+          {connectionOptions.map(([dash, thread]) => {
+            const size =
+              connectionSizeLabel(thread, dash) ?? "Size confirmed in quote";
+            return (
+              <DashChoice
+                active={connectionDash === dash}
+                ariaLabel={`Select ${size}, Connection Dash ${displayDash(dash)}`}
+                dash={dash}
+                dataAttribute="data-connection-dash"
+                key={dash}
+                onSelect={() => selectConnection(dash)}
+                primary={size}
+                secondary={`Connection Dash ${displayDash(dash)}`}
+              />
+            );
+          })}
         </div>
       </fieldset>
 
@@ -324,6 +336,7 @@ export function useProductVariantSelection({
   selectionRequested: boolean;
 }): ProductVariantSelectionModel {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const selectedHoseEnd =
     selected.variantSelection?.kind === "hose_end"
       ? selected.variantSelection
@@ -362,7 +375,7 @@ export function useProductVariantSelection({
 
   const beginSkuNavigation = (sku: string) => {
     setNavigationPending(true);
-    navigateToSku(navigate, sku);
+    navigateToSku(navigate, sku, searchParams);
   };
 
   return {

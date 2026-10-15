@@ -7,6 +7,7 @@ import {
 } from "../../catalog/domain/catalog-family";
 import type { PublicCatalogFamilySummary } from "../../catalog/domain/public-catalog";
 import {
+  catalogFamilyHref,
   catalogPageHref,
   catalogPageSizes,
   catalogPageWindow,
@@ -102,6 +103,16 @@ function CatalogPager({
 }
 
 export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
+  const listPath = data.activeCategory
+    ? `/catalog/${data.activeCategory}`
+    : "/catalog";
+  // Product pages link back to this exact list page.
+  const listHref = catalogPageHref(
+    listPath,
+    data.query,
+    data.pagination.page,
+    data.pagination.perPage,
+  );
   const activeLabel = data.activeCategory
     ? launchCatalogFamilies.find((family) => family.id === data.activeCategory)
         ?.label
@@ -183,7 +194,11 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
               <>
                 <div className="product-family-grid">
                   {data.families.map((family, index) => {
-                    const familyUrl = `/catalog/${family.category}/${family.familyKey}`;
+                    const familyUrl = catalogFamilyHref(
+                      family.category,
+                      family.familyKey,
+                      listHref,
+                    );
                     return (
                       <article
                         className="product-family-card"
@@ -232,11 +247,7 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
                   })}
                 </div>
                 <CatalogPager
-                  path={
-                    data.activeCategory
-                      ? `/catalog/${data.activeCategory}`
-                      : "/catalog"
-                  }
+                  path={listPath}
                   pagination={data.pagination}
                   query={data.query}
                 />

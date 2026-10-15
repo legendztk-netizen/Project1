@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  catalogFamilyHref,
   catalogPageHref,
+  catalogReturnLink,
   catalogPageWindow,
   paginateCatalog,
 } from "../app/modules/storefront/domain/catalog-pagination";
@@ -61,5 +63,46 @@ describe("catalog pagination", () => {
     expect(catalogPageHref("/catalog", "JIC 37", 3, 20)).toBe(
       "/catalog?q=JIC+37&page=3&perPage=20",
     );
+  });
+
+  it("returns a product page to the list page it was opened from", () => {
+    const list = catalogPageHref("/catalog/hose-ends", "", 5, 20);
+    const href = catalogFamilyHref("hose-ends", "jic-37", list);
+    expect(href).toBe(
+      "/catalog/hose-ends/jic-37?back=%2Fcatalog%2Fhose-ends%3Fpage%3D5%26perPage%3D20",
+    );
+    const back = new URL(href, "https://shop.test").searchParams.get("back");
+    expect(catalogReturnLink(back, "hose-ends")).toEqual({
+      href: "/catalog/hose-ends?page=5&perPage=20",
+      label: "Back to hose ends",
+    });
+    expect(catalogReturnLink("/catalog?q=JIC&page=3", "hose-ends")).toEqual({
+      href: "/catalog?q=JIC&page=3",
+      label: "Back to all products",
+    });
+    // The first page of its own category needs no parameter.
+    expect(catalogFamilyHref("adapters", "a1", "/catalog/adapters")).toBe(
+      "/catalog/adapters/a1",
+    );
+  });
+
+  it("only returns to catalog lists", () => {
+    const fallback = { href: "/catalog/hose-ends", label: "Back to hose ends" };
+    for (const back of [
+      null,
+      "https://evil.example/catalog",
+      "//evil.example/catalog",
+      "/catalog/hose-ends/jic-37",
+      "/catalog/unknown",
+      "/admin",
+    ]) {
+      expect(catalogReturnLink(back, "hose-ends")).toEqual(fallback);
+    }
+    expect(
+      catalogReturnLink(
+        "/catalog/adapters?page=x&perPage=99&utm=1",
+        "hose-ends",
+      ),
+    ).toEqual({ href: "/catalog/adapters", label: "Back to adapters" });
   });
 });

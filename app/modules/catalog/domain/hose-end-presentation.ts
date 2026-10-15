@@ -57,6 +57,12 @@ function customerInterface(code: string, shape: HoseEndShape) {
   return shape.interfaceFamily ?? "Hose End";
 }
 
+/** The thread a customer can match, or null for flange, weld, tube and grease ends stored as `N/A (…)`. */
+export function hoseEndThread(thread: string | null | undefined) {
+  const text = thread?.trim();
+  return text && !/^N\/A\b/i.test(text) ? text : null;
+}
+
 /** Same-shape braided, bite-the-wire, six-wire and stainless ends read and group apart, as at Hydraulax. */
 export function hoseEndPresentation(shape: HoseEndShape): HoseEndPresentation {
   const { code, onePiece } = shapeCode(shape.fittingSeries);

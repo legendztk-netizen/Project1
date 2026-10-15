@@ -9,7 +9,10 @@ import {
 import { publicCatalogMainImageUrl } from "../domain/catalog-main-image";
 import type { CatalogFamilyId } from "../domain/catalog-family";
 import { normalizeDashSize } from "../domain/dash-size";
-import { hoseEndPresentation } from "../domain/hose-end-presentation";
+import {
+  hoseEndPresentation,
+  hoseEndThread,
+} from "../domain/hose-end-presentation";
 import {
   hoseFamilyName,
   hoseStandardName,
@@ -223,7 +226,7 @@ function buildPublicCatalogPresentation(row: PublicCatalogRow) {
       specs: compactSpecs([
         ["Interface family", presentation.interface],
         ["Connection standard", row.connection_standard],
-        ["Thread", row.thread],
+        ["Thread", hoseEndThread(row.thread)],
         ["Sealing form", row.sealing_form],
         ["Connection dash", row.connection_dash],
         ["Hose tail dash", row.hose_tail_dash],

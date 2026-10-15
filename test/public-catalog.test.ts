@@ -347,6 +347,15 @@ describe("public catalog read model", () => {
     ]);
   });
 
+  it("leaves out the thread of flange, weld, tube and grease ends", () => {
+    const flange = hoseEnd({ thread: "N/A (SAE Code 61 flange)" });
+    expect(flange.specs.map((spec) => spec.label)).not.toContain("Thread");
+    expect(hoseEnd().specs).toContainEqual({
+      label: "Thread",
+      value: "9/16-18 UNF",
+    });
+  });
+
   it("only enables Add to Quote for eligible available products", () => {
     expect(hoseEnd().canAddToQuote).toBe(true);
     expect(
