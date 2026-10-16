@@ -1235,7 +1235,8 @@ _Avoid_: Model, hose type
 
 **Core Hose Series**:
 One of the six hose families approved for the primary retail range: 601R1,
-601R2, EN1SC, EN2SC, EN4SP, or EN4SH.
+601R2, 601R16, 601R17, 601R4, or EN4SH. The earlier EN1SC, EN2SC and EN4SP
+series are discontinued.
 _Avoid_: Main model, launch hose
 
 **Hose Size Variant**:
