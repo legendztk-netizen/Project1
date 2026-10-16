@@ -1,6 +1,9 @@
 import { unavailableHoseSql } from "./unavailable-hose-sql";
 import { availableAssemblySql } from "./available-assembly-sql";
-import { scopedAssemblyCombinationsSql } from "./scoped-assembly-combinations-sql";
+import {
+  hoseAssemblyCombinations,
+  hoseAssemblyPartsSql,
+} from "./hose-assembly-combinations";
 import { interfaceGroup } from "../../catalog/domain/public-catalog";
 import { normalizeDashSize } from "../../catalog/domain/dash-size";
 import { hoseEndPresentation } from "../../catalog/domain/hose-end-presentation";
@@ -223,16 +226,17 @@ async function readCompatibleEndARows(
     database
       .prepare("SELECT status FROM catalog_releases WHERE id = ?1")
       .bind(releaseId),
-    database.prepare(scopedAssemblyCombinationsSql).bind(releaseId, hoseSku),
+    database.prepare(hoseAssemblyPartsSql).bind(releaseId, hoseSku),
     database.prepare(hoseCompatibilities).bind(releaseId, hoseSku),
     database
       .prepare(
         `SELECT sku, product_type, catalog_publication_status, rfq_eligibility, supply_availability
          FROM catalog_runtime_skus
          WHERE import_id = ${importId} AND sku IN (
-           SELECT hose_sku FROM (${hoseCompatibilities})
-           UNION SELECT hose_end_sku FROM (${hoseCompatibilities})
-           UNION SELECT ferrule_sku FROM (${hoseCompatibilities}))`,
+           WITH compatibilities AS MATERIALIZED (${hoseCompatibilities})
+           SELECT hose_sku FROM compatibilities
+           UNION SELECT hose_end_sku FROM compatibilities
+           UNION SELECT ferrule_sku FROM compatibilities)`,
       )
       .bind(releaseId, hoseSku),
     database.prepare(unavailableHoseSql("?1")).bind(hoseSku),
@@ -281,7 +285,11 @@ async function readCompatibleEndARows(
     exclusions.results.map((row) => String(row.identity)),
   );
   const eligible = new Set<string>();
-  for (const combination of combinations.results) {
+  for (const combination of hoseAssemblyCombinations(
+    combinations.results as unknown as Parameters<
+      typeof hoseAssemblyCombinations
+    >[0],
+  )) {
     if (
       !listedEnds.has(
         key(

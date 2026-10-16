@@ -1,6 +1,6 @@
 import { unavailableHoseSql } from "../app/modules/configurator/infrastructure/unavailable-hose-sql";
 import { describe, expect, it } from "vitest";
-import { scopedAssemblyCombinationsSql } from "../app/modules/configurator/infrastructure/scoped-assembly-combinations-sql";
+import { hoseAssemblyPartsSql } from "../app/modules/configurator/infrastructure/hose-assembly-combinations";
 
 import {
   compatibleHoseEndCandidateFromRow,
@@ -119,8 +119,10 @@ describe("D1 configurator repository", () => {
       ferrule_sku: "601R1_1WB_002",
       assembly_working_bar: 250,
     });
+    // Complete combinations, read as legacy parts.
     const combination = (a: string, endA: string, b: string, endB: string) => ({
-      release_id: "catalog-release-7",
+      part: "legacy",
+      hose_series: "601R1",
       hose_sku: "601R1_002",
       identity: JSON.stringify([
         "601R1_002",
@@ -187,7 +189,7 @@ describe("D1 configurator repository", () => {
       ...overrides,
     };
     const tableOf = (sql: string) =>
-      sql === scopedAssemblyCombinationsSql
+      sql === hoseAssemblyPartsSql
         ? "catalog_runtime_assembly_combinations"
         : sql === unavailableHoseSql("?1")
           ? "catalog_item_unavailable_hoses"

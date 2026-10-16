@@ -657,6 +657,47 @@ describe("Build a Hose view", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("shows the first 16 compatible fittings and 50 more at a time", async () => {
+    const candidates = Array.from({ length: 80 }, (_, index) =>
+      compatibleEndAFixture({
+        compatibilityId: `COMP_${index}`,
+        hoseEndSku: `JIC_F_SW_04_04_${String(index).padStart(2, "0")}`,
+      }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({ candidates }),
+        ok: true,
+      }),
+    );
+    renderPage([publicHoseFixture()]);
+    fireEvent.click(
+      screen.getByRole("button", { name: /601R1 Hydraulic Hose/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Select 3\/16 in/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue to End A" }));
+    await screen.findByRole("heading", { name: "Choose End A" });
+    const shown = () =>
+      within(screen.getByLabelText("Compatible End A fittings")).getAllByRole(
+        "button",
+      ).length;
+    expect(screen.getByText("80 of 80 compatible fittings")).toBeTruthy();
+    expect(shown()).toBe(16);
+    expect(screen.getByText("Showing 16 of 80")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Show 50 more" }));
+    expect(shown()).toBe(66);
+    fireEvent.click(screen.getByRole("button", { name: "Show 14 more" }));
+    expect(shown()).toBe(80);
+    expect(screen.queryByText(/^Showing /)).toBeNull();
+    // A filter starts the list again from the first screen.
+    fireEvent.change(
+      screen.getByPlaceholderText("SKU, alias, thread, or dash"),
+      { target: { value: "JIC_F_SW_04_04_" } },
+    );
+    expect(shown()).toBe(16);
+  });
+
   it("continues to guided End A results and stores the derived ferrule", async () => {
     const candidates = compatibleCandidates();
     const fetchMock = vi.fn().mockResolvedValue({
