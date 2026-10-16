@@ -633,6 +633,52 @@
   font-weight: 650;
 }
 
+.thread-reference {
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.thread-reference h3 {
+  margin: 0;
+  font-size: 0.94rem;
+}
+
+.thread-reference > p {
+  margin: 5px 0 12px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.thread-reference table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.thread-reference th,
+.thread-reference td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+.thread-reference thead th {
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.thread-reference tbody th {
+  width: 72px;
+  font-weight: 650;
+}
+
+.thread-reference td.is-selected {
+  font-weight: 750;
+  background: rgb(213 43 30 / 8%);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
 .product-policy-band {
   align-self: start;
   background: #153d4b;

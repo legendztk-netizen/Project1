@@ -16,3 +16,4 @@ database field inventories, or deployment instructions.
 | [0054](0054-limit-pbkdf2-iterations-to-the-workers-maximum.md)      | Password hashing uses the Workers PBKDF2 maximum of 100,000 iterations |
 | [0055](0055-route-reply-email-through-one-dispatcher-worker.md)     | One dispatcher Worker relays each reply domain to its environment      |
 | [0056](0056-use-one-piece-crimp-fittings-paired-by-fitting-line.md) | One-piece crimp fittings paired by Fitting Line; no ferrules           |
+| [0057](0057-derive-adapter-end-threads-from-a-reference-chart.md)   | Adapter End Threads derived from a reference chart in code             |
