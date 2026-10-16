@@ -5743,13 +5743,88 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(unavailable).toContain("Temporarily Unavailable");
     expect(unavailable).toMatch(/product-quote-command[^>]*disabled/);
 
+    const legacyCouplerPage = await fetch(
+      `${origin}/catalog/quick-couplers/iso-16028-flat-face-plug-nipple-nptf-female?sku=QDC_16028_PLG_04_FNPT_04`,
+      { redirect: "manual" },
+    );
+    expect(legacyCouplerPage.status).toBe(301);
+    expect(legacyCouplerPage.headers.get("location")).toBe(
+      "/catalog/quick-couplers/iso-16028-flat-face?sku=QDC_16028_PLG_04_FNPT_04",
+    );
+
     const discontinued = await (
       await fetch(
-        `${origin}/catalog/quick-couplers/iso-16028-flat-face-plug-nipple-nptf-female?sku=QDC_16028_PLG_04_FNPT_04`,
+        `${origin}/catalog/quick-couplers/iso-16028-flat-face?sku=QDC_16028_PLG_04_FNPT_04`,
       )
     ).text();
     expect(discontinued).toContain("Discontinued");
     expect(discontinued).toMatch(/product-quote-command[^>]*disabled/);
+    expect(discontinued).toContain("ISO 16028 Flat Face Quick Couplers");
+    expect(discontinued).toContain("1. Body Size");
+    expect(discontinued).toContain("2. Port");
+    expect(discontinued).toContain("3. Part");
+    expect(discontinued).toMatch(
+      /data-part="Plug\/Nipple"[^>]*aria-pressed="true"/,
+    );
+    expect(discontinued).toMatch(
+      /<strong>Coupler \+ Nipple Set<\/strong><small>One coupler and one nipple<\/small>/,
+    );
+    expect(discontinued).not.toContain("Size / connection variant");
+
+    const unselectedCoupler = await (
+      await fetch(`${origin}/catalog/quick-couplers/iso-16028-flat-face`)
+    ).text();
+    expect(unselectedCoupler).toContain("1. Body Size");
+    expect(unselectedCoupler).not.toContain("2. Port");
+    expect(unselectedCoupler).toContain("Choose a size to continue.");
+    expect(unselectedCoupler).not.toContain("Technical specifications");
+
+    // ISO 5675 has one body size, so its page opens at the port choice.
+    const agriculturalCoupler = await (
+      await fetch(`${origin}/catalog/quick-couplers/iso-5675-agricultural`)
+    ).text();
+    expect(agriculturalCoupler).toMatch(
+      /data-body-dash="-8"[^>]*aria-pressed="true"/,
+    );
+    expect(agriculturalCoupler).toContain("2. Port");
+    expect(agriculturalCoupler).toContain("Choose a port to continue.");
+
+    const unselectedAdapter = await (
+      await fetch(`${origin}/catalog/adapters/adp-fam-jic-npt-st`)
+    ).text();
+    expect(unselectedAdapter).toContain(
+      "Straight Male JIC 37° to Male NPTF Adapter",
+    );
+    expect(unselectedAdapter).toContain("1. Male JIC 37° End");
+    expect(unselectedAdapter).toMatch(
+      /<strong>7\/16-20 UNF<\/strong><small>Dash -4<\/small>/,
+    );
+    expect(unselectedAdapter).not.toContain("2. Male NPTF End");
+    expect(unselectedAdapter).not.toContain("Size / connection variant");
+    expect(unselectedAdapter).toMatch(/product-quote-command[^>]*disabled/);
+
+    const selectedAdapter = await (
+      await fetch(
+        `${origin}/catalog/adapters/adp-fam-jic-npt-st?sku=ADP_ST_JIC_M_04_NPT_M_06`,
+      )
+    ).text();
+    expect(selectedAdapter).toContain("2. Male NPTF End");
+    expect(selectedAdapter).toMatch(
+      /data-end-2-dash="-6"[^>]*aria-pressed="true"/,
+    );
+    expect(selectedAdapter).toMatch(
+      /<strong>3\/8-18 NPTF<\/strong><small>Dash -6<\/small>/,
+    );
+    expect(selectedAdapter).not.toContain('data-end-2-dash="-16"');
+    expect(selectedAdapter).toContain("Technical specifications");
+    expect(selectedAdapter).toContain("Dash to thread reference");
+    expect(selectedAdapter).toContain(
+      '<td class="is-selected">7/16-20 UNF</td>',
+    );
+    expect(selectedAdapter).toContain(
+      '<td class="is-selected">3/8-18 NPTF</td>',
+    );
+    expect(selectedAdapter).not.toContain("Threads per");
 
     const inheritedSeriesImage = await (
       await fetch(
@@ -6296,12 +6371,26 @@ describe("Cloudflare Worker route surfaces", () => {
             releaseId: expect.any(String),
             releaseNumber: expect.any(String),
             specs: expect.arrayContaining([
-              {
-                label: "Interface 1",
-                value: expect.any(String),
-              },
+              { label: "End 1", value: "Male JIC 37°" },
+              { label: "End 1 thread", value: "5/16-24 UNF" },
             ]),
-            variantSelection: null,
+            variantSelection: {
+              ends: [
+                {
+                  dash: "-2",
+                  form: "Male",
+                  interfaceName: "JIC 37°",
+                  thread: "5/16-24 UNF",
+                },
+                {
+                  dash: "-2",
+                  form: "Male",
+                  interfaceName: "NPTF",
+                  thread: "1/8-27 NPTF",
+                },
+              ],
+              kind: "adapter",
+            },
           },
           quantity: 100,
           refresh: {

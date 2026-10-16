@@ -72,21 +72,42 @@ function product(value: QuoteRequestProductSnapshot) {
             hoseTailDash: variant.hoseTailDash,
             thread: variant.thread,
           }
-        : {
-            kind: variant.kind,
-            dash: variant.dash,
-            equivalentStandard: variant.equivalentStandard,
-            hoseSeries: variant.hoseSeries,
-            nominalIdIn: variant.nominalIdIn,
-            primaryStandard: variant.primaryStandard,
-            reinforcement: variant.reinforcement,
-            performance: {
-              temperatureMaxC: variant.performance.temperatureMaxC,
-              temperatureMinC: variant.performance.temperatureMinC,
-              workingBar: variant.performance.workingBar,
-              workingPsi: variant.performance.workingPsi,
-            },
-          },
+        : variant.kind === "adapter"
+          ? {
+              kind: variant.kind,
+              ends: variant.ends.map((end) => ({
+                dash: end.dash,
+                form: end.form,
+                interfaceName: end.interfaceName,
+                thread: end.thread,
+              })),
+            }
+          : variant.kind === "quick_coupler"
+            ? {
+                kind: variant.kind,
+                bodyDash: variant.bodyDash,
+                bodySize: variant.bodySize,
+                portDash: variant.portDash,
+                portGender: variant.portGender,
+                portInterface: variant.portInterface,
+                portThread: variant.portThread,
+                role: variant.role,
+              }
+            : {
+                kind: variant.kind,
+                dash: variant.dash,
+                equivalentStandard: variant.equivalentStandard,
+                hoseSeries: variant.hoseSeries,
+                nominalIdIn: variant.nominalIdIn,
+                primaryStandard: variant.primaryStandard,
+                reinforcement: variant.reinforcement,
+                performance: {
+                  temperatureMaxC: variant.performance.temperatureMaxC,
+                  temperatureMinC: variant.performance.temperatureMinC,
+                  workingBar: variant.performance.workingBar,
+                  workingPsi: variant.performance.workingPsi,
+                },
+              },
   };
 }
 

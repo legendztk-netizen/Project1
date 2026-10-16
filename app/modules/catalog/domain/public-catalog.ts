@@ -56,7 +56,60 @@ export type PublicVariantSelection =
       hoseTailDash: DashSize | null;
       kind: "hose_end";
       thread: string | null;
+    }
+  | {
+      ends: [PublicAdapterEnd, PublicAdapterEnd];
+      kind: "adapter";
+    }
+  | {
+      bodyDash: DashSize | null;
+      bodySize: string | null;
+      kind: "quick_coupler";
+      portDash: DashSize | null;
+      portGender: string | null;
+      portInterface: string | null;
+      portThread: string | null;
+      role: string | null;
     };
+
+export interface PublicAdapterEnd {
+  dash: DashSize | null;
+  /** `Male`, `Female`, or the stored connection form when it is neither. */
+  form: string | null;
+  /** Customer-facing interface name, such as `JIC 37°` or `NPTF`. */
+  interfaceName: string | null;
+  thread: string | null;
+}
+
+/** `Male JIC 37°`: how an adapter end reads in titles, picker legends and specifications. */
+export function adapterEndName(end: PublicAdapterEnd) {
+  return [end.form, end.interfaceName].filter(Boolean).join(" ") || null;
+}
+
+const quickCouplerRoleOrder = [
+  "Coupler/Socket",
+  "Plug/Nipple",
+  "Complete Pair",
+];
+
+const quickCouplerRoleNames: Record<string, string> = {
+  "Complete Pair": "Coupler + Nipple Set",
+  "Coupler/Socket": "Coupler",
+  "Plug/Nipple": "Nipple",
+};
+
+/** US names for the stored ISO roles: the female half is a coupler, the male half a nipple. */
+export function quickCouplerRoleName(role: string | null) {
+  return role ? (quickCouplerRoleNames[role] ?? role) : null;
+}
+
+export function compareQuickCouplerRoles(left: string, right: string) {
+  const rank = (role: string) => {
+    const index = quickCouplerRoleOrder.indexOf(role);
+    return index < 0 ? quickCouplerRoleOrder.length : index;
+  };
+  return rank(left) - rank(right) || left.localeCompare(right);
+}
 
 export interface PublicCatalogItem {
   catalogBasis?: CatalogRevisionBasis;

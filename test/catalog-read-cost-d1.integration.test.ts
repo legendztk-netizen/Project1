@@ -48,9 +48,29 @@ async function openDatabase(label: string) {
 
 async function legacyRows(database: D1Database, sku?: string) {
   const statement = database.prepare(legacyPublicCatalogSql(sku !== undefined));
-  return (sku !== undefined ? statement.bind(sku) : statement).all<
-    Record<string, unknown>
-  >();
+  const result = await (
+    sku !== undefined ? statement.bind(sku) : statement
+  ).all<Record<string, unknown>>();
+  // The reference join already returns D1's 100-column maximum, so the quick coupler Dash columns read
+  // since the staged coupler picker are joined here instead.
+  const couplers = await database
+    .prepare(
+      `SELECT sku, body_dash, port_dash FROM catalog_runtime_quick_couplers
+       WHERE import_id = (
+         SELECT r.source_import_id FROM catalog_active_release ar
+         JOIN catalog_releases r ON r.id = ar.release_id
+       )`,
+    )
+    .all<{ body_dash: string | null; port_dash: string | null; sku: string }>();
+  const couplerBySku = new Map(couplers.results.map((row) => [row.sku, row]));
+  return {
+    ...result,
+    results: result.results.map((row): Record<string, unknown> => ({
+      ...row,
+      body_dash: couplerBySku.get(String(row.sku))?.body_dash ?? null,
+      port_dash: couplerBySku.get(String(row.sku))?.port_dash ?? null,
+    })),
+  };
 }
 
 function skusOfEveryType(rows: Array<{ sku: string; product_type: string }>) {

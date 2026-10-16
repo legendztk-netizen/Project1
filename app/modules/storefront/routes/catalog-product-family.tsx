@@ -13,6 +13,7 @@ import {
 } from "../../after-sales/domain/return-policy";
 import { catalogReturnLink } from "../domain/catalog-pagination";
 import { requireCatalogFamilyId } from "../domain/catalog-route";
+import { AdapterThreadReference } from "../ui/adapter-thread-reference";
 import { CatalogMedia } from "../ui/catalog-media";
 import {
   ProductVariantSelector,
@@ -108,17 +109,33 @@ export async function action({ context, request }: Route.ActionArgs) {
 export async function loader({ context, params, request }: Route.LoaderArgs) {
   const { env } = context.get(cloudflareContext);
   const activeCategory = requireCatalogFamilyId(params.category);
-  const { searchParams } = new URL(request.url);
+  const { search, searchParams } = new URL(request.url);
   const sku = searchParams.get("sku");
-  const result = await createD1PublicCatalogRepository(env.DB, {
+  const catalog = createD1PublicCatalogRepository(env.DB, {
     sharedCache: true,
     edgeCache: storefrontCatalogCache(context.get(cloudflareContext)),
-  }).findFamily({
+  });
+  const result = await catalog.findFamily({
     category: activeCategory,
     familyKey: params.familyKey,
     sku,
   });
-  if (!result) throw new Response("Product family not found", { status: 404 });
+  if (!result) {
+    // Quick-coupler pages were once split by part and port; those keys begin with their series key.
+    const series =
+      activeCategory === "quick-couplers"
+        ? (await catalog.browseSummaries({ category: activeCategory })).find(
+            (family) => params.familyKey.startsWith(`${family.familyKey}-`),
+          )
+        : undefined;
+    if (series) {
+      throw redirect(
+        `/catalog/${activeCategory}/${series.familyKey}${search}`,
+        301,
+      );
+    }
+    throw new Response("Product family not found", { status: 404 });
+  }
   return {
     ...result,
     appName: env.PUBLIC_APP_NAME,
@@ -137,6 +154,7 @@ export default function CatalogProductFamily({
   const { family, selected } = loaderData;
   const offer = selected.offer;
   const variantSelection = useProductVariantSelection({
+    family,
     selected,
     selectionRequested: loaderData.selectionRequested,
   });
@@ -182,6 +200,9 @@ export default function CatalogProductFamily({
                   </div>
                 ))}
               </dl>
+              {selected.productType === "adapter" ? (
+                <AdapterThreadReference family={family} selected={selected} />
+              ) : null}
             </div>
             <aside className="product-policy-band">
               <div>

@@ -1,16 +1,28 @@
+import { formatReferenceUnitPrice } from "../../quote-list/domain/quote-currency-totals";
 import { Check, CircleHelp } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
 import {
   compareDashSizes,
-  type DashSize,
+  normalizeDashSize,
 } from "../../catalog/domain/dash-size";
 import { formatCompatibleHoses } from "../../catalog/domain/hose-name";
-import type {
-  PublicCatalogFamily,
-  PublicCatalogItem,
+import {
+  adapterEndName,
+  quickCouplerRoleName,
+  type PublicCatalogFamily,
+  type PublicCatalogItem,
 } from "../../catalog/domain/public-catalog";
+import {
+  chooseStageValue,
+  resolvedStageVariant,
+  resolveVariantStages,
+  stageValuesOf,
+  variantStageAxes,
+  type ResolvedVariantStage,
+  type VariantStageOption,
+} from "../domain/staged-variant-selection";
 import {
   connectionSizeLabel,
   displayDash,
@@ -30,29 +42,28 @@ function navigateToSku(
   void navigate(`?${next}`);
 }
 
-function DashChoice({
+function VariantChoice({
   active,
   ariaLabel,
-  dash,
   dataAttribute,
   note,
   onSelect,
   primary,
   secondary,
+  value,
 }: {
   active: boolean;
   ariaLabel?: string;
-  dash: DashSize | null;
-  dataAttribute:
-    "data-connection-dash" | "data-hose-dash" | "data-hose-tail-dash";
+  dataAttribute: `data-${string}`;
   note?: string | null;
   onSelect: () => void;
-  primary?: string;
+  primary: string;
   secondary: string;
+  value: string | null;
 }) {
   return (
     <button
-      {...{ [dataAttribute]: dash ?? undefined }}
+      {...{ [dataAttribute]: value ?? undefined }}
       aria-label={ariaLabel}
       aria-pressed={active}
       className="variant-choice"
@@ -60,7 +71,7 @@ function DashChoice({
       type="button"
     >
       <span>
-        <strong>{primary ?? displayDash(dash)}</strong>
+        <strong>{primary}</strong>
         <small>{secondary}</small>
         {note ? <small>{note}</small> : null}
       </span>
@@ -113,15 +124,15 @@ function HoseSizePicker({
             "Size not specified";
           const dashLabel = displayDash(selection.dash);
           return (
-            <DashChoice
+            <VariantChoice
               active={selectionComplete && variant.sku === selectedSku}
               ariaLabel={`Select ${sizeLabel} hose inside diameter, Dash ${dashLabel}`}
-              dash={selection.dash}
               dataAttribute="data-hose-dash"
               key={variant.sku}
               onSelect={() => selectSku(variant.sku)}
               primary={sizeLabel}
               secondary={`Hose ID · Dash ${dashLabel}`}
+              value={selection.dash}
             />
           );
         })}
@@ -130,112 +141,231 @@ function HoseSizePicker({
   );
 }
 
-function HoseEndSizePicker({
-  connectionDash,
-  family,
-  hoseTailDash,
-  selectConnection,
-  selectTail,
-}: {
-  connectionDash: DashSize | null;
-  family: PublicCatalogFamily;
-  hoseTailDash: DashSize | null;
-  selectConnection: (dash: DashSize) => void;
-  selectTail: (dash: DashSize | null, sku: string) => void;
-}) {
-  const hoseEndVariants = useMemo(
-    () =>
-      family.variants.flatMap((variant) =>
-        variant.variantSelection?.kind === "hose_end"
-          ? [{ selection: variant.variantSelection, variant }]
-          : [],
-      ),
-    [family.variants],
-  );
-  const connectionOptions = useMemo(() => {
-    const options = new Map<DashSize, string | null>();
-    for (const { selection } of hoseEndVariants) {
-      if (selection.connectionDash) {
-        options.set(selection.connectionDash, selection.thread);
-      }
-    }
-    return [...options.entries()].toSorted(([left], [right]) =>
-      compareDashSizes(left, right),
-    );
-  }, [hoseEndVariants]);
-  const hoseTailOptions = useMemo(
-    () =>
-      connectionDash
-        ? hoseEndVariants
-            .filter(
-              ({ selection }) => selection.connectionDash === connectionDash,
-            )
-            .toSorted((left, right) =>
-              compareDashSizes(
-                left.selection.hoseTailDash,
-                right.selection.hoseTailDash,
-              ),
-            )
-        : [],
-    [connectionDash, hoseEndVariants],
-  );
+interface StageOptionView {
+  ariaLabel: string;
+  note?: string | null;
+  primary: string;
+  secondary: string;
+}
 
+interface StagePresentation {
+  /** Names the stage in `data-stage` and each choice's `data-<attribute>` value. */
+  attribute: string;
+  hint: string;
+  legend: string;
+  option: (option: VariantStageOption) => StageOptionView;
+  /** Shown under the product title while this stage waits for a choice. */
+  prompt: string;
+}
+
+function hoseEndOf(option: VariantStageOption) {
+  const selection = option.variants[0]?.variantSelection;
+  return selection?.kind === "hose_end" ? selection : null;
+}
+
+function adapterEndOf(option: VariantStageOption, end: 0 | 1) {
+  const selection = option.variants[0]?.variantSelection;
+  return selection?.kind === "adapter" ? selection.ends[end] : null;
+}
+
+function quickCouplerOf(option: VariantStageOption) {
+  const selection = option.variants[0]?.variantSelection;
+  return selection?.kind === "quick_coupler" ? selection : null;
+}
+
+const hoseEndStages: StagePresentation[] = [
+  {
+    attribute: "connection-dash",
+    hint: "Select the nominal port or thread size.",
+    legend: "1. Connection Dash",
+    option: (option) => {
+      const dash = normalizeDashSize(option.value);
+      const size =
+        connectionSizeLabel(hoseEndOf(option)?.thread, dash) ??
+        "Size confirmed in quote";
+      return {
+        ariaLabel: `Select ${size}, Connection Dash ${displayDash(dash)}`,
+        primary: size,
+        secondary: `Connection Dash ${displayDash(dash)}`,
+      };
+    },
+    prompt: "Choose a size to continue.",
+  },
+  {
+    attribute: "hose-tail-dash",
+    hint: "Only compatible hose-tail sizes are shown.",
+    legend: "2. Hose Tail Dash",
+    option: (option) => {
+      const dash = normalizeDashSize(option.value);
+      const idLabel = hoseIdLabel(null, dash);
+      const hoses = hoseEndOf(option)?.compatibleHoses ?? [];
+      return {
+        ariaLabel: `Select ${idLabel}, Hose Tail Dash ${displayDash(dash)}`,
+        note: hoses.length
+          ? `Fits ${hoses.map((hose) => hose.shortName).join(", ")}`
+          : null,
+        primary: idLabel,
+        secondary: `Hose Tail Dash ${displayDash(dash)}`,
+      };
+    },
+    prompt: "Choose a Hose Tail Dash to continue.",
+  },
+];
+
+function adapterStages(family: PublicCatalogFamily): StagePresentation[] {
+  const selection = family.representative.variantSelection;
+  const names = ([0, 1] as const).map(
+    (end) =>
+      (selection?.kind === "adapter" && adapterEndName(selection.ends[end])) ||
+      `End ${end + 1}`,
+  );
+  const stage = (end: 0 | 1): StagePresentation => ({
+    attribute: `end-${end + 1}-dash`,
+    hint:
+      end === 0
+        ? `Select the ${names[0]} thread size.`
+        : "Only sizes available with the selected first end are shown.",
+    legend: `${end + 1}. ${names[end]} End`,
+    option: (option) => {
+      const dash = normalizeDashSize(option.value);
+      const size =
+        adapterEndOf(option, end)?.thread ??
+        hoseSizeLabel(null, dash) ??
+        "Size confirmed in quote";
+      return {
+        ariaLabel: `Select ${size}, ${names[end]} Dash ${displayDash(dash)}`,
+        primary: size,
+        secondary: `Dash ${displayDash(dash)}`,
+      };
+    },
+    prompt:
+      end === 0
+        ? "Choose a size to continue."
+        : `Choose the ${names[1]} end size to continue.`,
+  });
+  return [stage(0), stage(1)];
+}
+
+const quickCouplerPartNotes: Record<string, string> = {
+  "Complete Pair": "One coupler and one nipple",
+  "Coupler/Socket": "Female half",
+  "Plug/Nipple": "Male half",
+};
+
+const quickCouplerStages: StagePresentation[] = [
+  {
+    attribute: "body-dash",
+    hint: "Select the coupler body size.",
+    legend: "1. Body Size",
+    option: (option) => {
+      const dash = normalizeDashSize(option.value);
+      const size =
+        quickCouplerOf(option)?.bodySize ??
+        hoseSizeLabel(null, dash) ??
+        "Size confirmed in quote";
+      return {
+        ariaLabel: `Select ${size} body, Body Dash ${displayDash(dash)}`,
+        primary: size,
+        secondary: `Body Dash ${displayDash(dash)}`,
+      };
+    },
+    prompt: "Choose a size to continue.",
+  },
+  {
+    attribute: "port",
+    hint: "Only ports available for the selected body size are shown.",
+    legend: "2. Port",
+    option: (option) => {
+      const coupler = quickCouplerOf(option);
+      const port = [coupler?.portGender, coupler?.portInterface, "port"]
+        .filter(Boolean)
+        .join(" ");
+      const thread = coupler?.portThread ?? "Thread confirmed in quote";
+      return {
+        ariaLabel: `Select ${thread}, ${port}`,
+        primary: thread,
+        secondary: `${port} · Dash ${displayDash(coupler?.portDash ?? null)}`,
+      };
+    },
+    prompt: "Choose a port to continue.",
+  },
+  {
+    attribute: "part",
+    hint: "Order the coupler, the nipple, or both as a set.",
+    legend: "3. Part",
+    option: (option) => {
+      const name = quickCouplerRoleName(option.value) ?? option.value;
+      const offer = option.variants[0]?.offer;
+      return {
+        ariaLabel: `Select ${name}`,
+        note:
+          offer?.referencePrice == null
+            ? "Price confirmed in quote"
+            : `${offer.currency} ${formatReferenceUnitPrice(offer.referencePrice)} / ${offer.salesUnit.toLocaleLowerCase()}`,
+        primary: name,
+        secondary: quickCouplerPartNotes[option.value] ?? "Quick coupler part",
+      };
+    },
+    prompt: "Choose a part to continue.",
+  },
+];
+
+function stagePresentations(family: PublicCatalogFamily, productType: string) {
+  return productType === "hose_end"
+    ? hoseEndStages
+    : productType === "adapter"
+      ? adapterStages(family)
+      : productType === "quick_coupler"
+        ? quickCouplerStages
+        : [];
+}
+
+function StagedVariantPicker({
+  family,
+  productType,
+  selectStage,
+  stages,
+}: {
+  family: PublicCatalogFamily;
+  productType: string;
+  selectStage: (index: number, value: string) => void;
+  stages: ResolvedVariantStage[];
+}) {
+  const presentations = stagePresentations(family, productType);
   return (
     <div className="staged-variant-picker">
-      <fieldset className="variant-choice-group">
-        <legend>1. Connection Dash</legend>
-        <p>Select the nominal port or thread size.</p>
-        <div className="variant-choice-grid">
-          {connectionOptions.map(([dash, thread]) => {
-            const size =
-              connectionSizeLabel(thread, dash) ?? "Size confirmed in quote";
-            return (
-              <DashChoice
-                active={connectionDash === dash}
-                ariaLabel={`Select ${size}, Connection Dash ${displayDash(dash)}`}
-                dash={dash}
-                dataAttribute="data-connection-dash"
-                key={dash}
-                onSelect={() => selectConnection(dash)}
-                primary={size}
-                secondary={`Connection Dash ${displayDash(dash)}`}
-              />
-            );
-          })}
-        </div>
-      </fieldset>
-
-      {connectionDash ? (
-        <fieldset className="variant-choice-group" data-stage="hose-tail">
-          <legend>2. Hose Tail Dash</legend>
-          <p>Only compatible hose-tail sizes are shown.</p>
-          <div className="variant-choice-grid">
-            {hoseTailOptions.map(({ selection, variant }) => {
-              const idLabel = hoseIdLabel(null, selection.hoseTailDash);
-              const hoses = selection.compatibleHoses ?? [];
-              return (
-                <DashChoice
-                  active={hoseTailDash === selection.hoseTailDash}
-                  ariaLabel={`Select ${idLabel}, Hose Tail Dash ${displayDash(selection.hoseTailDash)}`}
-                  dash={selection.hoseTailDash}
-                  dataAttribute="data-hose-tail-dash"
-                  key={variant.sku}
-                  note={
-                    hoses.length
-                      ? `Fits ${hoses.map((hose) => hose.shortName).join(", ")}`
-                      : null
-                  }
-                  onSelect={() =>
-                    selectTail(selection.hoseTailDash, variant.sku)
-                  }
-                  primary={idLabel}
-                  secondary={`Hose Tail Dash ${displayDash(selection.hoseTailDash)}`}
-                />
-              );
-            })}
-          </div>
-        </fieldset>
-      ) : null}
+      {stages.map((stage, index) => {
+        const presentation = presentations[index];
+        if (!presentation) return null;
+        return (
+          <fieldset
+            className="variant-choice-group"
+            data-stage={presentation.attribute}
+            key={presentation.attribute}
+          >
+            <legend>{presentation.legend}</legend>
+            <p>{presentation.hint}</p>
+            <div className="variant-choice-grid">
+              {stage.options.map((option) => {
+                const view = presentation.option(option);
+                return (
+                  <VariantChoice
+                    active={stage.selected === option.value}
+                    ariaLabel={view.ariaLabel}
+                    dataAttribute={`data-${presentation.attribute}`}
+                    key={option.value}
+                    note={view.note}
+                    onSelect={() => selectStage(index, option.value)}
+                    primary={view.primary}
+                    secondary={view.secondary}
+                    value={option.value}
+                  />
+                );
+              })}
+            </div>
+          </fieldset>
+        );
+      })}
     </div>
   );
 }
@@ -249,6 +379,8 @@ export function ProductVariantSelector({
   selected: PublicCatalogItem;
   selection: ProductVariantSelectionModel;
 }) {
+  const presentations = stagePresentations(family, selected.productType);
+  const waitingStage = presentations[selection.stages.length - 1];
   return (
     <>
       <h1>{selection.guided ? family.familyName : selected.displayName}</h1>
@@ -272,9 +404,7 @@ export function ProductVariantSelector({
         </>
       ) : (
         <p className="product-sku">
-          {selected.productType === "hose_end" && selection.connectionDash
-            ? "Choose a Hose Tail Dash to continue."
-            : "Choose a size to continue."}
+          {waitingStage?.prompt ?? "Choose a size to continue."}
         </p>
       )}
 
@@ -285,13 +415,12 @@ export function ProductVariantSelector({
           selectionComplete={selection.selectionComplete}
           selectSku={selection.selectSku}
         />
-      ) : selected.productType === "hose_end" ? (
-        <HoseEndSizePicker
-          connectionDash={selection.connectionDash}
+      ) : presentations.length ? (
+        <StagedVariantPicker
           family={family}
-          hoseTailDash={selection.hoseTailDash}
-          selectConnection={selection.selectConnection}
-          selectTail={selection.selectTail}
+          productType={selected.productType}
+          selectStage={selection.selectStage}
+          stages={selection.stages}
         />
       ) : (
         <div className="variant-picker">
@@ -319,57 +448,42 @@ export function ProductVariantSelector({
 }
 
 export interface ProductVariantSelectionModel {
-  connectionDash: DashSize | null;
   guided: boolean;
-  hoseTailDash: DashSize | null;
-  selectConnection: (dash: DashSize) => void;
   selectionComplete: boolean;
   selectSku: (sku: string) => void;
-  selectTail: (dash: DashSize | null, sku: string) => void;
+  selectStage: (index: number, value: string) => void;
+  /** Stages up to the first one still waiting for a choice; empty for single-list products. */
+  stages: ResolvedVariantStage[];
 }
 
 export function useProductVariantSelection({
+  family,
   selected,
   selectionRequested,
 }: {
+  family: PublicCatalogFamily;
   selected: PublicCatalogItem;
   selectionRequested: boolean;
 }): ProductVariantSelectionModel {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const selectedHoseEnd =
-    selected.variantSelection?.kind === "hose_end"
-      ? selected.variantSelection
-      : null;
-  const [connectionDash, setConnectionDash] = useState<DashSize | null>(
-    selectionRequested ? (selectedHoseEnd?.connectionDash ?? null) : null,
-  );
-  const [hoseTailDash, setHoseTailDash] = useState<DashSize | null>(
-    selectionRequested ? (selectedHoseEnd?.hoseTailDash ?? null) : null,
-  );
+  const axes = variantStageAxes(selected.productType);
+  const requestedChoices = () =>
+    selectionRequested && axes ? stageValuesOf(selected, axes) : [];
+  const [chosen, setChosen] = useState<(string | null)[]>(requestedChoices);
   const [navigationPending, setNavigationPending] = useState(false);
-  const guided =
-    selected.productType === "hose" || selected.productType === "hose_end";
+  const guided = selected.productType === "hose" || axes !== null;
+  const stages = axes
+    ? resolveVariantStages(family.variants, axes, chosen)
+    : [];
+  const resolved = axes ? resolvedStageVariant(stages, axes.length) : null;
   const selectionComplete =
     !guided ||
-    (selected.productType === "hose"
-      ? selectionRequested && !navigationPending
-      : Boolean(
-          selectionRequested &&
-          !navigationPending &&
-          connectionDash &&
-          hoseTailDash &&
-          connectionDash === selectedHoseEnd?.connectionDash &&
-          hoseTailDash === selectedHoseEnd.hoseTailDash,
-        ));
+    (!navigationPending &&
+      (axes ? resolved?.sku === selected.sku : selectionRequested));
 
   useEffect(() => {
-    setConnectionDash(
-      selectionRequested ? (selectedHoseEnd?.connectionDash ?? null) : null,
-    );
-    setHoseTailDash(
-      selectionRequested ? (selectedHoseEnd?.hoseTailDash ?? null) : null,
-    );
+    setChosen(requestedChoices());
     setNavigationPending(false);
   }, [selected.sku, selectionRequested]);
 
@@ -379,18 +493,21 @@ export function useProductVariantSelection({
   };
 
   return {
-    connectionDash,
     guided,
-    hoseTailDash,
-    selectConnection: (dash) => {
-      setConnectionDash(dash);
-      setHoseTailDash(null);
-    },
     selectionComplete,
     selectSku: beginSkuNavigation,
-    selectTail: (dash, sku) => {
-      setHoseTailDash(dash);
-      beginSkuNavigation(sku);
+    selectStage: (index, value) => {
+      if (!axes) return;
+      const next = chooseStageValue(stages, index, value);
+      setChosen(next);
+      const variant = resolvedStageVariant(
+        resolveVariantStages(family.variants, axes, next),
+        axes.length,
+      );
+      if (variant && (variant.sku !== selected.sku || !selectionRequested)) {
+        beginSkuNavigation(variant.sku);
+      }
     },
+    stages,
   };
 }

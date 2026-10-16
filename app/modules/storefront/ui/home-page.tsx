@@ -43,24 +43,24 @@ const hoseSeries = [
     standard: "EN 853 2SN · SAE 100 R2AT",
   },
   {
-    code: "EN1SC",
-    note: "Compact, one braid",
-    standard: "EN 857 1SC",
+    code: "601R16",
+    note: "Compact braid, tight bend radius",
+    standard: "SAE 100 R16",
   },
   {
-    code: "EN2SC",
-    note: "Compact, two braids",
-    standard: "EN 857 2SC",
-  },
-  {
-    code: "EN4SP",
-    note: "Four spiral layers",
-    standard: "EN 856 4SP",
+    code: "601R17",
+    note: "Compact, 3,000 psi at every size",
+    standard: "SAE 100 R17",
   },
   {
     code: "EN4SH",
     note: "Four spiral layers, heavy duty",
     standard: "EN 856 4SH",
+  },
+  {
+    code: "601R4",
+    note: "Suction and return, wire helix",
+    standard: "SAE 100 R4",
   },
 ];
 

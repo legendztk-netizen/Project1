@@ -8,6 +8,10 @@ import {
 } from "./public-catalog-edge-cache";
 import { publicCatalogMainImageUrl } from "../domain/catalog-main-image";
 import type { CatalogFamilyId } from "../domain/catalog-family";
+import {
+  connectorInterfaceName,
+  connectorThread,
+} from "../domain/connector-thread";
 import { normalizeDashSize } from "../domain/dash-size";
 import {
   hoseEndPresentation,
@@ -25,6 +29,7 @@ import {
   parseAcceptedFittingLines,
 } from "../domain/fitting-line";
 import {
+  adapterEndName,
   categoryByProductType,
   groupCatalogFamilies,
   summarizeCatalogFamilies,
@@ -34,8 +39,10 @@ import {
   slug,
   type PublicCatalogFamily,
   type PublicCatalogItem,
+  type PublicAdapterEnd,
   type PublicCatalogSpec,
   type PublicProductType,
+  quickCouplerRoleName,
 } from "../domain/public-catalog";
 
 interface PublicCatalogRow {
@@ -47,6 +54,7 @@ interface PublicCatalogRow {
   /** Hoses this Hose End fits by the pairing rule, from `readHoseEndFits`. */
   compatible_hoses?: CompatibleHose[] | null;
   bend_radius_mm: number | null;
+  body_dash: string | null;
   body_material: string | null;
   body_size: string | null;
   burst_bar: number | null;
@@ -108,6 +116,7 @@ interface PublicCatalogRow {
   nominal_id_in: number | null;
   od_mm: number | null;
   overall_length_mm: number | null;
+  port_dash: string | null;
   port_gender: string | null;
   port_interface: string | null;
   port_thread: string | null;
@@ -148,6 +157,34 @@ function compactSpecs(entries: Array<[string, unknown]>): PublicCatalogSpec[] {
       ? []
       : [{ label, value: String(value) }],
   );
+}
+
+function adapterEnd(
+  connectorInterface: string | null,
+  connectionForm: string | null,
+  size: string | null,
+): PublicAdapterEnd {
+  const dash = normalizeDashSize(size);
+  const form = connectionForm?.trim() ?? "";
+  return {
+    dash,
+    form: /^m(ale)?$/i.test(form)
+      ? "Male"
+      : /^f(emale)?$/i.test(form)
+        ? "Female"
+        : form || null,
+    interfaceName: connectorInterfaceName(connectorInterface),
+    thread: connectorThread(connectorInterface, dash),
+  };
+}
+
+function adapterEnds(
+  row: PublicCatalogRow,
+): [PublicAdapterEnd, PublicAdapterEnd] {
+  return [
+    adapterEnd(row.interface_1, row.connection_form_1, row.size_1),
+    adapterEnd(row.interface_2, row.connection_form_2, row.size_2),
+  ];
 }
 
 function buildPublicCatalogPresentation(row: PublicCatalogRow) {
@@ -285,11 +322,13 @@ function buildPublicCatalogPresentation(row: PublicCatalogRow) {
     };
   }
   if (row.product_type === "adapter") {
+    const [end1, end2] = adapterEnds(row);
+    const shape = row.shape_code === "ST" ? "Straight" : row.shape_code;
     const familyName = [
-      row.shape_code === "ST" ? "Straight" : row.shape_code,
-      row.interface_1,
+      shape,
+      adapterEndName(end1),
       "to",
-      row.interface_2,
+      adapterEndName(end2),
       "Adapter",
     ]
       .filter(Boolean)
@@ -312,45 +351,58 @@ function buildPublicCatalogPresentation(row: PublicCatalogRow) {
       familyName,
       interface: row.interface_1,
       mediaKey: null,
+      // The first two values subtitle the family card.
       specs: compactSpecs([
-        ["Interface 1", row.interface_1],
-        ["Connection form 1", row.connection_form_1],
-        ["Size 1", row.size_1],
-        ["Interface 2", row.interface_2],
-        ["Connection form 2", row.connection_form_2],
-        ["Size 2", row.size_2],
+        ["End 1", adapterEndName(end1)],
+        ["End 2", adapterEndName(end2)],
+        ["Shape", shape],
+        ["End 1 thread", end1.thread],
+        ["End 1 dash", end1.dash],
+        ["End 2 thread", end2.thread],
+        ["End 2 dash", end2.dash],
         ["Catalog model", row.catalog_model],
       ]),
     };
   }
-  const familyName = `${row.coupler_series ?? "Hydraulic"} ${row.role ?? "Quick Coupler"}`;
+  const familyName = `${row.coupler_series ?? "Hydraulic"} Quick Couplers`;
+  const roleName = quickCouplerRoleName(row.role);
+  const port = [row.port_thread, row.port_gender?.toLocaleLowerCase()]
+    .filter(Boolean)
+    .join(" ");
   return {
     aliases: [
       row.interchange_standard,
+      row.role,
+      roleName,
       row.body_size,
       row.port_interface,
       row.port_gender,
       row.port_thread,
     ],
-    displayName:
-      `${familyName} ${row.body_size ?? ""} ${row.port_thread ?? ""}`.trim(),
-    familyKey: slug(
-      [row.coupler_series, row.role, row.port_interface, row.port_gender]
-        .filter(Boolean)
-        .join("-"),
-    ),
+    displayName: [
+      `${row.coupler_series ?? "Hydraulic"} ${roleName ?? "Quick Coupler"}`,
+      row.body_size ? `${row.body_size} body` : null,
+      port
+        ? `${port} ${row.role === "Complete Pair" ? "ports" : "port"}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(", "),
+    // One page per interchange series; the part (coupler, nipple or set) and port are chosen on it.
+    familyKey: slug(row.coupler_series ?? "quick-coupler"),
     familyName,
-    interface: row.port_interface,
+    interface: row.interchange_standard ?? row.port_interface,
     mediaKey: null,
+    // The first two values subtitle the family card, so they describe the whole series.
     specs: compactSpecs([
       ["Interchange standard", row.interchange_standard],
-      ["Role", row.role],
+      ["Valving", row.valving],
+      ["Connection mechanism", row.connection_mechanism],
+      ["Part", roleName],
       ["Body size", row.body_size],
       ["Port interface", row.port_interface],
       ["Port gender", row.port_gender],
       ["Port thread", row.port_thread],
-      ["Connection mechanism", row.connection_mechanism],
-      ["Valving", row.valving],
       ["Body material", row.body_material],
       ["Coating", row.coupler_coating],
       ["Seal material", row.seal_material],
@@ -494,7 +546,20 @@ export function publicCatalogItemFromRow(
                 ? { compatibleHoses: row.compatible_hoses }
                 : {}),
             }
-          : null,
+          : row.product_type === "adapter"
+            ? { ends: adapterEnds(row), kind: "adapter" }
+            : row.product_type === "quick_coupler"
+              ? {
+                  bodyDash: normalizeDashSize(row.body_dash),
+                  bodySize: row.body_size,
+                  kind: "quick_coupler",
+                  portDash: normalizeDashSize(row.port_dash),
+                  portGender: row.port_gender,
+                  portInterface: row.port_interface,
+                  portThread: row.port_thread,
+                  role: row.role,
+                }
+              : null,
   };
 }
 
@@ -894,7 +959,9 @@ export async function readPublicCatalogRows(
         coupler_series: "coupler_series",
         role: "role",
         interchange_standard: "interchange_standard",
+        body_dash: "body_dash",
         body_size: "body_size",
+        port_dash: "port_dash",
         port_interface: "port_interface",
         port_gender: "port_gender",
         port_thread: "port_thread",

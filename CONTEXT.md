@@ -1235,7 +1235,8 @@ _Avoid_: Model, hose type
 
 **Core Hose Series**:
 One of the six hose families approved for the primary retail range: 601R1,
-601R2, EN1SC, EN2SC, EN4SP, or EN4SH.
+601R2, 601R16, 601R17, 601R4, or EN4SH. The earlier EN1SC, EN2SC and EN4SP
+series are discontinued.
 _Avoid_: Main model, launch hose
 
 **Hose Size Variant**:
@@ -1394,6 +1395,14 @@ An approved launch combination of Hose End Interface Family, gender, swivel or
 fixed construction, and angle that may be selected in the configurator.
 _Avoid_: Every fitting in the factory catalogue, guaranteed compatibility
 
+**Adapter End Thread**:
+The thread of one end of an Adapter, derived from that end's interface and Dash
+size by the reference thread chart of ADR 0057 rather than stored per SKU.
+JIC 37-degree and ORB ends share one thread per Dash size, and pipe ends are
+NPTF although their interface code is `NPT`. Customers choose Adapter sizes by
+this thread, with the Dash size shown beneath it.
+_Avoid_: Per-SKU thread field, guessed thread, nominal size as a thread
+
 **Representative Product Image**:
 An owned, reviewed product-shape image shared by SKUs that differ only in size
 or another visually minor attribute. A Hose End image may be an original
@@ -1418,8 +1427,10 @@ AI-generated specification text
 **Catalog Product Family**:
 A customer-facing group of Standard Product SKU Variants that share the same
 core construction and differ primarily by connection size, hose size, body
-size, port size, or another selectable dimension. The family supports browsing
-and one canonical Product Detail page but is not itself quotable.
+size, port size, or another selectable dimension. A Quick Coupler family is one
+interchange series, such as ISO 16028 Flat Face, and its coupler, nipple and set
+are Quick Coupler Parts chosen on that page. The family supports browsing and
+one canonical Product Detail page but is not itself quotable.
 _Avoid_: SKU, Quote line, Hose End Interface Family, approximate product
 
 **SKU Variant**:
@@ -1427,6 +1438,14 @@ The exact purchasable or quotable Standard Product within a Catalog Product
 Family. Search may open a family page with this variant selected, and every
 Quote List line, PI line, and fulfillment record retains its exact SKU.
 _Avoid_: Product family name, unselected size, interchangeable substitute
+
+**Quick Coupler Part**:
+The half of a quick coupling that a Quick Coupler SKU supplies: the Coupler
+(female half), the Nipple (male half), or the Coupler + Nipple Set. Customers
+see these US names; the stored roles `Coupler/Socket`, `Plug/Nipple` and
+`Complete Pair` are unchanged. The part is chosen after body size and port on
+the family page of its interchange series.
+_Avoid_: Socket, Plug, a separate family per role
 
 **Catalog Publication Status**:
 The lifecycle state controlling whether Catalog Master Data is customer-visible:
