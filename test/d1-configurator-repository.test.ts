@@ -186,6 +186,8 @@ describe("D1 configurator repository", () => {
           skive_requirement: "Other",
         },
       ],
+      catalog_runtime_product_main_images: [],
+      catalog_media_versions: [],
       ...overrides,
     };
     const tableOf = (sql: string) =>
@@ -280,5 +282,35 @@ describe("D1 configurator repository", () => {
     expect(
       (await endA(excluded.database)).map((end) => end.compatibilityId),
     ).toEqual(["C1", "C2"]);
+  });
+
+  it("pictures each end with its catalog main image: its own photo, else its series photo", async () => {
+    const { database } = fakeDatabase({
+      catalog_runtime_hose_end_series: [
+        {
+          ...row,
+          series_code: "FJX",
+          interface_family: "JIC 37°",
+          representative_media_version_id: "media-fjx",
+        },
+        { ...row, series_code: "FFX", interface_family: "ORFS" },
+      ],
+      catalog_runtime_product_main_images: [
+        { sku: "JIC_08", media_version_id: "media-jic-08" },
+      ],
+      catalog_media_versions: [
+        { id: "media-fjx", approved_reference: null },
+        { id: "media-jic-08", approved_reference: null },
+      ],
+    });
+    expect(
+      Object.fromEntries(
+        (await endA(database)).map((end) => [end.hoseEndSku, end.mainImageUrl]),
+      ),
+    ).toEqual({
+      JIC_04: "/media/catalog/media-fjx/storefront",
+      JIC_08: "/media/catalog/media-jic-08/storefront",
+      ORFS_04: null,
+    });
   });
 });

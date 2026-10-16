@@ -19,6 +19,10 @@ import type {
   ClockingConvention,
   LengthMeasurementMethod,
 } from "../app/modules/configurator-reference/domain/configurator-reference";
+import {
+  attachEndAToDraft,
+  attachEndBToDraft,
+} from "../app/modules/configurator/domain/compatible-end-a";
 import { createHoseConfigurationDraft } from "../app/modules/configurator/domain/hose-configuration-draft";
 import { BuildAHoseView } from "../app/modules/storefront/routes/build-a-hose";
 import { publicHoseFixture } from "./fixtures/public-hose";
@@ -1066,6 +1070,84 @@ describe("Build a Hose view", () => {
         .value,
     ).toBe("1");
     expect(screen.queryByRole("button", { name: /Add to Quote/ })).toBeNull();
+  });
+
+  it("reviews components with their catalog photos when the catalog has them", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({
+          candidates: compatibleCandidates().map((candidate) => ({
+            ...candidate,
+            mainImageUrl: `/media/catalog/${candidate.hoseEndSku}/storefront`,
+          })),
+        }),
+        ok: true,
+      }),
+    );
+    renderPage([
+      publicHoseFixture({ mainImageUrl: "/media/catalog/hose/storefront" }),
+    ]);
+    await reachFinishedLengthStage();
+    saveM04Length();
+    saveNylonProtection();
+
+    const review = screen.getByRole("region", { name: "Assembly review" });
+    const image = (name: string) =>
+      within(review).getByRole("img", { name }).getAttribute("src");
+    expect(image("Hose: 601R1 Hydraulic Hose")).toBe(
+      "/media/catalog/hose/storefront",
+    );
+    expect(image("End A: JIC 37° Female Swivel 0° Straight Hose End")).toBe(
+      "/media/catalog/JIC_F_SW_04_04/storefront",
+    );
+    expect(image("End B: JIC 37° Female Swivel 0° Straight Hose End")).toBe(
+      "/media/catalog/JIC_F_SW_04_04/storefront",
+    );
+  });
+
+  it("shows catalog photos when reopening a saved assembly", async () => {
+    const hose = publicHoseFixture({
+      mainImageUrl: "/media/catalog/hose/storefront",
+    });
+    const context = configuredQuoteLineContextFixture(hose);
+    const end = compatibleEndAFixture();
+    context.line.configuredAssembly.snapshot.configuration = attachEndBToDraft(
+      attachEndAToDraft(
+        context.line.configuredAssembly.snapshot.configuration,
+        end,
+      ),
+      end,
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        json: async () => ({
+          candidates: [
+            { ...end, mainImageUrl: "/media/catalog/end/storefront" },
+          ],
+        }),
+        ok: true,
+      }),
+    );
+    renderPage([hose], { quoteLineContext: context });
+
+    const review = screen.getByRole("region", { name: "Assembly review" });
+    const endA = within(review).getByRole("img", {
+      name: "End A: JIC 37° Female Swivel 0° Straight Hose End",
+    });
+    // Until the current candidates arrive, the reviewed shape image stands in.
+    expect(endA.getAttribute("src")).toBe(
+      "/images/catalog/hose-ends/jic-female-swivel-straight.jpg",
+    );
+    await waitFor(() =>
+      expect(endA.getAttribute("src")).toBe("/media/catalog/end/storefront"),
+    );
+    expect(
+      within(review)
+        .getByRole("img", { name: "Hose: 601R1 Hydraulic Hose" })
+        .getAttribute("src"),
+    ).toBe("/media/catalog/hose/storefront");
   });
 
   it("blocks an invalid quantity and preserves the draft through linked corrections", async () => {

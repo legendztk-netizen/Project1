@@ -19,26 +19,36 @@ function hoseSeriesFromSku(sku: string) {
 
 export function quoteLinePreviewParts(line: AnonymousQuoteLine): PreviewPart[] {
   if (line.lineKind === "configured_assembly") {
-    const configuration = line.configuredAssembly.snapshot.configuration;
+    const { configuration, productBasis } = line.configuredAssembly.snapshot;
+    // The catalog main image captured with the line, else the reviewed shape image.
+    const photo = (sku: string | undefined) =>
+      productBasis?.find((product) => product.sku === sku)?.mainImageUrl ??
+      null;
     return [
       {
         alt: configuration.endA
           ? `End A: ${configuration.endA.hoseEnd.displayName}`
           : "End A image pending",
         kind: "end",
-        src: hoseEndMediaPath(configuration.endA?.hoseEnd.mediaKey),
+        src:
+          photo(configuration.endA?.hoseEnd.sku) ??
+          hoseEndMediaPath(configuration.endA?.hoseEnd.mediaKey),
       },
       {
         alt: `${configuration.hose.familyName} hose`,
         kind: "hose",
-        src: hoseMediaPath(configuration.hose.mediaKey),
+        src:
+          photo(configuration.hose.sku) ??
+          hoseMediaPath(configuration.hose.mediaKey),
       },
       {
         alt: configuration.endB
           ? `End B: ${configuration.endB.hoseEnd.displayName}`
           : "End B image pending",
         kind: "end",
-        src: hoseEndMediaPath(configuration.endB?.hoseEnd.mediaKey),
+        src:
+          photo(configuration.endB?.hoseEnd.sku) ??
+          hoseEndMediaPath(configuration.endB?.hoseEnd.mediaKey),
       },
     ];
   }

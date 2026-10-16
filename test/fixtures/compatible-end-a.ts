@@ -23,6 +23,7 @@ export function compatibleEndAFixture(
     hoseTailDash: "-4",
     interfaceFamily: "JIC 37°",
     interfaceGroup: "JIC 37°",
+    mainImageUrl: null,
     maximumWorkingBar: 300,
     mediaKey: "JIC 37°-Female-Swivel-0° Straight",
     sealingForm: "37° cone seat",

@@ -1073,8 +1073,15 @@
   border-bottom: 1px solid var(--line);
 }
 
-.assembly-component-order li:first-child {
-  grid-template-columns: auto minmax(0, 1fr);
+/* The rows share one column grid, so the hose thumbnail aligns with the end thumbnails. */
+.assembly-component-order {
+  grid-template-columns: auto minmax(0, 1fr) 112px auto;
+  column-gap: 14px;
+}
+
+.assembly-component-order li {
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
 }
 
 .assembly-component-order li:last-child,
@@ -1293,10 +1300,12 @@
     grid-template-columns: 1fr;
   }
 
-  .assembly-component-order li,
-  .assembly-component-order li:first-child {
-    align-items: center;
+  .assembly-component-order {
     grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .assembly-component-order li {
+    align-items: center;
   }
 
   .assembly-component-thumbnail,

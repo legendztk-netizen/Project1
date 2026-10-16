@@ -40,6 +40,7 @@ import {
 import {
   attachEndAToDraft,
   attachEndBToDraft,
+  isExactCompatibleCandidate,
   type CompatibleHoseEndCandidate,
 } from "../../configurator/domain/compatible-end-a";
 import { evaluateAssemblyReview } from "../../configurator/domain/assembly-review";
@@ -306,7 +307,24 @@ function candidateFromConfiguredEnd(
     compatibilityId: end.compatibilityId,
     ferrule: end.ferrule ? { ...end.ferrule } : null,
     hoseEndSku: end.hoseEnd.sku,
+    mainImageUrl: null,
   };
+}
+
+// A restored end carries no photo; the current candidates of the same hose supply it.
+function selectedEndImage(
+  end: CompatibleHoseEndCandidate | null,
+  snapshot: CompatibleCandidateSnapshot | null,
+  hoseSku: string,
+) {
+  if (!end) return null;
+  if (end.mainImageUrl) return end.mainImageUrl;
+  if (snapshot?.hoseSku !== hoseSku) return null;
+  return (
+    snapshot.candidates.find((candidate) =>
+      isExactCompatibleCandidate(candidate, end),
+    )?.mainImageUrl ?? null
+  );
 }
 
 function hoseOnlyDraft(draft: HoseConfigurationDraft): HoseConfigurationDraft {
@@ -1450,6 +1468,22 @@ export function BuildAHoseView({
                           : undefined
                     }
                     addError={quoteCommand.error}
+                    componentImages={{
+                      endA: selectedEndImage(
+                        selectedEndA,
+                        compatibleCandidateSnapshot,
+                        draft.hose.sku,
+                      ),
+                      endB: selectedEndImage(
+                        selectedEndB,
+                        compatibleCandidateSnapshot,
+                        draft.hose.sku,
+                      ),
+                      hose:
+                        selectedItem?.sku === draft.hose.sku
+                          ? selectedItem.mainImageUrl
+                          : null,
+                    }}
                     draft={draft}
                     isAdding={quoteCommand.pending}
                     onAdd={addAssemblyToQuote}
