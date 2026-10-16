@@ -1,5 +1,5 @@
 import { AlertTriangle, Check, Search, Wrench } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   exactSameHoseEndCandidate,
@@ -15,6 +15,11 @@ type HoseEndLoadState =
   | { kind: "loading" }
   | { kind: "error"; message: string }
   | { candidates: CompatibleHoseEndCandidate[]; kind: "ready" };
+
+// The list shows 16 fittings, then 50 more each time its end scrolls into view. All candidates of the hose
+// arrive in one read, which End B reuses, so showing more reads nothing.
+const firstVisibleCandidates = 16;
+const moreVisibleCandidates = 50;
 
 const emptyHoseEndFilters: HoseEndFilters = {
   angle: "",
@@ -126,11 +131,28 @@ export function CompatibleHoseEndStage({
     kind: "loading",
   });
   const [filters, setFilters] = useState<HoseEndFilters>(emptyHoseEndFilters);
+  const [visibleCount, setVisibleCount] = useState(firstVisibleCandidates);
+  const listEnd = useRef<HTMLDivElement>(null);
   const candidates = loadState.kind === "ready" ? loadState.candidates : [];
   const filteredCandidates = useMemo(
     () => filterCompatibleHoseEndCandidates(candidates, filters),
     [candidates, filters],
   );
+  // A retained selection stays on screen even when it sits further down the list.
+  const selectedPosition = selected
+    ? filteredCandidates.findIndex((candidate) =>
+        isExactCompatibleCandidate(candidate, selected),
+      )
+    : -1;
+  const shownCount = Math.min(
+    filteredCandidates.length,
+    Math.max(visibleCount, selectedPosition + 1),
+  );
+  const hasMoreCandidates = shownCount < filteredCandidates.length;
+  const showMoreCandidates = () =>
+    setVisibleCount(
+      (count) => Math.max(count, shownCount) + moreVisibleCandidates,
+    );
   const sameAsEndA = exactSameHoseEndCandidate(candidates, copyFromEndA);
   const filterOptions = {
     angle: uniqueCandidateValues(candidates, (candidate) => candidate.angle),
@@ -168,6 +190,28 @@ export function CompatibleHoseEndStage({
   useEffect(() => {
     setFilters(emptyHoseEndFilters);
   }, [endRole, hoseSku, releaseId]);
+
+  useEffect(() => {
+    setVisibleCount(firstVisibleCandidates);
+  }, [endRole, filters, hoseSku, releaseId]);
+
+  useEffect(() => {
+    const end = listEnd.current;
+    if (
+      !end ||
+      !hasMoreCandidates ||
+      typeof IntersectionObserver === "undefined"
+    )
+      return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting))
+        setVisibleCount(
+          (count) => Math.max(count, shownCount) + moreVisibleCandidates,
+        );
+    });
+    observer.observe(end);
+    return () => observer.disconnect();
+  }, [hasMoreCandidates, shownCount]);
 
   useEffect(() => {
     if (
@@ -417,7 +461,7 @@ export function CompatibleHoseEndStage({
               aria-label={`Compatible End ${endRole} fittings`}
               className="end-a-results"
             >
-              {filteredCandidates.map((candidate) => {
+              {filteredCandidates.slice(0, shownCount).map((candidate) => {
                 const active = Boolean(
                   selected && isExactCompatibleCandidate(candidate, selected),
                 );
@@ -467,6 +511,21 @@ export function CompatibleHoseEndStage({
               })}
             </div>
           )}
+          {hasMoreCandidates ? (
+            <div className="end-a-more" ref={listEnd}>
+              <span>
+                Showing {shownCount} of {filteredCandidates.length}
+              </span>
+              <button onClick={showMoreCandidates} type="button">
+                Show{" "}
+                {Math.min(
+                  moreVisibleCandidates,
+                  filteredCandidates.length - shownCount,
+                )}{" "}
+                more
+              </button>
+            </div>
+          ) : null}
         </>
       )}
     </section>

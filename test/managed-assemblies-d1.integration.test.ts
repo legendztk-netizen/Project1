@@ -60,6 +60,32 @@ async function editHose(values: Record<string, unknown>, price?: number) {
     source: { channel: "manual" },
   });
 }
+// The Assembly Management list reads its own SQL; it must return the runtime view's rows.
+async function expectRuntimeViewRows() {
+  const view = await db
+    .prepare(
+      `SELECT c.identity,c.hose_series AS hoseSeries,c.hose_sku AS hoseSku,
+       c.end_a_compatibility_id AS endACompatibilityId,c.end_a_hose_end_sku AS endAHoseEndSku,c.end_a_ferrule_sku AS endAFerruleSku,
+       c.end_b_compatibility_id AS endBCompatibilityId,c.end_b_hose_end_sku AS endBHoseEndSku,c.end_b_ferrule_sku AS endBFerruleSku
+       FROM catalog_runtime_assembly_combinations c JOIN catalog_item_publication_state s ON s.baseline_release_id=c.release_id
+       ORDER BY c.hose_series,c.identity`,
+    )
+    .all();
+  const listed = (await assemblies.all()).map((row) => ({
+    identity: row.identity,
+    hoseSeries: row.hoseSeries,
+    hoseSku: row.hoseSku,
+    endACompatibilityId: row.endACompatibilityId,
+    endAHoseEndSku: row.endAHoseEndSku,
+    endAFerruleSku: row.endAFerruleSku,
+    endBCompatibilityId: row.endBCompatibilityId,
+    endBHoseEndSku: row.endBHoseEndSku,
+    endBFerruleSku: row.endBFerruleSku,
+  }));
+  expect(view.results.length).toBeGreaterThan(0);
+  expect(listed).toEqual(view.results);
+  expect(await assemblies.count()).toBe(view.results.length);
+}
 beforeAll(async () => {
   const migration = spawnSync("pnpm", ["migrate"], {
     cwd: root,
@@ -127,6 +153,7 @@ it("gates published inputs until generation, preserves manual identity and exclu
   await expectPointAvailability(false);
   await assemblies.update(command());
   await expectPointAvailability(true);
+  await expectRuntimeViewRows(); // a manual row replaces its generated pair
   await expect(assemblies.add(combination, command())).rejects.toThrow(
     "已存在",
   );
@@ -145,6 +172,7 @@ it("gates published inputs until generation, preserves manual identity and exclu
     disabled: true,
     pending: false,
   });
+  await expectRuntimeViewRows();
   await expectPointAvailability(false);
   expect(
     await config.hasDerivedAssemblyCombination({

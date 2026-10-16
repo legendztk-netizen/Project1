@@ -1,6 +1,10 @@
 import { unavailableHoseSql } from "../app/modules/configurator/infrastructure/unavailable-hose-sql";
 import { spawnSync } from "node:child_process";
 import { scopedAssemblyCombinationsSql } from "../app/modules/configurator/infrastructure/scoped-assembly-combinations-sql";
+import {
+  hoseAssemblyCombinations,
+  hoseAssemblyPartsSql,
+} from "../app/modules/configurator/infrastructure/hose-assembly-combinations";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -107,6 +111,26 @@ async function expectSameAsReference(label: string) {
     const sort = (rows: typeof scoped) =>
       rows.sort((a, b) => a.identity.localeCompare(b.identity));
     expect(sort(scoped), label).toEqual(sort(original));
+    // End A pairs a hose's endpoints in code; the pairs must be the SQL-paired rows.
+    const paired = hoseAssemblyCombinations(
+      (
+        await db
+          .prepare(hoseAssemblyPartsSql)
+          .bind("active-release", hoseSku)
+          .all<Parameters<typeof hoseAssemblyCombinations>[0][number]>()
+      ).results,
+    );
+    const columns = (rows: object[]) =>
+      sort(
+        rows.map((row) => {
+          const { release_id: _release, ...rest } = row as Record<
+            string,
+            unknown
+          >;
+          return rest;
+        }) as typeof scoped,
+      );
+    expect(columns(paired), `${label} paired`).toEqual(columns(scoped));
     expect(
       await createD1ConfiguratorRepository(db).findCompatibleEndA(
         "active-release",

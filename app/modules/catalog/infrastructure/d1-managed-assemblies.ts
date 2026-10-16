@@ -18,6 +18,7 @@ import {
   validateCatalogWorksheetRecord,
   type CatalogWorkbookCell,
 } from "../domain/catalog-workbook";
+import { managedCombinationsSql } from "./managed-combination-list-sql";
 
 interface Token {
   sequence: number;
@@ -372,48 +373,12 @@ export function createD1ManagedAssemblies(
       ),
     };
   }
-  function combinationFilter(
-    baselineReleaseId: string,
-    filters: Record<string, string> = {},
-    identities?: string[],
-  ) {
-    const f = filters;
-    return {
-      sql: `WHERE c.release_id=? AND (?='' OR c.end_a_hose_end_sku=?) AND (?='' OR c.end_b_hose_end_sku=?)
-      AND (?='' OR c.hose_series=?) AND (?='' OR instr(lower(c.identity),lower(?))>0)
-      AND (?='' OR COALESCE(x.disabled,0)=?)
-      AND (?='' OR EXISTS (SELECT 1 FROM catalog_assembly_pending_series p WHERE p.hose_series=c.hose_series)=?)
-      AND (? IS NULL OR c.identity IN (SELECT value FROM json_each(?)))`,
-      values: [
-        baselineReleaseId,
-        f.endA ?? "",
-        f.endA ?? "",
-        f.endB ?? "",
-        f.endB ?? "",
-        f.series ?? "",
-        f.series ?? "",
-        f.q ?? "",
-        f.q ?? "",
-        f.enabled ?? "",
-        f.enabled === "disabled" ? 1 : 0,
-        f.ready ?? "",
-        f.ready === "pending" ? 1 : 0,
-        identities ? JSON.stringify(identities) : null,
-        identities ? JSON.stringify(identities) : null,
-      ],
-    };
-  }
   async function count(filters: Record<string, string> = {}) {
     const current = await state();
-    const filter = combinationFilter(current.baseline_release_id, filters);
+    const query = managedCombinationsSql(current.baseline_release_id, filters);
     const result = await database
-      .prepare(
-        `SELECT COUNT(*) AS total
-      FROM catalog_runtime_assembly_combinations c
-      LEFT JOIN catalog_assembly_exclusions x ON x.identity=c.identity
-      ${filter.sql}`,
-      )
-      .bind(...filter.values)
+      .prepare(`SELECT COUNT(*) AS total FROM (${query.sql})`)
+      .bind(...query.values)
       .first<{ total: number }>();
     return result?.total ?? 0;
   }
@@ -426,11 +391,13 @@ export function createD1ManagedAssemblies(
     } = {},
   ) {
     const current = await state();
-    const filter = combinationFilter(
+    const query = managedCombinationsSql(
       current.baseline_release_id,
       options.filters,
       options.identities,
     );
+    const page = query.values.length;
+    // Page first, then decorate only the page's rows.
     const rows = await database
       .prepare(
         `SELECT c.*,m.operation_id AS manual_id,s.generation_id,
@@ -440,14 +407,13 @@ export function createD1ManagedAssemblies(
         json_extract(o.payload_json,'$.hose_sku')=c.hose_sku AND
         (json_extract(o.payload_json,'$.hose_end_sku')=c.end_a_hose_end_sku AND json_extract(o.payload_json,'$.ferrule_sku') IS c.end_a_ferrule_sku
         OR json_extract(o.payload_json,'$.hose_end_sku')=c.end_b_hose_end_sku AND json_extract(o.payload_json,'$.ferrule_sku') IS c.end_b_ferrule_sku)) AS imported
-      FROM catalog_runtime_assembly_combinations c
+      FROM (${query.sql} ORDER BY c.hose_series,c.identity LIMIT ?${page + 1} OFFSET ?${page + 2}) c
       LEFT JOIN catalog_assembly_manual m ON m.identity=c.identity
       LEFT JOIN catalog_assembly_managed_series s ON s.hose_series=c.hose_series
       LEFT JOIN catalog_assembly_exclusions x ON x.identity=c.identity
-      ${filter.sql}
-      ORDER BY c.hose_series,c.identity LIMIT ? OFFSET ?`,
+      ORDER BY c.hose_series,c.identity`,
       )
-      .bind(...filter.values, options.limit ?? -1, options.offset ?? 0)
+      .bind(...query.values, options.limit ?? -1, options.offset ?? 0)
       .all<{
         identity: string;
         hose_series: string;
