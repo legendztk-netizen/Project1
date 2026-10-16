@@ -729,7 +729,7 @@ export function createD1CatalogItemRepository(
     findProductPayload,
     apply,
     async enable(input: { environment: string; actorId: string }) {
-      if (!["local", "preview"].includes(input.environment))
+      if (input.environment !== "local")
         throw new CatalogItemRejected(
           "Production cutover belongs to Ticket 05 / 生产切换由 Ticket 05 完成",
           403,

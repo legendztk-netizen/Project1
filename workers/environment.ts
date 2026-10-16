@@ -1,6 +1,6 @@
 import environmentContract from "../config/environment-contract.json";
 
-export type AppEnvironment = "local" | "preview" | "production";
+export type AppEnvironment = "local" | "production";
 
 export type ApplicationBindings = CloudflareBindings;
 
@@ -58,13 +58,9 @@ export function validateRuntimeEnvironment(
     throw new Error("Invalid runtime configuration: bindings are missing");
 
   const environment = input.APP_ENV;
-  if (
-    environment !== "local" &&
-    environment !== "preview" &&
-    environment !== "production"
-  ) {
+  if (environment !== "local" && environment !== "production") {
     throw new Error(
-      `Invalid runtime configuration: APP_ENV must be local, preview, or production; received ${String(environment)}`,
+      `Invalid runtime configuration: APP_ENV must be local or production; received ${String(environment)}`,
     );
   }
 

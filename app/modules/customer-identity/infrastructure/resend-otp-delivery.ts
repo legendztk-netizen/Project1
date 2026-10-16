@@ -41,7 +41,6 @@ function createResendOtpClient(apiKey: string): ResendOtpClient {
 }
 
 function resendApiKey(env: ApplicationBindings) {
-  if (env.APP_ENV === "preview") return env.PREVIEW_RESEND_API_KEY;
   if (env.APP_ENV === "production") return env.PRODUCTION_RESEND_API_KEY;
   throw new Error("Resend delivery is not available in local mode");
 }

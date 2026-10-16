@@ -15,10 +15,7 @@ interface EnvironmentDefinition {
 }
 
 interface EnvironmentContract {
-  environments: Record<
-    "local" | "preview" | "production",
-    EnvironmentDefinition
-  >;
+  environments: Record<"local" | "production", EnvironmentDefinition>;
 }
 
 const root = new URL("../", import.meta.url);
@@ -42,19 +39,16 @@ describe("environment configuration contract", () => {
       (item: EnvironmentDefinition) => item.vars.PUBLIC_STOREFRONT_ORIGIN,
       (item: EnvironmentDefinition) => item.vars.ADMIN_ORIGIN,
     ]) {
-      expect(new Set(environments.map(select)).size).toBe(3);
+      expect(new Set(environments.map(select)).size).toBe(2);
     }
   });
 
-  it("does not select production identifiers in local or preview", () => {
+  it("does not select production identifiers in local", () => {
     const contract = readJson(
       "config/environment-contract.json",
     ) as EnvironmentContract;
     const production = contract.environments.production;
-    const nonProduction = JSON.stringify([
-      contract.environments.local,
-      contract.environments.preview,
-    ]);
+    const nonProduction = JSON.stringify(contract.environments.local);
 
     for (const identifier of [
       production.workerName,
@@ -88,7 +82,7 @@ describe("environment configuration contract", () => {
   it("advertises scheduled recovery and the notification Queue consumer", () => {
     const wrangler = readJson("wrangler.jsonc") as {
       env: Record<
-        "preview" | "production",
+        "production",
         {
           queues?: { consumers?: unknown[] };
           triggers?: { crons?: string[] };
@@ -98,11 +92,7 @@ describe("environment configuration contract", () => {
       triggers?: { crons?: string[] };
     };
 
-    for (const definition of [
-      wrangler,
-      wrangler.env.preview,
-      wrangler.env.production,
-    ]) {
+    for (const definition of [wrangler, wrangler.env.production]) {
       expect(definition.queues?.consumers).toHaveLength(1);
       expect(definition.queues?.consumers?.[0]).toMatchObject({
         max_batch_size: 10,
@@ -112,7 +102,7 @@ describe("environment configuration contract", () => {
     }
   });
 
-  it.each(["local", "preview", "production"])(
+  it.each(["local", "production"])(
     "keeps Wrangler %s aligned with the shared contract",
     (environment) => {
       const output = execFileSync(
@@ -141,9 +131,6 @@ describe("environment configuration contract", () => {
       "env -u CLOUDFLARE_ENV",
     );
     expect(packageJson.scripts["dry-run:local"]).toContain("pnpm build:local");
-    expect(packageJson.scripts["build:preview"]).toContain(
-      "CLOUDFLARE_ENV=preview",
-    );
     expect(packageJson.scripts["build:production"]).toContain(
       "CLOUDFLARE_ENV=production",
     );
@@ -153,12 +140,8 @@ describe("environment configuration contract", () => {
     expect(packageJson.scripts.migrate).toBe(
       "node scripts/d1-migrations.mjs apply local",
     );
-    expect(packageJson.scripts["migrate:preview"]).toContain("apply preview");
     expect(packageJson.scripts["migrate:production"]).toContain(
       "apply production",
-    );
-    expect(packageJson.scripts["deploy:validate:preview"]).toBe(
-      "node scripts/deployment-pipeline.mjs validation preview",
     );
     expect(packageJson.scripts["deploy:validate:production"]).toBe(
       "node scripts/deployment-pipeline.mjs validation production",
@@ -176,32 +159,29 @@ describe("environment configuration contract", () => {
     );
   });
 
-  it.each(["preview", "production"])(
-    "blocks %s deployment while placeholders or secrets are missing",
-    (environment) => {
-      const result = spawnSync(
-        process.execPath,
-        ["scripts/environment-config.mjs", "require-deployable", environment],
-        {
-          cwd: new URL("../", import.meta.url),
-          encoding: "utf8",
-          env: {} as unknown as NodeJS.ProcessEnv,
-        },
-      );
+  it("blocks production deployment while placeholders or secrets are missing", () => {
+    const result = spawnSync(
+      process.execPath,
+      ["scripts/environment-config.mjs", "require-deployable", "production"],
+      {
+        cwd: new URL("../", import.meta.url),
+        encoding: "utf8",
+        env: {} as unknown as NodeJS.ProcessEnv,
+      },
+    );
 
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain(`Deployment blocked for ${environment}`);
-      // Every placeholder is replaced; deployment is now blocked only until
-      // the account variables and secrets are supplied by the shell or CI.
-      expect(result.stderr).not.toContain("still a placeholder");
-      expect(result.stderr).toContain(
-        "Missing deployment secret CLOUDFLARE_API_TOKEN",
-      );
-      expect(result.stderr).toContain(
-        `Missing deployment secret ${environment.toUpperCase()}_RESEND_API_KEY`,
-      );
-    },
-  );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Deployment blocked for production");
+    // Every placeholder is replaced; deployment is now blocked only until
+    // the account variables and secrets are supplied by the shell or CI.
+    expect(result.stderr).not.toContain("still a placeholder");
+    expect(result.stderr).toContain(
+      "Missing deployment secret CLOUDFLARE_API_TOKEN",
+    );
+    expect(result.stderr).toContain(
+      "Missing deployment secret PRODUCTION_RESEND_API_KEY",
+    );
+  });
 
   it("keeps GitHub checks secret-free and validation-only", () => {
     const quality = readFileSync(
@@ -249,7 +229,7 @@ describe("environment configuration contract", () => {
     expect(result.stdout).not.toContain("stage=configuration");
   });
 
-  it("resolves preview and local commands after a production build without leaking production", () => {
+  it("resolves local commands after a production build without leaking production", () => {
     const contract = readJson(
       "config/environment-contract.json",
     ) as EnvironmentContract;
@@ -272,22 +252,6 @@ describe("environment configuration contract", () => {
       env: commandEnvironment,
     });
     expect(productionBuild.status, productionBuild.stderr).toBe(0);
-
-    const previewBuild = spawnSync("pnpm", ["build:preview"], {
-      cwd: new URL("../", import.meta.url),
-      encoding: "utf8",
-      env: commandEnvironment,
-    });
-    expect(previewBuild.status, previewBuild.stderr).toBe(0);
-
-    const generatedPreview = readFileSync(
-      new URL("../build/server/wrangler.json", import.meta.url),
-      "utf8",
-    );
-    expect(generatedPreview).toContain("hydraulic-hose-rfq-platform-preview");
-    for (const identifier of productionIdentifiers) {
-      expect(generatedPreview).not.toContain(identifier);
-    }
 
     const localDryRun = spawnSync("pnpm", ["dry-run:local"], {
       cwd: new URL("../", import.meta.url),

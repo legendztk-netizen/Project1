@@ -10,30 +10,19 @@ import { UNROUTED_RECIPIENT_REASON } from "../workers/email-dispatcher/routing";
 const read = async (path: string) =>
   JSON.parse(await readFile(resolve(path), "utf8"));
 
-it("relays each environment's reply domain to that environment's Worker", async () => {
+it("relays the production reply domain to the production Worker", async () => {
   const app = await read("wrangler.jsonc");
   const dispatcher = await read("workers/email-dispatcher/wrangler.jsonc");
-  const services = Object.fromEntries(
-    dispatcher.services.map(
-      (s: { binding: string; service: string; entrypoint: string }) => [
-        s.binding,
-        s,
-      ],
-    ),
-  );
-  for (const [environment, prefix] of [
-    ["preview", "PREVIEW"],
-    ["production", "PRODUCTION"],
-  ]) {
-    expect(dispatcher.vars[`${prefix}_REPLY_DOMAIN`]).toBe(
-      app.env[environment].vars.EMAIL_REPLY_DOMAIN,
-    );
-    expect(services[`${prefix}_INBOUND_EMAIL`]).toEqual({
-      binding: `${prefix}_INBOUND_EMAIL`,
-      service: app.env[environment].name,
+  expect(dispatcher.vars).toEqual({
+    PRODUCTION_REPLY_DOMAIN: app.env.production.vars.EMAIL_REPLY_DOMAIN,
+  });
+  expect(dispatcher.services).toEqual([
+    {
+      binding: "PRODUCTION_INBOUND_EMAIL",
+      service: app.env.production.name,
       entrypoint: "InboundEmail",
-    });
-  }
+    },
+  ]);
 });
 
 // Real workerd: dispatcher email handler -> service binding -> named entrypoint.
@@ -95,7 +84,6 @@ beforeAll(async () => {
     routes: [`${name}.test/*`],
     bindings: config.vars,
     serviceBindings: {
-      PREVIEW_INBOUND_EMAIL: { name: "preview", entrypoint: "InboundEmail" },
       PRODUCTION_INBOUND_EMAIL: {
         name: production,
         entrypoint: "InboundEmail",
@@ -115,14 +103,13 @@ beforeAll(async () => {
       workers: [
         dispatcher("dispatcher", "production"),
         dispatcher("before-launch", "production-without-receive"),
-        stub("preview"),
         stub("production"),
         stub("production-without-receive", false),
       ],
     }),
   );
   await worker.ready;
-  seen = await worker.getKVNamespace("SEEN", "preview");
+  seen = await worker.getKVNamespace("SEEN", "production");
 }, 60_000);
 
 afterAll(async () => {
@@ -172,11 +159,11 @@ const delivered = async (to: string) =>
     text: string;
   } | null;
 
-it("relays a preview reply with the original envelope, headers and bytes", async () => {
-  const to = "r-preview-token@reply-preview.customhoseco.com";
+it("relays a reply with the original envelope, headers and bytes", async () => {
+  const to = "r-production-token@reply.customhoseco.com";
   expect(await send(to)).toEqual(accepted);
   const received = await delivered(to);
-  expect(received?.environment).toBe("preview");
+  expect(received?.environment).toBe("production");
   expect(received?.text).toBe(raw(to));
   expect(received?.envelope).toMatchObject({
     from: "customer@example.com",
@@ -187,7 +174,7 @@ it("relays a preview reply with the original envelope, headers and bytes", async
 });
 
 it("relays the production reply domain case-insensitively", async () => {
-  const to = "r-production-token@Reply.CustomHoseCo.com";
+  const to = "r-mixed-case-token@Reply.CustomHoseCo.com";
   expect(await send(to)).toEqual(accepted);
   expect((await delivered(to))?.environment).toBe("production");
 });
@@ -197,6 +184,7 @@ it("rejects other recipients without reaching an application Worker", async () =
     "quotes@customhoseco.com",
     "r-token@reply.customhoseco.com.example.net",
     "r-token@preview.customhoseco.com",
+    "r-token@reply-preview.customhoseco.com",
   ]) {
     expect(await send(to)).toEqual(rejected(UNROUTED_RECIPIENT_REASON));
     expect(await delivered(to)).toBeNull();
@@ -204,7 +192,7 @@ it("rejects other recipients without reaching an application Worker", async () =
 });
 
 it("returns the application's rejection to the sender", async () => {
-  expect(await send("refuse@reply-preview.customhoseco.com")).toEqual(
+  expect(await send("refuse@reply.customhoseco.com")).toEqual(
     rejected("Reply address is no longer valid."),
   );
 });
@@ -219,7 +207,4 @@ it("asks for a resend while the target Worker cannot receive yet", async () => {
   expect(await send("r-token@reply.customhoseco.com", "before-launch")).toEqual(
     rejected(INBOUND_EMAIL_RETRY_REASON),
   );
-  expect(
-    await send("r-later@reply-preview.customhoseco.com", "before-launch"),
-  ).toEqual(accepted);
 });

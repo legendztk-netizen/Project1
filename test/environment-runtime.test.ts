@@ -9,10 +9,9 @@ const resources = {
   PRIVATE_FILES: {},
 };
 
-function bindingsFor(environment: "local" | "preview" | "production") {
+function bindingsFor(environment: "local" | "production") {
   const deployed = environment !== "local";
-  const hostname =
-    environment === "production" ? "shop.example.com" : "preview.example.com";
+  const hostname = "shop.example.com";
 
   return {
     ...resources,
@@ -34,13 +33,6 @@ function bindingsFor(environment: "local" | "preview" | "production") {
     PUBLIC_STOREFRONT_ORIGIN: deployed
       ? `https://${hostname}`
       : "http://storefront.localhost:5173",
-    ...(environment === "preview"
-      ? {
-          PREVIEW_RESEND_API_KEY: "unit-test-resend-key",
-          PREVIEW_SESSION_SIGNING_KEY: "unit-test-session-key",
-          PREVIEW_NOTIFICATION_ENCRYPTION_KEY: "unit-test-notification-key",
-        }
-      : {}),
     ...(environment === "production"
       ? {
           PRODUCTION_RESEND_API_KEY: "unit-test-resend-key",
@@ -52,18 +44,15 @@ function bindingsFor(environment: "local" | "preview" | "production") {
 }
 
 describe("runtime environment validation", () => {
-  it.each(["preview", "production"] as const)(
-    "requires the notification encryption key in %s",
-    (environment) => {
-      const bindings = bindingsFor(environment);
-      const key = `${environment.toUpperCase()}_NOTIFICATION_ENCRYPTION_KEY`;
-      Reflect.deleteProperty(bindings, key);
-      expect(() => validateRuntimeEnvironment(bindings)).toThrow(
-        `Missing secret ${key}`,
-      );
-    },
-  );
-  it.each(["local", "preview", "production"] as const)(
+  it("requires the notification encryption key in production", () => {
+    const bindings = bindingsFor("production");
+    const key = "PRODUCTION_NOTIFICATION_ENCRYPTION_KEY";
+    Reflect.deleteProperty(bindings, key);
+    expect(() => validateRuntimeEnvironment(bindings)).toThrow(
+      `Missing secret ${key}`,
+    );
+  });
+  it.each(["local", "production"] as const)(
     "accepts a complete %s environment",
     (environment) => {
       const validated = validateRuntimeEnvironment(bindingsFor(environment));
@@ -83,24 +72,24 @@ describe("runtime environment validation", () => {
 
   it("rejects unresolved deployed placeholders and missing secrets", () => {
     const bindings = {
-      ...bindingsFor("preview"),
-      PUBLIC_STOREFRONT_ORIGIN: "https://storefront.preview.example.invalid",
-      PREVIEW_RESEND_API_KEY: undefined,
+      ...bindingsFor("production"),
+      PUBLIC_STOREFRONT_ORIGIN: "https://storefront.shop.example.invalid",
+      PRODUCTION_RESEND_API_KEY: undefined,
     };
 
     expect(() => validateRuntimeEnvironment(bindings)).toThrowError(
-      /PUBLIC_STOREFRONT_ORIGIN.*placeholder.*PREVIEW_RESEND_API_KEY/s,
+      /PUBLIC_STOREFRONT_ORIGIN.*placeholder.*PRODUCTION_RESEND_API_KEY/s,
     );
   });
 
   it("never permits the local Admin identity mode outside local development", () => {
     expect(() =>
       validateRuntimeEnvironment({
-        ...bindingsFor("preview"),
+        ...bindingsFor("production"),
         ADMIN_AUTH_MODE: "local-stub",
       }),
     ).toThrow(
-      "ADMIN_AUTH_MODE must be cloudflare-access or password for preview",
+      "ADMIN_AUTH_MODE must be cloudflare-access or password for production",
     );
   });
 

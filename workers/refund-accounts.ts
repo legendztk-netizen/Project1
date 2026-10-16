@@ -6,9 +6,7 @@ export async function refundAccountProtector(env: ApplicationBindings) {
   const secret =
     env.APP_ENV === "local"
       ? "local-development-only-customer-identity-signing-key"
-      : env.APP_ENV === "preview"
-        ? env.PREVIEW_NOTIFICATION_ENCRYPTION_KEY
-        : env.PRODUCTION_NOTIFICATION_ENCRYPTION_KEY;
+      : env.PRODUCTION_NOTIFICATION_ENCRYPTION_KEY;
   if (!secret || secret.length < 32)
     throw new Error("Refund account encryption is unavailable");
   const material = await crypto.subtle.importKey(

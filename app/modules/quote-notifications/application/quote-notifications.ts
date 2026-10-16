@@ -133,9 +133,7 @@ export function createQuoteNotifications(input: {
       notificationConfiguration(env);
       if (env.EMAIL_DELIVERY_MODE === "resend" && !adapter)
         adapter = createResendNotificationAdapter(
-          (env.APP_ENV === "preview"
-            ? env.PREVIEW_RESEND_API_KEY
-            : env.PRODUCTION_RESEND_API_KEY) ?? "",
+          env.PRODUCTION_RESEND_API_KEY ?? "",
         );
     } catch {
       await repository.finish(

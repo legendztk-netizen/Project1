@@ -12,7 +12,7 @@ import { adminOperationalPermissions } from "../app/modules/admin/infrastructure
 const deployedBindings: AdminAccessBindings = {
   ADMIN_AUTH_MODE: "cloudflare-access",
   ADMIN_ORIGIN: "https://admin.example.com",
-  APP_ENV: "preview",
+  APP_ENV: "production",
   CLOUDFLARE_ACCESS_AUD: "test-audience",
   CLOUDFLARE_ACCESS_TEAM_DOMAIN: "https://test-team.cloudflareaccess.com",
   DB: {} as D1Database,

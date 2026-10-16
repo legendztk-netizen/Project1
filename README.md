@@ -65,31 +65,31 @@ uses persistent local D1 instances rather than a database mock.
 ```bash
 pnpm dev
 pnpm build
-pnpm build:preview
 pnpm build:production
 ```
 
 The unqualified `dev` and `build` commands always select the top-level local
 Wrangler environment, even when the parent shell already contains a
-`CLOUDFLARE_ENV` value. Preview and production builds set `CLOUDFLARE_ENV`
+`CLOUDFLARE_ENV` value. The production build sets `CLOUDFLARE_ENV`
 explicitly before Vite resolves and flattens the selected Cloudflare environment.
 
 Validation commands build the selected Worker and run Wrangler in dry-run mode;
 they do not require real Cloudflare resources:
 
 ```bash
-pnpm deploy:validate:preview
 pnpm deploy:validate:production
 ```
 
-Future live deployment commands are explicit, require
+The live deployment command is explicit, requires
 `ALLOW_CLOUDFLARE_DEPLOYMENT=confirmed`, and fail before building while an ID,
 origin, Access setting, email setting, or required secret remains unresolved:
 
 ```bash
-pnpm deploy:preview
 pnpm deploy:production
 ```
+
+Cloudflare runs only production; there is no deployed preview environment
+(ADR 0058). Test changes locally.
 
 The environment contract and replacement procedure are documented in
 `docs/operations/environment-configuration.md`.
@@ -99,12 +99,11 @@ The environment contract and replacement procedure are documented in
 ```bash
 pnpm migrate
 pnpm migrate:verify
-pnpm migrate:preview
 pnpm migrate:production
 ```
 
-Only `pnpm migrate` has a default, and that default is always local. Preview and
-production promotion require their explicit commands and configured D1 IDs.
+Only `pnpm migrate` has a default, and that default is always local. Production
+promotion requires its explicit command and configured D1 ID.
 Deployment runs the selected migration before building or deploying the Worker;
 an unsuccessful migration stops the command chain. The full operational contract
 is in `docs/operations/d1-migrations.md`.
@@ -115,13 +114,11 @@ Keep these values in the shell or CI secret store and never commit them:
 
 - `CLOUDFLARE_ACCOUNT_ID`
 - `CLOUDFLARE_API_TOKEN`
-- `PREVIEW_SESSION_SIGNING_KEY`
-- `PREVIEW_RESEND_API_KEY`
 - `PRODUCTION_SESSION_SIGNING_KEY`
 - `PRODUCTION_RESEND_API_KEY`
 
 Local development uses a code-owned development-only Quote Session signing key;
-preview and production only accept their named secret bindings.
+production only accepts its named secret bindings.
 
 ## Current route boundary
 
@@ -132,7 +129,7 @@ proves successful responses and verifies that those markers do not cross the
 route boundary.
 
 The Worker protects `/admin` before React Router executes. Local development
-uses an explicit Owner stub; preview and production require a cryptographically
+uses an explicit Owner stub; production requires a cryptographically
 valid Cloudflare Access assertion whose email maps to an active D1 Owner or
 Subaccount. The deployed Admin origin, Access values, and D1 resource IDs remain
 placeholders and are not called until launch. Ticket 04 also proves the ordered

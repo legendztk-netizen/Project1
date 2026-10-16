@@ -57,7 +57,7 @@ export async function loader({ context, request }: Route.LoaderArgs) {
         "SELECT id, COALESCE(approved_reference, id) AS label FROM catalog_media_versions ORDER BY created_at DESC",
       ).all<{ id: string; label: string }>()
     ).results,
-    canEnable: env.APP_ENV === "local" || env.APP_ENV === "preview",
+    canEnable: env.APP_ENV === "local",
   };
 }
 

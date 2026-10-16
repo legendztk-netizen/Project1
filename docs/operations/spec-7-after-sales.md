@@ -221,9 +221,8 @@ order_shipping_change_refund_reservations;` and record the results.
    intended subaccounts.
 5. Confirm the hourly cron is enabled so overdue inspection and refund
    reminders are recorded.
-6. Confirm the target Worker's notification encryption secret
-   (`PREVIEW_NOTIFICATION_ENCRYPTION_KEY` or
-   `PRODUCTION_NOTIFICATION_ENCRYPTION_KEY`) is configured before customers
+6. Confirm the production Worker's notification encryption secret
+   (`PRODUCTION_NOTIFICATION_ENCRYPTION_KEY`) is configured before customers
    submit accounts; the refund-account key is derived from it. Inspect access to full
    account details. Test the same-channel path and a channel change requiring
    Owner approval on nonproduction records. Confirm that the remittance action

@@ -16,7 +16,7 @@ import {
 export interface AdminAccessBindings {
   ADMIN_AUTH_MODE: "cloudflare-access" | "password" | "local-stub";
   ADMIN_ORIGIN: string;
-  APP_ENV: "local" | "preview" | "production";
+  APP_ENV: "local" | "production";
   CLOUDFLARE_ACCESS_AUD: string;
   CLOUDFLARE_ACCESS_TEAM_DOMAIN: string;
   DB: D1Database;

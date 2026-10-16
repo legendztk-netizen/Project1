@@ -76,9 +76,7 @@ export function createPiAcceptanceCopies(input: {
       notificationConfiguration(input.env);
       if (input.env.EMAIL_DELIVERY_MODE === "resend" && !adapter)
         adapter = createResendNotificationAdapter(
-          (input.env.APP_ENV === "preview"
-            ? input.env.PREVIEW_RESEND_API_KEY
-            : input.env.PRODUCTION_RESEND_API_KEY) ?? "",
+          input.env.PRODUCTION_RESEND_API_KEY ?? "",
         );
     } catch {
       await repository.finish(

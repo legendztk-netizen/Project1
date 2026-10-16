@@ -43,7 +43,7 @@ export type InboundState =
   | "dead_letter";
 
 export interface InboundEnvironment {
-  APP_ENV: "local" | "preview" | "production";
+  APP_ENV: "local" | "production";
   EMAIL_REPLY_DOMAIN: string;
 }
 

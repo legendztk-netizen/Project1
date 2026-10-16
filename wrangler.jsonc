@@ -60,64 +60,6 @@
     ]
   },
   "env": {
-    "preview": {
-      "name": "hydraulic-hose-rfq-platform-preview",
-      "triggers": {
-        "crons": ["17 * * * *", "* * * * *"]
-      },
-      "routes": [
-        { "pattern": "preview.customhoseco.com", "custom_domain": true },
-        { "pattern": "admin-preview.customhoseco.com", "custom_domain": true }
-      ],
-      "vars": {
-        "APP_ENV": "preview",
-        "PUBLIC_APP_NAME": "Hydraulic Supply Preview",
-        "PUBLIC_STOREFRONT_ORIGIN": "https://preview.customhoseco.com",
-        "ADMIN_ORIGIN": "https://admin-preview.customhoseco.com",
-        "ADMIN_AUTH_MODE": "password",
-        "CLOUDFLARE_ACCESS_TEAM_DOMAIN": "https://tiny-moon-1025.cloudflareaccess.com",
-        "CLOUDFLARE_ACCESS_AUD": "be68140293d86de43fc669b1b04a8985f391c507e1085be1102033545a891b8a",
-        "EMAIL_DELIVERY_MODE": "resend",
-        "EMAIL_FROM": "quotes@preview.customhoseco.com",
-        "EMAIL_REPLY_DOMAIN": "reply-preview.customhoseco.com"
-      },
-      "secrets": {
-        "required": ["PREVIEW_SESSION_SIGNING_KEY", "PREVIEW_RESEND_API_KEY", "PREVIEW_NOTIFICATION_ENCRYPTION_KEY"]
-      },
-      "d1_databases": [
-        {
-          "binding": "DB",
-          "database_name": "hydraulic-hose-rfq-preview",
-          "database_id": "4ad2581b-8739-45ca-a32e-6f3d471f1dec",
-          "migrations_dir": "migrations",
-          "migrations_table": "d1_migrations"
-        }
-      ],
-      "r2_buckets": [
-        {
-          "binding": "PRIVATE_FILES",
-          "bucket_name": "hydraulic-hose-private-files-preview"
-        }
-      ],
-      "images": {
-        "binding": "IMAGES"
-      },
-      "queues": {
-        "consumers": [
-          {
-            "queue": "hydraulic-hose-async-jobs-preview",
-            "max_batch_size": 10,
-            "max_retries": 3
-          }
-        ],
-        "producers": [
-          {
-            "binding": "ASYNC_JOBS",
-            "queue": "hydraulic-hose-async-jobs-preview"
-          }
-        ]
-      }
-    },
     "production": {
       "name": "hydraulic-hose-rfq-platform-production",
       "triggers": {
@@ -149,8 +91,8 @@
       "d1_databases": [
         {
           "binding": "DB",
-          "database_name": "hydraulic-hose-rfq-production",
-          "database_id": "0a362737-8016-469d-8b5e-95bd1871466c",
+          "database_name": "hydraulic-hose-rfq-preview",
+          "database_id": "4ad2581b-8739-45ca-a32e-6f3d471f1dec",
           "migrations_dir": "migrations",
           "migrations_table": "d1_migrations"
         }
@@ -158,7 +100,7 @@
       "r2_buckets": [
         {
           "binding": "PRIVATE_FILES",
-          "bucket_name": "hydraulic-hose-private-files-production"
+          "bucket_name": "hydraulic-hose-private-files-preview"
         }
       ],
       "images": {

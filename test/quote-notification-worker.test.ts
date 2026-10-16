@@ -54,10 +54,10 @@ describe("quote notification Worker wiring", () => {
   it("keeps frozen payloads decryptable after session-secret rotation", async () => {
     const env = {
       ...environment,
-      APP_ENV: "preview",
-      PREVIEW_NOTIFICATION_ENCRYPTION_KEY:
+      APP_ENV: "production",
+      PRODUCTION_NOTIFICATION_ENCRYPTION_KEY:
         "test-only-persistent-notification-encryption-material",
-      PREVIEW_SESSION_SIGNING_KEY: "session-before",
+      PRODUCTION_SESSION_SIGNING_KEY: "session-before",
     } as ApplicationBindings;
     await quoteNotifications(env);
     const ciphertext = await mocks.factory.mock.calls[0][0].protector.seal(
@@ -66,7 +66,7 @@ describe("quote notification Worker wiring", () => {
     );
     await quoteNotifications({
       ...env,
-      PREVIEW_SESSION_SIGNING_KEY: "session-after",
+      PRODUCTION_SESSION_SIGNING_KEY: "session-after",
     });
     expect(
       await mocks.factory.mock.calls[1][0].protector.open(ciphertext, "job"),
