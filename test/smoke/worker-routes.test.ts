@@ -6371,12 +6371,26 @@ describe("Cloudflare Worker route surfaces", () => {
             releaseId: expect.any(String),
             releaseNumber: expect.any(String),
             specs: expect.arrayContaining([
-              {
-                label: "Interface 1",
-                value: expect.any(String),
-              },
+              { label: "End 1", value: "Male JIC 37°" },
+              { label: "End 1 thread", value: "5/16-24 UNF" },
             ]),
-            variantSelection: null,
+            variantSelection: {
+              ends: [
+                {
+                  dash: "-2",
+                  form: "Male",
+                  interfaceName: "JIC 37°",
+                  thread: "5/16-24 UNF",
+                },
+                {
+                  dash: "-2",
+                  form: "Male",
+                  interfaceName: "NPTF",
+                  thread: "1/8-27 NPTF",
+                },
+              ],
+              kind: "adapter",
+            },
           },
           quantity: 100,
           refresh: {
