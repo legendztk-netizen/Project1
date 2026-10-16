@@ -9,15 +9,9 @@
     "enabled": true
   },
   "vars": {
-    "PREVIEW_REPLY_DOMAIN": "reply-preview.customhoseco.com",
     "PRODUCTION_REPLY_DOMAIN": "reply.customhoseco.com"
   },
   "services": [
-    {
-      "binding": "PREVIEW_INBOUND_EMAIL",
-      "service": "hydraulic-hose-rfq-platform-preview",
-      "entrypoint": "InboundEmail"
-    },
     {
       "binding": "PRODUCTION_INBOUND_EMAIL",
       "service": "hydraulic-hose-rfq-platform-production",

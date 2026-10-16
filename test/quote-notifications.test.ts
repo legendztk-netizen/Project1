@@ -100,7 +100,7 @@ it("rejects deployed placeholders and stub delivery outside local, with no real 
   expect(() =>
     notificationConfiguration({
       ...local,
-      APP_ENV: "preview",
+      APP_ENV: "production",
       EMAIL_DELIVERY_MODE: "resend",
       EMAIL_FROM: "Sales <quotes@seller.test>",
       EMAIL_REPLY_DOMAIN: "reply.seller.test",

@@ -62,7 +62,7 @@ timestamps, nullable failure code, delivery/dispatch attempt counts, and a numer
 Admin identity, never request data. Main's routes must enforce Admin Worker auth
 and `Cache-Control: private, no-store`. Capture is available only with local/stub
 configuration; the durable plaintext view is decrypted on demand for that route,
-  not written to logs. No UI or Worker is installed by this module.
+not written to logs. No UI or Worker is installed by this module.
 
 ## Recipients and Reply Tokens
 
@@ -98,15 +98,14 @@ Never log inbound token addresses. Possession of a token alone is insufficient.
 ## Configuration and Protection
 
 Existing names: `APP_ENV`, `EMAIL_DELIVERY_MODE`, `EMAIL_FROM`,
-`EMAIL_REPLY_DOMAIN`, `PREVIEW_RESEND_API_KEY`, `PRODUCTION_RESEND_API_KEY`.
-The Worker additionally requires `PREVIEW_NOTIFICATION_ENCRYPTION_KEY` or
-`PRODUCTION_NOTIFICATION_ENCRYPTION_KEY`: dedicated persistent random material
-of at least 32 characters, retained independently of session-signing keys. These
-names are placeholders for deployment secrets; no production values are stored
+`EMAIL_REPLY_DOMAIN`, `PRODUCTION_RESEND_API_KEY`.
+The Worker additionally requires `PRODUCTION_NOTIFICATION_ENCRYPTION_KEY`:
+dedicated persistent random material of at least 32 characters, retained
+independently of session-signing keys. These names are placeholders for deployment secrets; no production values are stored
 in the repository. Back up the key with the encrypted data. Changing it requires
 a keyring migration, not an ordinary session-secret rotation. Local uses fixed
 development-only material and never sends email.
-Local requires `stub` and no provider credentials. Preview/production require
+Local requires `stub` and no provider credentials. Production requires
 `resend`, valid non-placeholder sender/reply configuration, and the corresponding
 API key when using the default adapter. Missing configuration enters a durable
 review state without a network request. Inject a fake adapter for tests.

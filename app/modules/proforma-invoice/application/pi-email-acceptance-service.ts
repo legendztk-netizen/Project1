@@ -52,7 +52,7 @@ export function createPiEmailAcceptanceService(
   bucket: R2Bucket,
   options: {
     inboundProtector: NotificationProtector;
-    appEnvironment: "local" | "preview" | "production";
+    appEnvironment: "local" | "production";
     now?: () => Date;
   },
 ) {

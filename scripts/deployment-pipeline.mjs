@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** @typedef {"preview" | "production"} DeploymentEnvironment */
+/** @typedef {"production"} DeploymentEnvironment */
 /** @typedef {"validation" | "live"} DeploymentMode */
 /** @typedef {{ commands: Array<[string, string[]]>; name: string }} DeploymentStage */
 /**
@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
  */
 
 const projectRoot = fileURLToPath(new URL("../", import.meta.url));
-const supportedEnvironments = ["preview", "production"];
+const supportedEnvironments = ["production"];
 const supportedModes = ["validation", "live"];
 
 export const deploymentStageNames = [
@@ -30,8 +30,6 @@ export const deploymentStageNames = [
  * @returns {DeploymentStage[]}
  */
 function stageDefinitions(environment, mode) {
-  const environmentSuffix =
-    environment === "production" ? "production" : "preview";
   const validation = mode === "validation";
   return [
     {
@@ -55,12 +53,12 @@ function stageDefinitions(environment, mode) {
               ["scripts/d1-migrations.mjs", "validate", environment],
             ],
           ]
-        : [["pnpm", [`migrate:${environmentSuffix}`]]],
+        : [["pnpm", [`migrate:${environment}`]]],
       name: "migrations",
     },
     {
       commands: [
-        ["pnpm", [`build:${environmentSuffix}`]],
+        ["pnpm", [`build:${environment}`]],
         [
           "pnpm",
           [

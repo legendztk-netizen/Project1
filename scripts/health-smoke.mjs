@@ -32,4 +32,4 @@ export async function checkHealth(environment) {
 
 const [, , command, environment] = process.argv;
 if (command === "check") await checkHealth(environment);
-else throw new Error("Usage: health-smoke.mjs check <preview|production>");
+else throw new Error("Usage: health-smoke.mjs check production");

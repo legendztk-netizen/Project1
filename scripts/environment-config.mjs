@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 const projectRoot = new URL("../", import.meta.url);
 const contract = readJson("config/environment-contract.json");
 const wrangler = readJson("wrangler.jsonc");
-const environmentNames = ["local", "preview", "production"];
+const environmentNames = ["local", "production"];
 
 function readJson(relativePath) {
   return JSON.parse(readFileSync(new URL(relativePath, projectRoot), "utf8"));
@@ -52,7 +52,7 @@ function assertUniqueEnvironmentValues() {
     );
   }
 
-  const deployedDatabaseIds = ["preview", "production"]
+  const deployedDatabaseIds = ["production"]
     .map((environment) => resolvedWranglerEnvironment(environment))
     .flatMap((definition) => definition.d1_databases ?? [])
     .filter((database) => !isPlaceholder(database.database_id))
@@ -64,12 +64,18 @@ function assertUniqueEnvironmentValues() {
 }
 
 function validateEnvironment(environment) {
-  assert(environmentNames.includes(environment), `Unknown environment: ${environment}`);
+  assert(
+    environmentNames.includes(environment),
+    `Unknown environment: ${environment}`,
+  );
   assertUniqueEnvironmentValues();
 
   const expected = contract.environments[environment];
   const actual = resolvedWranglerEnvironment(environment);
-  assert(actual.name === expected.workerName, `${environment} Worker name does not match contract`);
+  assert(
+    actual.name === expected.workerName,
+    `${environment} Worker name does not match contract`,
+  );
   assert(
     sameStringRecord(actual.vars, expected.vars),
     `${environment} vars do not match environment-contract.json`,
@@ -78,7 +84,10 @@ function validateEnvironment(environment) {
   const database = actual.d1_databases?.find(
     (item) => item.binding === contract.bindingNames.database,
   );
-  assert(database, `${environment} is missing D1 binding ${contract.bindingNames.database}`);
+  assert(
+    database,
+    `${environment} is missing D1 binding ${contract.bindingNames.database}`,
+  );
   assert(
     database.database_name === expected.resourceNames.database,
     `${environment} D1 resource name does not match contract`,
@@ -99,7 +108,10 @@ function validateEnvironment(environment) {
   const asyncJobs = actual.queues?.producers?.find(
     (item) => item.binding === contract.bindingNames.asyncJobs,
   );
-  assert(asyncJobs, `${environment} is missing Queue binding ${contract.bindingNames.asyncJobs}`);
+  assert(
+    asyncJobs,
+    `${environment} is missing Queue binding ${contract.bindingNames.asyncJobs}`,
+  );
   assert(
     asyncJobs.queue === expected.resourceNames.asyncJobs,
     `${environment} Queue resource name does not match contract`,
@@ -111,7 +123,10 @@ function validateEnvironment(environment) {
       ["R2", privateFiles],
       ["Queue", asyncJobs],
     ]) {
-      assert(resource.remote !== true, `local ${label} binding must not target a remote resource`);
+      assert(
+        resource.remote !== true,
+        `local ${label} binding must not target a remote resource`,
+      );
     }
   }
 
@@ -153,7 +168,8 @@ function requireDeployable(environment) {
   }
 
   for (const key of contract.placeholderPolicy.deployedVariables) {
-    if (isPlaceholder(actual.vars[key])) errors.push(`${key} is still a placeholder`);
+    if (isPlaceholder(actual.vars[key]))
+      errors.push(`${key} is still a placeholder`);
   }
 
   for (const name of [
@@ -165,7 +181,9 @@ function requireDeployable(environment) {
   }
 
   if (errors.length > 0) {
-    throw new Error(`Deployment blocked for ${environment}:\n- ${errors.join("\n- ")}`);
+    throw new Error(
+      `Deployment blocked for ${environment}:\n- ${errors.join("\n- ")}`,
+    );
   }
 }
 
@@ -179,7 +197,9 @@ try {
     requireDeployable(environment);
     process.stdout.write(`environment=${environment} deployment=ready\n`);
   } else {
-    throw new Error("Usage: environment-config.mjs <validate|require-deployable> <environment>");
+    throw new Error(
+      "Usage: environment-config.mjs <validate|require-deployable> <environment>",
+    );
   }
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);

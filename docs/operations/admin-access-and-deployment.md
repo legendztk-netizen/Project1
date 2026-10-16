@@ -20,12 +20,12 @@ all their sessions and redirects to login. Subaccount account-management APIs
 are forbidden. Module checks protect both HTML and `.data` resource requests;
 all unsafe admin requests require the same Origin.
 
-Preview and production use `ADMIN_AUTH_MODE=password` (decision 2026-09-30):
+Production uses `ADMIN_AUTH_MODE=password` (decision 2026-09-30):
 the account and module-permission system (Owner plus Subaccounts with a
 username and password) only works in this mode. `/admin/login` is served over
 HTTPS on the configured Admin origin and the rate limits, opaque sessions and
 Owner-only account management described above apply. The Owner is provisioned
-in each remote D1 with `node scripts/set-admin-owner-password.mjs <preview|production>`,
+in the production D1 with `node scripts/set-admin-owner-password.mjs production`,
 which asks for the password in a hidden prompt (or reads `ADMIN_OWNER_PASSWORD`)
 and stores only the salted PBKDF2 hash. Any Cloudflare Access application in
 front of the Admin origin is optional extra protection; with it in place the
@@ -65,7 +65,7 @@ failure and prove that deployment and health are not entered.
 `pnpm deploy:production` is the future live entry point. It cannot run unless
 `ALLOW_CLOUDFLARE_DEPLOYMENT=confirmed` is set, all placeholders are replaced,
 and all required secrets are present. No Ticket 04 verification invokes this
-command. Preview has equivalent validation and live commands.
+command. There is no deployed preview environment (ADR 0058).
 
 ## GitHub Actions
 

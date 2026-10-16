@@ -180,7 +180,7 @@ it("serves compact summaries across isolate resets and invalidates edge data on 
   const storage = new Map<string, Response>();
   const writes: Promise<unknown>[] = [];
   const edgeCache = {
-    origin: "https://preview.customhoseco.com",
+    origin: "https://customhoseco.com",
     cache: {
       match: async (request: RequestInfo | URL) =>
         storage.get((request as Request).url)?.clone(),
@@ -298,7 +298,7 @@ it("does not persist data read across a publication change, and survives an edge
     },
   });
   const edgeCache = {
-    origin: "https://preview.customhoseco.com",
+    origin: "https://customhoseco.com",
     cache: {
       match: async (request: RequestInfo | URL) =>
         storage.get((request as Request).url)?.clone(),

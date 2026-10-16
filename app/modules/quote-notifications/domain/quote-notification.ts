@@ -10,11 +10,10 @@ export const DELIVERY_LEASE_MS = 120_000;
 export const MAX_DELIVERY_ATTEMPTS = 10;
 
 export interface NotificationEnvironment {
-  APP_ENV: "local" | "preview" | "production";
+  APP_ENV: "local" | "production";
   EMAIL_DELIVERY_MODE: "stub" | "resend";
   EMAIL_FROM: string;
   EMAIL_REPLY_DOMAIN: string;
-  PREVIEW_RESEND_API_KEY?: string;
   PRODUCTION_RESEND_API_KEY?: string;
 }
 
@@ -189,7 +188,7 @@ export function notificationConfiguration(env: NotificationEnvironment) {
   }
   const values = [fromEmail, env.EMAIL_REPLY_DOMAIN];
   if (
-    !["preview", "production"].includes(env.APP_ENV) ||
+    env.APP_ENV !== "production" ||
     env.EMAIL_DELIVERY_MODE !== "resend" ||
     values.some((value) =>
       /replace-with-|\.invalid$|@example\.(com|org|net)$|^example\.(com|org|net)$/i.test(

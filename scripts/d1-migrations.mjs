@@ -19,7 +19,7 @@ const wranglerBin = fileURLToPath(
 const schemaContract = readJson("config/database-schema-contract.json");
 const environmentContract = readJson("config/environment-contract.json");
 const wrangler = readJson("wrangler.jsonc");
-const environmentNames = ["local", "preview", "production"];
+const environmentNames = ["local", "production"];
 
 function readJson(relativePath) {
   return JSON.parse(readFileSync(new URL(relativePath, projectRoot), "utf8"));
@@ -235,7 +235,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     else if (command === "validate") validateMigrationPlan(environment);
     else {
       throw new Error(
-        "Usage: d1-migrations.mjs <apply|verify|validate> <local|preview|production>",
+        "Usage: d1-migrations.mjs <apply|verify|validate> <local|production>",
       );
     }
   } catch (error) {

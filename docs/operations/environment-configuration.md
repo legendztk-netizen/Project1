@@ -3,7 +3,7 @@
 ## Contract
 
 `config/environment-contract.json` is the single machine-readable contract for
-local, preview, and production. It names every application variable, Worker,
+local and production. It names every application variable, Worker,
 D1 database, private R2 bucket, asynchronous Queue, Access setting, email
 setting, public origin, required secret, and deployed-placeholder rule.
 
@@ -15,12 +15,18 @@ The Worker imports the same contract and rejects incomplete runtime bindings in
 | Environment | Default use                      | Admin auth        | Email      | Remote deployment                       |
 | ----------- | -------------------------------- | ----------------- | ---------- | --------------------------------------- |
 | local       | `pnpm dev`, `pnpm build`         | local stub        | local stub | prohibited                              |
-| preview     | explicit preview build/deploy    | Cloudflare Access | Resend     | blocked until placeholders are replaced |
 | production  | explicit production build/deploy | Cloudflare Access | Resend     | blocked until placeholders are replaced |
 
 Worker, D1, R2, Queue, Storefront origin, and Admin origin values are distinct
-for all three environments. The contract test fails if any of those identities
+for the two environments. The contract test fails if any of those identities
 are reused.
+
+There is no deployed preview environment (ADR 0058). Production took over the
+former preview D1 database `hydraulic-hose-rfq-preview` and R2 bucket
+`hydraulic-hose-private-files-preview`; Cloudflare cannot rename them, so the
+production contract names them as they are. The empty
+`hydraulic-hose-rfq-production` database and `hydraulic-hose-private-files-production`
+bucket are unused.
 
 ## Required Bindings
 
@@ -43,25 +49,23 @@ before invoking Cloudflare tooling.
 
 ## Placeholder Replacement
 
-Before preview or production can deploy:
+Before production can deploy:
 
-1. Replace that environment's D1 `database_id` in `wrangler.jsonc`.
+1. Replace the production D1 `database_id` in `wrangler.jsonc`.
 2. Replace `.invalid` Storefront/Admin origins and email domains in both the
    contract and Wrangler configuration.
 3. Replace the Cloudflare Access team domain and audience in both files, then
    provision the initial Owner and Subaccount as active D1 Admin Identities.
-4. Provide `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, and that
-   environment's `PREVIEW_*` or `PRODUCTION_*` signing and Resend secrets
-   through the shell or CI secret store.
-5. Run `node scripts/environment-config.mjs validate <environment>`.
-6. During local development, run `pnpm deploy:validate:preview` or
-   `pnpm deploy:validate:production`.
-7. Only after launch approval, run the explicit `pnpm deploy:preview` or
-   `pnpm deploy:production` command with
-   `ALLOW_CLOUDFLARE_DEPLOYMENT=confirmed`.
+4. Provide `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, and the
+   `PRODUCTION_*` signing and Resend secrets through the shell or CI secret
+   store.
+5. Run `node scripts/environment-config.mjs validate production`.
+6. During local development, run `pnpm deploy:validate:production`.
+7. Only after launch approval, run the explicit `pnpm deploy:production`
+   command with `ALLOW_CLOUDFLARE_DEPLOYMENT=confirmed`.
 
 The deployment gate reports every unresolved field at once. It never prints a
-secret value. Preview and production builds may be produced with placeholders
+secret value. Production builds may be produced with placeholders
 for validation, but those builds are not deployable.
 
 Ticket 04 validates the production chain without real Cloudflare resources.
@@ -76,6 +80,5 @@ domains, placeholder Access values, non-HTTPS origins, local auth mode, and the
 email stub.
 
 Cloudflare environment selection happens when Vite starts or builds. Therefore
-the preview and production scripts set `CLOUDFLARE_ENV` before `react-router
-build`; setting it only at `vite preview` or after the build is intentionally
+the production scripts set `CLOUDFLARE_ENV` before `react-router build`; setting it only at `vite preview` or after the build is intentionally
 unsupported.

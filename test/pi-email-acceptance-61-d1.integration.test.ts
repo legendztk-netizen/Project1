@@ -652,7 +652,7 @@ it("rejects unauthorized Admin identities and cross-origin mutations before acce
   await expect(
     createPiEmailAcceptanceService(db, bucket, {
       inboundProtector: protector,
-      appEnvironment: "preview",
+      appEnvironment: "production",
     }).accept(actor, mutation(), f.input, evidence),
   ).rejects.toMatchObject({ status: 403 });
   expect((await counts(f.piId)).accepts).toBe(0);
@@ -969,7 +969,7 @@ it("retries uncertain delivery with identical payload/key, then stops outside th
   // No real transport: preview exercises provider behavior with a fully fake adapter.
   const env: NotificationEnvironment = {
     ...localEnv,
-    APP_ENV: "preview",
+    APP_ENV: "production",
     EMAIL_DELIVERY_MODE: "resend",
     EMAIL_FROM: "seller@seller.test",
     EMAIL_REPLY_DOMAIN: "reply.seller.test",
@@ -1075,7 +1075,7 @@ it("keeps permanent delivery failure reviewable and manually retries the same in
   const accepted = await accept(f);
   const env: NotificationEnvironment = {
     ...localEnv,
-    APP_ENV: "preview",
+    APP_ENV: "production",
     EMAIL_DELIVERY_MODE: "resend",
     EMAIL_FROM: "seller@seller.test",
     EMAIL_REPLY_DOMAIN: "reply.seller.test",
@@ -1192,11 +1192,11 @@ it("the real worker factory lists, dispatches and retries without a key; missing
     const accepted = await accept(f);
     const env = {
       ...localEnv,
-      APP_ENV: "preview",
+      APP_ENV: "production",
       EMAIL_DELIVERY_MODE: "resend",
       EMAIL_FROM: "seller@seller.test",
       EMAIL_REPLY_DOMAIN: "reply.seller.test",
-      PREVIEW_NOTIFICATION_ENCRYPTION_KEY: key,
+      PRODUCTION_NOTIFICATION_ENCRYPTION_KEY: key,
       DB: db,
     } as unknown as ApplicationBindings;
     const factory = await workerCopies(env);
@@ -1236,7 +1236,7 @@ it("reconciles a failed attempt tomorrow into a fresh bounded generation with id
     .mockResolvedValue({ kind: "sent", providerId: "new-delivery" });
   const env: NotificationEnvironment = {
     ...localEnv,
-    APP_ENV: "preview",
+    APP_ENV: "production",
     EMAIL_DELIVERY_MODE: "resend",
     EMAIL_FROM: "seller@seller.test",
     EMAIL_REPLY_DOMAIN: "reply.seller.test",
@@ -1414,7 +1414,7 @@ it("retains the ten-attempt cap and requires audited reconciliation before reset
     .mockResolvedValue({ kind: "retry", code: "provider_unavailable" });
   const env: NotificationEnvironment = {
     ...localEnv,
-    APP_ENV: "preview",
+    APP_ENV: "production",
     EMAIL_DELIVERY_MODE: "resend",
     EMAIL_FROM: "seller@seller.test",
     EMAIL_REPLY_DOMAIN: "reply.seller.test",

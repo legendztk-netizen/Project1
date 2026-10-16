@@ -8,9 +8,7 @@ export async function notificationProtector(env: ApplicationBindings) {
   const secret =
     env.APP_ENV === "local"
       ? "local-development-only-customer-identity-signing-key"
-      : env.APP_ENV === "preview"
-        ? env.PREVIEW_NOTIFICATION_ENCRYPTION_KEY
-        : env.PRODUCTION_NOTIFICATION_ENCRYPTION_KEY;
+      : env.PRODUCTION_NOTIFICATION_ENCRYPTION_KEY;
   if (!secret || secret.length < 32)
     throw new Error("Persistent notification encryption key is missing");
   const material = await crypto.subtle.importKey(

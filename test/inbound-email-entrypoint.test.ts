@@ -23,10 +23,10 @@ vi.mock("react-router", async (original) => ({
 }));
 import { InboundEmail } from "../workers/app";
 
-const env = { APP_ENV: "preview" } as CloudflareBindings;
+const env = { APP_ENV: "production" } as CloudflareBindings;
 const envelope = {
   from: "customer@example.com",
-  to: "r-token@reply-preview.customhoseco.com",
+  to: "r-token@reply.customhoseco.com",
   rawSize: 3,
   headers: [] as Array<[string, string]>,
 };

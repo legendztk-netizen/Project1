@@ -5,10 +5,7 @@ const localQuoteSessionSigningKey =
 
 export function quoteSessionSigningKey(env: ApplicationBindings) {
   if (env.APP_ENV === "local") return localQuoteSessionSigningKey;
-  const secret =
-    env.APP_ENV === "preview"
-      ? env.PREVIEW_SESSION_SIGNING_KEY
-      : env.PRODUCTION_SESSION_SIGNING_KEY;
+  const secret = env.PRODUCTION_SESSION_SIGNING_KEY;
   if (!secret) {
     throw new Error(
       `Anonymous Quote Session signing key is missing for ${env.APP_ENV}`,
@@ -21,10 +18,7 @@ export function customerIdentitySigningKey(env: ApplicationBindings) {
   if (env.APP_ENV === "local") {
     return "local-development-only-customer-identity-signing-key";
   }
-  const secret =
-    env.APP_ENV === "preview"
-      ? env.PREVIEW_SESSION_SIGNING_KEY
-      : env.PRODUCTION_SESSION_SIGNING_KEY;
+  const secret = env.PRODUCTION_SESSION_SIGNING_KEY;
   if (!secret) {
     throw new Error(
       `Customer identity signing key is missing for ${env.APP_ENV}`,

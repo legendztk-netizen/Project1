@@ -7,10 +7,10 @@ import {
 
 function environment(overrides: Record<string, unknown> = {}) {
   return {
-    APP_ENV: "preview",
+    APP_ENV: "production",
     EMAIL_DELIVERY_MODE: "resend",
     EMAIL_FROM: "Hydraulic Supply <verify@example.test>",
-    PREVIEW_RESEND_API_KEY: "unit-test-resend-key",
+    PRODUCTION_RESEND_API_KEY: "unit-test-resend-key",
     ...overrides,
   } as never;
 }
@@ -72,7 +72,7 @@ describe("Resend OTP delivery", () => {
         challengeId: "challenge-missing-key",
         code: "123456",
         email: "customer@example.com",
-        env: environment({ PREVIEW_RESEND_API_KEY: undefined }),
+        env: environment({ PRODUCTION_RESEND_API_KEY: undefined }),
         purpose: "register",
       }),
     ).rejects.toThrow("Resend API key is not configured");

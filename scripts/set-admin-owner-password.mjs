@@ -86,10 +86,8 @@ function d1(database, environment, command) {
 }
 
 const environment = process.argv[2];
-if (!["preview", "production"].includes(environment ?? "")) {
-  console.error(
-    "Usage: node scripts/set-admin-owner-password.mjs <preview|production>",
-  );
+if (environment !== "production") {
+  console.error("Usage: node scripts/set-admin-owner-password.mjs production");
   process.exit(1);
 }
 

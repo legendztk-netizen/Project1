@@ -1,5 +1,8 @@
 # Route reply email through one dispatcher Worker
 
+Amended by ADR 0058: preview is retired, so the dispatcher routes only
+`reply.customhoseco.com` to production.
+
 Preview and production share the `customhoseco.com` zone, and Cloudflare Email
 Routing allows one catch-all rule per zone. Reply addresses carry per-quote
 tokens, so they cannot be listed as literal routing rules. The catch-all
