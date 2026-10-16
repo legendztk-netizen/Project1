@@ -17,7 +17,11 @@ interface ConfiguredHoseEnd {
   ferrule: CompatibleHoseEndCandidate["ferrule"];
   hoseEnd: Omit<
     CompatibleHoseEndCandidate,
-    "assemblyWorkingBar" | "compatibilityId" | "ferrule" | "hoseEndSku"
+    | "assemblyWorkingBar"
+    | "compatibilityId"
+    | "ferrule"
+    | "hoseEndSku"
+    | "mainImageUrl"
   > & {
     sku: string;
   };

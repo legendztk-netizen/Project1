@@ -14,6 +14,7 @@ import { seedManagedAssemblyBaseline } from "./fixtures/managed-assembly-baselin
 import { legacyCompatibleHoseEndSql } from "./fixtures/legacy-compatible-end-sql";
 import { createD1CatalogItemRepository } from "../app/modules/catalog/infrastructure/d1-catalog-item-repository";
 import { createD1ManagedAssemblies } from "../app/modules/catalog/infrastructure/d1-managed-assemblies";
+import { createD1PublicCatalogRepository } from "../app/modules/catalog/infrastructure/d1-public-catalog-repository";
 import {
   compatibleHoseEndCandidateFromRow,
   createD1ConfiguratorRepository,
@@ -49,12 +50,20 @@ afterAll(async () => {
   rmSync(directory, { recursive: true, force: true });
 });
 
+// The reference query predates End photos; each End shows the main image of its catalog page.
 async function reference(hoseSku: string) {
   const rows = await db
     .prepare(legacyCompatibleHoseEndSql())
     .bind("active-release", hoseSku)
     .all<Parameters<typeof compatibleHoseEndCandidateFromRow>[0]>();
-  return rows.results.map(compatibleHoseEndCandidateFromRow);
+  const catalog = createD1PublicCatalogRepository(db);
+  return Promise.all(
+    rows.results.map(compatibleHoseEndCandidateFromRow).map(async (end) => ({
+      ...end,
+      mainImageUrl:
+        (await catalog.findItem(end.hoseEndSku))?.mainImageUrl ?? null,
+    })),
+  );
 }
 
 async function expectSameAsReference(label: string) {

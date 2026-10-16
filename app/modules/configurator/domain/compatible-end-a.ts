@@ -22,6 +22,8 @@ export interface CompatibleHoseEndCandidate {
   hoseTailDash: DashSize | null;
   interfaceFamily: string;
   interfaceGroup: string;
+  /** The catalog main image (uploaded photo); display only, not carried into the draft. */
+  mainImageUrl: string | null;
   maximumWorkingBar: number | null;
   mediaKey: string;
   sealingForm: string;

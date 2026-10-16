@@ -13,9 +13,14 @@ import type {
 } from "../../configurator/domain/assembly-draft-validation";
 import type { AssemblyReviewResult } from "../../configurator/domain/assembly-review";
 import type { HoseConfigurationDraft } from "../../configurator/domain/hose-configuration-draft";
-import { hoseEndMediaPath } from "./catalog-media";
+import { hoseEndMediaPath, hoseMediaPath } from "./catalog-media";
 
-type ConfiguredEnd = NonNullable<HoseConfigurationDraft["endA"]>;
+/** Catalog main images (uploaded photos) of the selected components, when known. */
+export interface AssemblyComponentImages {
+  endA?: string | null;
+  endB?: string | null;
+  hose?: string | null;
+}
 
 const outcomeCopy: Record<
   AssemblyReviewResult["outcome"],
@@ -90,15 +95,16 @@ function applicationLabel(draft: HoseConfigurationDraft) {
   ].join(" · ");
 }
 
-function SelectedEndThumbnail({
-  end,
+function ComponentThumbnail({
+  name,
   position,
+  src,
 }: {
-  end: ConfiguredEnd | undefined;
-  position: "End A" | "End B";
+  name: string | undefined;
+  position: "Hose" | "End A" | "End B";
+  src: string | null;
 }) {
-  const path = hoseEndMediaPath(end?.hoseEnd.mediaKey);
-  if (!end || !path) {
+  if (!name || !src) {
     return (
       <div
         aria-label={`${position} technical image pending`}
@@ -111,7 +117,7 @@ function SelectedEndThumbnail({
   }
   return (
     <div className="assembly-component-thumbnail">
-      <img alt={`${position}: ${end.hoseEnd.displayName}`} src={path} />
+      <img alt={`${position}: ${name}`} src={src} />
     </div>
   );
 }
@@ -143,6 +149,7 @@ function ReviewIssue({
 export function AssemblyReviewStage({
   actionLabel = "Add Assembly to Quote",
   addError,
+  componentImages = {},
   draft,
   isAdding,
   onAdd,
@@ -156,6 +163,7 @@ export function AssemblyReviewStage({
 }: {
   actionLabel?: string;
   addError: string | null;
+  componentImages?: AssemblyComponentImages;
   draft: HoseConfigurationDraft;
   isAdding: boolean;
   onAdd: () => void;
@@ -221,6 +229,11 @@ export function AssemblyReviewStage({
               <strong>{draft.hose.familyName}</strong>
               <small>SKU {draft.hose.sku}</small>
             </div>
+            <ComponentThumbnail
+              name={draft.hose.familyName}
+              position="Hose"
+              src={componentImages.hose ?? hoseMediaPath(draft.hose.mediaKey)}
+            />
           </li>
           <li>
             <span>2</span>
@@ -231,7 +244,14 @@ export function AssemblyReviewStage({
               <small>SKU {draft.endA?.hoseEnd.sku ?? "Not selected"}</small>
               {draft.endA?.ferrule ? <em>Matched ferrule included</em> : null}
             </div>
-            <SelectedEndThumbnail end={draft.endA} position="End A" />
+            <ComponentThumbnail
+              name={draft.endA?.hoseEnd.displayName}
+              position="End A"
+              src={
+                componentImages.endA ??
+                hoseEndMediaPath(draft.endA?.hoseEnd.mediaKey)
+              }
+            />
             <button onClick={() => onEdit("end-a")} type="button">
               Edit End A
             </button>
@@ -245,7 +265,14 @@ export function AssemblyReviewStage({
               <small>SKU {draft.endB?.hoseEnd.sku ?? "Not selected"}</small>
               {draft.endB?.ferrule ? <em>Matched ferrule included</em> : null}
             </div>
-            <SelectedEndThumbnail end={draft.endB} position="End B" />
+            <ComponentThumbnail
+              name={draft.endB?.hoseEnd.displayName}
+              position="End B"
+              src={
+                componentImages.endB ??
+                hoseEndMediaPath(draft.endB?.hoseEnd.mediaKey)
+              }
+            />
             <button onClick={() => onEdit("end-b")} type="button">
               Edit End B
             </button>

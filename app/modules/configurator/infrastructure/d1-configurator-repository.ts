@@ -5,6 +5,7 @@ import {
   hoseAssemblyPartsSql,
 } from "./hose-assembly-combinations";
 import { interfaceGroup } from "../../catalog/domain/public-catalog";
+import { publicCatalogMainImageUrl } from "../../catalog/domain/catalog-main-image";
 import { normalizeDashSize } from "../../catalog/domain/dash-size";
 import { hoseEndPresentation } from "../../catalog/domain/hose-end-presentation";
 import type { CompatibleHoseEndCandidate } from "../domain/compatible-end-a";
@@ -26,6 +27,8 @@ interface CompatibleHoseEndRow {
   hose_end_sku: string;
   hose_tail_dash: string;
   interface_family: string;
+  main_image_approved_reference?: string | null;
+  main_image_version_id?: string | null;
   max_working_bar: number | string | null;
   sealing_form: string;
   swivel_form: string;
@@ -82,6 +85,10 @@ export function compatibleHoseEndCandidateFromRow(
     interfaceFamily: presentation.interface,
     interfaceGroup:
       interfaceGroup(presentation.interface) ?? presentation.interface,
+    mainImageUrl: publicCatalogMainImageUrl(
+      row.main_image_version_id,
+      row.main_image_approved_reference,
+    ),
     maximumWorkingBar: nullableNumber(row.max_working_bar),
     mediaKey: presentation.mediaKey,
     sealingForm: row.sealing_form,
@@ -222,6 +229,8 @@ async function readCompatibleEndARows(
     ends,
     endSeries,
     ferrules,
+    images,
+    media,
   ] = await database.batch<Row>([
     database
       .prepare("SELECT status FROM catalog_releases WHERE id = ?1")
@@ -265,6 +274,17 @@ async function readCompatibleEndARows(
          WHERE import_id = ${importId} AND sku IN (SELECT ferrule_sku FROM (${hoseCompatibilities}))`,
       )
       .bind(releaseId, hoseSku),
+    database
+      .prepare(
+        `SELECT sku, media_version_id FROM catalog_runtime_product_main_images
+         WHERE import_id = ${importId} AND assignment_kind = 'override'
+           AND media_version_id IS NOT NULL
+           AND sku IN (SELECT hose_end_sku FROM (${hoseCompatibilities}))`,
+      )
+      .bind(releaseId, hoseSku),
+    database.prepare(
+      "SELECT id, approved_reference FROM catalog_media_versions",
+    ),
   ]);
   const status = release.results[0]?.status;
   if (
@@ -340,6 +360,10 @@ async function readCompatibleEndARows(
   const ferruleBySku = new Map(
     ferrules.results.map((row) => [String(row.sku), row]),
   );
+  const imageBySku = new Map(
+    images.results.map((row) => [String(row.sku), row.media_version_id]),
+  );
+  const mediaById = new Map(media.results.map((row) => [String(row.id), row]));
   const rows: Array<{ row: CompatibleHoseEndRow; order: unknown[] }> = [];
   for (const compatibility of compatibilities.results) {
     if (
@@ -366,6 +390,10 @@ async function readCompatibleEndARows(
           !availableForQuote(ferruleSku)))
     )
       continue;
+    // The catalog page's main image: the SKU's own photo, else its series photo.
+    const mediaId =
+      imageBySku.get(String(end.sku)) ?? series.representative_media_version_id;
+    const image = mediaId == null ? undefined : mediaById.get(String(mediaId));
     rows.push({
       row: {
         compatibility_id: compatibility.compatibility_id,
@@ -384,6 +412,8 @@ async function readCompatibleEndARows(
         connection_dash: end.connection_dash,
         hose_tail_dash: end.hose_tail_dash,
         max_working_bar: end.max_working_bar,
+        main_image_version_id: image?.id ?? null,
+        main_image_approved_reference: image?.approved_reference ?? null,
         ferrule_series: ferrule?.ferrule_series ?? null,
         ferrule_hose_construction: ferrule?.hose_construction ?? null,
         ferrule_hose_tail_dash: ferrule?.hose_tail_dash ?? null,
