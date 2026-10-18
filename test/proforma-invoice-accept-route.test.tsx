@@ -265,6 +265,22 @@ it("keeps expired and superseded acceptance pages linked to read-only historical
   }
 });
 
+it("tells the customer which evidence accepting records", () => {
+  render(
+    <RouterProvider
+      router={createMemoryRouter([
+        { path: "/", element: <Page loaderData={page} /> },
+      ])}
+    />,
+  );
+  expect(
+    screen.getByText(/your IP address and your browser.s user agent/),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("link", { name: "Privacy Notice" }).getAttribute("href"),
+  ).toBe("/policies/privacy");
+});
+
 it("projects acceptance on the customer PI page and links its immutable record", async () => {
   const invoice = {
     ...page.invoice,

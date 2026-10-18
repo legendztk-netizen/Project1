@@ -116,4 +116,17 @@ describe("Customer authentication accessibility", () => {
     expect(document.activeElement).toBe(recovery);
     expect(recovery.getAttribute("href")).toBe("/forgot-password");
   });
+
+  it("offers password recovery on the default email-code tab but not when registering", async () => {
+    renderAccessPage({});
+    expect(
+      (
+        await screen.findByRole("link", { name: "Forgot password?" })
+      ).getAttribute("href"),
+    ).toBe("/forgot-password");
+    cleanup();
+    renderAccessPage({ purpose: "register" });
+    await screen.findByRole("textbox", { name: "Email address" });
+    expect(screen.queryByRole("link", { name: "Forgot password?" })).toBeNull();
+  });
 });

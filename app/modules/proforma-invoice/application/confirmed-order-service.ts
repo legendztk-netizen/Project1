@@ -49,6 +49,15 @@ export const orderStageSql = `CASE
   )}>0 THEN 'ready'
   ELSE 'processing' END`;
 
+// True when approved Cancellation Resolutions cancelled every physical unit of
+// every Order line. The Confirmed Order itself never changes, so this is derived.
+export const orderFullyCancelledSql = `NOT EXISTS(SELECT 1 FROM confirmed_order_lines line
+  WHERE line.order_id=o.id AND CASE WHEN line.line_kind='length_based_hose'
+      THEN json_extract(line.snapshot_json,'$.lengthOrder.pieceCount')
+      ELSE json_extract(line.snapshot_json,'$.quantity') END
+    > coalesce((SELECT sum(cancelled.physical_quantity) FROM order_cancelled_quantities cancelled
+      WHERE cancelled.order_id=line.order_id AND cancelled.line_id=line.line_id),0))`;
+
 export interface AdminOrderFilters {
   query: string;
   status: "all" | "confirmed" | "hold";

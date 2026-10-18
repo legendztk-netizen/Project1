@@ -256,6 +256,13 @@ it("always performs fresh validation for authenticated RFQ submission", async ()
     )
     .run();
   await createD1CustomerIdentityRepository(db).createSessionForProfile({
+    access: {
+      city: null,
+      country: null,
+      ip: null,
+      method: "password",
+      region: null,
+    },
     profileId,
     sessionId: crypto.randomUUID(),
     tokenDigest: await digestCustomerSessionToken(

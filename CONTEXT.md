@@ -176,6 +176,46 @@ entity, action, and permitted before-and-after field differences. It excludes
 passwords, authentication codes, secrets, and sensitive payment credentials.
 _Avoid_: Editable activity note, application error log, full secret snapshot
 
+**Customer Directory**:
+The read-only Admin Backoffice module 用户管理, which lists verified Customer
+Profiles and shows each one's contact details, Organization Profiles, delivery
+addresses and Customer Access Record. It is authorized by its own Admin
+Permission and never widens business access: the RFQ count and RFQs appear only
+to admins who may open 询价与 PI, the Order total and Orders only to admins who
+may open 订单与发货. A customer's RFQs and Orders are exactly those the customer
+sees in the Personal Center, including organization RFQs while they are the
+active Primary Company Contact. An Order is history once every Shipment is
+delivered or every unit is cancelled, and current otherwise. 累计成交金额 sums
+Confirmed Order totals except fully cancelled Orders; partial cancellations and
+refunds are not deducted. A customer's country is the active Organization
+Profile's country, else the default delivery address's, else the most recently
+added address's. The list filters by Beijing registration date, individual or
+company, country and, only for admins who may open Orders, whether the customer
+has a Confirmed Order; it sorts by registration date, newest first by default.
+_Avoid_: CRM, customer account editor, wholesale approval
+
+**Customer Access Record**:
+The IP address a Customer Profile registered from, and the time, method and IP
+address of its latest sign-in, each with the country, region and city that
+Cloudflare estimates for the IP. Registration fields are written once, when the
+profile is created. Each new session from an email code, a password, or an
+emailed-code password reset replaces the last sign-in fields; changing a
+password while signed in is not a sign-in. Records are kept indefinitely.
+Profiles registered before 2026-10-18 have no registration IP, and their last
+sign-in has no IP until they sign in again.
+_Avoid_: Visit log, page-view tracking, rate-limit IP digest
+
+**Privacy Notice**:
+The public page at `/policies/privacy` describing, in English, the personal
+information the website collects, why, who receives it, where it is stored,
+how long it is kept, the cookies the application sets and how to make a
+privacy request to `privacy@customhoseco.com`. The Seller of Record is named
+as the operator. Registration and sign-in pages and the PI acceptance form say
+what they record and link to it. It describes only collection that exists in
+the application; a new kind of collection, recipient or cookie requires
+updating it.
+_Avoid_: Terms of service, cookie banner, Returns Policy
+
 **Factory Batch Access**:
 A time-limited, batch-specific authorization opened from a QR code for the
 minimal Factory Mobile workflow. It is not an Admin Backoffice account or role.

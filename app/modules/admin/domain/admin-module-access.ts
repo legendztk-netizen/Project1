@@ -26,6 +26,12 @@ export const ADMIN_MODULES = [
   },
   { key: "messages", label: "消息管理", description: "客户对话、消息和附件" },
   {
+    key: "customers",
+    label: "用户管理",
+    description:
+      "已注册客户的资料、公司、地址、注册与最后登录 IP；询价数和订单需同时拥有对应权限",
+  },
+  {
     key: "notifications",
     label: "通知",
     description: "已授权业务的通知；只读也可标记自己的已读状态",
@@ -52,6 +58,7 @@ export function adminPathModule(path: string): AdminModule | null {
   )
     return "quotes";
   if (path.startsWith("/admin/orders")) return "orders";
+  if (path.startsWith("/admin/customers")) return "customers";
   if (path.startsWith("/admin/notifications")) return "notifications";
   if (path === "/admin/settings/commercial" || path === "/admin/china-calendar")
     return "settings";
@@ -96,6 +103,18 @@ export function canAccessAdminPath(
     (identity.moduleAccess[module] === "write" ||
       (read && identity.moduleAccess[module] === "read"))
   );
+}
+
+// The Customer Directory shows a customer's RFQs and Orders only to admins who
+// may also open those modules; its own grant never widens business access.
+export function customerDirectoryGrants(identity: {
+  accountType: string;
+  moduleAccess?: ModuleAccess;
+}) {
+  return {
+    orders: canAccessAdminPath(identity, "/admin/orders", "GET"),
+    quotes: canAccessAdminPath(identity, "/admin/quotes", "GET"),
+  };
 }
 
 export function canWriteAdminModule(

@@ -28,6 +28,7 @@ const footerColumns = [
       { label: "Register", to: "/register" },
       { label: "My Account", to: "/account" },
       { label: "Returns Policy", to: "/policies/returns" },
+      { label: "Privacy Notice", to: "/policies/privacy" },
     ],
   },
 ];

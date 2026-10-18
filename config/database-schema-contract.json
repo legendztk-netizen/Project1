@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 134,
+  "schemaVersion": 135,
   "migrations": [
     "0000_initial_catalog_release.sql",
     "0001_add_admin_identities.sql",
@@ -134,6 +134,7 @@
     "0130_independent_configurator_permission.sql",
     "0131_item_mode_media_upload.sql",
     "0132_pi_pdf_job_failure_code.sql",
-    "0133_one_piece_assembly_endpoints.sql"
+    "0133_one_piece_assembly_endpoints.sql",
+    "0134_customer_directory.sql"
   ]
 }

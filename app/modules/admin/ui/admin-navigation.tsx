@@ -16,6 +16,7 @@ import {
   MessagesSquare,
   RotateCcw,
   Settings,
+  UsersRound,
   Waypoints,
 } from "lucide-react";
 import { useContext, useEffect, useState } from "react";
@@ -27,6 +28,7 @@ export type AdminNavigationKey =
   | "after-sales"
   | "catalog"
   | "configurator"
+  | "customers"
   | "imports"
   | "messages"
   | "notifications"
@@ -74,6 +76,12 @@ const adminNavigation = [
     label: "取消与售后",
     icon: RotateCcw,
     to: "/admin/after-sales",
+  },
+  {
+    key: "customers",
+    label: "用户管理",
+    icon: UsersRound,
+    to: "/admin/customers",
   },
   {
     key: "catalog",

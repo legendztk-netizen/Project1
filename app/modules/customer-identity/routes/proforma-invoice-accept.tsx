@@ -29,6 +29,7 @@ import {
   requireReviewMutation,
 } from "../../quote-review/domain/private-review";
 import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
+import { privacyNoticePath } from "../../storefront/domain/privacy-notice";
 import { AccountWorkspace } from "../ui/account-workspace";
 import { readyScheduleText } from "../../shipment/domain/ready-schedule";
 
@@ -327,6 +328,11 @@ function AcceptanceForm({
         <h2>Refund conditions</h2>
         <p>{conditions.refund.text}</p>
       </section>
+      <p className="pi-acceptance-evidence-note">
+        Accepting records your typed name, the time, your IP address and your
+        browser&rsquo;s user agent as evidence of this acceptance.{" "}
+        <Link to={privacyNoticePath}>Privacy Notice</Link>
+      </p>
       <button
         className="button button-primary"
         disabled={pending || !status.canAccept || !status.viewId || !complete}

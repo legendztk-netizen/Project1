@@ -8,6 +8,7 @@ import {
   RefreshCw,
   RotateCcw,
   Settings,
+  UsersRound,
   Waypoints,
 } from "lucide-react";
 import { Link, useRevalidator } from "react-router";
@@ -34,6 +35,7 @@ const icons = {
   messages: MessagesSquare,
   after_sales: RotateCcw,
   settings: Settings,
+  customers: UsersRound,
 };
 export default function AdminHome({ loaderData }: Route.ComponentProps) {
   const revalidator = useRevalidator();

@@ -470,3 +470,15 @@
   color: var(--ink);
   line-height: 1.65;
 }
+
+.returns-policy-section p {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.65;
+}
+
+.returns-policy-section a {
+  color: var(--steel);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}

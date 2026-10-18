@@ -1,6 +1,7 @@
 import {
   canAccessAdminPath,
   canWriteAdminModule,
+  customerDirectoryGrants,
 } from "../app/modules/admin/domain/admin-module-access";
 import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
@@ -139,4 +140,37 @@ it("separates configurator from catalog on GET and POST including catalog view a
   expect((await call("/admin/catalog/reference-data", "POST")).status).toBe(
     403,
   );
+});
+
+it("opens the Customer Directory with its own grant and shows RFQs and Orders only with theirs", async () => {
+  mocks.authorize.mockResolvedValue({
+    id: "staff",
+    accountType: "subaccount",
+    moduleAccess: { customers: "read" },
+  });
+  expect((await call("/admin/customers.data")).status).toBe(200);
+  expect((await call("/admin/customers/buyer")).status).toBe(200);
+  expect((await call("/admin/customers/buyer", "POST")).status).toBe(403);
+  expect(
+    customerDirectoryGrants({
+      accountType: "subaccount",
+      moduleAccess: { customers: "read" },
+    }),
+  ).toEqual({ orders: false, quotes: false });
+  expect(
+    customerDirectoryGrants({
+      accountType: "subaccount",
+      moduleAccess: { customers: "read", orders: "read", quotes: "write" },
+    }),
+  ).toEqual({ orders: true, quotes: true });
+  expect(customerDirectoryGrants({ accountType: "owner" })).toEqual({
+    orders: true,
+    quotes: true,
+  });
+  mocks.authorize.mockResolvedValue({
+    id: "staff",
+    accountType: "subaccount",
+    moduleAccess: { orders: "write", quotes: "write" },
+  });
+  expect((await call("/admin/customers")).status).toBe(403);
 });
