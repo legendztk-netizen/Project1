@@ -1012,6 +1012,13 @@ describe("real local D1 migration lifecycle", () => {
       suffix: string;
     }) {
       return createD1CustomerIdentityRepository(database).completeVerification({
+        access: {
+          city: null,
+          country: null,
+          ip: null,
+          method: "email_code",
+          region: null,
+        },
         anonymousQuoteSessionId: input.sourceSessionId,
         authenticate: true,
         challengeId: input.challengeId,

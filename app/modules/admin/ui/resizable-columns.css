@@ -1,0 +1,44 @@
+.admin-column-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 9px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.admin-column-resizer::after {
+  position: absolute;
+  top: 28%;
+  bottom: 28%;
+  right: 0;
+  width: 1px;
+  background: #c3cdd3;
+  content: "";
+  transition:
+    background 120ms ease,
+    top 120ms ease,
+    bottom 120ms ease;
+}
+.admin-column-resizer:hover::after,
+.admin-column-resizer:focus-visible::after,
+.admin-column-resizing .admin-column-resizer:active::after {
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+}
+.admin-column-resizer:focus-visible {
+  outline: none;
+}
+.admin-column-resizing,
+.admin-column-resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+@media (max-width: 760px) {
+  .admin-column-resizer {
+    display: none;
+  }
+}

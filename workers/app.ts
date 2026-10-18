@@ -166,7 +166,13 @@ export default {
     )
       return new Response("需要产品编辑权限", { status: 403 });
     const routerContext = new RouterContextProvider();
-    routerContext.set(cloudflareContext, { adminIdentity, env, runtime, ctx });
+    routerContext.set(cloudflareContext, {
+      adminIdentity,
+      cf: request.cf,
+      env,
+      runtime,
+      ctx,
+    });
 
     let status = 500;
     try {

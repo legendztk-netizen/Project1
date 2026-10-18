@@ -11,6 +11,7 @@ import {
   validatedCustomerReturnPath,
   type EmailOtpPurpose,
 } from "../domain/email-otp";
+import type { CustomerRequestLocation } from "../domain/customer-access";
 
 function textValue(form: FormData, key: string) {
   const value = form.get(key);
@@ -27,6 +28,7 @@ export function authReturnPath(request: Request, storefrontOrigin: string) {
 export async function handleEmailOtpAction(input: {
   env: ApplicationBindings;
   environment: AppEnvironment;
+  location?: CustomerRequestLocation;
   purpose: EmailOtpPurpose;
   request: Request;
 }) {
@@ -60,6 +62,7 @@ export async function handleEmailOtpAction(input: {
       const result = await service.verifyOtp({
         challengeId: textValue(form, "challengeId"),
         code: textValue(form, "code"),
+        location: input.location,
         purpose: input.purpose,
         request: input.request,
       });

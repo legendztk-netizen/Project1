@@ -39,7 +39,9 @@ export function AccountWorkspace({
                 : undefined
             }
           />
-          <Form action="/sign-out" method="post">
+          {/* A document POST: a page left open across a deploy cannot discover
+              the sign-out route client-side and would load it with GET. */}
+          <Form action="/sign-out" method="post" reloadDocument>
             <button type="submit">
               <LogOut aria-hidden="true" size={17} />
               Sign Out

@@ -2313,6 +2313,13 @@ it("creates independent customer and Admin follow-on drafts without changing the
   const sessionNow = new Date();
   const token = generateCustomerSessionToken();
   await createD1CustomerIdentityRepository(db).createSessionForProfile({
+    access: {
+      city: null,
+      country: null,
+      ip: null,
+      method: "password",
+      region: null,
+    },
     profileId: f.profileId,
     sessionId: crypto.randomUUID(),
     tokenDigest: await digestCustomerSessionToken(

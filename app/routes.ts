@@ -83,6 +83,7 @@ export default [
     "modules/customer-identity/routes/reset-password.tsx",
   ),
   route("policies/returns", "modules/storefront/routes/returns-policy.tsx"),
+  route("policies/privacy", "modules/storefront/routes/privacy-notice.tsx"),
   route(
     "assembly-measurement-guide",
     "modules/storefront/routes/assembly-measurement-guide.tsx",
@@ -99,6 +100,11 @@ export default [
   route("admin/messages/:requestId", "modules/admin/routes/message-thread.tsx"),
   route("admin/orders", "modules/admin/routes/confirmed-orders.tsx"),
   route("admin/after-sales", "modules/admin/routes/after-sales.tsx"),
+  route("admin/customers", "modules/admin/routes/customers.tsx"),
+  route(
+    "admin/customers/:profileId",
+    "modules/admin/routes/customer-detail.tsx",
+  ),
   route(
     "admin/orders/:orderId/after-sales/files/:fileId",
     "modules/admin/routes/after-sales-file-download.ts",

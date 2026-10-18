@@ -25,7 +25,7 @@ export function loader({ context, request }: Route.LoaderArgs) {
 }
 
 export async function action({ context, request }: Route.ActionArgs) {
-  const { env, runtime } = context.get(cloudflareContext);
+  const { cf, env, runtime } = context.get(cloudflareContext);
   const form = await request.clone().formData();
   const intent = textValue(form, "intent");
   if (
@@ -88,6 +88,7 @@ export async function action({ context, request }: Route.ActionArgs) {
   return handleEmailOtpAction({
     env,
     environment: runtime.environment,
+    location: cf,
     purpose: "register",
     request,
   });

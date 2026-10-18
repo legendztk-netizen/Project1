@@ -19,7 +19,7 @@ interface AdminQuoteReviewRow {
   order_id: string | null;
 }
 
-const reviewSelect = `SELECT request.id, request.reference_number, request.snapshot_json, request.submitted_at,
+export const adminQuoteReviewSelect = `SELECT request.id, request.reference_number, request.snapshot_json, request.submitted_at,
   o.id AS order_id,
   CASE
     WHEN o.id IS NOT NULL THEN 'order_created'
@@ -75,7 +75,7 @@ export function createD1AdminQuoteReviewRepository(database: D1Database) {
     async countAwaitingReview() {
       const row = await database
         .prepare(
-          `SELECT count(*) AS count FROM (${reviewSelect}) WHERE review_state='awaiting_review'`,
+          `SELECT count(*) AS count FROM (${adminQuoteReviewSelect}) WHERE review_state='awaiting_review'`,
         )
         .first<{ count: number }>();
       return row?.count ?? 0;
@@ -83,7 +83,7 @@ export function createD1AdminQuoteReviewRepository(database: D1Database) {
     async find(requestId: string) {
       const row = await database
         .prepare(
-          `${reviewSelect}
+          `${adminQuoteReviewSelect}
            WHERE request.id = ?
            LIMIT 1`,
         )
@@ -134,7 +134,8 @@ export function createD1AdminQuoteReviewRepository(database: D1Database) {
     limit?: number,
     offset = 0,
   ) {
-    const statement = database.prepare(`SELECT * FROM (${reviewSelect})
+    const statement =
+      database.prepare(`SELECT * FROM (${adminQuoteReviewSelect})
       WHERE (? = 'all' OR review_state = ?)
       ORDER BY julianday(submitted_at) DESC, id DESC
       ${limit === undefined ? "" : "LIMIT ? OFFSET ?"}`);

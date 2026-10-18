@@ -2,6 +2,7 @@ import { ArrowRight, KeyRound, Mail, ShieldCheck } from "lucide-react";
 import { Form, Link, useNavigation } from "react-router";
 
 import type { EmailOtpPurpose } from "../domain/email-otp";
+import { privacyNoticePath } from "../../storefront/domain/privacy-notice";
 import { StorefrontHeader } from "../../storefront/ui/storefront-header";
 
 export interface EmailOtpActionData {
@@ -198,7 +199,9 @@ export function EmailOtpAccessPage(input: {
             </button>
           </Form>
 
-          {password ? (
+          {/* Sign-in opens on the email-code tab; customers who set a
+              password must still find the reset there. */}
+          {!register && !verify ? (
             <Link className="customer-auth-switch" to="/forgot-password">
               Forgot password?
             </Link>
@@ -242,6 +245,10 @@ export function EmailOtpAccessPage(input: {
               </Link>
             </p>
           )}
+          <p className="customer-auth-privacy">
+            We record the IP address you register and sign in from to protect
+            your account. <Link to={privacyNoticePath}>Privacy Notice</Link>
+          </p>
         </section>
       </main>
     </div>

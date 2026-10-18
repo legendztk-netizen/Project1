@@ -3200,6 +3200,18 @@ a.customer-auth-switch {
   font-weight: 700;
 }
 
+.customer-auth-privacy {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.customer-auth-privacy a {
+  color: var(--steel);
+  font-weight: 700;
+}
+
 .customer-account-panel > svg {
   color: var(--steel);
 }

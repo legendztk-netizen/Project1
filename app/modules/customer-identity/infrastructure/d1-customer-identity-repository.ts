@@ -5,6 +5,7 @@ import type {
 import type { PasswordCredentialHash } from "../domain/customer-password";
 import type { PasswordAuthorizationScope } from "../domain/password-authorization";
 import type { CustomerContactProfile } from "../domain/customer-profile";
+import type { CustomerSignInAccess } from "../domain/customer-access";
 import { customerQuoteListMergeStatements } from "../../quote-list/infrastructure/d1-customer-quote-list-merge";
 
 export interface CustomerProfile {
@@ -81,6 +82,58 @@ export class PasswordAttemptRejected extends Error {
 
 export type PasswordAttemptKind =
   "password_change" | "password_login" | "password_reset";
+
+// Records where a session was opened, only if the session row exists after
+// the earlier statements of the same batch. Registration fields are written
+// only when this batch created the profile (its created_at is this instant);
+// later sign-ins replace only the last sign-in fields.
+function signInAccessStatement(
+  database: D1Database,
+  input: {
+    access: CustomerSignInAccess;
+    now: string;
+    profileId: string;
+    sessionId: string;
+  },
+) {
+  const { access } = input;
+  return database
+    .prepare(
+      `INSERT INTO customer_access_records
+         (profile_id, registration_ip, registration_country,
+          registration_region, registration_city, last_sign_in_at,
+          last_sign_in_method, last_sign_in_ip, last_sign_in_country,
+          last_sign_in_region, last_sign_in_city)
+       SELECT p.id,
+         CASE WHEN p.created_at = ?2 THEN ?4 END,
+         CASE WHEN p.created_at = ?2 THEN ?5 END,
+         CASE WHEN p.created_at = ?2 THEN ?6 END,
+         CASE WHEN p.created_at = ?2 THEN ?7 END,
+         ?2, ?8, ?4, ?5, ?6, ?7
+       FROM customer_profiles p
+       WHERE p.id = ?1 AND EXISTS (
+         SELECT 1 FROM customer_sessions s
+         WHERE s.id = ?3 AND s.profile_id = p.id
+       )
+       ON CONFLICT(profile_id) DO UPDATE SET
+         last_sign_in_at = excluded.last_sign_in_at,
+         last_sign_in_method = excluded.last_sign_in_method,
+         last_sign_in_ip = excluded.last_sign_in_ip,
+         last_sign_in_country = excluded.last_sign_in_country,
+         last_sign_in_region = excluded.last_sign_in_region,
+         last_sign_in_city = excluded.last_sign_in_city`,
+    )
+    .bind(
+      input.profileId,
+      input.now,
+      input.sessionId,
+      access.ip,
+      access.country,
+      access.region,
+      access.city,
+      access.method,
+    );
+}
 
 export function createD1CustomerIdentityRepository(database: D1Database) {
   return {
@@ -364,6 +417,7 @@ export function createD1CustomerIdentityRepository(database: D1Database) {
     },
 
     async completeVerification(input: {
+      access: CustomerSignInAccess;
       anonymousQuoteSessionId: string | null;
       authenticate: boolean;
       challengeId: string;
@@ -501,6 +555,7 @@ export function createD1CustomerIdentityRepository(database: D1Database) {
                )`,
           )
           .bind(input.now, input.challengeId),
+        signInAccessStatement(database, input),
       ];
       let quoteListAuditResultIndex: number | null = null;
       if (input.authenticate && input.anonymousQuoteSessionId) {
@@ -644,6 +699,7 @@ export function createD1CustomerIdentityRepository(database: D1Database) {
     },
 
     async createSessionForProfile(input: {
+      access: CustomerSignInAccess;
       expiresAt: string;
       now: string;
       previousTokenDigest: string | null;
@@ -671,6 +727,7 @@ export function createD1CustomerIdentityRepository(database: D1Database) {
             input.now,
             input.expiresAt,
           ),
+        signInAccessStatement(database, input),
       ]);
       if ((results[1]?.meta.changes ?? 0) !== 1) {
         throw new Error("Customer session could not be created");
@@ -764,6 +821,7 @@ export function createD1CustomerIdentityRepository(database: D1Database) {
     },
 
     async replacePasswordWithAuthorization(input: {
+      access: CustomerSignInAccess;
       authorizationId: string;
       credential: PasswordCredentialHash;
       expiresAt: string;
@@ -856,6 +914,7 @@ export function createD1CustomerIdentityRepository(database: D1Database) {
             input.profileId,
             consumptionNonce,
           ),
+        signInAccessStatement(database, input),
       ]);
       return (
         (results[0]?.meta.changes ?? 0) === 1 &&

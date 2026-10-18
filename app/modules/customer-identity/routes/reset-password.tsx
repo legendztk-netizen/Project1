@@ -36,7 +36,7 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 }
 
 export async function action({ context, request }: Route.ActionArgs) {
-  const { env, runtime } = context.get(cloudflareContext);
+  const { cf, env, runtime } = context.get(cloudflareContext);
   requireTrustedAuthPost({
     environment: runtime.environment,
     request,
@@ -51,6 +51,7 @@ export async function action({ context, request }: Route.ActionArgs) {
     const result = await createCustomerIdentityService(
       env,
     ).replacePasswordWithAuthorization({
+      location: cf,
       newPassword: password,
       request,
     });

@@ -26,7 +26,7 @@ export function loader({ context, request }: Route.LoaderArgs) {
 }
 
 export async function action({ context, request }: Route.ActionArgs) {
-  const { env, runtime } = context.get(cloudflareContext);
+  const { cf, env, runtime } = context.get(cloudflareContext);
   const form = await request.clone().formData();
   if (form.get("intent") === "password") {
     requireTrustedAuthPost({
@@ -40,6 +40,7 @@ export async function action({ context, request }: Route.ActionArgs) {
         env,
       ).signInWithPassword({
         email,
+        location: cf,
         password: String(form.get("password") ?? ""),
         request,
       });
@@ -61,6 +62,7 @@ export async function action({ context, request }: Route.ActionArgs) {
   return handleEmailOtpAction({
     env,
     environment: runtime.environment,
+    location: cf,
     purpose: "sign_in",
     request,
   });

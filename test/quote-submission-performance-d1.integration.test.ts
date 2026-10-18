@@ -95,6 +95,13 @@ async function accountList(count: number, quantity = 100) {
     )
     .run();
   await createD1CustomerIdentityRepository(db).createSessionForProfile({
+    access: {
+      city: null,
+      country: null,
+      ip: null,
+      method: "password",
+      region: null,
+    },
     profileId: id,
     sessionId: crypto.randomUUID(),
     tokenDigest: await digestCustomerSessionToken(

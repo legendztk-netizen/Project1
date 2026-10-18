@@ -42,6 +42,10 @@ import {
   verifyCustomerPassword,
 } from "../domain/customer-password";
 import {
+  customerSignInAccess,
+  type CustomerRequestLocation,
+} from "../domain/customer-access";
+import {
   createPasswordAuthorizationCookie,
   generatePasswordAuthorizationToken,
   passwordAuthorizationLifetimeSeconds,
@@ -97,16 +101,25 @@ function addSeconds(date: Date, seconds: number) {
   return new Date(date.getTime() + seconds * 1000).toISOString();
 }
 
-function requestIp(
+function clientIp(
   request: Request,
   environment: ApplicationBindings["APP_ENV"],
 ) {
   const cloudflareIp = request.headers.get("cf-connecting-ip");
-  if (environment !== "local") return cloudflareIp ?? "unavailable";
+  if (environment !== "local") return cloudflareIp;
   return (
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    cloudflareIp ??
-    "local-development"
+    cloudflareIp
+  );
+}
+
+function requestIp(
+  request: Request,
+  environment: ApplicationBindings["APP_ENV"],
+) {
+  return (
+    clientIp(request, environment) ??
+    (environment === "local" ? "local-development" : "unavailable")
   );
 }
 
@@ -378,6 +391,7 @@ export function createCustomerIdentityService(
     async verifyOtp(input: {
       challengeId: string;
       code: string;
+      location?: CustomerRequestLocation;
       purpose: EmailOtpPurpose;
       request: Request;
     }) {
@@ -400,6 +414,11 @@ export function createCustomerIdentityService(
       const authenticate =
         input.purpose === "register" || Boolean(existingProfile);
       const completion = await repository.completeVerification({
+        access: customerSignInAccess({
+          ip: clientIp(input.request, env.APP_ENV),
+          location: input.location,
+          method: "email_code",
+        }),
         anonymousQuoteSessionId,
         authenticate,
         challengeId: challenge.id,
@@ -471,6 +490,7 @@ export function createCustomerIdentityService(
 
     async signInWithPassword(input: {
       email: string;
+      location?: CustomerRequestLocation;
       password: string;
       request: Request;
     }) {
@@ -497,6 +517,11 @@ export function createCustomerIdentityService(
       );
       const token = generateCustomerSessionToken();
       await repository.createSessionForProfile({
+        access: customerSignInAccess({
+          ip: clientIp(input.request, env.APP_ENV),
+          location: input.location,
+          method: "password",
+        }),
         expiresAt: addSeconds(instant, customerSessionLifetimeSeconds),
         now: instant.toISOString(),
         previousTokenDigest: await sessionDigestFromRequest(input.request),
@@ -634,6 +659,7 @@ export function createCustomerIdentityService(
     },
 
     async replacePasswordWithAuthorization(input: {
+      location?: CustomerRequestLocation;
       newPassword: string;
       request: Request;
     }) {
@@ -665,6 +691,11 @@ export function createCustomerIdentityService(
       });
       const token = generateCustomerSessionToken();
       const replaced = await repository.replacePasswordWithAuthorization({
+        access: customerSignInAccess({
+          ip: clientIp(input.request, env.APP_ENV),
+          location: input.location,
+          method: "password_reset",
+        }),
         authorizationId: authorization.id,
         credential: await hashCustomerPassword(password),
         expiresAt: addSeconds(instant, customerSessionLifetimeSeconds),

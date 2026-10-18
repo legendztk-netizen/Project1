@@ -52,6 +52,12 @@ const shortcuts = [
     to: "/admin/after-sales",
   },
   {
+    key: "customers",
+    title: "用户管理",
+    description: "查看客户资料、地址与登录 IP",
+    to: "/admin/customers",
+  },
+  {
     key: "settings",
     title: "商业设置",
     description: "维护公司资料与交易设置",
