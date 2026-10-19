@@ -3,9 +3,11 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { createCustomerIdentityService } from "../app/modules/customer-identity/application/customer-identity-service";
 import { customerDirectoryFilters } from "../app/modules/customer-identity/domain/customer-directory";
 import { createD1AdminCustomerDirectory } from "../app/modules/customer-identity/infrastructure/d1-admin-customer-directory";
+import { createConfirmedOrderService } from "../app/modules/proforma-invoice/application/confirmed-order-service";
 import { createD1QuoteRequestRepository } from "../app/modules/quote-request/infrastructure/d1-quote-request-repository";
 import {
   fixtureClock,
+  owner,
   seedAfterSalesOrder,
   shipShipment,
   startAfterSalesDatabase,
@@ -215,13 +217,14 @@ it("splits current Orders from delivered and fully cancelled history", async () 
   expect(customer?.historicalOrders?.map((order) => order.id).sort()).toEqual(
     [cancelled.orderId, delivered.orderId, emptied.orderId].sort(),
   );
-  // Its emptied Shipment is still planned, so the fulfillment stage never
-  // reaches delivered; every unit was delivered or cancelled all the same.
+  // Its emptied Shipment is still planned but no longer counts.
   expect(
     customer?.historicalOrders?.find((order) => order.id === emptied.orderId),
   ).toMatchObject({
     settled: true,
-    stage: "shipped",
+    stage: "delivered",
+    shipmentCount: 1,
+    shippedCount: 1,
     fullyCancelled: false,
     partiallyCancelled: true,
   });
@@ -242,6 +245,40 @@ it("splits current Orders from delivered and fully cancelled history", async () 
       active: true,
     }),
   ]);
+});
+
+it("shows an Order as delivered in the order lists when its only other Shipment was emptied by a cancellation", async () => {
+  const orders = createConfirmedOrderService(db);
+  const admin = await orders.adminList(owner, {
+    query: emptied.orderId,
+    status: "all",
+    stage: "delivered",
+    from: "",
+    to: "",
+    country: "",
+    productType: "all",
+    sort: "newest",
+    page: 1,
+  });
+  expect(admin.records).toEqual([
+    expect.objectContaining({
+      id: emptied.orderId,
+      stage: "delivered",
+      shipmentCount: 1,
+      shippedCount: 1,
+      deliveredCount: 1,
+    }),
+  ]);
+  const customer = await orders.customerList("buyer", null, "delivered");
+  expect(customer.records.map((order) => order.id).sort()).toEqual(
+    [delivered.orderId, emptied.orderId].sort(),
+  );
+  // An Order with nothing cancelled still needs every Shipment delivered.
+  expect(
+    (await orders.customerList("buyer", null, "processing")).records.map(
+      (order) => order.id,
+    ),
+  ).toContain(processing.orderId);
 });
 
 it("leaves out RFQs and Orders when the admin may not open those modules", async () => {

@@ -764,7 +764,9 @@ dispatch continues under the accepted PI and the customer receives tracking
 information after the Shipment is marked `Shipped`. In a split Order, each
 Shipment independently sends its Ready-to-Ship notification when marked ready;
 the notice identifies `Shipment X of N` and lists that Shipment's products and
-quantities without waiting for the remaining Shipments.
+quantities without waiting for the remaining Shipments. A Shipment whose every
+unit was cancelled stays planned but no longer counts toward the Order's
+progress or its shipped and delivered Shipment counts.
 _Avoid_: Preparing Items, Quality Check, In Production, Factory Link Opened,
 Production Started, automatically exposed factory activity, customer shipment
 approval
