@@ -68,10 +68,17 @@ import { createCustomerIdentityService } from "../../customer-identity/applicati
 import { createSavedConfigurationService } from "../../customer-identity/application/saved-configuration-service";
 import { QuoteListCommandRejected } from "../../quote-list/domain/anonymous-quote-list";
 import { hoseSizeLabel } from "../domain/variant-label";
+import { canonicalUrl, seoMeta } from "../domain/catalog-seo";
+import {
+  buildAHoseDescription,
+  buildAHoseEndTypes,
+  buildAHoseTitle,
+} from "../domain/page-seo";
 import { fetchCompatibleHoseEndCandidates } from "../infrastructure/compatible-hose-end-client";
 import { CatalogMedia } from "../ui/catalog-media";
 import { ClockingStage } from "../ui/clocking-stage";
 import { CompatibleHoseEndStage } from "../ui/compatible-end-a-stage";
+import { ConfiguratorGuide } from "../ui/configurator-guide";
 import { FinishedLengthStage } from "../ui/finished-length-stage";
 import { LiveAssemblyPreview } from "../ui/live-assembly-preview";
 import { AssemblyReviewStage } from "../ui/assembly-review-stage";
@@ -137,10 +144,25 @@ export async function loader({ context, request }: Route.LoaderArgs) {
     edgeCache: storefrontCatalogCache(context.get(cloudflareContext)),
   });
   const referenceRepository = createD1ConfiguratorReferenceRepository(env.DB);
-  const result = await repository.browse({ category: "hydraulic-hose" });
+  const [result, hoseEnds] = await Promise.all([
+    repository.browse({ category: "hydraulic-hose" }),
+    // Cached family summaries, enough to name the connection types the ends come in.
+    repository.browseSummaries({ category: "hose-ends" }),
+  ]);
   const hoses = result.items.filter((item) => item.productType === "hose");
   const eligibleHoses = hoses.filter(
     (item) => item.rfqEligibility === "Eligible",
+  );
+  const families = groupCatalogFamilies(eligibleHoses);
+  const endTypes = buildAHoseEndTypes(
+    hoseEnds.flatMap((family) => {
+      const selection = family.representative.variantSelection;
+      return selection?.kind === "hose_end" &&
+        selection.compatibleHoses?.length &&
+        family.interfaceGroup
+        ? [family.interfaceGroup]
+        : [];
+    }),
   );
   const requestedSku = url.searchParams.get("hose")?.trim();
   const requestedEndASku = url.searchParams.get("endA")?.trim();
@@ -250,7 +272,7 @@ export async function loader({ context, request }: Route.LoaderArgs) {
       assemblyEstimateSchedule,
       directSelection,
       clockingConvention,
-      families: groupCatalogFamilies(eligibleHoses),
+      families,
       measurementMethods,
       installedProtectionRules,
       installedProtections,
@@ -263,19 +285,20 @@ export async function loader({ context, request }: Route.LoaderArgs) {
       requestedEndASku: requestedEndASku ?? null,
       savedConfigurationContext,
       savedConfigurationError,
+      seo: {
+        canonical: canonicalUrl(env.PUBLIC_STOREFRONT_ORIGIN, "/build-a-hose"),
+        description: buildAHoseDescription(families.length, endTypes),
+        title: buildAHoseTitle(env.PUBLIC_APP_NAME),
+      },
     },
     { headers },
   );
 }
 
-export function meta() {
-  return [
-    { title: "Build a Hydraulic Hose | Hydraulic Supply" },
-    {
-      name: "description",
-      content: "Configure a hydraulic hose assembly from an exact hose SKU.",
-    },
-  ];
+export function meta({ loaderData }: Route.MetaArgs) {
+  return loaderData
+    ? seoMeta(loaderData.seo)
+    : [{ title: buildAHoseTitle("Hydraulic Supply") }];
 }
 
 function sizeLabel(item: PublicCatalogItem) {
@@ -1119,7 +1142,7 @@ export function BuildAHoseView({
         <header className="configurator-heading">
           <div>
             <span className="eyebrow">Custom hydraulic assembly</span>
-            <h1>Build a Hose</h1>
+            <h1>Custom Hydraulic Hose Builder</h1>
             <p>Start with the hose series and exact inside diameter.</p>
           </div>
           <div className="configurator-heading-actions">
@@ -1134,10 +1157,6 @@ export function BuildAHoseView({
                 {saveCommand.pending ? "Saving..." : "Save Configuration"}
               </button>
             ) : null}
-            <div className="configurator-release">
-              <span>Catalog release</span>
-              <strong>{loaderData.releaseNumber ?? "Not available"}</strong>
-            </div>
           </div>
         </header>
 
@@ -1647,6 +1666,7 @@ export function BuildAHoseView({
             ) : null}
           </>
         )}
+        <ConfiguratorGuide seriesCount={loaderData.families.length} />
       </main>
       {navigationBlocker.state === "blocked" ? (
         <UnsavedDraftExitDialog

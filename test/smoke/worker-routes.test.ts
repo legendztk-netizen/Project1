@@ -4906,8 +4906,11 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(staleConfiguredEdit).toContain(
       "This saved configuration no longer matches the current catalog",
     );
-    expect(staleConfiguredEdit).toContain("Configuration Trace");
-    expect(staleConfiguredEdit).toContain(`<dd>${draft.release_number}</dd>`);
+    // Internal reference versions such as the catalog release stay off the customer's Review.
+    expect(staleConfiguredEdit).not.toContain("Configuration Trace");
+    expect(staleConfiguredEdit).not.toContain(
+      `<dd>${draft.release_number}</dd>`,
+    );
     expect(
       runLocalD1<{ configured_snapshot_json: string; quantity: number }>(
         `SELECT configured_snapshot_json, quantity

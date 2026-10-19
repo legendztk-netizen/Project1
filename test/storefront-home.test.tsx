@@ -32,9 +32,9 @@ describe("Storefront home page", () => {
   it("leads with Build a Hose and product search", async () => {
     renderHome();
 
-    expect(
-      (await screen.findByRole("heading", { level: 1 })).textContent,
-    ).toContain("built to your length");
+    expect((await screen.findByRole("heading", { level: 1 })).textContent).toBe(
+      "Custom hydraulic hose assemblies, built to your length.",
+    );
     const hero = screen
       .getByRole("heading", { level: 1 })
       .closest("section") as HTMLElement;

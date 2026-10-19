@@ -100,6 +100,11 @@ function renderPage(
               requestedEndASku: options.requestedEndASku ?? null,
               savedConfigurationContext: null,
               savedConfigurationError: null,
+              seo: {
+                canonical: "https://customhoseco.com/build-a-hose",
+                description: "",
+                title: "",
+              },
             }}
           />
         ),
@@ -314,6 +319,37 @@ afterEach(() => {
 });
 
 describe("Build a Hose view", () => {
+  it("explains the configuration steps below the configurator", async () => {
+    renderPage([publicHoseFixture()]);
+
+    expect((await screen.findByRole("heading", { level: 1 })).textContent).toBe(
+      "Custom Hydraulic Hose Builder",
+    );
+    const guide = screen
+      .getByRole("heading", {
+        name: "How to configure a custom hydraulic hose",
+      })
+      .closest("section") as HTMLElement;
+    expect(guide.textContent).toContain("You start from one hose series");
+    expect(
+      within(guide)
+        .getAllByRole("listitem")
+        .map((step) => step.querySelector("strong")?.textContent),
+    ).toEqual([
+      "Hose.",
+      "End A.",
+      "End B.",
+      "Length.",
+      "Protection.",
+      "Review.",
+    ]);
+    expect(
+      within(guide)
+        .getByRole("link", { name: "assembly measurement guide" })
+        .getAttribute("href"),
+    ).toBe("/assembly-measurement-guide");
+  });
+
   it("allows an empty configurator to leave without a warning", async () => {
     renderPage([publicHoseFixture()]);
 
@@ -1020,7 +1056,7 @@ describe("Build a Hose view", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("reviews ordered components, versions and exposes the configured Quote List command", async () => {
+  it("reviews ordered components without internal versions and exposes the configured Quote List command", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -1063,8 +1099,14 @@ describe("Build a Hose view", () => {
     expect(within(review).getByText("72 in")).toBeTruthy();
     expect(within(review).getByText(/1828.8 mm/)).toBeTruthy();
     expect(within(review).getByText("± 1% (± 18.288 mm)")).toBeTruthy();
-    expect(within(review).getByText("Assembly estimate schedule")).toBeTruthy();
-    expect(within(review).getByText("v2")).toBeTruthy();
+    // Reference versions stay in the saved configuration, not on the customer's Review.
+    for (const internal of [
+      "Configuration Trace",
+      "Catalog release",
+      "Assembly estimate schedule",
+    ]) {
+      expect(within(review).queryByText(internal)).toBeNull();
+    }
     expect(
       (within(review).getByLabelText("Assembly quantity") as HTMLInputElement)
         .value,

@@ -68,25 +68,6 @@
   line-height: 1.5;
 }
 
-.configurator-release {
-  display: grid;
-  gap: 3px;
-  min-width: 180px;
-  padding: 11px 14px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--steel);
-}
-
-.configurator-release span {
-  color: var(--muted);
-  font-size: 0.7rem;
-}
-
-.configurator-release strong {
-  font-size: 0.82rem;
-}
-
 .configurator-progress {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -1160,16 +1141,14 @@
   cursor: pointer;
 }
 
-.assembly-review-specs,
-.assembly-review-trace dl {
+.assembly-review-specs {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0 22px;
   margin: 0;
 }
 
-.assembly-review-specs > div,
-.assembly-review-trace dl > div {
+.assembly-review-specs > div {
   display: grid;
   align-content: start;
   gap: 5px;
@@ -1177,16 +1156,14 @@
   border-bottom: 1px solid var(--line);
 }
 
-.assembly-review-specs dt,
-.assembly-review-trace dt {
+.assembly-review-specs dt {
   color: var(--muted);
   font-size: 0.66rem;
   font-weight: 800;
   text-transform: uppercase;
 }
 
-.assembly-review-specs dd,
-.assembly-review-trace dd {
+.assembly-review-specs dd {
   display: grid;
   gap: 3px;
   margin: 0;
@@ -1285,8 +1262,7 @@
 @media (max-width: 720px) {
   .protection-choice-grid,
   .application-form-grid,
-  .assembly-review-specs,
-  .assembly-review-trace dl {
+  .assembly-review-specs {
     grid-template-columns: 1fr;
   }
 
@@ -2479,4 +2455,43 @@
   font: inherit;
   font-weight: 800;
   cursor: pointer;
+}
+
+.configurator-guide {
+  max-width: 860px;
+  margin-top: 56px;
+  padding-top: 32px;
+  border-top: 1px solid var(--line);
+}
+
+.configurator-guide h2 {
+  margin: 0 0 12px;
+  font-size: 1.35rem;
+  letter-spacing: 0;
+}
+
+.configurator-guide p,
+.configurator-guide li {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.configurator-guide p {
+  margin: 0;
+}
+
+.configurator-guide ol {
+  display: grid;
+  gap: 8px;
+  margin: 18px 0 0;
+  padding-left: 22px;
+}
+
+.configurator-guide strong {
+  color: var(--ink);
+}
+
+.configurator-guide a {
+  color: var(--steel);
+  font-weight: 700;
 }
