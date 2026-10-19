@@ -6,13 +6,20 @@ import {
   type RouterContextProvider,
 } from "react-router";
 
+import { storefrontNoindex } from "./modules/storefront/domain/robots";
+import { cloudflareContext } from "#workers/context";
+
 export default async function handleRequest(
   request: Request,
   responseStatusCode: number,
   responseHeaders: Headers,
   routerContext: EntryContext,
-  _loadContext: RouterContextProvider,
+  loadContext: RouterContextProvider,
 ) {
+  const { env } = loadContext.get(cloudflareContext);
+  if (storefrontNoindex(new URL(request.url), env.ADMIN_ORIGIN)) {
+    responseHeaders.set("X-Robots-Tag", "noindex");
+  }
   let shellRendered = false;
   const userAgent = request.headers.get("user-agent");
   const body = await renderToReadableStream(

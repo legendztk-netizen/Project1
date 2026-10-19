@@ -154,8 +154,17 @@ Fittings`, `Adapters`, and `Quick Couplings`.
   (the Privacy Notice).
 - `/robots.txt` is served by the storefront: it allows all crawling and names
   the sitemap. Private pages are kept out of search results with noindex, never
-  `Disallow`, because a crawler must fetch a page to see its noindex. While the
-  origin has no robots.txt, Cloudflare serves its own comment-only file instead.
+  `Disallow`, because a crawler must fetch a page to see its noindex: `/sign-in`,
+  `/register`, `/quote-list` and `/forgot-password` are sent with
+  `X-Robots-Tag: noindex`. Redirecting pages (`/account`, `/reset-password`,
+  `/sign-out`) need nothing. While the origin has no robots.txt, Cloudflare
+  serves its own comment-only file instead.
+- The admin host runs the same Worker, so it also answers storefront paths. It
+  is not redirected; its robots.txt is `Disallow: /` and its storefront pages
+  (`/`, `/catalog`, catalog categories and families, `Build a Hose`, the
+  measurement guide, the policy pages and the private pages above) carry
+  `X-Robots-Tag: noindex`. Admin pages carry nothing extra: they answer 401 or
+  the admin sign-in form.
 - A SKU search or operator-supplied canonical link opens the correct family page
   with the exact SKU Variant preselected. The active variant's name, SKU,
   dimensions, price, and availability replace the family defaults; Quote List,
