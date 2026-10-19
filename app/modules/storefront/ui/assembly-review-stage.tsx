@@ -176,10 +176,6 @@ export function AssemblyReviewStage({
   validationIssues: DraftValidationIssue[];
 }) {
   const status = outcomeCopy[result.outcome];
-  const selectedMeasurement =
-    draft.measurementSelection?.state === "selected"
-      ? draft.measurementSelection
-      : null;
 
   return (
     <section
@@ -332,70 +328,6 @@ export function AssemblyReviewStage({
             <dt>Operating conditions</dt>
             <dd>{applicationLabel(draft)}</dd>
           </div>
-        </dl>
-      </section>
-
-      <section className="assembly-review-section assembly-review-trace">
-        <header>
-          <div>
-            <span className="eyebrow">Reference versions</span>
-            <h3>Configuration Trace</h3>
-          </div>
-        </header>
-        <dl>
-          <div>
-            <dt>Catalog release</dt>
-            <dd>{draft.catalogRelease.number}</dd>
-          </div>
-          <div>
-            <dt>Compatibility records</dt>
-            <dd>
-              {draft.endA?.compatibilityId ?? "Missing"} /{" "}
-              {draft.endB?.compatibilityId ?? "Missing"}
-            </dd>
-          </div>
-          <div>
-            <dt>Measurement registry</dt>
-            <dd>
-              {selectedMeasurement
-                ? `record v${selectedMeasurement.method.recordVersion} · diagram ${selectedMeasurement.diagram.assetVersion} · overlay ${selectedMeasurement.diagram.overlayVersion}`
-                : "Not Sure"}
-            </dd>
-          </div>
-          <div>
-            <dt>Tolerance schedule</dt>
-            <dd>
-              {draft.finishedLength
-                ? `${draft.finishedLength.tolerance.scheduleCode} v${draft.finishedLength.tolerance.scheduleVersion}`
-                : "Missing"}
-            </dd>
-          </div>
-          <div>
-            <dt>Protection registry</dt>
-            <dd>
-              {draft.installedProtection
-                ? `${draft.installedProtection.code} v${draft.installedProtection.recordVersion}`
-                : "Missing"}
-            </dd>
-          </div>
-          <div>
-            <dt>Assembly estimate schedule</dt>
-            <dd>
-              {draft.lengthReferencePricing?.scheduleRecordVersion === null ||
-              draft.lengthReferencePricing?.scheduleRecordVersion === undefined
-                ? "Unavailable"
-                : `v${draft.lengthReferencePricing.scheduleRecordVersion}`}
-            </dd>
-          </div>
-          {draft.clocking ? (
-            <div>
-              <dt>Clocking convention</dt>
-              <dd>
-                M08 record v{draft.clocking.convention.recordVersion} · renderer{" "}
-                {draft.clocking.convention.rendererVersion}
-              </dd>
-            </div>
-          ) : null}
         </dl>
       </section>
 

@@ -147,7 +147,10 @@ Fittings`, `Adapters`, and `Quick Couplings`.
   `Custom Hydraulic Hose — Configure & Quote | Hydraulic Supply` and its H1
   `Custom Hydraulic Hose Builder`. It has a canonical link to its bare
   URL, and below the configurator an indexable "How to configure a custom
-  hydraulic hose" section describes its steps in text.
+  hydraulic hose" section describes its steps in text. Internal reference
+  versions (the Catalog Release number, compatibility records and registry
+  versions) stay in the saved configuration but are never shown to the
+  customer, neither in the configurator header nor in Review.
 - Search indexes SKU, product name and aliases, SAE and EN standards, interface
   families including JIC, NPT, ORFS, and BSP, dash size, angle, and working
   pressure. Search and category filters use Catalog Master Data.

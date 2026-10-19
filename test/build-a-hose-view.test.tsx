@@ -1056,7 +1056,7 @@ describe("Build a Hose view", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("reviews ordered components, versions and exposes the configured Quote List command", async () => {
+  it("reviews ordered components without internal versions and exposes the configured Quote List command", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -1099,8 +1099,14 @@ describe("Build a Hose view", () => {
     expect(within(review).getByText("72 in")).toBeTruthy();
     expect(within(review).getByText(/1828.8 mm/)).toBeTruthy();
     expect(within(review).getByText("± 1% (± 18.288 mm)")).toBeTruthy();
-    expect(within(review).getByText("Assembly estimate schedule")).toBeTruthy();
-    expect(within(review).getByText("v2")).toBeTruthy();
+    // Reference versions stay in the saved configuration, not on the customer's Review.
+    for (const internal of [
+      "Configuration Trace",
+      "Catalog release",
+      "Assembly estimate schedule",
+    ]) {
+      expect(within(review).queryByText(internal)).toBeNull();
+    }
     expect(
       (within(review).getByLabelText("Assembly quantity") as HTMLInputElement)
         .value,
