@@ -35,8 +35,17 @@ export const customerOrderStages = [
 ] as const;
 export type CustomerOrderStage = (typeof customerOrderStages)[number];
 
+// An approved cancellation of everything in a Shipment removes its allocations
+// but leaves the Shipment planned. Such a Shipment carries nothing, so it does
+// not count toward the Order's progress; one not yet allocated still does.
+const notEmptiedByCancellationSql = `(EXISTS(SELECT 1 FROM order_shipment_allocations allocation
+    WHERE allocation.shipment_id=shipment.id)
+  OR NOT EXISTS(SELECT 1 FROM order_cancelled_quantities cancelled
+    WHERE cancelled.order_id=shipment.order_id AND cancelled.shipment_id=shipment.id))`;
+
 export function shipmentCountSql(condition?: string) {
-  return `(SELECT count(*) FROM order_shipments shipment WHERE shipment.order_id=o.id${condition ? ` AND ${condition}` : ""})`;
+  return `(SELECT count(*) FROM order_shipments shipment
+    WHERE shipment.order_id=o.id AND ${notEmptiedByCancellationSql}${condition ? ` AND ${condition}` : ""})`;
 }
 
 // Order fulfillment stage shared by the customer and Admin order lists. A
@@ -313,7 +322,7 @@ export function createConfirmedOrderService(db: D1Database) {
           json_extract(o.snapshot_json,'$.destination.countryCode') AS country_code,
           coalesce(guard.held,0) AS held,
           (SELECT count(*) FROM confirmed_order_lines line WHERE line.order_id=o.id) AS line_count,
-          (SELECT count(*) FROM order_shipments shipment WHERE shipment.order_id=o.id) AS shipment_count,
+          ${shipmentCountSql()} AS shipment_count,
           ${shipmentCountSql("shipment.status IN ('shipped','delivered')")} AS shipped_count,
           ${shipmentCountSql("shipment.status='delivered'")} AS delivered_count,
           ${orderStageSql} AS stage,
