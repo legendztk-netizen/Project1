@@ -145,6 +145,19 @@ Fittings`, `Adapters`, and `Quick Couplings`.
   for every size SKU. Hose Dash, connection and hose-tail Dash, adapter size
   pairs, coupling Body Dash, Port Dash, and comparable dimensions are selected
   as exact SKU Variants within the applicable family.
+- Category and Catalog Product Family pages carry a title, a meta description
+  and a canonical link to their bare URL, so `?back=`, `?page=`, `?q=` and
+  `?sku=` links never count as separate pages. Everything is generated from
+  the published catalog; no count, size or pressure is typed in.
+  - A family title is the family name, plus the category noun (Hydraulic Hose,
+    Hose End, Adapter, Quick Coupler) when the name lacks it, then
+    `| Hydraulic Supply`. Past 60 characters the noun goes, then a bracketed
+    note such as `(R1)`; if it still does not fit the full title stays, because
+    model names are never cut. Hose End titles run longer for that reason.
+  - Descriptions run 150–160 characters and are made only of real data: sizes,
+    pressures, temperatures, standards, threads and compatible hoses. Missing
+    or placeholder values (`N/A`) are left out, nothing is padded, and only
+    hose pages say cut to length.
 - `/sitemap.xml` is built on each request from the published Catalog Product
   Families, so a family is listed as soon as it is online. It lists `/`,
   `/catalog`, the four sidebar categories, every family page, `Build a Hose`,
@@ -154,8 +167,17 @@ Fittings`, `Adapters`, and `Quick Couplings`.
   (the Privacy Notice).
 - `/robots.txt` is served by the storefront: it allows all crawling and names
   the sitemap. Private pages are kept out of search results with noindex, never
-  `Disallow`, because a crawler must fetch a page to see its noindex. While the
-  origin has no robots.txt, Cloudflare serves its own comment-only file instead.
+  `Disallow`, because a crawler must fetch a page to see its noindex: `/sign-in`,
+  `/register`, `/quote-list` and `/forgot-password` are sent with
+  `X-Robots-Tag: noindex`. Redirecting pages (`/account`, `/reset-password`,
+  `/sign-out`) need nothing. While the origin has no robots.txt, Cloudflare
+  serves its own comment-only file instead.
+- The admin host runs the same Worker, so it also answers storefront paths. It
+  is not redirected; its robots.txt is `Disallow: /` and its storefront pages
+  (`/`, `/catalog`, catalog categories and families, `Build a Hose`, the
+  measurement guide, the policy pages and the private pages above) carry
+  `X-Robots-Tag: noindex`. Admin pages carry nothing extra: they answer 401 or
+  the admin sign-in form.
 - A SKU search or operator-supplied canonical link opens the correct family page
   with the exact SKU Variant preselected. The active variant's name, SKU,
   dimensions, price, and availability replace the family defaults; Quote List,
