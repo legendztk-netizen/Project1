@@ -144,14 +144,18 @@ export async function loader({ context, request }: Route.LoaderArgs) {
     edgeCache: storefrontCatalogCache(context.get(cloudflareContext)),
   });
   const referenceRepository = createD1ConfiguratorReferenceRepository(env.DB);
-  const [result, hoseEnds] = await Promise.all([
+  const [result, hoseEnds, assemblySkus] = await Promise.all([
     repository.browse({ category: "hydraulic-hose" }),
     // Cached family summaries, enough to name the connection types the ends come in.
     repository.browseSummaries({ category: "hose-ends" }),
+    repository.assemblyHoseSkus(),
   ]);
   const hoses = result.items.filter((item) => item.productType === "hose");
+  const assemblyHoseSkus = new Set(assemblySkus);
+  // A hose size no hose end fits cannot become an assembly, so it is not offered here.
   const eligibleHoses = hoses.filter(
-    (item) => item.rfqEligibility === "Eligible",
+    (item) =>
+      item.rfqEligibility === "Eligible" && assemblyHoseSkus.has(item.sku),
   );
   const families = groupCatalogFamilies(eligibleHoses);
   const endTypes = buildAHoseEndTypes(
@@ -224,7 +228,10 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 
   let directSelection: DirectSelectionState = { kind: "none" };
   if (requestedSku) {
-    if (requested && !requested.canAddToQuote) {
+    if (
+      requested &&
+      (!requested.canAddToQuote || !assemblyHoseSkus.has(requested.sku))
+    ) {
       directSelection = { kind: "unavailable", sku: requestedSku };
     } else if (requested) {
       directSelection = { kind: "current", sku: requestedSku };

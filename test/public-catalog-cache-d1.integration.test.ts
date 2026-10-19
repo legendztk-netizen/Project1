@@ -342,3 +342,46 @@ it("does not persist data read across a publication change, and survives an edge
   ).toEqual(after);
   await Promise.all(writes);
 });
+
+it("caches the hoses Build a Hose may offer as one small entry", async () => {
+  const storage = new Map<string, Response>();
+  const writes: Promise<unknown>[] = [];
+  const edgeCache = {
+    origin: "https://customhoseco.com",
+    cache: {
+      match: async (request: RequestInfo | URL) =>
+        storage.get((request as Request).url)?.clone(),
+      put: async (request: RequestInfo | URL, response: Response) => {
+        storage.set((request as Request).url, response.clone());
+      },
+    },
+    waitUntil: (promise: Promise<unknown>) => {
+      writes.push(promise);
+    },
+  };
+  const expected = await createD1PublicCatalogRepository(db).assemblyHoseSkus();
+  // No assemblies are generated in this baseline, so the list may be empty; which hoses it holds
+  // is checked against End A in one-piece-assemblies-d1.integration.test.ts.
+  expect(new Set(expected).size).toBe(expected.length);
+  expect(
+    await createD1PublicCatalogRepository(db, {
+      sharedCache: true,
+      edgeCache,
+    }).assemblyHoseSkus(),
+  ).toEqual(expected);
+  await Promise.all(writes);
+  const entry = [...storage].find(([url]) =>
+    url.includes("assembly-hose-skus"),
+  );
+  expect(JSON.parse(await entry![1].clone().text())).toEqual(expected);
+  clearPublicCatalogCache(); // Another isolate reads the cached list, not the compatibility view.
+  const next = meterD1(db);
+  expect(
+    await createD1PublicCatalogRepository(next.binding, {
+      sharedCache: true,
+      edgeCache,
+    }).assemblyHoseSkus(),
+  ).toEqual(expected);
+  expect(next.metrics.rowsRead).toBeLessThan(50);
+  expect(next.metrics.catalogCache.edge).toBe(1);
+});

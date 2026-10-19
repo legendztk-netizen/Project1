@@ -182,9 +182,6 @@ export function HomePage({ appName }: { appName: string }) {
       <main>
         <section className="home-hero" aria-labelledby="home-hero-title">
           <div className="home-hero-copy">
-            <span className="home-eyebrow">
-              Custom hydraulic hose assemblies
-            </span>
             <h1 id="home-hero-title">
               Custom hydraulic hose assemblies, built to your length.
             </h1>

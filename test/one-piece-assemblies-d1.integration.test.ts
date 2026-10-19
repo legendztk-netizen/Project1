@@ -242,6 +242,10 @@ it("pairs one-piece Hose Ends by accepted Fitting Line without a ferrule", async
   expect(biteTheWire?.family.familyName).toBe(
     "JIC 37° Female Swivel 0° Straight Bite-the-Wire Hose End",
   );
+
+  // Build a Hose offers this hose because End A has a fitting for it.
+  expect(candidates.length).toBeGreaterThan(0);
+  expect(await catalog.assemblyHoseSkus()).toContain(hose);
 });
 
 it("regenerates when a hose accepts another Fitting Line or an end changes line", async () => {
