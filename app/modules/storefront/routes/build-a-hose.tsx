@@ -1157,10 +1157,6 @@ export function BuildAHoseView({
                 {saveCommand.pending ? "Saving..." : "Save Configuration"}
               </button>
             ) : null}
-            <div className="configurator-release">
-              <span>Catalog release</span>
-              <strong>{loaderData.releaseNumber ?? "Not available"}</strong>
-            </div>
           </div>
         </header>
 

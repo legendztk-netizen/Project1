@@ -68,25 +68,6 @@
   line-height: 1.5;
 }
 
-.configurator-release {
-  display: grid;
-  gap: 3px;
-  min-width: 180px;
-  padding: 11px 14px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--steel);
-}
-
-.configurator-release span {
-  color: var(--muted);
-  font-size: 0.7rem;
-}
-
-.configurator-release strong {
-  font-size: 0.82rem;
-}
-
 .configurator-progress {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
