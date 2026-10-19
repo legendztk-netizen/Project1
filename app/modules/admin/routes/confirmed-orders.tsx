@@ -10,6 +10,12 @@ import { data, Form, Link, type LoaderFunctionArgs } from "react-router";
 import { confirmedOrders, piPrivateHeaders } from "#workers/proforma-invoice";
 import { requireAdminRequestContext } from "../infrastructure/admin-request-context";
 import { AdminNavigation } from "../ui/admin-navigation";
+import {
+  formatAdminUsd,
+  orderStageLabels,
+  orderStageText,
+} from "../ui/order-display";
+import { choiceParam, isoDateParam } from "../../shared/domain/search-params";
 import type { AdminOrderFilters } from "../../proforma-invoice/application/confirmed-order-service";
 import { formatPiDate } from "../../proforma-invoice/domain/proforma-invoice";
 import { hoseMediaPath } from "../../storefront/ui/catalog-media";
@@ -26,36 +32,20 @@ const stageOptions = [
   "shipped",
   "delivered",
 ] as const;
-const stageLabels = {
-  processing: "待备妥",
-  ready: "已备妥 · 待发货",
-  shipped: "已发货",
-  delivered: "已送达",
-} as const;
 const productOptions = ["all", "standard", "assembly", "hose"] as const;
 const sortOptions = ["newest", "oldest", "amount_desc", "amount_asc"] as const;
 
-function choice<T extends string>(
-  value: string | null,
-  options: readonly T[],
-  fallback: T,
-): T {
-  return options.find((option) => option === value) ?? fallback;
-}
-
 function filtersFromUrl(url: URL): AdminOrderFilters {
   const params = url.searchParams;
-  const date = (value: string | null) =>
-    value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "";
   return {
     query: (params.get("q") ?? "").trim().slice(0, 150),
-    status: choice(params.get("status"), statusOptions, "all"),
-    stage: choice(params.get("stage"), stageOptions, "all"),
-    from: date(params.get("from")),
-    to: date(params.get("to")),
+    status: choiceParam(params.get("status"), statusOptions, "all"),
+    stage: choiceParam(params.get("stage"), stageOptions, "all"),
+    from: isoDateParam(params.get("from")),
+    to: isoDateParam(params.get("to")),
     country: (params.get("country") ?? "").trim().slice(0, 3),
-    productType: choice(params.get("product"), productOptions, "all"),
-    sort: choice(params.get("sort"), sortOptions, "newest"),
+    productType: choiceParam(params.get("product"), productOptions, "all"),
+    sort: choiceParam(params.get("sort"), sortOptions, "newest"),
     page: Math.max(1, Number(params.get("page")) || 1),
   };
 }
@@ -66,8 +56,6 @@ export async function loader({ context, request }: LoaderFunctionArgs) {
   const result = await confirmedOrders(env).adminList(adminIdentity, filters);
   return data({ filters, ...result }, { headers: headers() });
 }
-
-const money = (cents: number) => `USD ${(cents / 100).toFixed(2)}`;
 
 export default function ConfirmedOrders({
   loaderData,
@@ -169,10 +157,10 @@ export default function ConfirmedOrders({
             <span>订单状态</span>
             <select name="stage" defaultValue={filters.stage}>
               <option value="all">全部</option>
-              <option value="processing">{stageLabels.processing}</option>
-              <option value="ready">{stageLabels.ready}</option>
+              <option value="processing">{orderStageLabels.processing}</option>
+              <option value="ready">{orderStageLabels.ready}</option>
               <option value="shipped">已发货（含部分发货）</option>
-              <option value="delivered">{stageLabels.delivered}</option>
+              <option value="delivered">{orderStageLabels.delivered}</option>
             </select>
           </label>
           <label>
@@ -290,7 +278,7 @@ export default function ConfirmedOrders({
                       </div>
                     </td>
                     <td data-label="总金额">
-                      <strong>{money(order.totalCents)}</strong>
+                      <strong>{formatAdminUsd(order.totalCents)}</strong>
                     </td>
                     <td data-label="目的地">{order.countryCode ?? "未记录"}</td>
                     <td data-label="发货计划">
@@ -312,13 +300,10 @@ export default function ConfirmedOrders({
                       >
                         {order.status === "Payment Review Hold"
                           ? "付款复核锁定"
-                          : order.stage === "shipped" &&
-                              order.shippedCount < order.shipmentCount
-                            ? `部分发货 ${order.shippedCount}/${order.shipmentCount}`
-                            : stageLabels[order.stage]}
+                          : orderStageText(order)}
                       </span>
                       {order.status === "Payment Review Hold" && (
-                        <small>{stageLabels[order.stage]}</small>
+                        <small>{orderStageLabels[order.stage]}</small>
                       )}
                     </td>
                     <td data-label="确认时间" className="orders-confirmed-time">

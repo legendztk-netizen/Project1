@@ -2,6 +2,10 @@ import type { AdminIdentity } from "#workers/admin-access";
 import { ownedQuoteRequestWhere } from "../../quote-request/infrastructure/d1-quote-request-repository";
 import { quoteNotificationOutboxStatement } from "../../quote-notifications/infrastructure/d1-quote-notifications";
 import { piSha256 } from "../../proforma-invoice/domain/proforma-invoice";
+import {
+  lineCancelledQuantitySql,
+  linePhysicalQuantitySql,
+} from "../infrastructure/d1-shipment-initialization";
 import { Temporal } from "@js-temporal/polyfill";
 import {
   actualChinaDate,
@@ -422,11 +426,8 @@ export function createShipmentMilestoneService(
              SELECT 1 FROM confirmed_order_lines l WHERE l.order_id=s.order_id
                AND coalesce((SELECT a.physical_quantity FROM order_shipment_allocations a
                  WHERE a.shipment_id=s.id AND a.line_id=l.line_id),0)
-               != CASE WHEN l.line_kind='length_based_hose'
-                 THEN json_extract(l.snapshot_json,'$.lengthOrder.pieceCount')
-                 ELSE json_extract(l.snapshot_json,'$.quantity') END
-                 -coalesce((SELECT sum(c.physical_quantity) FROM order_cancelled_quantities c
-                   WHERE c.order_id=l.order_id AND c.line_id=l.line_id),0))))`;
+               != ${linePhysicalQuantitySql("l")}
+                 -${lineCancelledQuantitySql("l")})))`;
     try {
       await db.batch([
         db
@@ -771,10 +772,8 @@ export function createShipmentMilestoneService(
         expected = (
           await db
             .prepare(
-              `SELECT line_id AS lineId,CASE WHEN line_kind='length_based_hose'
-                 THEN json_extract(snapshot_json,'$.lengthOrder.pieceCount')
-                 ELSE json_extract(snapshot_json,'$.quantity') END AS physicalQuantity
-               FROM confirmed_order_lines WHERE order_id=?`,
+              `SELECT l.line_id AS lineId,${linePhysicalQuantitySql("l")} AS physicalQuantity
+               FROM confirmed_order_lines l WHERE l.order_id=?`,
             )
             .bind(input.orderId)
             .all<{ lineId: string; physicalQuantity: number }>()

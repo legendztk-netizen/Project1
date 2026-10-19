@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 
 import { BrandMark } from "../../shared/ui/brand-mark";
+import { privacyNoticePath } from "../domain/privacy-notice";
 import "../styles/storefront-footer.css";
 
 const footerColumns = [
@@ -28,7 +29,7 @@ const footerColumns = [
       { label: "Register", to: "/register" },
       { label: "My Account", to: "/account" },
       { label: "Returns Policy", to: "/policies/returns" },
-      { label: "Privacy Notice", to: "/policies/privacy" },
+      { label: "Privacy Notice", to: privacyNoticePath },
     ],
   },
 ];

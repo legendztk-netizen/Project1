@@ -1,5 +1,5 @@
 import { KeyRound } from "lucide-react";
-import { data, Form, redirect, useNavigation } from "react-router";
+import { data, Form, Link, redirect, useNavigation } from "react-router";
 import {
   customerPasswordMinimumLength,
   customerPasswordPattern,
@@ -16,6 +16,7 @@ import {
 } from "../application/customer-identity-service";
 import { requireTrustedAuthPost } from "../application/trusted-auth-request";
 import { clearPasswordAuthorizationCookie } from "../domain/password-authorization";
+import { privacyNoticePath } from "../../storefront/domain/privacy-notice";
 import { StorefrontHeader } from "../../storefront/ui/storefront-header";
 
 function value(form: FormData, key: string) {
@@ -131,6 +132,15 @@ export default function ResetPassword({
               Save new password
             </button>
           </Form>
+          {/* Only a Forgot password reset signs in; Account Security resets
+              happen while already signed in. */}
+          {loaderData.authorization.scope === "password_reset" ? (
+            <p className="customer-auth-privacy">
+              Saving signs you in. We record the IP address you sign in from to
+              protect your account.{" "}
+              <Link to={privacyNoticePath}>Privacy Notice</Link>
+            </p>
+          ) : null}
         </section>
       </main>
     </div>

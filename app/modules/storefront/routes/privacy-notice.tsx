@@ -6,12 +6,12 @@ import { cloudflareContext } from "#workers/context";
 import {
   privacyContactEmail,
   privacyNoticeCookies,
+  privacyNoticeOperator,
   privacyNoticeUpdated,
 } from "../domain/privacy-notice";
+import { createD1SellerCommercialSettingsRepository } from "../../seller-settings/infrastructure/d1-seller-commercial-settings-repository";
 import { StorefrontHeader } from "../ui/storefront-header";
 import "../styles/measurement-guide.css";
-
-const seller = "Hangzhou Rongyao Trading Co., Ltd.";
 
 const sections: ReadonlyArray<{ title: string; items: readonly string[] }> = [
   {
@@ -21,10 +21,11 @@ const sections: ReadonlyArray<{ title: string; items: readonly string[] }> = [
       "Company: the legal name, trade name, country and registration or tax ID you give when you buy for a company.",
       "Delivery addresses: recipient name, email, phone number and address.",
       "Quotes and orders: the products and hose assembly specifications you choose, your Quote List and saved configurations, RFQs, Proforma Invoices, orders, shipments, cancellations, returns and refunds.",
-      "Proforma Invoice acceptance: the name and business title you type, the time, your IP address and your browser's user agent, kept as evidence of the acceptance.",
+      "Proforma Invoice acceptance: the name you type, the time, your IP address and your browser's user agent, kept as evidence of the acceptance.",
       "Messages and files: what you send us through the website or by replying to our email, including attached photos and documents.",
       "Refund details: the bank account or PayPal account you give us for a refund. We store these encrypted.",
       "Payments: you pay by bank transfer or PayPal outside this website. We record the amount, channel and payment reference we receive. We never collect card numbers.",
+      "Order requests: when you report a problem or request a return, request or withdraw a cancellation, confirm or dispute a refund, give refund account details, or request a delivery address or shipping plan change, we record your IP address with the request.",
       "Sign-in: the IP address you registered from, and the time, method and IP address of your most recent sign-in, each with the approximate country, region and city that Cloudflare associates with the IP address. We use this to protect your account and to investigate misuse.",
       "Rate limiting: when you request a sign-in code or enter a password, we keep a keyed one-way digest of your IP address to stop repeated attempts. It cannot be turned back into the address.",
     ],
@@ -61,7 +62,7 @@ const sections: ReadonlyArray<{ title: string; items: readonly string[] }> = [
     title: "How long we keep it",
     items: [
       "Account, company, address and sign-in information: for as long as your account exists.",
-      "RFQs, Proforma Invoices and their acceptance evidence, orders, payments, refunds and related messages: as business records for tax, accounting and dispute purposes, also after an account is closed.",
+      "RFQs, Proforma Invoices and their acceptance evidence, orders, payments, refunds, order requests and related messages: as business records for tax, accounting and dispute purposes, also after an account is closed.",
       "Request logs that include IP addresses: up to 7 days.",
     ],
   },
@@ -105,8 +106,15 @@ const sections: ReadonlyArray<{ title: string; items: readonly string[] }> = [
   },
 ];
 
-export function loader({ context }: Route.LoaderArgs) {
-  return { appName: context.get(cloudflareContext).env.PUBLIC_APP_NAME };
+export async function loader({ context }: Route.LoaderArgs) {
+  const { env } = context.get(cloudflareContext);
+  const identity = await createD1SellerCommercialSettingsRepository(
+    env.DB,
+  ).findCurrentIdentity();
+  return {
+    appName: env.PUBLIC_APP_NAME,
+    operator: privacyNoticeOperator(identity?.registeredAddressEn ?? null),
+  };
 }
 
 export function meta({ loaderData }: Route.MetaArgs) {
@@ -132,14 +140,14 @@ export default function PrivacyNotice({ loaderData }: Route.ComponentProps) {
           <span className="eyebrow">Policy</span>
           <h1>Privacy Notice</h1>
           <p>
-            {loaderData.appName} at customhoseco.com is operated by {seller},
-            Hangzhou, Zhejiang, China (&ldquo;we&rdquo;). This notice explains
-            what personal information we collect on this website, why, and the
+            {loaderData.appName} at customhoseco.com is operated by{" "}
+            {loaderData.operator} (&ldquo;we&rdquo;). This notice explains what
+            personal information we collect on this website, why, and the
             choices you have. Last updated {privacyNoticeUpdated}.
           </p>
         </header>
         {sections.map((section) => (
-          <section className="returns-policy-section" key={section.title}>
+          <section className="policy-section" key={section.title}>
             <h2>{section.title}</h2>
             <ul>
               {section.items.map((item) => (
@@ -148,10 +156,10 @@ export default function PrivacyNotice({ loaderData }: Route.ComponentProps) {
             </ul>
           </section>
         ))}
-        <section className="returns-policy-section">
+        <section className="policy-section">
           <h2>Contact</h2>
           <p>
-            {seller}, Hangzhou, Zhejiang, China.{" "}
+            {loaderData.operator}.{" "}
             <a href={`mailto:${privacyContactEmail}`}>{privacyContactEmail}</a>
           </p>
         </section>

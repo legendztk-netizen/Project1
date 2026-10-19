@@ -101,7 +101,8 @@ function addSeconds(date: Date, seconds: number) {
   return new Date(date.getTime() + seconds * 1000).toISOString();
 }
 
-function clientIp(
+/** The visitor's IP address, or null when the request does not carry one. */
+function clientIpAddress(
   request: Request,
   environment: ApplicationBindings["APP_ENV"],
 ) {
@@ -113,12 +114,13 @@ function clientIp(
   );
 }
 
-function requestIp(
+/** The value whose keyed digest rate-limits requests; never empty. */
+function rateLimitIpKey(
   request: Request,
   environment: ApplicationBindings["APP_ENV"],
 ) {
   return (
-    clientIp(request, environment) ??
+    clientIpAddress(request, environment) ??
     (environment === "local" ? "local-development" : "unavailable")
   );
 }
@@ -189,7 +191,7 @@ export function createCustomerIdentityService(
 
     const ipDigest = await digestIdentityValue(
       "otp-request-ip",
-      requestIp(input.request, env.APP_ENV),
+      rateLimitIpKey(input.request, env.APP_ENV),
     );
     const recent = await repository.countRecentRequests({
       email,
@@ -336,7 +338,7 @@ export function createCustomerIdentityService(
       ),
       ipDigest: await digestIdentityValue(
         `${input.attemptKind}-ip`,
-        requestIp(input.request, env.APP_ENV),
+        rateLimitIpKey(input.request, env.APP_ENV),
       ),
     };
   }
@@ -415,7 +417,7 @@ export function createCustomerIdentityService(
         input.purpose === "register" || Boolean(existingProfile);
       const completion = await repository.completeVerification({
         access: customerSignInAccess({
-          ip: clientIp(input.request, env.APP_ENV),
+          ip: clientIpAddress(input.request, env.APP_ENV),
           location: input.location,
           method: "email_code",
         }),
@@ -518,7 +520,7 @@ export function createCustomerIdentityService(
       const token = generateCustomerSessionToken();
       await repository.createSessionForProfile({
         access: customerSignInAccess({
-          ip: clientIp(input.request, env.APP_ENV),
+          ip: clientIpAddress(input.request, env.APP_ENV),
           location: input.location,
           method: "password",
         }),
@@ -691,11 +693,16 @@ export function createCustomerIdentityService(
       });
       const token = generateCustomerSessionToken();
       const replaced = await repository.replacePasswordWithAuthorization({
-        access: customerSignInAccess({
-          ip: clientIp(input.request, env.APP_ENV),
-          location: input.location,
-          method: "password_reset",
-        }),
+        // A reset from Account Security happens while signed in; only a reset
+        // from Forgot password signs the customer in.
+        access:
+          authorization.scope === "password_reset"
+            ? customerSignInAccess({
+                ip: clientIpAddress(input.request, env.APP_ENV),
+                location: input.location,
+                method: "password_reset",
+              })
+            : null,
         authorizationId: authorization.id,
         credential: await hashCustomerPassword(password),
         expiresAt: addSeconds(instant, customerSessionLifetimeSeconds),

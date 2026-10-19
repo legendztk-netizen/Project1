@@ -1,3 +1,5 @@
+import { choiceParam, isoDateParam } from "../../shared/domain/search-params";
+
 export const customerDirectorySorts = [
   "registered_desc",
   "registered_asc",
@@ -25,27 +27,37 @@ export interface CustomerDirectoryFilters {
   page: number;
 }
 
-function choice<T extends string>(
-  value: string | null,
-  options: readonly T[],
-): T {
-  return options.find((option) => option === value) ?? options[0];
+/** The unfiltered first page, newest registrations first. */
+export const customerDirectoryDefaults: CustomerDirectoryFilters = {
+  query: "",
+  from: "",
+  to: "",
+  type: "all",
+  country: "",
+  orders: "all",
+  sort: "registered_desc",
+  page: 1,
+};
+
+/** Whether anything narrows the list; sort and page do not. */
+export function customerDirectoryIsFiltered(filters: CustomerDirectoryFilters) {
+  return (["query", "from", "to", "type", "country", "orders"] as const).some(
+    (key) => filters[key] !== customerDirectoryDefaults[key],
+  );
 }
 
 export function customerDirectoryFilters(
   params: URLSearchParams,
 ): CustomerDirectoryFilters {
-  const date = (value: string | null) =>
-    value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "";
   const country = (params.get("country") ?? "").trim().toUpperCase();
   return {
     query: (params.get("q") ?? "").trim().slice(0, 150),
-    from: date(params.get("from")),
-    to: date(params.get("to")),
-    type: choice(params.get("type"), customerDirectoryTypes),
+    from: isoDateParam(params.get("from")),
+    to: isoDateParam(params.get("to")),
+    type: choiceParam(params.get("type"), customerDirectoryTypes),
     country: /^[A-Z0-9]{2}$/.test(country) ? country : "",
-    orders: choice(params.get("orders"), customerDirectoryOrderFilters),
-    sort: choice(params.get("sort"), customerDirectorySorts),
+    orders: choiceParam(params.get("orders"), customerDirectoryOrderFilters),
+    sort: choiceParam(params.get("sort"), customerDirectorySorts),
     page: Math.max(1, Math.floor(Number(params.get("page"))) || 1),
   };
 }
@@ -57,14 +69,19 @@ export function customerDirectorySearch(
 ) {
   const next = { ...filters, ...changes };
   const params = new URLSearchParams();
-  if (next.query) params.set("q", next.query);
-  if (next.from) params.set("from", next.from);
-  if (next.to) params.set("to", next.to);
-  if (next.type !== "all") params.set("type", next.type);
-  if (next.country) params.set("country", next.country);
-  if (next.orders !== "all") params.set("orders", next.orders);
-  if (next.sort !== "registered_desc") params.set("sort", next.sort);
-  if (next.page > 1) params.set("page", String(next.page));
+  const names = {
+    query: "q",
+    from: "from",
+    to: "to",
+    type: "type",
+    country: "country",
+    orders: "orders",
+    sort: "sort",
+    page: "page",
+  } as const;
+  for (const key of Object.keys(names) as (keyof typeof names)[])
+    if (next[key] !== customerDirectoryDefaults[key])
+      params.set(names[key], String(next[key]));
   const search = params.toString();
   return search ? `?${search}` : "";
 }

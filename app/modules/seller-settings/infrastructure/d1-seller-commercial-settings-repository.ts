@@ -112,6 +112,8 @@ export function createD1SellerCommercialSettingsRepository(
   }
 
   return {
+    findCurrentIdentity: currentSellerIdentity,
+
     async findSnapshot() {
       const [identity, identityHistory, payments, returnLocations] =
         await Promise.all([

@@ -821,7 +821,7 @@ export function createD1CustomerIdentityRepository(database: D1Database) {
     },
 
     async replacePasswordWithAuthorization(input: {
-      access: CustomerSignInAccess;
+      access: CustomerSignInAccess | null;
       authorizationId: string;
       credential: PasswordCredentialHash;
       expiresAt: string;
@@ -914,7 +914,14 @@ export function createD1CustomerIdentityRepository(database: D1Database) {
             input.profileId,
             consumptionNonce,
           ),
-        signInAccessStatement(database, input),
+        ...(input.access
+          ? [
+              signInAccessStatement(database, {
+                ...input,
+                access: input.access,
+              }),
+            ]
+          : []),
       ]);
       return (
         (results[0]?.meta.changes ?? 0) === 1 &&

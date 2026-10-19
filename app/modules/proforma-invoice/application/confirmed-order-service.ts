@@ -4,7 +4,11 @@ import {
   piSha256,
   type ProformaInvoiceSnapshot,
 } from "../domain/proforma-invoice";
-import { shipmentInitializationStatements } from "../../shipment/infrastructure/d1-shipment-initialization";
+import {
+  lineCancelledQuantitySql,
+  linePhysicalQuantitySql,
+  shipmentInitializationStatements,
+} from "../../shipment/infrastructure/d1-shipment-initialization";
 
 interface OrderRow {
   id: string;
@@ -52,11 +56,20 @@ export const orderStageSql = `CASE
 // True when approved Cancellation Resolutions cancelled every physical unit of
 // every Order line. The Confirmed Order itself never changes, so this is derived.
 export const orderFullyCancelledSql = `NOT EXISTS(SELECT 1 FROM confirmed_order_lines line
-  WHERE line.order_id=o.id AND CASE WHEN line.line_kind='length_based_hose'
-      THEN json_extract(line.snapshot_json,'$.lengthOrder.pieceCount')
-      ELSE json_extract(line.snapshot_json,'$.quantity') END
-    > coalesce((SELECT sum(cancelled.physical_quantity) FROM order_cancelled_quantities cancelled
-      WHERE cancelled.order_id=line.order_id AND cancelled.line_id=line.line_id),0))`;
+  WHERE line.order_id=o.id
+    AND ${linePhysicalQuantitySql("line")} > ${lineCancelledQuantitySql("line")})`;
+
+// True when every physical unit of every Order line was delivered or cancelled.
+// Counted per unit rather than per Shipment: a Shipment emptied by a
+// cancellation keeps its planned status.
+export const orderSettledSql = `NOT EXISTS(SELECT 1 FROM confirmed_order_lines line
+  WHERE line.order_id=o.id
+    AND ${linePhysicalQuantitySql("line")} > ${lineCancelledQuantitySql("line")}
+      + coalesce((SELECT sum(allocation.physical_quantity)
+        FROM order_shipment_allocations allocation
+        JOIN order_shipments shipment ON shipment.id=allocation.shipment_id
+        WHERE allocation.order_id=line.order_id AND allocation.line_id=line.line_id
+          AND shipment.status='delivered'),0))`;
 
 export interface AdminOrderFilters {
   query: string;

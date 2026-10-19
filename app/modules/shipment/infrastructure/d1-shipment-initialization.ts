@@ -1,3 +1,18 @@
+/** A confirmed Order line's physical units: hose pieces, otherwise its quantity. */
+export function linePhysicalQuantitySql(alias: string) {
+  return `CASE WHEN ${alias}.line_kind='length_based_hose'
+      THEN json_extract(${alias}.snapshot_json,'$.lengthOrder.pieceCount')
+      ELSE json_extract(${alias}.snapshot_json,'$.quantity') END`;
+}
+
+/** Units of a confirmed Order line removed by Cancellation Resolutions. */
+export function lineCancelledQuantitySql(alias: string) {
+  return `coalesce((SELECT sum(cancelled.physical_quantity)
+      FROM order_cancelled_quantities cancelled
+      WHERE cancelled.order_id=${alias}.order_id
+        AND cancelled.line_id=${alias}.line_id),0)`;
+}
+
 export function pendingShipmentAllocationStatement(
   db: D1Database,
   orderId: string,
@@ -53,10 +68,6 @@ export function shipmentInitializationStatements(
   orderId: string,
   now: string,
 ) {
-  const physicalQuantitySql = (alias: string) =>
-    `CASE WHEN ${alias}.line_kind='length_based_hose'
-      THEN json_extract(${alias}.snapshot_json,'$.lengthOrder.pieceCount')
-      ELSE json_extract(${alias}.snapshot_json,'$.quantity') END`;
   return [
     db
       .prepare(
@@ -74,13 +85,13 @@ export function shipmentInitializationStatements(
                  WHERE hold.order_id=o.id AND hold.active=1)
                AND EXISTS(SELECT 1 FROM confirmed_order_lines l WHERE l.order_id=o.id)
                AND NOT EXISTS(SELECT 1 FROM confirmed_order_lines l WHERE l.order_id=o.id
-                 AND (typeof(${physicalQuantitySql("l")})!='integer' OR ${physicalQuantitySql("l")}<=0))
+                 AND (typeof(${linePhysicalQuantitySql("l")})!='integer' OR ${linePhysicalQuantitySql("l")}<=0))
              THEN 'ready' ELSE 'review' END,
            CASE WHEN json_array_length(o.snapshot_json,'$.terms.shipmentGroups')>0 THEN 'accepted_structured'
              WHEN json_extract(o.snapshot_json,'$.terms.shipmentMode')='together'
                AND EXISTS(SELECT 1 FROM confirmed_order_lines l WHERE l.order_id=o.id)
                AND NOT EXISTS(SELECT 1 FROM confirmed_order_lines l WHERE l.order_id=o.id
-                 AND (typeof(${physicalQuantitySql("l")})!='integer' OR ${physicalQuantitySql("l")}<=0))
+                 AND (typeof(${linePhysicalQuantitySql("l")})!='integer' OR ${linePhysicalQuantitySql("l")}<=0))
              THEN 'accepted_together' ELSE 'historical_review' END,
            coalesce(json_extract(o.snapshot_json,'$.terms.splitPlan'),''),?,?
          FROM confirmed_orders o WHERE o.id=? ON CONFLICT(order_id) DO NOTHING`,
@@ -120,7 +131,7 @@ export function shipmentInitializationStatements(
     db
       .prepare(
         `INSERT INTO order_shipment_allocations(shipment_id,order_id,line_id,physical_quantity)
-         SELECT s.id,l.order_id,l.line_id,${physicalQuantitySql("l")}
+         SELECT s.id,l.order_id,l.line_id,${linePhysicalQuantitySql("l")}
          FROM confirmed_order_lines l JOIN order_shipments s
            ON s.order_id=l.order_id AND s.group_key='together'
          JOIN order_fulfillment_plans p ON p.order_id=l.order_id
@@ -146,7 +157,7 @@ export function shipmentInitializationStatements(
              AND coalesce((SELECT sum(a.physical_quantity)
                FROM order_shipment_allocations a
                WHERE a.order_id=l.order_id AND a.line_id=l.line_id),0)
-               != ${physicalQuantitySql("l")})`,
+               != ${linePhysicalQuantitySql("l")})`,
       )
       .bind(now, orderId, orderId, orderId, orderId, orderId),
     db

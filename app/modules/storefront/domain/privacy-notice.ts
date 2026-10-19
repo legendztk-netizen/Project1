@@ -1,3 +1,4 @@
+import { SELLER_LEGAL_NAME } from "../../seller-settings/domain/seller-commercial-settings";
 import {
   customerSessionCookieName,
   customerSessionLifetimeSeconds,
@@ -13,7 +14,20 @@ import {
 
 export const privacyNoticePath = "/policies/privacy";
 export const privacyContactEmail = "privacy@customhoseco.com";
-export const privacyNoticeUpdated = "Oct 18, 2026";
+export const privacyNoticeUpdated = "Oct 19, 2026";
+
+/**
+ * The Seller of Record with its configured registered address on one line.
+ * An unset address shows the legal name alone.
+ */
+export function privacyNoticeOperator(registeredAddressEn: string | null) {
+  const address = (registeredAddressEn ?? "")
+    .split(/[\n,]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(", ");
+  return address ? `${SELLER_LEGAL_NAME}, ${address}` : SELLER_LEGAL_NAME;
+}
 
 function lifetime(seconds: number) {
   const days = seconds / 86_400;

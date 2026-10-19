@@ -92,3 +92,63 @@ it("lets a customer who forgot their password set a new one from an email code a
     }),
   ).rejects.toBeInstanceOf(CustomerIdentityError);
 }, 60_000);
+
+it("does not record a sign-in when a signed-in customer resets their password from Account Security", async () => {
+  let clock = new Date("2026-10-18T06:00:00.000Z");
+  const service = createCustomerIdentityService(
+    {
+      APP_ENV: "production",
+      DB: db,
+      PRODUCTION_SESSION_SIGNING_KEY: "test-only-session-signing-key",
+    } as never,
+    {
+      deliver: async () => undefined,
+      now: () => clock,
+      otp: () => "135790",
+    },
+  );
+  const request = (ip: string, cookie?: string) =>
+    new Request("https://customhoseco.com/account/security", {
+      headers: { "cf-connecting-ip": ip, ...(cookie ? { cookie } : {}) },
+    });
+  const email = "buyer@example.test";
+  const signedIn = await service.signInWithPassword({
+    email,
+    password: "Hydraulic2026",
+    request: request("198.51.100.1"),
+  });
+  const session = signedIn.setCookie.split(";")[0];
+  const lastSignIn = () =>
+    db
+      .prepare(
+        `SELECT last_sign_in_at,last_sign_in_method,last_sign_in_ip
+         FROM customer_access_records WHERE profile_id='buyer'`,
+      )
+      .first();
+  const before = await lastSignIn();
+  expect(before).toEqual({
+    last_sign_in_at: "2026-10-18T06:00:00.000Z",
+    last_sign_in_method: "password",
+    last_sign_in_ip: "198.51.100.1",
+  });
+
+  clock = new Date("2026-10-18T07:00:00.000Z");
+  const challenge = await service.requestPasswordAuthorizationOtp({
+    request: request("198.51.100.2", session),
+    scope: "password_change",
+  });
+  const verified = await service.verifyPasswordAuthorizationOtp({
+    challengeId: challenge.challengeId,
+    code: "135790",
+    request: request("198.51.100.2", session),
+    scope: "password_change",
+  });
+  await service.replacePasswordWithAuthorization({
+    newPassword: "Hydraulic2027",
+    request: request(
+      "198.51.100.2",
+      `${session}; ${verified.setCookie.split(";")[0]}`,
+    ),
+  });
+  expect(await lastSignIn()).toEqual(before);
+}, 60_000);

@@ -13,10 +13,13 @@ import { AdminNavigation } from "../ui/admin-navigation";
 import {
   accessLocation,
   beijingDate,
-  customerMoney,
   signInMethodLabels,
 } from "../ui/customer-directory-format";
-import { createD1AdminCustomerDirectory } from "../../customer-identity/infrastructure/d1-admin-customer-directory";
+import { formatAdminUsd, orderStageText } from "../ui/order-display";
+import {
+  createD1AdminCustomerDirectory,
+  customerDetailListLimit,
+} from "../../customer-identity/infrastructure/d1-admin-customer-directory";
 import {
   adminQuoteReviewLabels,
   formatBeijingDateTime,
@@ -48,20 +51,22 @@ export async function loader({ context, params }: Route.LoaderArgs) {
 type Customer = Route.ComponentProps["loaderData"]["customer"];
 type Order = NonNullable<Customer["currentOrders"]>[number];
 
-const stageLabels = {
-  processing: "待备妥",
-  ready: "已备妥 · 待发货",
-  shipped: "已发货",
-  delivered: "已送达",
-} as const;
-
 function orderStatus(order: Order) {
   if (order.fullyCancelled) return "已全部取消";
-  const stage =
-    order.stage === "shipped" && order.shippedCount < order.shipmentCount
-      ? `部分发货 ${order.shippedCount}/${order.shipmentCount}`
-      : stageLabels[order.stage];
+  // Every unit was delivered or cancelled, even if a Shipment emptied by a
+  // cancellation still shows as planned.
+  if (order.settled)
+    return order.partiallyCancelled ? "已送达 · 部分取消" : "已送达";
+  const stage = orderStageText(order);
   return order.held ? `付款复核锁定 · ${stage}` : stage;
+}
+
+function ListLimitNote({ shown, total }: { shown: number; total: number }) {
+  return total > shown ? (
+    <p className="customer-detail-hint">
+      共 {total} 条，仅显示最近 {customerDetailListLimit} 条。
+    </p>
+  ) : null;
 }
 
 function OrderTable({ orders, empty }: { orders: Order[]; empty: string }) {
@@ -87,7 +92,7 @@ function OrderTable({ orders, empty }: { orders: Order[]; empty: string }) {
                 </Link>
               </td>
               <td data-label="询价编号">{order.referenceNumber}</td>
-              <td data-label="金额">{customerMoney(order.totalCents)}</td>
+              <td data-label="金额">{formatAdminUsd(order.totalCents)}</td>
               <td data-label="状态">
                 {orderStatus(order)}
                 {order.cancellationPending && <small>取消申请待处理</small>}
@@ -157,21 +162,11 @@ export default function CustomerDetail({ loaderData }: Route.ComponentProps) {
   const company = customer.organizations.find(
     (organization) => organization.active,
   );
-  const country =
-    company?.countryCode ??
-    (
-      customer.addresses.find((address) => address.selected) ??
-      customer.addresses[0]
-    )?.countryCode ??
-    null;
-  const orders =
-    customer.currentOrders && customer.historicalOrders
-      ? [...customer.currentOrders, ...customer.historicalOrders]
-      : null;
+  const { stats } = customer;
   const counts: Partial<Record<Tab, number>> = {
     addresses: customer.addresses.length,
-    quotes: customer.quotes?.length,
-    orders: orders?.length,
+    quotes: stats.quoteCount ?? undefined,
+    orders: stats.orderCount ?? undefined,
   };
   const registrationLocation = accessLocation(customer.registration.location);
   const lastSignInLocation = accessLocation(customer.lastSignIn.location);
@@ -194,8 +189,10 @@ export default function CustomerDetail({ loaderData }: Route.ComponentProps) {
                 <span className="customer-detail-badge">
                   {company ? company.legalName : "个人"}
                 </span>
-                {country && (
-                  <span className="customer-detail-badge">{country}</span>
+                {customer.countryCode && (
+                  <span className="customer-detail-badge">
+                    {customer.countryCode}
+                  </span>
                 )}
               </p>
             </div>
@@ -207,19 +204,15 @@ export default function CustomerDetail({ loaderData }: Route.ComponentProps) {
                 ? beijingDate(customer.lastSignIn.at)
                 : "—"}
             </Fact>
-            {customer.quotes && (
-              <Fact label="询价">{customer.quotes.length}</Fact>
+            {stats.quoteCount !== null && (
+              <Fact label="询价">{stats.quoteCount}</Fact>
             )}
-            {customer.currentOrders && (
-              <Fact label="当前订单">{customer.currentOrders.length}</Fact>
+            {stats.currentOrderCount !== null && (
+              <Fact label="当前订单">{stats.currentOrderCount}</Fact>
             )}
-            {orders && (
+            {stats.confirmedCents !== null && (
               <Fact label="累计成交金额">
-                {customerMoney(
-                  orders
-                    .filter((order) => !order.fullyCancelled)
-                    .reduce((sum, order) => sum + order.totalCents, 0),
-                )}
+                {formatAdminUsd(stats.confirmedCents)}
               </Fact>
             )}
           </dl>
@@ -381,40 +374,46 @@ export default function CustomerDetail({ loaderData }: Route.ComponentProps) {
                 需要「询价与 PI」权限才能查看此客户的询价。
               </p>
             ) : customer.quotes.length ? (
-              <div className="customer-directory-scroll">
-                <table className="customer-directory-table customer-detail-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">询价编号</th>
-                      <th scope="col">购买身份</th>
-                      <th scope="col">状态</th>
-                      <th scope="col">提交时间</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {customer.quotes.map((quote) => (
-                      <tr key={quote.id}>
-                        <td data-label="询价编号">
-                          <Link
-                            to={`/admin/quotes/${encodeURIComponent(quote.id)}`}
-                          >
-                            {quote.referenceNumber}
-                          </Link>
-                        </td>
-                        <td data-label="购买身份">
-                          {quote.organization ? "公司" : "个人"}
-                        </td>
-                        <td data-label="状态">
-                          {adminQuoteReviewLabels[quote.reviewState]}
-                        </td>
-                        <td data-label="提交时间">
-                          {formatBeijingDateTime(quote.submittedAt)}
-                        </td>
+              <>
+                <ListLimitNote
+                  shown={customer.quotes.length}
+                  total={stats.quoteCount ?? 0}
+                />
+                <div className="customer-directory-scroll">
+                  <table className="customer-directory-table customer-detail-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">询价编号</th>
+                        <th scope="col">购买身份</th>
+                        <th scope="col">状态</th>
+                        <th scope="col">提交时间</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {customer.quotes.map((quote) => (
+                        <tr key={quote.id}>
+                          <td data-label="询价编号">
+                            <Link
+                              to={`/admin/quotes/${encodeURIComponent(quote.id)}`}
+                            >
+                              {quote.referenceNumber}
+                            </Link>
+                          </td>
+                          <td data-label="购买身份">
+                            {quote.organization ? "公司" : "个人"}
+                          </td>
+                          <td data-label="状态">
+                            {adminQuoteReviewLabels[quote.reviewState]}
+                          </td>
+                          <td data-label="提交时间">
+                            {formatBeijingDateTime(quote.submittedAt)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             ) : (
               <p className="customer-detail-empty">还没有提交询价。</p>
             ))}
@@ -427,16 +426,24 @@ export default function CustomerDetail({ loaderData }: Route.ComponentProps) {
               </p>
             ) : (
               <>
-                <h2>当前订单（{customer.currentOrders.length}）</h2>
+                <ListLimitNote
+                  shown={
+                    customer.currentOrders.length +
+                    customer.historicalOrders.length
+                  }
+                  total={stats.orderCount ?? 0}
+                />
+                <h2>当前订单（{stats.currentOrderCount}）</h2>
                 <OrderTable
                   empty="没有进行中的订单。"
                   orders={customer.currentOrders}
                 />
                 <h2 className="customer-detail-subheading">
-                  历史订单（{customer.historicalOrders.length}）
+                  历史订单（
+                  {(stats.orderCount ?? 0) - (stats.currentOrderCount ?? 0)}）
                 </h2>
                 <p className="customer-detail-hint">
-                  已全部送达或已全部取消的订单。
+                  每件商品都已送达或已取消的订单。
                 </p>
                 <OrderTable
                   empty="还没有已完成的订单。"

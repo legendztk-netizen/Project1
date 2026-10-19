@@ -1,19 +1,21 @@
 export type CustomerSignInMethod = "email_code" | "password" | "password_reset";
 
-/** Cloudflare's approximate location of the client IP address. */
-export interface CustomerRequestLocation {
-  city?: string | null;
-  country?: string | null;
-  region?: string | null;
+/** Cloudflare's approximate location of an IP address. */
+export interface IpLocation {
+  country: string | null;
+  region: string | null;
+  city: string | null;
 }
 
+/** The location fields as Cloudflare's `request.cf` provides them. */
+export type CustomerRequestLocation = {
+  [Field in keyof IpLocation]?: string | null;
+};
+
 /** Where a new customer session was opened from (ADR 0059). */
-export interface CustomerSignInAccess {
-  city: string | null;
-  country: string | null;
+export interface CustomerSignInAccess extends IpLocation {
   ip: string | null;
   method: CustomerSignInMethod;
-  region: string | null;
 }
 
 function bounded(value: string | null | undefined, maximum: number) {
