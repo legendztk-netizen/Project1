@@ -20,6 +20,8 @@ export default [
     "media/catalog/:mediaVersionId/:variant",
     "modules/storefront/routes/catalog-main-image-resource.ts",
   ),
+  route("sitemap.xml", "modules/storefront/routes/sitemap-resource.ts"),
+  route("robots.txt", "modules/storefront/routes/robots-resource.ts"),
   route("build-a-hose", "modules/storefront/routes/build-a-hose.tsx"),
   route(
     "api/configurator/compatible-end-a",

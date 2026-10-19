@@ -145,6 +145,17 @@ Fittings`, `Adapters`, and `Quick Couplings`.
   for every size SKU. Hose Dash, connection and hose-tail Dash, adapter size
   pairs, coupling Body Dash, Port Dash, and comparable dimensions are selected
   as exact SKU Variants within the applicable family.
+- `/sitemap.xml` is built on each request from the published Catalog Product
+  Families, so a family is listed as soon as it is online. It lists `/`,
+  `/catalog`, the four sidebar categories, every family page, `Build a Hose`,
+  the measurement guide and the policy pages, all as bare paths: no search,
+  pagination or `?back=` URLs, and no sign-in, account, Quote List or admin
+  pages. A `<lastmod>` appears only where the page carries a real update date
+  (the Privacy Notice).
+- `/robots.txt` is served by the storefront: it allows all crawling and names
+  the sitemap. Private pages are kept out of search results with noindex, never
+  `Disallow`, because a crawler must fetch a page to see its noindex. While the
+  origin has no robots.txt, Cloudflare serves its own comment-only file instead.
 - A SKU search or operator-supplied canonical link opens the correct family page
   with the exact SKU Variant preselected. The active variant's name, SKU,
   dimensions, price, and availability replace the family defaults; Quote List,
