@@ -100,6 +100,11 @@ function renderPage(
               requestedEndASku: options.requestedEndASku ?? null,
               savedConfigurationContext: null,
               savedConfigurationError: null,
+              seo: {
+                canonical: "https://customhoseco.com/build-a-hose",
+                description: "",
+                title: "",
+              },
             }}
           />
         ),
@@ -314,6 +319,37 @@ afterEach(() => {
 });
 
 describe("Build a Hose view", () => {
+  it("explains the configuration steps below the configurator", async () => {
+    renderPage([publicHoseFixture()]);
+
+    expect((await screen.findByRole("heading", { level: 1 })).textContent).toBe(
+      "Custom Hydraulic Hose Builder",
+    );
+    const guide = screen
+      .getByRole("heading", {
+        name: "How to configure a custom hydraulic hose",
+      })
+      .closest("section") as HTMLElement;
+    expect(guide.textContent).toContain("You start from one hose series");
+    expect(
+      within(guide)
+        .getAllByRole("listitem")
+        .map((step) => step.querySelector("strong")?.textContent),
+    ).toEqual([
+      "Hose.",
+      "End A.",
+      "End B.",
+      "Length.",
+      "Protection.",
+      "Review.",
+    ]);
+    expect(
+      within(guide)
+        .getByRole("link", { name: "assembly measurement guide" })
+        .getAttribute("href"),
+    ).toBe("/assembly-measurement-guide");
+  });
+
   it("allows an empty configurator to leave without a warning", async () => {
     renderPage([publicHoseFixture()]);
 

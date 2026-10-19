@@ -185,7 +185,9 @@ export function HomePage({ appName }: { appName: string }) {
             <span className="home-eyebrow">
               Custom hydraulic hose assemblies
             </span>
-            <h1 id="home-hero-title">Hydraulic hose, built to your length.</h1>
+            <h1 id="home-hero-title">
+              Custom hydraulic hose assemblies, built to your length.
+            </h1>
             <p>
               Choose the hose, pick both ends and set the length. Every assembly
               is made to order to your exact specification.

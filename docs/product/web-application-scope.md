@@ -138,6 +138,16 @@ Fittings`, `Adapters`, and `Quick Couplings`.
 - The storefront home page (`/`) is a marketing landing page whose first
   viewport provides direct access to `Build a Hose` and product search (ADR
   0053). Product browsing and search live at `/catalog`.
+- The home page leads search results with the product, not the brand: its
+  title is `Hydraulic Hose Assembly — Made to Length | Hydraulic Supply` and
+  its description counts the published hose series and hose sizes. Those are
+  hose sizes, not assembly sizes, because not every hose size has a compatible
+  fitting. `Build a Hose` keeps a different lead phrase so the two pages do
+  not compete for one phrase: its title is
+  `Custom Hydraulic Hose — Configure & Quote | Hydraulic Supply` and its H1
+  `Custom Hydraulic Hose Builder`. It has a canonical link to its bare
+  URL, and below the configurator an indexable "How to configure a custom
+  hydraulic hose" section describes its steps in text.
 - Search indexes SKU, product name and aliases, SAE and EN standards, interface
   families including JIC, NPT, ORFS, and BSP, dash size, angle, and working
   pressure. Search and category filters use Catalog Master Data.

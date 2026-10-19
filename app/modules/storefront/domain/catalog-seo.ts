@@ -116,7 +116,7 @@ function distinct<T>(values: Iterable<T>) {
 }
 
 /** `a`, `a and b`, `a, b and c`. */
-function listText(values: string[], conjunction = "and") {
+export function listText(values: string[], conjunction = "and") {
   return values.length < 2
     ? (values[0] ?? "")
     : `${values.slice(0, -1).join(", ")} ${conjunction} ${values.at(-1)}`;
@@ -493,7 +493,7 @@ function hoseSeriesList(families: PublicCatalogFamily[]) {
 }
 
 /** The listed connection names the data actually has, so a title never names a missing type. */
-function presentTypes(
+export function presentTypes(
   candidates: Array<[label: string, pattern: RegExp]>,
   names: string[],
 ) {
