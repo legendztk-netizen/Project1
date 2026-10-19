@@ -70,7 +70,7 @@ export default function ReturnsPolicy() {
           </p>
         </header>
         {sections.map((section) => (
-          <section className="returns-policy-section" key={section.title}>
+          <section className="policy-section" key={section.title}>
             <h2>{section.title}</h2>
             <ul>
               {section.items.map((item) => (

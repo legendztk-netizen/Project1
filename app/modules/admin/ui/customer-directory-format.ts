@@ -1,4 +1,7 @@
-import type { CustomerSignInMethod } from "../../customer-identity/domain/customer-access";
+import type {
+  CustomerSignInMethod,
+  IpLocation,
+} from "../../customer-identity/domain/customer-access";
 import { formatBeijingDateTime } from "../../quote-review/domain/admin-quote-review";
 
 export const signInMethodLabels: Record<CustomerSignInMethod, string> = {
@@ -12,20 +15,10 @@ export function beijingDate(value: string) {
 }
 
 /** Cloudflare's approximate location of an IP address, e.g. `US · Texas · Houston`. */
-export function accessLocation(location: {
-  country: string | null;
-  region: string | null;
-  city: string | null;
-}) {
+export function accessLocation(location: IpLocation) {
   return (
     [location.country, location.region, location.city]
       .filter(Boolean)
       .join(" · ") || null
   );
 }
-
-export const customerMoney = (cents: number) =>
-  `USD ${(cents / 100).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;

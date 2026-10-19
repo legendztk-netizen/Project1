@@ -17,6 +17,7 @@ let dispose: () => Promise<void>;
 let processing: SeededOrder;
 let delivered: SeededOrder;
 let cancelled: SeededOrder;
+let emptied: SeededOrder;
 
 const all = { orders: true, quotes: true };
 const filters = (params: Record<string, string> = {}) =>
@@ -34,6 +35,13 @@ beforeAll(async () => {
       deliveredDate: "2026-09-28",
     });
   cancelled = await seedAfterSalesOrder(db, "cd3");
+  // The second Shipment is delivered and everything in the first is cancelled,
+  // which leaves the first Shipment planned with nothing allocated to it.
+  emptied = await seedAfterSalesOrder(db, "cd4");
+  await shipShipment(db, emptied.orderId, emptied.shipments.second, {
+    handoffAt: "2026-09-25T02:00:00.000Z",
+    deliveredDate: "2026-09-28",
+  });
   const now = fixtureClock;
   await db.batch([
     // A real full cancellation needs both the customer and the exceptional
@@ -68,6 +76,36 @@ beforeAll(async () => {
          FROM confirmed_order_lines WHERE order_id=?1`,
       )
       .bind(cancelled.orderId),
+    db.prepare("DROP TRIGGER order_shipment_allocation_no_delete"),
+    db
+      .prepare(
+        `INSERT INTO order_cancellation_requests
+           (id,order_id,kind,origin,status,actor_id,reason,
+            submission_command_id,submission_hash,created_at,updated_at)
+         VALUES ('cd4-cancel',?1,'exceptional','support','resolved','test',
+           'Cancelled','cd4-cancel-command','hash',?2,?2)`,
+      )
+      .bind(emptied.orderId, now),
+    db
+      .prepare(
+        `INSERT INTO order_cancellation_resolutions
+           (id,request_id,order_id,outcome,customer_reason,lines_json,
+            financial_json,actor_id,decided_at,command_id,command_hash)
+         VALUES ('cd4-resolution','cd4-cancel',?1,'approved','Cancelled','[]',
+           '{}','test',?2,'cd4-resolution-command','hash')`,
+      )
+      .bind(emptied.orderId, now),
+    db
+      .prepare(
+        `INSERT INTO order_cancelled_quantities
+           (resolution_id,order_id,line_id,shipment_id,physical_quantity)
+         SELECT 'cd4-resolution',order_id,line_id,shipment_id,physical_quantity
+         FROM order_shipment_allocations WHERE shipment_id=?1`,
+      )
+      .bind(emptied.shipments.first),
+    db
+      .prepare("DELETE FROM order_shipment_allocations WHERE shipment_id=?1")
+      .bind(emptied.shipments.first),
     db
       .prepare(
         `INSERT INTO customer_organizations
@@ -140,7 +178,7 @@ it("counts the RFQs each customer sees in the Personal Center, including organiz
   const { records } = await directory().list(filters(), all);
   const ownedByBuyer =
     await createD1QuoteRequestRepository(db).listOwned("buyer");
-  expect(ownedByBuyer).toHaveLength(4);
+  expect(ownedByBuyer).toHaveLength(5);
   expect(records.find((record) => record.id === "buyer")).toMatchObject({
     organizationName: "Acme Hydraulics LLC",
     countryCode: "CA",
@@ -154,11 +192,19 @@ it("counts the RFQs each customer sees in the Personal Center, including organiz
   });
 });
 
-it("totals confirmed Orders without the fully cancelled one", async () => {
+it("totals confirmed Orders without the fully cancelled one, the same in the list and the detail", async () => {
   const { records } = await directory().list(filters(), all);
+  const total =
+    processing.totalCents + delivered.totalCents + emptied.totalCents;
   expect(records.find((record) => record.id === "buyer")?.confirmedCents).toBe(
-    processing.totalCents + delivered.totalCents,
+    total,
   );
+  expect((await directory().read("buyer", all))?.stats).toEqual({
+    quoteCount: 5,
+    orderCount: 4,
+    currentOrderCount: 1,
+    confirmedCents: total,
+  });
 });
 
 it("splits current Orders from delivered and fully cancelled history", async () => {
@@ -167,14 +213,25 @@ it("splits current Orders from delivered and fully cancelled history", async () 
     processing.orderId,
   ]);
   expect(customer?.historicalOrders?.map((order) => order.id).sort()).toEqual(
-    [cancelled.orderId, delivered.orderId].sort(),
+    [cancelled.orderId, delivered.orderId, emptied.orderId].sort(),
   );
+  // Its emptied Shipment is still planned, so the fulfillment stage never
+  // reaches delivered; every unit was delivered or cancelled all the same.
+  expect(
+    customer?.historicalOrders?.find((order) => order.id === emptied.orderId),
+  ).toMatchObject({
+    settled: true,
+    stage: "shipped",
+    fullyCancelled: false,
+    partiallyCancelled: true,
+  });
   expect(
     customer?.historicalOrders?.find((order) => order.id === cancelled.orderId),
   ).toMatchObject({ fullyCancelled: true });
   expect(
     customer?.historicalOrders?.find((order) => order.id === delivered.orderId),
   ).toMatchObject({ fullyCancelled: false, stage: "delivered" });
+  expect(customer?.countryCode).toBe("CA");
   expect(customer?.quotes?.map((quote) => quote.referenceNumber)).toContain(
     "RFQ-ACME-1",
   );
@@ -198,6 +255,12 @@ it("leaves out RFQs and Orders when the admin may not open those modules", async
     quotes: null,
     currentOrders: null,
     historicalOrders: null,
+    stats: {
+      quoteCount: null,
+      orderCount: null,
+      currentOrderCount: null,
+      confirmedCents: null,
+    },
   });
 });
 

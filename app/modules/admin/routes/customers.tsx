@@ -5,14 +5,17 @@ import type { Route } from "./+types/customers";
 import { customerDirectoryGrants } from "../domain/admin-module-access";
 import { requireAdminRequestContext } from "../infrastructure/admin-request-context";
 import { AdminNavigation } from "../ui/admin-navigation";
-import { beijingDate, customerMoney } from "../ui/customer-directory-format";
+import { beijingDate } from "../ui/customer-directory-format";
+import { formatAdminUsd } from "../ui/order-display";
 import {
   ColumnResizer,
   useResizableColumns,
   type ResizableColumn,
 } from "../ui/resizable-columns";
 import {
+  customerDirectoryDefaults,
   customerDirectoryFilters,
+  customerDirectoryIsFiltered,
   customerDirectorySearch,
 } from "../../customer-identity/domain/customer-directory";
 import { createD1AdminCustomerDirectory } from "../../customer-identity/infrastructure/d1-admin-customer-directory";
@@ -54,13 +57,7 @@ export default function Customers({ loaderData }: Route.ComponentProps) {
     loaderData;
   const url = (changes: Parameters<typeof customerDirectorySearch>[1]) =>
     `${basePath}${customerDirectorySearch(filters, changes)}`;
-  const filtered =
-    !!filters.query ||
-    !!filters.from ||
-    !!filters.to ||
-    !!filters.country ||
-    filters.type !== "all" ||
-    filters.orders !== "all";
+  const filtered = customerDirectoryIsFiltered(filters);
   const ascending = filters.sort === "registered_asc";
   const columns: ResizableColumn[] = [
     { id: "email", label: "邮箱", width: 230, min: 140 },
@@ -157,14 +154,10 @@ export default function Customers({ loaderData }: Route.ComponentProps) {
             {filtered && (
               <Link
                 className="button button-secondary"
-                to={`${basePath}${customerDirectorySearch(filters, {
-                  query: "",
-                  from: "",
-                  to: "",
-                  type: "all",
-                  country: "",
-                  orders: "all",
-                  page: 1,
+                // Reset keeps the chosen sort order.
+                to={`${basePath}${customerDirectorySearch({
+                  ...customerDirectoryDefaults,
+                  sort: filters.sort,
                 })}`}
               >
                 <RotateCcw size={16} aria-hidden="true" /> 重置
@@ -308,7 +301,7 @@ export default function Customers({ loaderData }: Route.ComponentProps) {
                     )}
                     {grants.orders && (
                       <td data-label="累计成交金额">
-                        {customerMoney(customer.confirmedCents ?? 0)}
+                        {formatAdminUsd(customer.confirmedCents ?? 0)}
                       </td>
                     )}
                   </tr>

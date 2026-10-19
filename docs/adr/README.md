@@ -18,4 +18,4 @@ database field inventories, or deployment instructions.
 | [0056](0056-use-one-piece-crimp-fittings-paired-by-fitting-line.md)                | One-piece crimp fittings paired by Fitting Line; no ferrules           |
 | [0057](0057-derive-adapter-end-threads-from-a-reference-chart.md)                  | Adapter End Threads derived from a reference chart in code             |
 | [0058](0058-run-only-production-on-the-former-preview-data.md)                     | Only production runs on Cloudflare, on the former preview D1 and R2    |
-| [0059](0059-record-registration-and-last-sign-in-ip-for-the-customer-directory.md) | Read-only Customer Directory with registration and last sign-in IP     |
+| [0059](0059-record-registration-and-last-sign-in-ip-for-the-customer-directory.md) | Raw registration and last sign-in IP for the Customer Directory        |

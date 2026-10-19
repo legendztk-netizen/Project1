@@ -1,7 +1,9 @@
 import { expect, it } from "vitest";
 
 import {
+  customerDirectoryDefaults,
   customerDirectoryFilters,
+  customerDirectoryIsFiltered,
   customerDirectorySearch,
 } from "../app/modules/customer-identity/domain/customer-directory";
 
@@ -38,4 +40,21 @@ it("writes only non-default filters into the query string", () => {
     customerDirectorySearch(filters, { sort: "registered_asc", page: 3 }),
   ).toBe("?type=individual&sort=registered_asc&page=3");
   expect(customerDirectorySearch(filters, { type: "all" })).toBe("");
+});
+
+it("counts only narrowing filters as filtered, not sort or page", () => {
+  expect(customerDirectoryIsFiltered(customerDirectoryDefaults)).toBe(false);
+  expect(
+    customerDirectoryIsFiltered({
+      ...customerDirectoryDefaults,
+      sort: "registered_asc",
+      page: 3,
+    }),
+  ).toBe(false);
+  expect(
+    customerDirectoryIsFiltered({
+      ...customerDirectoryDefaults,
+      to: "2026-10-01",
+    }),
+  ).toBe(true);
 });

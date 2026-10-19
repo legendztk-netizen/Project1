@@ -41,3 +41,9 @@ module grants. Read-only notification access allows only opening authorized
 notifications and updating one's own read state. Successful password verification
 releases its own reserved login attempts; it never clears other requests'
 shared-IP failures, and concurrent failures remain limited atomically.
+
+Follow-up decision, 2026-10-18: the read-only Customer Directory (用户管理) is
+a separate module (`customers`). Existing subaccounts receive no grant
+automatically. Its RFQ and Order sections, counts and the has-Orders filter
+also require the `quotes` or `orders` grant, so a `customers` grant never
+reveals data those modules would deny. Its IP recording is ADR 0059.

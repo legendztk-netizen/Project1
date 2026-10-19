@@ -1,15 +1,21 @@
 import {
   orderFullyCancelledSql,
+  orderSettledSql,
   orderStageSql,
   shipmentCountSql,
   type CustomerOrderStage,
 } from "../../proforma-invoice/application/confirmed-order-service";
 import type { AdminQuoteReviewState } from "../../quote-review/domain/admin-quote-review";
 import { adminQuoteReviewSelect } from "../../quote-review/infrastructure/d1-admin-quote-review-repository";
-import type { CustomerSignInMethod } from "../domain/customer-access";
+import type {
+  CustomerSignInMethod,
+  IpLocation,
+} from "../domain/customer-access";
 import type { CustomerDirectoryFilters } from "../domain/customer-directory";
 
 export const customerDirectoryPageSize = 50;
+/** The detail page lists at most this many RFQs and Orders; counts are exact. */
+export const customerDetailListLimit = 200;
 
 /** Business sections shown only to admins who may also open that module. */
 export interface CustomerDirectoryGrants {
@@ -17,32 +23,42 @@ export interface CustomerDirectoryGrants {
   quotes: boolean;
 }
 
-// The RFQs each profile in the `page` CTE sees in its Personal Center. This is
-// ownedQuoteRequestWhere written as two indexed branches, so a page of
-// profiles is counted without scanning every RFQ once per profile.
-const ownedRequestsSql = `
-  SELECT page.profile_id, request.id AS request_id
-  FROM page
+/** Counts and totals over every owned RFQ and Order; null without the grant. */
+export interface CustomerDirectoryStats {
+  quoteCount: number | null;
+  orderCount: number | null;
+  currentOrderCount: number | null;
+  confirmedCents: number | null;
+}
+
+// The RFQs each profile in the `profiles(profile_id)` table expression sees in
+// its Personal Center. This is ownedQuoteRequestWhere written as two indexed
+// branches, so many profiles are counted without scanning every RFQ per profile.
+function ownedRequestsSql(profiles: string) {
+  return `
+  SELECT ${profiles}.profile_id, request.id AS request_id
+  FROM ${profiles}
   JOIN customer_quote_requests request
-    ON request.profile_id=page.profile_id
+    ON request.profile_id=${profiles}.profile_id
    AND request.purchasing_context_kind='individual'
   JOIN customer_purchasing_contexts context
     ON context.id=request.purchasing_context_id AND context.kind='individual'
-   AND context.individual_profile_id=page.profile_id
+   AND context.individual_profile_id=${profiles}.profile_id
   UNION
-  SELECT page.profile_id, request.id
-  FROM page
+  SELECT ${profiles}.profile_id, request.id
+  FROM ${profiles}
   JOIN customer_profile_purchasing_context_access access
-    ON access.profile_id=page.profile_id
+    ON access.profile_id=${profiles}.profile_id
   JOIN customer_purchasing_contexts context
     ON context.id=access.context_id AND context.kind='organization'
   JOIN customer_organization_memberships membership
     ON membership.organization_id=context.organization_id
-   AND membership.profile_id=page.profile_id
+   AND membership.profile_id=${profiles}.profile_id
    AND membership.role='primary_contact' AND membership.status='active'
   JOIN customer_quote_requests request
     ON request.purchasing_context_id=context.id
    AND request.purchasing_context_kind='organization'`;
+}
 
 const searchSql = `(instr(p.email_normalized,?)>0
   OR instr(lower(coalesce(p.full_name,'')),?)>0
@@ -61,8 +77,8 @@ const firstOrganizationIdSql = `(SELECT m.organization_id
   WHERE m.profile_id=p.id AND m.status='active'
   ORDER BY m.created_at,m.id LIMIT 1)`;
 
-// A company customer's country is its company's; otherwise the default
-// delivery address's, else the most recently added address's.
+// A company customer's country is its earliest active company's; otherwise
+// the default delivery address's, else the most recently added address's.
 const countrySql = `coalesce(
   (SELECT o.country_code FROM customer_organizations o
     WHERE o.id=${firstOrganizationIdSql}),
@@ -110,8 +126,8 @@ function listFilterSql(
     );
   return {
     with: byOrders
-      ? `WITH page(profile_id) AS (SELECT id FROM customer_profiles),
-          owned AS (${ownedRequestsSql}),
+      ? `WITH everyone(profile_id) AS (SELECT id FROM customer_profiles),
+          owned AS (${ownedRequestsSql("everyone")}),
           ordered AS (SELECT owned.profile_id FROM owned
             JOIN confirmed_orders o ON o.request_id=owned.request_id)`
       : "",
@@ -138,6 +154,7 @@ interface ProfileRow {
   full_name: string | null;
   phone_number: string | null;
   created_at: string;
+  country_code: string | null;
   has_password: number;
   registration_ip: string | null;
   registration_country: string | null;
@@ -192,21 +209,66 @@ interface OrderRow {
   confirmed_at: string;
   held: number;
   stage: CustomerOrderStage;
+  settled: number;
   fully_cancelled: number;
+  partially_cancelled: number;
   cancellation_pending: number;
   shipment_count: number;
   shipped_count: number;
 }
 
-function location(
-  country: string | null,
-  region: string | null,
-  city: string | null,
-) {
-  return { country, region, city };
+interface StatsRow {
+  profile_id: string;
+  quote_count?: number;
+  order_count?: number;
+  current_order_count?: number;
+  confirmed_cents?: number;
 }
 
 export function createD1AdminCustomerDirectory(db: D1Database) {
+  async function ownedStats(
+    profileIds: readonly string[],
+    grants: CustomerDirectoryGrants,
+  ) {
+    const columns = [
+      grants.quotes ? "count(*) AS quote_count" : null,
+      ...(grants.orders
+        ? [
+            "count(o.id) AS order_count",
+            `coalesce(sum(CASE WHEN o.id IS NOT NULL AND NOT ${orderSettledSql}
+               THEN 1 ELSE 0 END),0) AS current_order_count`,
+            `coalesce(sum(CASE WHEN o.id IS NOT NULL AND NOT ${orderFullyCancelledSql}
+               THEN o.total_cents END),0) AS confirmed_cents`,
+          ]
+        : []),
+    ].filter(Boolean);
+    const rows = new Map<string, StatsRow>();
+    if (profileIds.length && columns.length) {
+      const result = await db
+        .prepare(
+          `WITH listed(profile_id) AS (SELECT value FROM json_each(?1)),
+             owned AS (${ownedRequestsSql("listed")})
+           SELECT owned.profile_id,${columns.join(",")}
+           FROM owned ${grants.orders ? "LEFT JOIN confirmed_orders o ON o.request_id=owned.request_id" : ""}
+           GROUP BY owned.profile_id`,
+        )
+        .bind(JSON.stringify(profileIds))
+        .all<StatsRow>();
+      for (const row of result.results) rows.set(row.profile_id, row);
+    }
+    return (profileId: string): CustomerDirectoryStats => {
+      const row = rows.get(profileId);
+      return {
+        quoteCount: grants.quotes ? (row?.quote_count ?? 0) : null,
+        orderCount: grants.orders ? (row?.order_count ?? 0) : null,
+        currentOrderCount: grants.orders
+          ? (row?.current_order_count ?? 0)
+          : null,
+        confirmedCents: grants.orders ? (row?.confirmed_cents ?? 0) : null,
+      };
+    };
+  }
+
   return {
     async list(
       filters: CustomerDirectoryFilters,
@@ -263,66 +325,41 @@ export function createD1AdminCustomerDirectory(db: D1Database) {
           )
           .all<{ code: string }>()
       ).results.map((row) => row.code);
-      const columns = [
-        grants.quotes ? "count(*) AS quote_count" : null,
-        grants.orders
-          ? `coalesce(sum(CASE WHEN o.id IS NOT NULL AND NOT ${orderFullyCancelledSql}
-               THEN o.total_cents END),0) AS confirmed_cents`
-          : null,
-      ].filter(Boolean);
-      const stats = new Map<
-        string,
-        { quote_count?: number; confirmed_cents?: number }
-      >();
-      if (rows.length && columns.length) {
-        const result = await db
-          .prepare(
-            `WITH page(profile_id) AS (SELECT value FROM json_each(?1)),
-               owned AS (${ownedRequestsSql})
-             SELECT owned.profile_id,${columns.join(",")}
-             FROM owned ${grants.orders ? "LEFT JOIN confirmed_orders o ON o.request_id=owned.request_id" : ""}
-             GROUP BY owned.profile_id`,
-          )
-          .bind(JSON.stringify(rows.map((row) => row.id)))
-          .all<{
-            profile_id: string;
-            quote_count?: number;
-            confirmed_cents?: number;
-          }>();
-        for (const row of result.results) stats.set(row.profile_id, row);
-      }
+      const stats = await ownedStats(
+        rows.map((row) => row.id),
+        grants,
+      );
       return {
         page,
         pageCount,
         total,
         countries,
-        records: rows.map((row) => ({
-          id: row.id,
-          email: row.email_display,
-          fullName: row.full_name,
-          organizationName: row.organization_name,
-          organizationCount: row.organization_count,
-          countryCode: row.country_code,
-          registeredAt: row.created_at,
-          lastSignInAt: row.last_sign_in_at,
-          quoteCount: grants.quotes
-            ? (stats.get(row.id)?.quote_count ?? 0)
-            : null,
-          confirmedCents: grants.orders
-            ? (stats.get(row.id)?.confirmed_cents ?? 0)
-            : null,
-        })),
+        records: rows.map((row) => {
+          const { quoteCount, confirmedCents } = stats(row.id);
+          return {
+            id: row.id,
+            email: row.email_display,
+            fullName: row.full_name,
+            organizationName: row.organization_name,
+            organizationCount: row.organization_count,
+            countryCode: row.country_code,
+            registeredAt: row.created_at,
+            lastSignInAt: row.last_sign_in_at,
+            quoteCount,
+            confirmedCents,
+          };
+        }),
       };
     },
 
     async read(profileId: string, grants: CustomerDirectoryGrants) {
-      const owned = `WITH page(profile_id) AS (VALUES(?1)),
-        owned AS (${ownedRequestsSql})`;
+      const owned = `WITH listed(profile_id) AS (VALUES(?1)),
+        owned AS (${ownedRequestsSql("listed")})`;
       const [profiles, organizations, addresses] = await db.batch([
         db
           .prepare(
             `SELECT p.id,p.email_display,p.email_verified_at,p.full_name,
-               p.phone_number,p.created_at,
+               p.phone_number,p.created_at,${countrySql} AS country_code,
                EXISTS(SELECT 1 FROM customer_password_credentials c
                  WHERE c.profile_id=p.id) AS has_password,
                access.registration_ip,access.registration_country,
@@ -361,6 +398,7 @@ export function createD1AdminCustomerDirectory(db: D1Database) {
       ]);
       const profile = profiles.results[0] as ProfileRow | undefined;
       if (!profile) return null;
+      const stats = (await ownedStats([profileId], grants))(profileId);
       const quotes = grants.quotes
         ? (
             await db
@@ -371,9 +409,9 @@ export function createD1AdminCustomerDirectory(db: D1Database) {
                  FROM (${adminQuoteReviewSelect}) review
                  JOIN customer_quote_requests request ON request.id=review.id
                  WHERE review.id IN (SELECT request_id FROM owned)
-                 ORDER BY review.submitted_at DESC,review.id DESC LIMIT 200`,
+                 ORDER BY review.submitted_at DESC,review.id DESC LIMIT ?2`,
               )
-              .bind(profileId)
+              .bind(profileId, customerDetailListLimit)
               .all<QuoteRow>()
           ).results
         : null;
@@ -385,7 +423,10 @@ export function createD1AdminCustomerDirectory(db: D1Database) {
                  SELECT o.id,o.order_number,request.reference_number,
                    o.total_cents,o.confirmed_at,coalesce(guard.held,0) AS held,
                    ${orderStageSql} AS stage,
+                   ${orderSettledSql} AS settled,
                    ${orderFullyCancelledSql} AS fully_cancelled,
+                   EXISTS(SELECT 1 FROM order_cancelled_quantities cancelled
+                     WHERE cancelled.order_id=o.id) AS partially_cancelled,
                    EXISTS(SELECT 1 FROM order_cancellation_requests cancellation
                      WHERE cancellation.order_id=o.id
                        AND cancellation.status='pending_review') AS cancellation_pending,
@@ -395,9 +436,9 @@ export function createD1AdminCustomerDirectory(db: D1Database) {
                  JOIN confirmed_orders o ON o.request_id=owned.request_id
                  JOIN customer_quote_requests request ON request.id=o.request_id
                  LEFT JOIN order_release_guards guard ON guard.order_id=o.id
-                 ORDER BY o.confirmed_at DESC,o.id DESC LIMIT 200`,
+                 ORDER BY o.confirmed_at DESC,o.id DESC LIMIT ?2`,
               )
-              .bind(profileId)
+              .bind(profileId, customerDetailListLimit)
               .all<OrderRow>()
           ).results.map((row) => ({
             id: row.id,
@@ -407,37 +448,43 @@ export function createD1AdminCustomerDirectory(db: D1Database) {
             confirmedAt: row.confirmed_at,
             held: row.held === 1,
             stage: row.stage,
+            settled: row.settled === 1,
             fullyCancelled: row.fully_cancelled === 1,
+            partiallyCancelled: row.partially_cancelled === 1,
             cancellationPending: row.cancellation_pending === 1,
             shipmentCount: row.shipment_count,
             shippedCount: row.shipped_count,
           }))
         : null;
+      const registrationLocation: IpLocation = {
+        country: profile.registration_country,
+        region: profile.registration_region,
+        city: profile.registration_city,
+      };
+      const lastSignInLocation: IpLocation = {
+        country: profile.last_sign_in_country,
+        region: profile.last_sign_in_region,
+        city: profile.last_sign_in_city,
+      };
       return {
         id: profile.id,
         email: profile.email_display,
         emailVerifiedAt: profile.email_verified_at,
         fullName: profile.full_name,
         phoneNumber: profile.phone_number,
+        countryCode: profile.country_code,
         registeredAt: profile.created_at,
         hasPassword: profile.has_password === 1,
+        stats,
         registration: {
           ip: profile.registration_ip,
-          location: location(
-            profile.registration_country,
-            profile.registration_region,
-            profile.registration_city,
-          ),
+          location: registrationLocation,
         },
         lastSignIn: {
           at: profile.last_sign_in_at,
           method: profile.last_sign_in_method,
           ip: profile.last_sign_in_ip,
-          location: location(
-            profile.last_sign_in_country,
-            profile.last_sign_in_region,
-            profile.last_sign_in_city,
-          ),
+          location: lastSignInLocation,
         },
         organizations: (organizations.results as OrganizationRow[]).map(
           (row) => ({
@@ -472,15 +519,9 @@ export function createD1AdminCustomerDirectory(db: D1Database) {
             reviewState: row.review_state,
             organization: row.purchasing_context_kind === "organization",
           })) ?? null,
-        // Delivered and fully cancelled Orders are history; the rest are current.
-        currentOrders:
-          orders?.filter(
-            (order) => order.stage !== "delivered" && !order.fullyCancelled,
-          ) ?? null,
-        historicalOrders:
-          orders?.filter(
-            (order) => order.stage === "delivered" || order.fullyCancelled,
-          ) ?? null,
+        // An Order is history once every unit was delivered or cancelled.
+        currentOrders: orders?.filter((order) => !order.settled) ?? null,
+        historicalOrders: orders?.filter((order) => order.settled) ?? null,
       };
     },
   };
