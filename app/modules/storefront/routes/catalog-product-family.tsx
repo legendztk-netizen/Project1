@@ -13,6 +13,7 @@ import {
 } from "../../after-sales/domain/return-policy";
 import { catalogReturnLink } from "../domain/catalog-pagination";
 import { requireCatalogFamilyId } from "../domain/catalog-route";
+import { catalogFamilySeo, seoMeta } from "../domain/catalog-seo";
 import { AdapterThreadReference } from "../ui/adapter-thread-reference";
 import { CatalogMedia } from "../ui/catalog-media";
 import {
@@ -141,11 +142,18 @@ export async function loader({ context, params, request }: Route.LoaderArgs) {
     appName: env.PUBLIC_APP_NAME,
     backLink: catalogReturnLink(searchParams.get("back"), activeCategory),
     selectionRequested: Boolean(sku),
+    seo: catalogFamilySeo(
+      result.family,
+      env.PUBLIC_APP_NAME,
+      env.PUBLIC_STOREFRONT_ORIGIN,
+    ),
   };
 }
 
-export function meta() {
-  return [{ title: "Product Family | Hydraulic Supply" }];
+export function meta({ loaderData }: Route.MetaArgs) {
+  return loaderData
+    ? seoMeta(loaderData.seo)
+    : [{ title: "Product Family | Hydraulic Supply" }];
 }
 
 export default function CatalogProductFamily({
