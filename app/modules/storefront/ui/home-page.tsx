@@ -183,7 +183,7 @@ export function HomePage({ appName }: { appName: string }) {
         <section className="home-hero" aria-labelledby="home-hero-title">
           <div className="home-hero-copy">
             <span className="home-eyebrow">
-              Custom hydraulic hose assemblies
+              Precision-Crimped. Pressure-Proven.
             </span>
             <h1 id="home-hero-title">
               Custom hydraulic hose assemblies, built to your length.

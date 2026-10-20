@@ -1080,6 +1080,7 @@ interface SharedCatalogCache {
   scopes: Map<string, Promise<PublicCatalogItem[]>>;
   items: Map<string, Promise<PublicCatalogItem | null>>;
   summaries: Map<string, Promise<PublicCatalogFamilySummary[]>>;
+  assemblyHoseSkus?: Promise<string[]>;
 }
 
 // Per isolate and per D1 binding. Entries are tied to one freshness token; a new token replaces them all.
@@ -1336,6 +1337,38 @@ export function createD1PublicCatalogRepository(
       return selected ? { family, selected } : null;
     },
     findItem,
+    /**
+     * Hose SKUs with at least one Hose End compatibility, the records End A starts from, for
+     * one-piece and legacy catalogues alike. Build a Hose offers only these. The query reads
+     * about 10k rows, so its short result is cached with the catalog.
+     */
+    async assemblyHoseSkus(): Promise<string[]> {
+      const load = async () =>
+        (
+          await database
+            .prepare(
+              `SELECT DISTINCT hose_sku FROM catalog_runtime_compatibilities
+               WHERE import_id = ${activeImport} ORDER BY hose_sku`,
+            )
+            .all<{ hose_sku: string }>()
+        ).results.map((row) => row.hose_sku);
+      if (!options.sharedCache) return load();
+      const cache = await sharedCache();
+      if (cache.assemblyHoseSkus) {
+        recordCatalogCache(database, "memory");
+        return cache.assemblyHoseSkus;
+      }
+      const pending = edgeRead("assembly-hose-skus", cache.token, load).then(
+        deepFreeze,
+      );
+      cache.assemblyHoseSkus = pending;
+      pending.catch(() => {
+        if (cache.assemblyHoseSkus === pending) {
+          cache.assemblyHoseSkus = undefined;
+        }
+      });
+      return pending;
+    },
     async wasHosePublishedInSupersededRelease(sku: string) {
       const row = await database
         .prepare(

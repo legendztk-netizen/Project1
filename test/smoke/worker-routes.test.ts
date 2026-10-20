@@ -4286,15 +4286,29 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(buildBlank).not.toContain('data-hose-sku="601R1_001"');
     expect(buildBlank).not.toContain("Hose selection ready");
 
+    // A current hose that Hose Ends fit is linked as such.
     const buildCurrentLinkResponse = await fetch(
-      `${origin}/build-a-hose?hose=601R1_001`,
+      `${origin}/build-a-hose?hose=601R1_002`,
     );
     const buildCurrentLink = await buildCurrentLinkResponse.text();
     expect(buildCurrentLinkResponse.status).toBe(200);
     expect(buildCurrentLink).toContain("This link points to a current hose.");
-    expect(buildCurrentLink).not.toContain('data-hose-sku="601R1_001"');
+    expect(buildCurrentLink).not.toContain('data-hose-sku="601R1_002"');
     expect(buildCurrentLink).not.toContain("Hose selection ready");
     expect(buildCurrentLink).toContain("has not been added to your Quote List");
+    // A current hose with no Hose End compatibility has nothing for End A, so it is not offered.
+    const unfittedEndA = (await (
+      await fetch(
+        `${origin}/api/configurator/compatible-end-a?release=${draft.id}&hose=601R1_001`,
+      )
+    ).json()) as { candidates: unknown[] };
+    expect(unfittedEndA.candidates).toEqual([]);
+    const buildUnfittedLink = await (
+      await fetch(`${origin}/build-a-hose?hose=601R1_001`)
+    ).text();
+    expect(buildUnfittedLink).toContain(
+      "This hose is not currently selectable.",
+    );
 
     const compatibleEndAResponse = await fetch(
       `${origin}/api/configurator/compatible-end-a?release=${draft.id}&hose=601R1_002`,

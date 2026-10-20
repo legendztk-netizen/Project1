@@ -151,6 +151,11 @@ Fittings`, `Adapters`, and `Quick Couplings`.
   versions (the Catalog Release number, compatibility records and registry
   versions) stay in the saved configuration but are never shown to the
   customer, neither in the configurator header nor in Review.
+- `Build a Hose` offers only the hose sizes that have at least one Hose End
+  compatibility, the records End A is built from, so every offered size has
+  fittings to choose. The other sizes stay in the catalog as hose sold by
+  length; a link that preselects one says the hose is not currently
+  selectable.
 - Search indexes SKU, product name and aliases, SAE and EN standards, interface
   families including JIC, NPT, ORFS, and BSP, dash size, angle, and working
   pressure. Search and category filters use Catalog Master Data.
