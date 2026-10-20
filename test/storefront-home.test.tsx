@@ -38,8 +38,10 @@ describe("Storefront home page", () => {
     const hero = screen
       .getByRole("heading", { level: 1 })
       .closest("section") as HTMLElement;
-    // The H1 leads; no eyebrow repeats its opening words.
-    expect(hero.querySelector(".home-eyebrow")).toBeNull();
+    // The eyebrow carries the slogan rather than repeating the H1's opening words.
+    expect(hero.querySelector(".home-eyebrow")?.textContent).toBe(
+      "Precision-Crimped. Pressure-Proven.",
+    );
     expect(
       within(hero)
         .getByRole("link", { name: /Build a hose/u })
