@@ -21,7 +21,7 @@ export async function catalogCacheKey(
   // Bump the namespace whenever the serialized DTO or its interpretation changes.
   return new Request(
     new URL(
-      `/__public-catalog-cache/v6/${version}/${encodeURIComponent(scope)}`,
+      `/__public-catalog-cache/v7/${version}/${encodeURIComponent(scope)}`,
       origin,
     ),
   );

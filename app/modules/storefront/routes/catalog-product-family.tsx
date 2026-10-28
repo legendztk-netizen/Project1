@@ -16,10 +16,12 @@ import { requireCatalogFamilyId } from "../domain/catalog-route";
 import { catalogFamilySeo, seoMeta } from "../domain/catalog-seo";
 import { AdapterThreadReference } from "../ui/adapter-thread-reference";
 import { CatalogMedia } from "../ui/catalog-media";
+import { HoseSeriesReference } from "../ui/hose-series-reference";
 import {
   ProductVariantSelector,
   useProductVariantSelection,
 } from "../ui/product-variant-selector";
+import { StorefrontFooter } from "../ui/storefront-footer";
 import { StorefrontHeader } from "../ui/storefront-header";
 import "../styles/catalog.css";
 import { cloudflareContext } from "#workers/context";
@@ -137,9 +139,19 @@ export async function loader({ context, params, request }: Route.LoaderArgs) {
     }
     throw new Response("Product family not found", { status: 404 });
   }
+  // The same cached list Build a Hose offers; without it the size chart leaves out its assembly column.
+  const familySkus = new Set(result.family.variants.map((item) => item.sku));
+  const assemblyHoseSkus =
+    result.family.representative.variantSelection?.kind === "hose"
+      ? await catalog
+          .assemblyHoseSkus()
+          .then((skus) => skus.filter((item) => familySkus.has(item)))
+          .catch(() => null)
+      : null;
   return {
     ...result,
     appName: env.PUBLIC_APP_NAME,
+    assemblyHoseSkus,
     backLink: catalogReturnLink(searchParams.get("back"), activeCategory),
     selectionRequested: Boolean(sku),
     seo: catalogFamilySeo(
@@ -250,7 +262,16 @@ export default function CatalogProductFamily({
             </aside>
           </section>
         ) : null}
+
+        <HoseSeriesReference
+          assemblyHoseSkus={loaderData.assemblyHoseSkus}
+          family={family}
+          selected={selected}
+          selectionComplete={variantSelection.selectionComplete}
+          selectSku={variantSelection.selectSku}
+        />
       </main>
+      <StorefrontFooter appName={loaderData.appName} />
     </div>
   );
 }
