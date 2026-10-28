@@ -1297,6 +1297,14 @@ an underscore, and a three-digit sequence that restarts at 001 for each series,
 such as 601R2_001.
 _Avoid_: Manufacturer model, Sales SKU, dash-derived SKU
 
+**Hose Metric Size**:
+The nominal metric designation of a Hose Size Variant in millimetres, as EN 853
+and the factory catalogue print it: 10 for dash -6, 12.5 for dash -8. Like the
+dash size it names the size and is not a measured bore. A measured inside
+diameter falls within the factory's tolerance range, which can include the exact
+inch conversion (12.3 to 13.5 mm for -8 includes 12.7 mm).
+_Avoid_: Actual bore, measured ID, exact inside diameter
+
 **Packaged Hose**:
 A Hose Size Variant sold in a predefined coil length, such as 100 feet.
 _Avoid_: Bulk hose, roll option
@@ -1372,13 +1380,16 @@ the submitted RFQ snapshot is never changed by a later configuration update.
 _Avoid_: Submitted RFQ repricing, silent fee change, PI recalculation
 
 **Large-bore Hose**:
-A Hose Size Variant above 1 inch that remains visible in the catalogue but is
-available only through a made-to-order RFQ.
+A Hose Size Variant above 1 inch that remains visible in the catalogue. Unless it
+is a Configurator-supported Size, such as 601R1 -20, it is available only as
+cut-length hose or through a made-to-order RFQ.
 _Avoid_: Packaged Hose, unavailable size
 
 **Configurator-supported Size**:
-A common Hose Assembly dash size available in the launch configurator: -4, -6,
--8, -10, -12, or -16.
+A Hose Size Variant that Build a Hose offers because at least one Hose End has a
+compatibility with it in the active catalogue, such as 601R1 -4, -6, -8, -10,
+-12, -16 and -20. The product page's size chart marks the same set. Other sizes
+are sold as cut-length hose or through a Manual Assembly Quote Request.
 _Avoid_: Every available hose size, automatic compatibility
 
 **Manually Reviewed Assembly**:

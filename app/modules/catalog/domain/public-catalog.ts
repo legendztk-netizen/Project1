@@ -43,6 +43,8 @@ export type PublicVariantSelection =
       dash: DashSize | null;
       equivalentStandard: string | null;
       hoseSeries: string;
+      /** Inside diameter in mm (`id_mm`), present when read from a hose variant row. */
+      idMm?: number | null;
       kind: "hose";
       nominalIdIn: number | null;
       performance: PublicHosePerformance;

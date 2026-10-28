@@ -525,6 +525,7 @@ export function publicCatalogItemFromRow(
             dash: normalizeDashSize(row.dash),
             equivalentStandard: row.equivalent_standard,
             hoseSeries: row.hose_series ?? row.sku.split("_")[0] ?? row.sku,
+            ...(row.id_mm == null ? {} : { idMm: row.id_mm }),
             kind: "hose",
             nominalIdIn: row.nominal_id_in,
             performance: {

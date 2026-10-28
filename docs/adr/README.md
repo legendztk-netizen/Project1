@@ -19,3 +19,4 @@ database field inventories, or deployment instructions.
 | [0057](0057-derive-adapter-end-threads-from-a-reference-chart.md)                  | Adapter End Threads derived from a reference chart in code             |
 | [0058](0058-run-only-production-on-the-former-preview-data.md)                     | Only production runs on Cloudflare, on the former preview D1 and R2    |
 | [0059](0059-record-registration-and-last-sign-in-ip-for-the-customer-directory.md) | Raw registration and last sign-in IP for the Customer Directory        |
+| [0060](0060-limit-hose-series-reference-content-to-sourced-facts.md)               | Hose Series reference content limited to sourced catalogue facts       |
