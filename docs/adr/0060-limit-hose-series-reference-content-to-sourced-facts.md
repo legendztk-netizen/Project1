@@ -21,6 +21,19 @@ compatibility in the active catalogue, the same cached list Build a Hose offers.
 When that list cannot be read, the column and the related question are left out
 rather than guessed.
 
-A hand-written block per series was kept for 601R1 because its text was
-reviewed against the sources above. Extending it to other series requires the
-same review, with any numbers in the text taken from catalogue rows.
+Each series has hand-written text, reviewed against the sources above, and only
+reviewed series show the block: 601R1; 601R2 since 2026-11-01; 601R4, 601R16,
+601R17 and EN4SH since 2026-11-04. The size chart, dash conversion and link
+frame are shared. The headings, questions, related link and the sizes the dash
+conversion cites belong to the series, because 601R4 and EN4SH start at -12.
+Numbers in the text come from catalogue rows, including those of a compared
+series, whose rows the page loader takes from the hydraulic hose items it has
+already read: 601R2 is compared with 601R1 and 601R16, 601R16 and EN4SH with
+601R2, and 601R17 with 601R16. A comparative statement, such as a higher rating
+at every size or about half the bend radius, appears only while every compared
+size supports it, and is left out rather than reworded otherwise; a working
+pressure that differs in both directions is listed size by size. Burst pressure
+is not compared with 601R16 while its burst-to-working ratio, 2.9 to 3.6 in the
+factory catalogue, is unconfirmed. The factory rates 601R4 for low-pressure and
+vacuum service and gives no return-line rating, so its page says exactly that.
+Adding a series requires the same review.
