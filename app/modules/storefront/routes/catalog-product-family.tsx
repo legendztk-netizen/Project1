@@ -16,7 +16,12 @@ import { requireCatalogFamilyId } from "../domain/catalog-route";
 import { catalogFamilySeo, seoMeta } from "../domain/catalog-seo";
 import { AdapterThreadReference } from "../ui/adapter-thread-reference";
 import { CatalogMedia } from "../ui/catalog-media";
-import { HoseSeriesReference } from "../ui/hose-series-reference";
+import {
+  buildHoseSpecTableRows,
+  HoseSeriesReference,
+  hoseSeriesComparedWith,
+  type HoseSpecTableRow,
+} from "../ui/hose-series-reference";
 import {
   ProductVariantSelector,
   useProductVariantSelection,
@@ -141,17 +146,43 @@ export async function loader({ context, params, request }: Route.LoaderArgs) {
   }
   // The same cached list Build a Hose offers; without it the size chart leaves out its assembly column.
   const familySkus = new Set(result.family.variants.map((item) => item.sku));
+  const hose = result.family.representative.variantSelection;
   const assemblyHoseSkus =
-    result.family.representative.variantSelection?.kind === "hose"
+    hose?.kind === "hose"
       ? await catalog
           .assemblyHoseSkus()
           .then((skus) => skus.filter((item) => familySkus.has(item)))
           .catch(() => null)
       : null;
+  // Rows of the series the reference text compares with, from the category items read above.
+  const comparedSeries = hoseSeriesComparedWith(
+    hose?.kind === "hose" ? hose.hoseSeries : null,
+  );
+  const comparisonRows: Record<string, HoseSpecTableRow[]> =
+    comparedSeries.length > 0
+      ? await catalog
+          .browse({ category: activeCategory })
+          .then(({ families }) =>
+            Object.fromEntries(
+              families.flatMap((candidate) => {
+                const selection = candidate.representative.variantSelection;
+                const code =
+                  selection?.kind === "hose"
+                    ? selection.hoseSeries.toUpperCase()
+                    : null;
+                return code && comparedSeries.includes(code)
+                  ? [[code, buildHoseSpecTableRows(candidate, null)]]
+                  : [];
+              }),
+            ),
+          )
+          .catch(() => ({}))
+      : {};
   return {
     ...result,
     appName: env.PUBLIC_APP_NAME,
     assemblyHoseSkus,
+    comparisonRows,
     backLink: catalogReturnLink(searchParams.get("back"), activeCategory),
     selectionRequested: Boolean(sku),
     seo: catalogFamilySeo(
@@ -265,6 +296,7 @@ export default function CatalogProductFamily({
 
         <HoseSeriesReference
           assemblyHoseSkus={loaderData.assemblyHoseSkus}
+          comparisonRows={loaderData.comparisonRows}
           family={family}
           selected={selected}
           selectionComplete={variantSelection.selectionComplete}
