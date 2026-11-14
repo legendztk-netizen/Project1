@@ -2,6 +2,8 @@ import { ArrowLeft, CircleAlert, Ruler, RotateCw } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 
+import type { Route } from "./+types/assembly-measurement-guide";
+import { cloudflareContext } from "#workers/context";
 import m01Image from "../../../../assets/measurement-diagrams/M01-straight-male-to-straight-male.jpg";
 import m02Image from "../../../../assets/measurement-diagrams/M02-female-seat-to-female-seat.jpg";
 import m03Image from "../../../../assets/measurement-diagrams/M03-straight-to-45-elbow.jpg";
@@ -9,6 +11,7 @@ import m04Image from "../../../../assets/measurement-diagrams/M04-straight-to-90
 import m05Image from "../../../../assets/measurement-diagrams/M05-45-elbow-to-45-elbow.jpg";
 import m06Image from "../../../../assets/measurement-diagrams/M06-90-elbow-to-90-elbow.jpg";
 import m07Image from "../../../../assets/measurement-diagrams/M07-orfs-flat-face-to-flat-face.jpg";
+import { canonicalLink, canonicalUrl } from "../domain/catalog-seo";
 import { M08ClockingPreview } from "../ui/m08-clocking-preview";
 import { StorefrontHeader } from "../ui/storefront-header";
 import "../styles/clocking-preview.css";
@@ -238,7 +241,17 @@ function ClockingDiagram() {
   );
 }
 
-export function meta() {
+export function loader({ context }: Route.LoaderArgs) {
+  const { env } = context.get(cloudflareContext);
+  return {
+    canonical: canonicalUrl(
+      env.PUBLIC_STOREFRONT_ORIGIN,
+      "/assembly-measurement-guide",
+    ),
+  };
+}
+
+export function meta({ loaderData }: Route.MetaArgs) {
   return [
     { title: "Hose Assembly Measurement Guide | Hydraulic Supply" },
     {
@@ -246,6 +259,7 @@ export function meta() {
       content:
         "Finished hose assembly length endpoints and double-elbow Clocking reference.",
     },
+    ...canonicalLink(loaderData?.canonical),
   ];
 }
 

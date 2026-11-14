@@ -29,8 +29,16 @@ export function seoMeta(seo: PageSeo) {
   return [
     { title: seo.title },
     { name: "description", content: seo.description },
-    { tagName: "link", rel: "canonical", href: seo.canonical },
+    ...canonicalLink(seo.canonical),
   ];
+}
+
+/**
+ * The canonical link for a route's `meta` export, from the URL its loader built. Without loader
+ * data, as on an error page, there is none.
+ */
+export function canonicalLink(href: string | undefined) {
+  return href ? [{ tagName: "link", rel: "canonical", href }] : [];
 }
 
 /** An absolute storefront URL without a query, on the same origin and fallback as robots.txt. */

@@ -1,7 +1,13 @@
 import { ArrowLeft } from "lucide-react";
 import { Link } from "react-router";
 
-import { LAUNCH_RETURN_POLICY } from "../../after-sales/domain/return-policy";
+import type { Route } from "./+types/returns-policy";
+import { cloudflareContext } from "#workers/context";
+import {
+  LAUNCH_RETURN_POLICY,
+  RETURN_POLICY_PATH,
+} from "../../after-sales/domain/return-policy";
+import { canonicalLink, canonicalUrl } from "../domain/catalog-seo";
 import { StorefrontHeader } from "../ui/storefront-header";
 import "../styles/measurement-guide.css";
 
@@ -42,7 +48,14 @@ const sections: ReadonlyArray<{ title: string; items: readonly string[] }> = [
   },
 ];
 
-export function meta() {
+export function loader({ context }: Route.LoaderArgs) {
+  const { env } = context.get(cloudflareContext);
+  return {
+    canonical: canonicalUrl(env.PUBLIC_STOREFRONT_ORIGIN, RETURN_POLICY_PATH),
+  };
+}
+
+export function meta({ loaderData }: Route.MetaArgs) {
   return [
     { title: "Returns and Refunds Policy | Hydraulic Supply" },
     {
@@ -50,6 +63,7 @@ export function meta() {
       content:
         "Return window, restocking fee, made-to-order restrictions, inspection and refund timing.",
     },
+    ...canonicalLink(loaderData?.canonical),
   ];
 }
 

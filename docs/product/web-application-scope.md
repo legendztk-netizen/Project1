@@ -182,7 +182,10 @@ Fittings`, `Adapters`, and `Quick Couplings`.
   the measurement guide and the policy pages, all as bare paths: no search,
   pagination or `?back=` URLs, and no sign-in, account, Quote List or admin
   pages. A `<lastmod>` appears only where the page carries a real update date
-  (the Privacy Notice).
+  (the Privacy Notice). Every listed page carries a canonical link to the URL
+  the sitemap gives it, on the storefront origin: `/catalog` keeps `/catalog`
+  for any search or page, as the categories do, and the measurement guide and
+  the policy pages carry one too.
 - `/robots.txt` is served by the storefront: it allows all crawling and names
   the sitemap. Private pages are kept out of search results with noindex, never
   `Disallow`, because a crawler must fetch a page to see its noindex: `/sign-in`,

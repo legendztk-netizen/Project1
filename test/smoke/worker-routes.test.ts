@@ -466,6 +466,25 @@ describe("Cloudflare Worker route surfaces", () => {
     await expect(response.json()).resolves.toMatchObject({ status: "ok" });
   });
 
+  it("gives the catalog, guide and policy pages one canonical link to their bare URL", async () => {
+    // The local PUBLIC_STOREFRONT_ORIGIN in wrangler.jsonc.
+    const storefrontOrigin = "http://storefront.localhost:5173";
+    for (const [path, canonicalPath] of [
+      ["/catalog", "/catalog"],
+      ["/catalog?q=jic&page=2", "/catalog"],
+      ["/assembly-measurement-guide", "/assembly-measurement-guide"],
+      ["/policies/returns", "/policies/returns"],
+      ["/policies/privacy", "/policies/privacy"],
+    ]) {
+      const response = await fetch(`${origin}${path}`);
+      const page = await response.text();
+      expect(response.status, path).toBe(200);
+      expect(page.match(/<link rel="canonical"[^>]*>/g), path).toEqual([
+        `<link rel="canonical" href="${storefrontOrigin}${canonicalPath}"/>`,
+      ]);
+    }
+  });
+
   it("keeps the Storefront and Admin shells distinct", async () => {
     const [storefrontResponse, adminResponse, adminDataResponse] =
       await Promise.all([
