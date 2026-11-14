@@ -3,10 +3,12 @@ import { Link } from "react-router";
 
 import type { Route } from "./+types/privacy-notice";
 import { cloudflareContext } from "#workers/context";
+import { canonicalLink, canonicalUrl } from "../domain/catalog-seo";
 import {
   privacyContactEmail,
   privacyNoticeCookies,
   privacyNoticeOperator,
+  privacyNoticePath,
   privacyNoticeUpdated,
 } from "../domain/privacy-notice";
 import { createD1SellerCommercialSettingsRepository } from "../../seller-settings/infrastructure/d1-seller-commercial-settings-repository";
@@ -113,6 +115,7 @@ export async function loader({ context }: Route.LoaderArgs) {
   ).findCurrentIdentity();
   return {
     appName: env.PUBLIC_APP_NAME,
+    canonical: canonicalUrl(env.PUBLIC_STOREFRONT_ORIGIN, privacyNoticePath),
     operator: privacyNoticeOperator(identity?.registeredAddressEn ?? null),
   };
 }
@@ -125,6 +128,7 @@ export function meta({ loaderData }: Route.MetaArgs) {
       content:
         "What personal information we collect, why, who we share it with, how long we keep it and your choices.",
     },
+    ...canonicalLink(loaderData?.canonical),
   ];
 }
 

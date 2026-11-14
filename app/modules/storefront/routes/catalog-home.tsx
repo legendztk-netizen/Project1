@@ -2,10 +2,11 @@ import { storefrontCatalogCache } from "../../catalog/infrastructure/public-cata
 import type { Route } from "./+types/catalog-home";
 import { createD1PublicCatalogRepository } from "../../catalog/infrastructure/d1-public-catalog-repository";
 import { paginateCatalog } from "../domain/catalog-pagination";
+import { canonicalLink, canonicalUrl } from "../domain/catalog-seo";
 import { CatalogBrowser } from "../ui/catalog-browser";
 import { cloudflareContext } from "#workers/context";
 
-export function meta() {
+export function meta({ loaderData }: Route.MetaArgs) {
   return [
     { title: "Hydraulic Supply | Hose and Fittings" },
     {
@@ -13,6 +14,7 @@ export function meta() {
       content:
         "Hydraulic hose, fittings and custom assembly quote preparation.",
     },
+    ...canonicalLink(loaderData?.canonical),
   ];
 }
 
@@ -31,6 +33,8 @@ export async function loader({ context, request }: Route.LoaderArgs) {
   return {
     activeCategory: null,
     appName: env.PUBLIC_APP_NAME,
+    // Searches and later pages are the same page to a crawler, as on the category pages.
+    canonical: canonicalUrl(env.PUBLIC_STOREFRONT_ORIGIN, "/catalog"),
     families: items,
     pagination,
     query,
