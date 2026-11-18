@@ -152,6 +152,36 @@
 }
 
 /* Brand Mark on Customer Surfaces */
+[data-surface="storefront"] .brand-mark-storefront {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 6px 0;
+  text-decoration: none;
+}
+
+[data-surface="storefront"] .brand-mark-icon {
+  display: block;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+
+[data-surface="storefront"] .brand-mark-storefront .brand-wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  color: var(--meta-ink-deep);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1;
+}
+
+[data-surface="storefront"] .brand-mark-storefront .brand-wordmark-accent {
+  color: var(--meta-primary);
+}
+
 [data-surface="storefront"] .brand-symbol {
   width: 34px;
   height: 34px;
@@ -1006,6 +1036,13 @@ body:has([data-surface="storefront"]) .action-dialog .button-secondary {
 @media (max-width: 700px) {
   [data-surface="storefront"] .storefront-header .brand-mark > span:last-child {
     display: grid;
+  }
+
+  [data-surface="storefront"]
+    .storefront-header
+    .brand-mark-storefront
+    > span:last-child {
+    display: inline-flex;
   }
 
   [data-surface="storefront"] .account-workspace-sidebar {

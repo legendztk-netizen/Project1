@@ -127,4 +127,16 @@ describe("Meta Design System storefront migration", () => {
       screen.getByRole("heading", { level: 1, name: "Hydraulic Hose" }),
     ).toBeTruthy();
   });
+
+  it("renders the customhoseco stacked brand mark in StorefrontHeader", async () => {
+    renderWithRoot(<StorefrontHeader />, "/catalog");
+
+    const homeLink = await screen.findByRole("link", {
+      name: "customhoseco home",
+    });
+    expect(homeLink.textContent).toBe("customhoseco");
+    expect(homeLink.querySelector("img")?.getAttribute("src")).toBe(
+      "/images/brand/customhoseco-mark.svg",
+    );
+  });
 });

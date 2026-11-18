@@ -17,7 +17,7 @@ export function StorefrontHeader({ floating = false }: { floating?: boolean }) {
         floating ? "storefront-header is-floating" : "storefront-header"
       }
     >
-      <BrandMark />
+      <BrandMark variant="storefront" />
       <nav aria-label="Customer navigation">
         <Link
           className={location.pathname.startsWith("/catalog") ? "active" : ""}

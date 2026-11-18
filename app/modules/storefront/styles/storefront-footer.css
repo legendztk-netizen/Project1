@@ -24,6 +24,27 @@
   padding: 64px 32px 44px;
 }
 
+[data-surface="storefront"] .storefront-footer .brand-mark-storefront {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+}
+
+[data-surface="storefront"] .storefront-footer .brand-mark-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
+}
+
+[data-surface="storefront"]
+  .storefront-footer
+  .brand-mark-storefront
+  .brand-wordmark {
+  font-size: 16px;
+}
+
 .storefront-footer .brand-mark strong {
   color: #0a1317;
 }
