@@ -8,7 +8,7 @@
 
 .storefront-shell .catalog-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(300px, 400px);
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
   align-items: center;
   gap: 14px 24px;
   padding: 16px 24px;
@@ -26,7 +26,7 @@
 }
 
 .catalog-toolbar-subtitle {
-  max-width: 68ch;
+  max-width: none;
   margin: 4px 0 0;
   color: #5d6c7b;
   font-size: 14px;
