@@ -39,7 +39,7 @@ export function StorefrontFooter({ appName }: { appName: string }) {
     <footer className="storefront-footer">
       <div className="storefront-footer-inner">
         <div className="storefront-footer-brand">
-          <BrandMark variant="storefront" />
+          <BrandMark variant="storefront-footer" />
           <p>
             Made-to-order hydraulic hose assemblies, hose ends and fittings for
             North American repair shops, OEMs and distributors. Configure your

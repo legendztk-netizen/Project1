@@ -128,13 +128,14 @@ describe("Meta Design System storefront migration", () => {
     ).toBeTruthy();
   });
 
-  it("renders the customhoseco stacked brand mark in StorefrontHeader", async () => {
+  it("renders the customhoseco mark beside Hydraulic Supply copy in StorefrontHeader", async () => {
     renderWithRoot(<StorefrontHeader />, "/catalog");
 
     const homeLink = await screen.findByRole("link", {
-      name: "customhoseco home",
+      name: "Hydraulic Supply home",
     });
-    expect(homeLink.textContent).toBe("customhoseco");
+    expect(homeLink.textContent).toContain("Hydraulic Supply");
+    expect(homeLink.textContent).toContain("Hose & Fittings");
     expect(homeLink.querySelector("img")?.getAttribute("src")).toBe(
       "/images/brand/customhoseco-mark.svg",
     );

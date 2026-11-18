@@ -152,6 +152,18 @@
 }
 
 /* Brand Mark on Customer Surfaces */
+[data-surface="storefront"] .brand-mark-header {
+  gap: 11px;
+  text-decoration: none;
+}
+
+[data-surface="storefront"] .brand-mark-header .brand-mark-icon {
+  display: block;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+}
+
 [data-surface="storefront"] .brand-mark-storefront {
   flex-direction: column;
   align-items: center;

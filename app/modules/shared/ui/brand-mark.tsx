@@ -3,9 +3,32 @@ import { Link } from "react-router";
 export function BrandMark({
   variant = "admin",
 }: {
-  variant?: "admin" | "storefront";
+  variant?: "admin" | "storefront-header" | "storefront-footer";
 }) {
-  if (variant === "storefront") {
+  if (variant === "storefront-header") {
+    return (
+      <Link
+        className="brand-mark brand-mark-header"
+        to="/"
+        aria-label="Hydraulic Supply home"
+      >
+        <img
+          alt=""
+          aria-hidden="true"
+          className="brand-mark-icon"
+          height={36}
+          src="/images/brand/customhoseco-mark.svg"
+          width={36}
+        />
+        <span>
+          <strong>Hydraulic Supply</strong>
+          <small>Hose &amp; Fittings</small>
+        </span>
+      </Link>
+    );
+  }
+
+  if (variant === "storefront-footer") {
     return (
       <Link
         className="brand-mark brand-mark-storefront"
@@ -16,9 +39,9 @@ export function BrandMark({
           alt=""
           aria-hidden="true"
           className="brand-mark-icon"
-          height={32}
+          height={44}
           src="/images/brand/customhoseco-mark.svg"
-          width={32}
+          width={44}
         />
         <span className="brand-wordmark">
           <span>custom</span>
