@@ -1360,8 +1360,8 @@
 }
 
 .end-a-search-input:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgb(220 47 37 / 12%);
+  border-color: var(--meta-fb-blue, #1876f2);
+  box-shadow: 0 0 0 3px rgba(24, 118, 242, 0.14);
 }
 
 .end-a-search-input svg {
@@ -2492,6 +2492,149 @@
 }
 
 .configurator-guide a {
-  color: var(--steel);
+  color: #0064e0;
   font-weight: 700;
+}
+
+/* Meta Design System Skin for Build a Hose */
+.configurator-page {
+  max-width: 1280px;
+}
+
+.configurator-heading h1 {
+  color: #0a1317;
+  font-size: clamp(1.85rem, 3.2vw, 2.4rem);
+  font-weight: 500;
+}
+
+.configurator-edit-context {
+  background: #f1f4f7;
+  border: 1px solid #dee3e9;
+  border-radius: 24px;
+  padding: 18px 22px;
+}
+
+.configurator-progress {
+  border-radius: 100px;
+  border: 1px solid #dee3e9;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.configurator-progress li {
+  border-right-color: #dee3e9;
+}
+
+.configurator-progress li[aria-current="step"] {
+  box-shadow: inset 0 -3px #0064e0;
+  color: #0a1317;
+}
+
+.configurator-progress li[aria-current="step"] span {
+  background: #0064e0;
+}
+
+.configurator-fieldset,
+.application-optional-panel,
+.assembly-review-section,
+.assembly-review-quantity,
+.assembly-review-support {
+  background: #ffffff;
+  border: 1px solid #dee3e9;
+  border-radius: 24px;
+}
+
+.configurator-summary {
+  border: 1px solid #dee3e9;
+  border-radius: 24px;
+  box-shadow: 0 1px 4px rgba(20, 22, 26, 0.14);
+}
+
+.assembly-schematic-frame,
+.configurator-media,
+.assembly-component-thumbnail {
+  background: #f1f4f7;
+  border-color: #dee3e9;
+}
+
+.assembly-component-thumbnail {
+  border-radius: 12px;
+}
+
+.assembly-component-thumbnail img,
+.configurator-media img {
+  mix-blend-mode: multiply;
+  filter: contrast(1.04) brightness(1.03);
+}
+
+.hose-series-choice,
+.hose-size-choice,
+.end-a-choice,
+.protection-choice,
+.measurement-method-choice {
+  background: #ffffff;
+  border: 1px solid rgba(10, 19, 23, 0.12);
+  border-radius: 8px;
+}
+
+.hose-series-choice:hover,
+.hose-size-choice:hover:not(:disabled),
+.end-a-choice:hover,
+.protection-choice:hover,
+.measurement-method-choice:hover {
+  border-color: #8595a4;
+}
+
+.hose-series-choice[aria-pressed="true"],
+.hose-size-choice[aria-pressed="true"],
+.end-a-choice[aria-pressed="true"],
+.protection-choice[aria-pressed="true"],
+.measurement-method-choice[aria-pressed="true"] {
+  border: 2px solid #0143b5;
+  box-shadow: none;
+  background: #ffffff;
+}
+
+.measurement-code,
+.optional-badge,
+.export-packaging-notice {
+  border-radius: 100px;
+}
+
+.configurator-stage-prompt {
+  background: #f1f4f7;
+  border: 1px dashed #ced0d4;
+  border-radius: 24px;
+}
+
+.end-a-search-input,
+.end-a-filter select,
+.application-field input,
+.application-field select,
+.application-field textarea {
+  border: 1px solid #ced0d4;
+  border-radius: 8px;
+}
+
+.configurator-action-dock {
+  background: rgba(255, 255, 255, 0.94);
+  border-top: 1px solid #dee3e9;
+  backdrop-filter: saturate(180%) blur(12px);
+}
+
+.unsaved-draft-dialog {
+  border: 1px solid #dee3e9;
+  border-radius: 24px;
+  box-shadow: 0 24px 64px rgba(10, 19, 23, 0.22);
+}
+
+.mobile-assembly-preview-toggle {
+  border-radius: 100px;
+  border-color: #dee3e9;
+}
+
+@media (max-width: 1060px) {
+  .configurator-progress {
+    border-radius: 20px;
+  }
 }

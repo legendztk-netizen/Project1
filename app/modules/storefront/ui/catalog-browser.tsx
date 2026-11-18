@@ -29,6 +29,19 @@ export interface CatalogBrowserData {
   query: string;
 }
 
+const categorySubtitles: Record<CatalogFamilyId, string> = {
+  "hydraulic-hose":
+    "Braided and spiral steel-wire hose series rated across SAE and EN working pressures.",
+  "hose-ends":
+    "One-piece crimp hose ends in JIC, NPT, ORFS, and BSP threads matched to compatible hose lines.",
+  adapters:
+    "Steel hydraulic adapters and conversion fittings across straight, 45°, and 90° port geometries.",
+  "quick-couplers":
+    "ISO flat-face and poppet quick-disconnect couplers engineered for zero-spill coupling.",
+  ferrules:
+    "Legacy ferrule sleeves maintained for reference compatibility with older hose builds.",
+};
+
 function price(family: PublicCatalogFamilySummary) {
   return family.minimumReferencePrice !== null
     ? `From USD ${family.minimumReferencePrice.toFixed(2)}`
@@ -117,14 +130,19 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
     ? launchCatalogFamilies.find((family) => family.id === data.activeCategory)
         ?.label
     : "All Products";
+  const subtitle = data.activeCategory
+    ? categorySubtitles[data.activeCategory]
+    : "Published hose series, crimp hose ends, hydraulic adapters, and quick couplers ready for custom length quoting.";
+
   return (
     <div className="storefront-shell" data-surface="storefront">
       <StorefrontHeader floating />
-      <main>
+      <main className="catalog-page-shell">
         <section className="catalog-toolbar" aria-labelledby="catalog-title">
-          <div>
+          <div className="catalog-toolbar-copy">
             <span className="eyebrow">{data.appName}</span>
             <h1 id="catalog-title">{activeLabel}</h1>
+            <p className="catalog-toolbar-subtitle">{subtitle}</p>
           </div>
           <Form className="catalog-search" role="search" method="get">
             {data.pagination.perPage !== defaultCatalogPageSize ? (
@@ -134,7 +152,7 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
                 value={data.pagination.perPage}
               />
             ) : null}
-            <Search size={19} aria-hidden="true" />
+            <Search size={18} aria-hidden="true" />
             <label className="sr-only" htmlFor="catalog-query">
               Search products
             </label>
@@ -145,42 +163,40 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
               type="search"
               placeholder="Search SKU, thread, standard or size"
             />
-            <button className="button button-primary" type="submit">
+            <button className="button button-marketing" type="submit">
               Search
             </button>
           </Form>
         </section>
 
-        <section className="catalog-layout" aria-label="Catalog workspace">
-          <aside className="category-sidebar">
-            <h2>Categories</h2>
-            <ul>
-              <li>
-                <Link
-                  className={!data.activeCategory ? "active" : ""}
-                  to="/catalog"
-                >
-                  All Products
-                </Link>
-              </li>
-              {launchCatalogFamilies
-                // Crimp fittings are one-piece (ADR 0056); old ferrule pages keep their route.
-                .filter((family) => family.id !== "ferrules")
-                .map((family) => (
-                  <li key={family.id}>
-                    <Link
-                      className={
-                        family.id === data.activeCategory ? "active" : ""
-                      }
-                      to={`/catalog/${family.id}`}
-                    >
-                      {family.label}
-                    </Link>
-                  </li>
-                ))}
-            </ul>
-          </aside>
+        <nav aria-label="Catalog categories" className="catalog-category-pills">
+          <Link
+            aria-current={!data.activeCategory ? "page" : undefined}
+            className={!data.activeCategory ? "active" : undefined}
+            to="/catalog"
+          >
+            All Products
+          </Link>
+          {launchCatalogFamilies
+            // Crimp fittings are one-piece (ADR 0056); old ferrule pages keep their route.
+            .filter((family) => family.id !== "ferrules")
+            .map((family) => (
+              <Link
+                aria-current={
+                  family.id === data.activeCategory ? "page" : undefined
+                }
+                className={
+                  family.id === data.activeCategory ? "active" : undefined
+                }
+                key={family.id}
+                to={`/catalog/${family.id}`}
+              >
+                {family.label}
+              </Link>
+            ))}
+        </nav>
 
+        <section className="catalog-layout" aria-label="Catalog workspace">
           <div className="catalog-content">
             <div className="section-heading">
               <h2>
@@ -188,6 +204,10 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
                   ? `Results for “${data.query}”`
                   : "Browse product families"}
               </h2>
+              <span className="catalog-result-count">
+                {data.pagination.total}{" "}
+                {data.pagination.total === 1 ? "family" : "families"}
+              </span>
             </div>
 
             {data.families.length ? (
@@ -218,7 +238,10 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
                                 family.category.replaceAll("-", " ")}
                             </span>
                             <span className="variant-count">
-                              {family.variantCount} variants
+                              {family.variantCount}{" "}
+                              {family.variantCount === 1
+                                ? "variant"
+                                : "variants"}
                             </span>
                           </div>
                           <h3>
@@ -238,7 +261,8 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
                               title="View product family"
                               to={familyUrl}
                             >
-                              <ChevronRight size={19} />
+                              <span>View</span>
+                              <ChevronRight size={17} />
                             </Link>
                           </div>
                         </div>

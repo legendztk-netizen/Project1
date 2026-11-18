@@ -1,35 +1,51 @@
+/* Meta footer-region: white canvas, hairline-soft border, steel hierarchy. */
 .storefront-footer {
-  color: #c4ccd2;
-  background: #0b0f12;
-  border-top: 1px solid #222c33;
+  color: #5d6c7b;
+  background: #ffffff;
+  border-top: 1px solid #dee3e9;
+  font-family:
+    "Optimistic VF",
+    "Montserrat",
+    "Noto Sans",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Helvetica,
+    Arial,
+    sans-serif;
 }
 
 .storefront-footer-inner {
   display: grid;
   grid-template-columns: minmax(260px, 1.1fr) 2fr;
   gap: 56px;
-  width: min(1200px, 100%);
+  width: min(1280px, 100%);
   margin: 0 auto;
   padding: 64px 32px 44px;
 }
 
 .storefront-footer .brand-mark strong {
-  color: #ffffff;
+  color: #0a1317;
 }
 
 .storefront-footer .brand-mark small {
-  color: #8d99a2;
+  color: #5d6c7b;
 }
 
 .storefront-footer .brand-symbol {
-  background: #1b2329;
+  background: #0a1317;
+  color: #ffffff;
+  border-left: 0;
+  border-radius: 100px;
 }
 
 .storefront-footer-brand p {
   max-width: 34ch;
-  margin: 20px 0 0;
-  font-size: 0.88rem;
-  line-height: 1.65;
+  margin: 18px 0 0;
+  color: #5d6c7b;
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: -0.14px;
 }
 
 .storefront-footer-nav {
@@ -40,11 +56,12 @@
 
 .storefront-footer .storefront-footer-nav h2 {
   margin: 0 0 14px;
-  color: #ffffff;
-  font-size: 0.78rem;
-  line-height: 1.3;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  color: #0a1317;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.43;
+  letter-spacing: -0.14px;
+  text-transform: none;
 }
 
 .storefront-footer-nav ul {
@@ -59,11 +76,13 @@
   display: inline-flex;
   min-height: 32px;
   align-items: center;
-  font-size: 0.88rem;
+  color: #5d6c7b;
+  font-size: 14px;
+  letter-spacing: -0.14px;
 }
 
 .storefront-footer-nav a:hover {
-  color: #ffffff;
+  color: #0a1317;
   text-decoration: underline;
 }
 
@@ -71,24 +90,24 @@
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  width: min(1200px, 100%);
+  width: min(1280px, 100%);
   margin: 0 auto;
   padding: 20px 32px 28px;
-  border-top: 1px solid #222c33;
-  color: #8d99a2;
-  font-size: 0.78rem;
+  border-top: 1px solid #dee3e9;
+  color: #8595a4;
+  font-size: 12px;
 }
 
 @media (max-width: 860px) {
   .storefront-footer-inner {
     grid-template-columns: 1fr;
     gap: 36px;
-    padding: 48px 18px 32px;
+    padding: 48px 20px 32px;
   }
 
   .storefront-footer-legal {
-    padding-right: 18px;
-    padding-left: 18px;
+    padding-right: 20px;
+    padding-left: 20px;
   }
 }
 

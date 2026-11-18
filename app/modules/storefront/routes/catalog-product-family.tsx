@@ -1,5 +1,6 @@
 import { storefrontCatalogCache } from "../../catalog/infrastructure/public-catalog-edge-cache";
 import { ArrowLeft, Check, Clock3, PackageCheck } from "lucide-react";
+import { useEffect, useState } from "react";
 import { data, Link, redirect } from "react-router";
 
 import type { Route } from "./+types/catalog-product-family";
@@ -15,7 +16,7 @@ import { catalogReturnLink } from "../domain/catalog-pagination";
 import { requireCatalogFamilyId } from "../domain/catalog-route";
 import { catalogFamilySeo, seoMeta } from "../domain/catalog-seo";
 import { AdapterThreadReference } from "../ui/adapter-thread-reference";
-import { CatalogMedia } from "../ui/catalog-media";
+import { CatalogMedia, catalogMediaPath } from "../ui/catalog-media";
 import {
   buildHoseSpecTableRows,
   HoseSeriesReference,
@@ -209,9 +210,38 @@ export default function CatalogProductFamily({
     selected,
     selectionRequested: loaderData.selectionRequested,
   });
+  const [activeThumbIndex, setActiveThumbIndex] = useState(0);
+  const primaryImage = catalogMediaPath(selected);
+
+  useEffect(() => {
+    setActiveThumbIndex(0);
+  }, [selected.sku]);
+
+  const galleryThumbs =
+    selected.productType === "hose" && primaryImage
+      ? [
+          {
+            isPhoto: false,
+            label: `${family.familyName} cutaway view`,
+            src: primaryImage,
+          },
+          {
+            isPhoto: true,
+            label: "Steel-wire braid reinforcement",
+            src: "/images/home/wire-braid.jpg",
+          },
+          {
+            isPhoto: false,
+            label: "Multi-layer spiral hose structure",
+            src: "/images/home/hose-en4sp.jpg",
+          },
+        ]
+      : [];
+  const activeThumb = galleryThumbs[activeThumbIndex] ?? galleryThumbs[0];
+
   return (
     <div className="storefront-shell" data-surface="storefront">
-      <StorefrontHeader />
+      <StorefrontHeader floating />
       <main className="product-page">
         <Link className="product-back-link" to={loaderData.backLink.href}>
           <ArrowLeft size={17} /> {loaderData.backLink.label}
@@ -219,7 +249,42 @@ export default function CatalogProductFamily({
 
         <section className="product-overview">
           <div className="product-gallery">
-            <CatalogMedia item={selected} />
+            {galleryThumbs.length ? (
+              <div className="product-gallery-layout">
+                <div
+                  aria-label="Product gallery views"
+                  className="product-thumb-rail"
+                >
+                  {galleryThumbs.map((thumb, index) => (
+                    <button
+                      aria-label={thumb.label}
+                      aria-pressed={activeThumbIndex === index}
+                      className={`product-thumb-btn${activeThumbIndex === index ? " is-active" : ""}`}
+                      key={thumb.src}
+                      onClick={() => setActiveThumbIndex(index)}
+                      type="button"
+                    >
+                      <img
+                        alt=""
+                        className={thumb.isPhoto ? "is-photo" : undefined}
+                        src={thumb.src}
+                      />
+                    </button>
+                  ))}
+                </div>
+                <div className="product-hero-stage">
+                  <img
+                    alt={activeThumb.label}
+                    className={activeThumb.isPhoto ? "is-photo" : undefined}
+                    src={activeThumb.src}
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="product-hero-stage">
+                <CatalogMedia item={selected} />
+              </div>
+            )}
           </div>
           <div className="product-summary">
             <span className="eyebrow">

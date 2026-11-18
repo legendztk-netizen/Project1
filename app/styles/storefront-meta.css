@@ -1,0 +1,1055 @@
+/* Meta Design System tokens and customer-portal skin.
+   Strictly scoped to [data-surface="storefront"] so Admin surfaces stay untouched. */
+
+[data-surface="storefront"] {
+  --meta-primary: #0064e0;
+  --meta-primary-deep: #0457cb;
+  --meta-primary-soft: rgba(0, 145, 255, 0.14);
+  --meta-ink-button: #000000;
+  --meta-ink-button-pressed: #444950;
+  --meta-fb-blue: #1876f2;
+  --meta-radio-active: #0143b5;
+  --meta-canvas: #ffffff;
+  --meta-soft: #f1f4f7;
+  --meta-ink-deep: #0a1317;
+  --meta-ink: #1c1e21;
+  --meta-charcoal: #444950;
+  --meta-slate: #4b4c4f;
+  --meta-steel: #5d6c7b;
+  --meta-stone: #8595a4;
+  --meta-hairline: #ced0d4;
+  --meta-hairline-soft: #dee3e9;
+  --meta-disabled-text: #bcc0c4;
+  --meta-success: #31a24c;
+  --meta-attention: #f2a918;
+  --meta-warning: #f7b928;
+  --meta-critical: #e41e3f;
+  --meta-critical-strong: #f0284a;
+
+  /* Map shared storefront tokens to Meta palette inside customer surfaces */
+  --ink: var(--meta-ink-deep);
+  --muted: var(--meta-steel);
+  --line: var(--meta-hairline-soft);
+  --surface: var(--meta-canvas);
+  --surface-subtle: var(--meta-canvas);
+  --accent: var(--meta-primary);
+  --accent-hover: var(--meta-primary-deep);
+  --steel: var(--meta-steel);
+  --signal: var(--meta-primary);
+  --success: var(--meta-success);
+  --action: var(--meta-primary);
+
+  color: var(--meta-ink);
+  background: var(--meta-canvas);
+  font-family:
+    "Optimistic VF",
+    "Montserrat",
+    "Noto Sans",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Helvetica,
+    Arial,
+    sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+}
+
+:where([data-surface="storefront"]) :is(h1, h2, h3, h4) {
+  color: var(--meta-ink-deep);
+  font-feature-settings: "ss01", "ss02";
+  letter-spacing: 0;
+}
+
+[data-surface="storefront"] .eyebrow {
+  color: var(--meta-steel);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Global Pill Buttons (rounded.full: 100px everywhere) */
+[data-surface="storefront"] .button {
+  min-height: 44px;
+  padding: 10px 24px;
+  border-radius: 100px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.14px;
+  line-height: 1.43;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+[data-surface="storefront"] .button-primary {
+  background: var(--meta-primary);
+  border-color: var(--meta-primary);
+  color: #ffffff;
+}
+
+[data-surface="storefront"] .button-primary:hover:not(:disabled),
+[data-surface="storefront"] .button-primary:active:not(:disabled) {
+  background: var(--meta-primary-deep);
+  border-color: var(--meta-primary-deep);
+}
+
+[data-surface="storefront"] .button-secondary {
+  background: transparent;
+  color: var(--meta-ink-deep);
+  border: 1.5px solid var(--meta-hairline);
+}
+
+[data-surface="storefront"] .button-secondary:hover:not(:disabled) {
+  border-color: var(--meta-ink-deep);
+  background: var(--meta-soft);
+}
+
+[data-surface="storefront"] .button-marketing {
+  background: var(--meta-ink-button);
+  border-color: var(--meta-ink-button);
+  color: #ffffff;
+  padding: 12px 28px;
+}
+
+[data-surface="storefront"] .button-marketing:hover:not(:disabled),
+[data-surface="storefront"] .button-marketing:active:not(:disabled) {
+  background: var(--meta-ink-button-pressed);
+  border-color: var(--meta-ink-button-pressed);
+}
+
+[data-surface="storefront"] .button-danger {
+  background: #ffffff;
+  color: var(--meta-critical);
+  border: 1px solid #f0b8c1;
+}
+
+[data-surface="storefront"] .button-danger:hover:not(:disabled) {
+  background: #fff2f4;
+  border-color: var(--meta-critical);
+}
+
+[data-surface="storefront"] .button:disabled,
+[data-surface="storefront"] .button.is-disabled {
+  background: #e9ecef;
+  border-color: #e9ecef;
+  color: var(--meta-stone);
+  opacity: 1;
+}
+
+[data-surface="storefront"] :is(input, select, textarea):focus-visible {
+  outline: none;
+  border-color: var(--meta-fb-blue);
+  box-shadow: 0 0 0 3px rgba(24, 118, 242, 0.14);
+}
+
+[data-surface="storefront"] :is(a, button, summary):focus-visible {
+  outline: 2px solid var(--meta-fb-blue);
+  outline-offset: 2px;
+}
+
+/* Brand Mark on Customer Surfaces */
+[data-surface="storefront"] .brand-symbol {
+  width: 34px;
+  height: 34px;
+  border-left: 0;
+  border-radius: 100px;
+  background: var(--meta-ink-deep);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+[data-surface="storefront"] .brand-mark strong {
+  color: var(--meta-ink-deep);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+[data-surface="storefront"] .brand-mark small {
+  color: var(--meta-steel);
+  font-size: 11px;
+}
+
+/* Top Navigation (68px sticky Meta header, NO category links inside nav) */
+[data-surface="storefront"] .storefront-header {
+  position: relative;
+  z-index: 60;
+  min-height: 68px;
+  padding: 0 32px;
+  background: var(--meta-canvas);
+  border-bottom: 1px solid var(--meta-hairline-soft);
+  gap: 24px;
+}
+
+[data-surface="storefront"] .storefront-header.is-floating {
+  position: sticky;
+  top: 0;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: saturate(180%) blur(14px);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+}
+
+[data-surface="storefront"] .storefront-header nav {
+  align-items: center;
+  align-self: center;
+  gap: 8px;
+}
+
+[data-surface="storefront"] .storefront-header nav a {
+  height: 38px;
+  padding: 0 16px;
+  border-bottom: 0;
+  border-radius: 100px;
+  border: 1px solid transparent;
+  color: var(--meta-charcoal);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.14px;
+  white-space: nowrap;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    border-color 150ms ease;
+}
+
+[data-surface="storefront"] .storefront-header nav a:hover {
+  background: var(--meta-soft);
+  color: var(--meta-ink-deep);
+}
+
+[data-surface="storefront"] .storefront-header nav a.active {
+  background: var(--meta-ink-deep);
+  color: #ffffff;
+  border-color: var(--meta-ink-deep);
+}
+
+[data-surface="storefront"] .storefront-header-actions {
+  gap: 10px;
+}
+
+[data-surface="storefront"] .storefront-register-link,
+[data-surface="storefront"] .storefront-account-link {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 100px;
+  border: 1px solid var(--meta-hairline-soft);
+  background: var(--meta-canvas);
+  color: var(--meta-ink-deep);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+
+[data-surface="storefront"] .storefront-register-link:hover,
+[data-surface="storefront"] .storefront-account-link:hover {
+  color: var(--meta-ink-deep);
+  background: var(--meta-soft);
+  border-color: var(--meta-hairline);
+}
+
+[data-surface="storefront"] .storefront-account-link[aria-current="page"] {
+  background: var(--meta-soft);
+  border-color: var(--meta-ink-deep);
+}
+
+[data-surface="storefront"] .storefront-header-actions .button-secondary {
+  min-height: 38px;
+  padding: 0 16px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+[data-surface="storefront"] .storefront-messages-badge {
+  min-width: 20px;
+  padding: 1px 7px;
+  border-radius: 100px;
+  background: var(--meta-primary);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.storefront-mobile-toggle {
+  display: none;
+}
+
+.storefront-mobile-drawer {
+  display: none;
+}
+
+@media (max-width: 1040px) {
+  [data-surface="storefront"] .storefront-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+  }
+
+  [data-surface="storefront"] .storefront-header nav,
+  [data-surface="storefront"] .storefront-header-actions {
+    display: none;
+  }
+
+  .storefront-mobile-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    border-radius: 9999px;
+    border: 1px solid var(--meta-hairline);
+    background: var(--meta-canvas);
+    color: var(--meta-ink-deep);
+    cursor: pointer;
+  }
+
+  .storefront-mobile-drawer {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 65;
+    display: grid;
+    gap: 16px;
+    padding: 20px;
+    background: #ffffff;
+    border-bottom: 1px solid var(--meta-hairline-soft);
+    box-shadow: 0 16px 36px rgba(10, 19, 23, 0.12);
+  }
+
+  .storefront-mobile-drawer-section {
+    display: grid;
+    gap: 8px;
+  }
+
+  .storefront-mobile-drawer-section a {
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 0 16px;
+    border-radius: 100px;
+    border: 1px solid var(--meta-hairline-soft);
+    color: var(--meta-ink-deep);
+    font-size: 14px;
+    font-weight: 700;
+    background: var(--meta-canvas);
+  }
+
+  .storefront-mobile-drawer-section a.is-active {
+    background: var(--meta-ink-deep);
+    color: #ffffff;
+    border-color: var(--meta-ink-deep);
+  }
+}
+
+/* Auth & Onboarding Pages (/sign-in, /register, /forgot-password, /reset-password) */
+[data-surface="storefront"] .customer-auth-page,
+[data-surface="storefront"] .customer-account-page {
+  background: var(--meta-soft);
+  padding: 56px 20px 80px;
+}
+
+[data-surface="storefront"] .customer-auth-panel,
+[data-surface="storefront"] .customer-account-panel {
+  width: min(100%, 500px);
+  padding: 40px 36px;
+  background: var(--meta-canvas);
+  border: 1px solid var(--meta-hairline-soft);
+  border-radius: 32px;
+  box-shadow: 0 2px 12px rgba(10, 19, 23, 0.04);
+}
+
+[data-surface="storefront"] .customer-auth-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 9999px;
+  background: var(--meta-soft);
+  color: var(--meta-ink-deep);
+}
+
+[data-surface="storefront"] .customer-auth-panel h1,
+[data-surface="storefront"] .customer-account-panel h1 {
+  font-size: 32px;
+  font-weight: 500;
+  line-height: 1.18;
+}
+
+[data-surface="storefront"] .customer-auth-panel > p,
+[data-surface="storefront"] .customer-account-panel > p {
+  color: var(--meta-steel);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+[data-surface="storefront"] .customer-auth-methods {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 24px;
+  background: var(--meta-soft);
+  border: 0;
+  border-radius: 100px;
+}
+
+[data-surface="storefront"] .customer-auth-methods a {
+  padding: 9px 14px;
+  border-bottom: 0;
+  border-radius: 100px;
+  color: var(--meta-steel);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+[data-surface="storefront"] .customer-auth-methods a[aria-current="page"] {
+  background: var(--meta-ink-deep);
+  color: #ffffff;
+}
+
+[data-surface="storefront"] .customer-auth-form input,
+[data-surface="storefront"] .account-form-grid input,
+[data-surface="storefront"] .account-form-grid select,
+[data-surface="storefront"] .account-record-form input,
+[data-surface="storefront"] .account-record-form select,
+[data-surface="storefront"] .account-record-form textarea {
+  min-height: 44px;
+  padding: 10px 14px;
+  color: var(--meta-ink);
+  background: var(--meta-canvas);
+  border: 1px solid var(--meta-hairline);
+  border-radius: 8px;
+}
+
+[data-surface="storefront"] .customer-auth-form input:focus,
+[data-surface="storefront"] .account-form-grid input:focus,
+[data-surface="storefront"] .account-form-grid select:focus,
+[data-surface="storefront"] .account-record-form input:focus,
+[data-surface="storefront"] .account-record-form select:focus,
+[data-surface="storefront"] .account-record-form textarea:focus {
+  border: 2px solid var(--meta-fb-blue);
+  box-shadow: none;
+}
+
+[data-surface="storefront"] .customer-auth-error {
+  border-radius: 16px;
+  border: 1px solid #f5c2ca;
+  background: #fff4f6;
+  color: var(--meta-critical);
+}
+
+[data-surface="storefront"] .customer-auth-success,
+[data-surface="storefront"] .local-mail-stub {
+  border-radius: 16px;
+  border: 1px solid #c5e8cd;
+  background: #f1fbf4;
+  color: #1e6b31;
+}
+
+/* Personal Center / Account Workspace */
+[data-surface="storefront"] .account-workspace {
+  background: var(--meta-soft);
+  max-width: none;
+  width: 100%;
+}
+
+[data-surface="storefront"] .account-workspace-sidebar {
+  padding: 28px 18px;
+  background: var(--meta-canvas);
+  border-right: 1px solid var(--meta-hairline-soft);
+  gap: 22px;
+}
+
+[data-surface="storefront"] .account-workspace-sidebar > div > strong {
+  color: var(--meta-ink-deep);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+[data-surface="storefront"] .account-detail-navigation,
+[data-surface="storefront"] .account-workspace-sidebar nav {
+  display: grid;
+  gap: 6px;
+}
+
+[data-surface="storefront"] .account-detail-navigation a,
+[data-surface="storefront"] .account-workspace-sidebar nav a,
+[data-surface="storefront"] .account-workspace-sidebar form button {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-left: 0;
+  border-radius: 100px;
+  color: var(--meta-charcoal);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.14px;
+}
+
+[data-surface="storefront"] .account-detail-navigation a:hover,
+[data-surface="storefront"] .account-workspace-sidebar nav a:hover {
+  background: var(--meta-soft);
+  color: var(--meta-ink-deep);
+}
+
+[data-surface="storefront"] .account-detail-navigation a[aria-current="page"],
+[data-surface="storefront"]
+  .account-workspace-sidebar
+  nav
+  a[aria-current="page"] {
+  background: var(--meta-ink-deep);
+  color: #ffffff;
+  border-left-color: transparent;
+}
+
+[data-surface="storefront"]
+  .account-detail-navigation
+  a[aria-current="page"]
+  svg {
+  color: #ffffff;
+}
+
+[data-surface="storefront"]
+  .account-detail-navigation
+  a[aria-current="page"]
+  .account-nav-badge {
+  background: #ffffff;
+  color: var(--meta-ink-deep);
+}
+
+[data-surface="storefront"] .account-nav-badge {
+  border-radius: 100px;
+  background: var(--meta-primary);
+  color: #ffffff;
+}
+
+[data-surface="storefront"] .account-workspace-sidebar form button {
+  border: 1px solid var(--meta-hairline);
+  justify-content: center;
+  color: var(--meta-ink-deep);
+  background: var(--meta-canvas);
+}
+
+[data-surface="storefront"] .account-workspace-sidebar form button:hover {
+  background: var(--meta-soft);
+  border-color: var(--meta-ink-deep);
+  color: var(--meta-ink-deep);
+}
+
+[data-surface="storefront"] .account-detail-content {
+  padding: 40px 40px 80px;
+}
+
+[data-surface="storefront"] .account-overview,
+[data-surface="storefront"] .account-profile-detail,
+[data-surface="storefront"] .account-record-detail,
+[data-surface="storefront"] .account-empty-detail {
+  width: min(100%, 1020px);
+}
+
+[data-surface="storefront"] .account-overview h1,
+[data-surface="storefront"] .account-profile-detail h1,
+[data-surface="storefront"] .account-record-detail h1,
+[data-surface="storefront"] .account-empty-detail h1,
+[data-surface="storefront"] .customer-quote-hero h1,
+[data-surface="storefront"] .customer-quote-detail-header h1,
+[data-surface="storefront"] .shipment-documents-page h1 {
+  font-size: 34px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+[data-surface="storefront"] .account-summary-grid {
+  gap: 20px;
+}
+
+[data-surface="storefront"] .account-summary-grid article {
+  padding: 28px 24px;
+  background: var(--meta-canvas);
+  border: 1px solid var(--meta-hairline-soft);
+  border-radius: 24px;
+}
+
+[data-surface="storefront"] .account-summary-grid article > svg {
+  color: var(--meta-ink-deep);
+}
+
+[data-surface="storefront"] .account-summary-grid h2 {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+[data-surface="storefront"] .account-summary-grid a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 18px;
+  border-radius: 100px;
+  border: 1px solid var(--meta-hairline);
+  color: var(--meta-ink-deep);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+[data-surface="storefront"] .account-summary-grid a:hover {
+  background: var(--meta-soft);
+  border-color: var(--meta-ink-deep);
+}
+
+[data-surface="storefront"] .account-profile-form,
+[data-surface="storefront"] .account-record-form-section > .account-record-form,
+[data-surface="storefront"] .account-record-list > article,
+[data-surface="storefront"] .account-context-list > article,
+[data-surface="storefront"] .account-address-card,
+[data-surface="storefront"] .saved-configuration-list > article,
+[data-surface="storefront"] .customer-quote-list > article,
+[data-surface="storefront"] .customer-quote-section,
+[data-surface="storefront"] .customer-quote-progress,
+[data-surface="storefront"] .customer-order-card {
+  background: var(--meta-canvas);
+  border: 1px solid var(--meta-hairline-soft);
+  border-radius: 24px;
+}
+
+[data-surface="storefront"] .account-record-form-section,
+[data-surface="storefront"] .account-context-section {
+  background: transparent;
+  border: 0;
+  padding: 8px 0 0;
+}
+
+[data-surface="storefront"]
+  .account-record-form-section
+  > .account-record-form {
+  padding: 28px;
+}
+
+[data-surface="storefront"] .account-address-card[data-selected],
+[data-surface="storefront"] .account-context-list > article[data-selected] {
+  border: 2px solid var(--meta-radio-active);
+  box-shadow: none;
+}
+
+[data-surface="storefront"] .account-address-default {
+  border-radius: 100px;
+  background: #ebf7ee;
+  color: #1e6b31;
+  padding: 4px 10px;
+}
+
+[data-surface="storefront"] .account-addresses-empty,
+[data-surface="storefront"] .customer-order-empty,
+[data-surface="storefront"] .account-inline-empty {
+  background: var(--meta-canvas);
+  border: 1px dashed var(--meta-hairline);
+  border-radius: 24px;
+}
+
+/* Quote & Order Pills / Navigation / Tabs */
+[data-surface="storefront"] .customer-quote-tabs {
+  gap: 8px;
+  padding: 6px;
+  margin-bottom: 24px;
+  background: var(--meta-canvas);
+  border: 1px solid var(--meta-hairline-soft);
+  border-radius: 100px;
+  border-bottom: 1px solid var(--meta-hairline-soft);
+}
+
+[data-surface="storefront"] .customer-quote-tabs [role="tab"],
+[data-surface="storefront"] .customer-quote-tabs > a {
+  min-height: 40px;
+  padding: 6px 16px;
+  border-bottom: 0;
+  border-radius: 100px;
+  color: var(--meta-steel);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+[data-surface="storefront"] .customer-quote-tabs [aria-selected="true"],
+[data-surface="storefront"] .customer-quote-tabs [aria-current="page"] {
+  background: var(--meta-ink-deep);
+  color: #ffffff;
+}
+
+[data-surface="storefront"] .customer-quote-tab-count {
+  border-radius: 100px;
+  background: var(--meta-soft);
+  color: var(--meta-ink-deep);
+}
+
+[data-surface="storefront"]
+  .customer-quote-tabs
+  [aria-selected="true"]
+  .customer-quote-tab-count,
+[data-surface="storefront"]
+  .customer-quote-tabs
+  [aria-current="page"]
+  .customer-quote-tab-count {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+[data-surface="storefront"] .customer-quote-navigation {
+  gap: 8px;
+  border-bottom: 0;
+  margin-bottom: 20px;
+}
+
+[data-surface="storefront"] .customer-quote-navigation a {
+  border-radius: 100px;
+  border: 1px solid var(--meta-hairline-soft);
+  background: var(--meta-canvas);
+  border-bottom-width: 1px;
+  padding: 8px 18px;
+  min-height: 40px;
+}
+
+[data-surface="storefront"] .customer-quote-navigation a[aria-current="page"] {
+  background: var(--meta-ink-deep);
+  color: #ffffff;
+  border-color: var(--meta-ink-deep);
+}
+
+/* Order & Quote Status Badges & Thumbnails */
+[data-surface="storefront"] .customer-order-badge,
+[data-surface="storefront"] .customer-quote-status {
+  border-radius: 100px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+[data-surface="storefront"] .customer-order-badge.ready {
+  background: #fef3d6;
+  color: #8a5600;
+}
+
+[data-surface="storefront"] .customer-order-badge.shipped {
+  background: #e8f1fe;
+  color: var(--meta-primary-deep);
+}
+
+[data-surface="storefront"] .customer-order-badge.delivered {
+  background: #eaf7ed;
+  color: #1e6b31;
+}
+
+[data-surface="storefront"] .customer-order-badge.hold {
+  background: #fff0f2;
+  color: var(--meta-critical);
+}
+
+[data-surface="storefront"] .customer-order-thumb,
+[data-surface="storefront"] .customer-quote-product-preview,
+[data-surface="storefront"] .customer-quote-preview-part {
+  background: var(--meta-soft);
+  border-radius: 12px;
+  border: 1px solid var(--meta-hairline-soft);
+}
+
+[data-surface="storefront"] .customer-order-thumb img,
+[data-surface="storefront"] .customer-quote-preview-part img {
+  mix-blend-mode: multiply;
+  filter: contrast(1.04) brightness(1.03);
+}
+
+[data-surface="storefront"]
+  .customer-order-progress-bar
+  span[data-complete="true"] {
+  background: var(--meta-success);
+}
+
+[data-surface="storefront"] .customer-quote-next-row {
+  background: var(--meta-soft);
+  border-radius: 16px;
+}
+
+/* Proforma Invoice & Acceptance */
+[data-surface="storefront"] .customer-quote-section.customer-pi-pay {
+  border-left: 4px solid var(--meta-primary);
+}
+
+[data-surface="storefront"] .pi-acceptance-form .quote-confirmation {
+  border-radius: 16px;
+  border: 1px solid rgba(10, 19, 23, 0.14);
+}
+
+[data-surface="storefront"]
+  .pi-acceptance-form
+  .quote-confirmation:has(input:checked) {
+  border: 2px solid var(--meta-radio-active);
+  background: #f5f9ff;
+}
+
+[data-surface="storefront"]
+  .pi-acceptance-form
+  .quote-confirmation
+  input[type="checkbox"] {
+  accent-color: var(--meta-primary);
+}
+
+/* Customer Message Center, Shipment Docs & After-Sales inside Storefront */
+[data-surface="storefront"] .message-center-filters a {
+  border-radius: 100px;
+  border: 1px solid var(--meta-hairline);
+  background: var(--meta-canvas);
+  color: var(--meta-ink);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+[data-surface="storefront"] .message-center-filters a[aria-current="page"] {
+  background: var(--meta-ink-deep);
+  border-color: var(--meta-ink-deep);
+  color: #ffffff;
+}
+
+[data-surface="storefront"] .message-inbox,
+[data-surface="storefront"] .quote-conversation-panel {
+  border-radius: 24px;
+  border: 1px solid var(--meta-hairline-soft);
+  overflow: hidden;
+  background: var(--meta-canvas);
+}
+
+[data-surface="storefront"] .message-inbox-row:hover {
+  background: var(--meta-soft);
+}
+
+[data-surface="storefront"] .message-inbox-row.unread {
+  background: #f4f8ff;
+}
+
+[data-surface="storefront"] .quote-message {
+  border-radius: 16px;
+  border: 1px solid var(--meta-hairline-soft);
+}
+
+[data-surface="storefront"] .shipment-documents-tabs {
+  gap: 8px;
+  border-bottom: 1px solid var(--meta-hairline-soft);
+  padding-bottom: 12px;
+}
+
+[data-surface="storefront"] .shipment-documents-tabs button {
+  min-height: 40px;
+  border-bottom: 0;
+  border-radius: 100px;
+  border: 1px solid var(--meta-hairline);
+  background: var(--meta-canvas);
+  color: var(--meta-ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+[data-surface="storefront"]
+  .shipment-documents-tabs
+  button[aria-selected="true"] {
+  background: var(--meta-ink-deep);
+  border-color: var(--meta-ink-deep);
+  color: #ffffff;
+}
+
+[data-surface="storefront"] .shipment-carton-group,
+[data-surface="storefront"] .customer-shipment-item {
+  border-radius: 16px;
+  border: 1px solid var(--meta-hairline-soft);
+  background: var(--meta-canvas);
+}
+
+[data-surface="storefront"] .after-sales-flag {
+  border-radius: 100px;
+  background: #fff0f2;
+  color: var(--meta-critical);
+}
+
+/* ActionDialog when rendered inside a storefront session */
+body:has([data-surface="storefront"]) .action-dialog {
+  border-radius: 24px;
+  border: 1px solid var(--meta-hairline-soft);
+  box-shadow: 0 24px 64px rgba(10, 19, 23, 0.18);
+  font-family:
+    "Optimistic VF",
+    "Montserrat",
+    "Noto Sans",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Helvetica,
+    Arial,
+    sans-serif;
+}
+
+body:has([data-surface="storefront"]) .action-dialog-close {
+  border-radius: 9999px;
+}
+
+body:has([data-surface="storefront"]) .action-dialog .button-primary {
+  border-radius: 100px;
+  background: #0064e0;
+  border-color: #0064e0;
+}
+
+body:has([data-surface="storefront"]) .action-dialog .button-secondary {
+  border-radius: 100px;
+}
+
+/* Shared Back Links, Order / PI / Quote Details & After-Sales Inputs */
+[data-surface="storefront"] .product-back-link,
+[data-surface="storefront"] .customer-quote-back-link {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding: 0 14px;
+  border-radius: 100px;
+  border: 1px solid var(--meta-hairline-soft);
+  background: var(--meta-canvas);
+  color: var(--meta-steel);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+[data-surface="storefront"] .product-back-link:hover,
+[data-surface="storefront"] .customer-quote-back-link:hover {
+  border-color: var(--meta-ink-deep);
+  color: var(--meta-ink-deep);
+}
+
+[data-surface="storefront"] .customer-order-hero,
+[data-surface="storefront"] .customer-pi-hero {
+  padding: 24px 28px;
+  background: var(--meta-canvas);
+  border: 1px solid var(--meta-hairline-soft);
+  border-radius: 24px;
+}
+
+[data-surface="storefront"] .customer-quote-lines article {
+  border-radius: 16px;
+  border: 1px solid var(--meta-hairline-soft);
+  background: var(--meta-canvas);
+}
+
+[data-surface="storefront"] .customer-pi-instructions,
+[data-surface="storefront"] .customer-pi-reference {
+  background: var(--meta-soft);
+  border-radius: 16px;
+  border: 1px solid var(--meta-hairline-soft);
+}
+
+[data-surface="storefront"] .customer-pi-conditions {
+  border-radius: 16px;
+  border: 1px solid var(--meta-hairline-soft);
+  background: var(--meta-soft);
+}
+
+[data-surface="storefront"] .quote-conversation-composer input,
+[data-surface="storefront"] .quote-conversation-composer textarea,
+[data-surface="storefront"] .message-center-search input,
+[data-surface="storefront"] .shipping-change-form input,
+[data-surface="storefront"] .shipping-change-form select,
+[data-surface="storefront"] .shipping-change-form textarea,
+[data-surface="storefront"] .after-sales-inline-form input,
+[data-surface="storefront"] .after-sales-inline-form select,
+[data-surface="storefront"] .after-sales-inline-form textarea {
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--meta-hairline);
+  border-radius: 8px;
+  background: var(--meta-canvas);
+  color: var(--meta-ink);
+}
+
+.error-page {
+  min-height: 100vh;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 40px 20px;
+  text-align: center;
+  background: #ffffff;
+  color: #1c1e21;
+  font-family:
+    "Optimistic VF",
+    "Montserrat",
+    "Noto Sans",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Helvetica,
+    Arial,
+    sans-serif;
+}
+
+.error-page .button-primary {
+  border-radius: 100px;
+  background: #000000;
+  color: #ffffff;
+}
+
+@media (max-width: 700px) {
+  [data-surface="storefront"] .storefront-header .brand-mark > span:last-child {
+    display: grid;
+  }
+
+  [data-surface="storefront"] .account-workspace-sidebar {
+    padding: 18px 18px 20px;
+    background: var(--meta-canvas);
+    border-bottom: 1px solid var(--meta-hairline-soft);
+  }
+
+  [data-surface="storefront"] .account-workspace-sidebar nav,
+  [data-surface="storefront"] .account-detail-navigation {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  [data-surface="storefront"] .account-detail-navigation a,
+  [data-surface="storefront"] .account-workspace-sidebar nav a {
+    justify-content: flex-start;
+    gap: 7px;
+    padding: 8px 10px;
+    font-size: 12.5px;
+    line-height: 1.25;
+    border-radius: 100px;
+    border: 1px solid var(--meta-hairline-soft);
+  }
+
+  [data-surface="storefront"] .account-detail-navigation a[aria-current="page"],
+  [data-surface="storefront"]
+    .account-workspace-sidebar
+    nav
+    a[aria-current="page"] {
+    border-color: var(--meta-ink-deep);
+  }
+
+  [data-surface="storefront"] .account-detail-content {
+    padding: 24px 18px 56px;
+  }
+
+  [data-surface="storefront"] .customer-quote-tabs {
+    border-radius: 20px;
+    flex-wrap: wrap;
+  }
+
+  [data-surface="storefront"] .customer-order-hero,
+  [data-surface="storefront"] .customer-pi-hero {
+    padding: 20px 18px;
+  }
+}

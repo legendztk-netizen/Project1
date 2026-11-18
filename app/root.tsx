@@ -12,6 +12,7 @@ import type { Route } from "./+types/root";
 import { createCustomerIdentityService } from "./modules/customer-identity/application/customer-identity-service";
 import { createD1MessageCenter } from "./modules/message-center/infrastructure/d1-message-center";
 import "./styles/app.css";
+import "./styles/storefront-meta.css";
 import { cloudflareContext } from "#workers/context";
 
 export interface RootLoaderData {
