@@ -140,7 +140,6 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
       <main className="catalog-page-shell">
         <section className="catalog-toolbar" aria-labelledby="catalog-title">
           <div className="catalog-toolbar-copy">
-            <span className="eyebrow">{data.appName}</span>
             <h1 id="catalog-title">{activeLabel}</h1>
             <p className="catalog-toolbar-subtitle">{subtitle}</p>
           </div>

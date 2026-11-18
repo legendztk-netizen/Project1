@@ -3,43 +3,43 @@
 .catalog-page-shell {
   width: min(1280px, 100%);
   margin: 0 auto;
-  padding: 28px 32px 80px;
+  padding: 16px 32px 68px;
 }
 
 .storefront-shell .catalog-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
-  align-items: end;
-  gap: 28px;
-  padding: 36px;
+  grid-template-columns: minmax(0, 1.4fr) minmax(300px, 400px);
+  align-items: center;
+  gap: 14px 24px;
+  padding: 16px 24px;
   background: #f1f4f7;
   border: 1px solid #dee3e9;
-  border-radius: 32px;
+  border-radius: 24px;
 }
 
 .catalog-toolbar-copy h1 {
-  margin: 8px 0 0;
+  margin: 0;
   color: #0a1317;
-  font-size: clamp(2rem, 3.6vw, 2.75rem);
+  font-size: clamp(1.375rem, 2.2vw, 1.75rem);
   font-weight: 500;
-  line-height: 1.16;
+  line-height: 1.2;
 }
 
 .catalog-toolbar-subtitle {
-  max-width: 56ch;
-  margin: 12px 0 0;
+  max-width: 68ch;
+  margin: 4px 0 0;
   color: #5d6c7b;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 400;
-  line-height: 1.48;
+  line-height: 1.4;
 }
 
 .storefront-shell .catalog-search {
   display: flex;
-  min-height: 48px;
+  min-height: 42px;
   align-items: center;
   gap: 10px;
-  padding: 4px 4px 4px 18px;
+  padding: 3px 3px 3px 16px;
   background: #ffffff;
   border: 1px solid #ced0d4;
   border-radius: 100px;
@@ -62,8 +62,8 @@
 }
 
 .storefront-shell .catalog-search .button {
-  min-height: 40px;
-  padding: 0 22px;
+  min-height: 36px;
+  padding: 0 18px;
   border-radius: 100px;
 }
 
@@ -73,14 +73,14 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin: 24px 0 28px;
+  margin: 14px 0 16px;
 }
 
 .catalog-category-pills a {
   display: inline-flex;
-  min-height: 40px;
+  min-height: 36px;
   align-items: center;
-  padding: 8px 18px;
+  padding: 6px 16px;
   color: #1c1e21;
   background: #ffffff;
   border: 1px solid #ced0d4;
@@ -123,13 +123,13 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 20px;
+  margin-bottom: 14px;
 }
 
 .catalog-content .section-heading h2 {
   margin: 0;
   color: #0a1317;
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 500;
 }
 
@@ -139,21 +139,21 @@
   font-weight: 400;
 }
 
-/* Product Family Grid (card-product-feature 32px) */
+/* Product Family Grid (card-product-feature) */
 .product-family-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 24px;
+  gap: 20px;
 }
 
 .product-family-card {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: 20px;
+  padding: 16px;
   background: #ffffff;
   border: 1px solid #dee3e9;
-  border-radius: 32px;
+  border-radius: 24px;
   transition: border-color 160ms ease;
 }
 
@@ -164,9 +164,9 @@
 .product-family-media {
   display: grid;
   min-width: 0;
-  height: 210px;
+  height: 176px;
   place-items: center;
-  padding: 20px;
+  padding: 14px;
   background: #f1f4f7;
   border-radius: 16px;
   overflow: hidden;
@@ -174,7 +174,7 @@
 
 .product-family-media img {
   width: 100%;
-  height: 168px;
+  height: 144px;
   object-fit: contain;
   mix-blend-mode: multiply;
   filter: contrast(1.04) brightness(1.03);
@@ -183,9 +183,9 @@
 .product-family-copy {
   display: flex;
   flex: 1;
-  min-height: 168px;
+  min-height: 142px;
   flex-direction: column;
-  padding: 18px 8px 6px;
+  padding: 14px 6px 4px;
 }
 
 .family-card-topline {
@@ -196,8 +196,8 @@
 }
 
 .product-family-copy h3 {
-  margin: 10px 0 6px;
-  font-size: 20px;
+  margin: 8px 0 4px;
+  font-size: 18px;
   font-weight: 500;
   line-height: 1.25;
 }
@@ -210,7 +210,7 @@
   margin: 0;
   color: #5d6c7b;
   font-size: 14px;
-  line-height: 1.43;
+  line-height: 1.4;
 }
 
 .variant-count {
@@ -226,7 +226,7 @@
   justify-content: space-between;
   gap: 12px;
   margin-top: auto;
-  padding-top: 18px;
+  padding-top: 12px;
   font-size: 15px;
 }
 
@@ -1350,7 +1350,8 @@
 @media (max-width: 1040px) {
   .storefront-shell .catalog-toolbar {
     grid-template-columns: 1fr;
-    gap: 20px;
+    gap: 12px;
+    padding: 16px 20px;
   }
 
   .product-family-grid {
@@ -1382,12 +1383,12 @@
 @media (max-width: 700px) {
   .catalog-page-shell,
   .product-page {
-    padding: 20px 20px 64px;
+    padding: 14px 16px 56px;
   }
 
   .storefront-shell .catalog-toolbar {
-    padding: 24px 20px;
-    border-radius: 24px;
+    padding: 14px 16px;
+    border-radius: 20px;
   }
 
   .product-family-grid {
