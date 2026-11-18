@@ -160,7 +160,7 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
               defaultValue={data.query}
               name="q"
               type="search"
-              placeholder="Search SKU, thread or size"
+              placeholder="Search SKU or size"
             />
             <button className="button button-marketing" type="submit">
               Search
