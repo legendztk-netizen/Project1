@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" width="640" height="640" fill="none">
+  <rect x="174" y="88" width="292" height="292" rx="74" fill="#0A1317" />
+  <path
+    d="M 329 179 A 56 56 0 1 0 329 291"
+    stroke="#FFFFFF"
+    stroke-width="38"
+    stroke-linecap="round"
+  />
+  <line
+    x1="389"
+    y1="162"
+    x2="389"
+    y2="308"
+    stroke="#0064E0"
+    stroke-width="38"
+    stroke-linecap="round"
+  />
+  <rect x="293" y="217" width="78" height="36" rx="11" fill="#E87A1E" />
+  <text
+    x="320"
+    y="500"
+    text-anchor="middle"
+    font-family="Inter, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif"
+    font-size="96"
+    font-weight="700"
+    letter-spacing="-2.5"
+  >
+    <tspan fill="#0A1317">custom</tspan><tspan fill="#0064E0">hose</tspan><tspan fill="#0A1317">co</tspan>
+  </text>
+</svg>

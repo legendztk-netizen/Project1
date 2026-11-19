@@ -1,27 +1,32 @@
+/* Measurement Guide & Storefront Legal Policies: Meta Design System. */
 .measurement-guide-page {
   width: min(1240px, calc(100% - 64px));
   margin: 0 auto;
-  padding: 24px 0 72px;
+  padding: 28px 0 80px;
 }
 
 .measurement-guide-heading {
-  padding: 28px 0 34px;
-  border-bottom: 1px solid var(--line);
+  padding: 36px;
+  background: #f1f4f7;
+  border: 1px solid #dee3e9;
+  border-radius: 32px;
 }
 
 .measurement-guide-heading h1 {
   max-width: 820px;
-  margin: 7px 0 12px;
-  font-size: 2.25rem;
+  margin: 8px 0 12px;
+  color: #0a1317;
+  font-size: clamp(1.9rem, 3.4vw, 2.75rem);
+  font-weight: 500;
   line-height: 1.15;
-  letter-spacing: 0;
 }
 
 .measurement-guide-heading > p {
-  max-width: 800px;
+  max-width: 780px;
   margin: 0;
-  color: var(--muted);
-  line-height: 1.65;
+  color: #4b4c4f;
+  font-size: 16px;
+  line-height: 1.5;
 }
 
 .measurement-guide-heading nav {
@@ -33,26 +38,32 @@
 
 .measurement-guide-heading nav a {
   display: inline-flex;
-  min-height: 36px;
+  min-height: 38px;
   align-items: center;
-  padding: 0 12px;
-  color: var(--ink);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  font-size: 0.78rem;
-  font-weight: 750;
+  padding: 0 16px;
+  color: #1c1e21;
+  background: #ffffff;
+  border: 1px solid #ced0d4;
+  border-radius: 100px;
+  font-size: 13px;
+  font-weight: 700;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
 }
 
 .measurement-guide-heading nav a:hover {
-  border-color: var(--accent);
+  border-color: #0a1317;
+  background: #0a1317;
+  color: #ffffff;
 }
 
 .endpoint-reference-section,
 .measurement-method-section,
 .clocking-guide {
-  padding-top: 44px;
-  scroll-margin-top: 18px;
+  padding-top: 48px;
+  scroll-margin-top: 84px;
 }
 
 .measurement-section-heading {
@@ -64,20 +75,22 @@
 
 .measurement-section-heading > svg {
   flex: 0 0 auto;
-  margin-top: 3px;
-  color: var(--accent);
+  margin-top: 4px;
+  color: #0a1317;
 }
 
 .measurement-section-heading h2 {
-  margin: 3px 0 0;
-  font-size: 1.4rem;
-  letter-spacing: 0;
+  margin: 4px 0 0;
+  color: #0a1317;
+  font-size: 24px;
+  font-weight: 500;
 }
 
 .endpoint-reference-table {
-  background: var(--surface);
-  border-top: 2px solid var(--ink);
-  border-bottom: 1px solid var(--line);
+  background: #ffffff;
+  border: 1px solid #dee3e9;
+  border-radius: 24px;
+  overflow: hidden;
 }
 
 .endpoint-reference-row {
@@ -86,9 +99,9 @@
   min-height: 52px;
   align-items: center;
   gap: 24px;
-  padding: 11px 16px;
-  border-bottom: 1px solid var(--line);
-  font-size: 0.86rem;
+  padding: 12px 20px;
+  border-bottom: 1px solid #dee3e9;
+  font-size: 14px;
 }
 
 .endpoint-reference-row:last-child {
@@ -96,38 +109,40 @@
 }
 
 .endpoint-reference-row.header {
-  min-height: 42px;
-  color: var(--muted);
-  background: #f0f3f4;
-  font-size: 0.72rem;
-  font-weight: 750;
+  min-height: 44px;
+  color: #5d6c7b;
+  background: #f1f4f7;
+  font-size: 12px;
+  font-weight: 700;
   text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .endpoint-reference-row > span:last-child {
-  color: #53616b;
+  color: #4b4c4f;
   line-height: 1.5;
 }
 
 .measurement-method-list {
   display: grid;
-  gap: 18px;
+  gap: 20px;
 }
 
 .measurement-method {
   overflow: hidden;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  scroll-margin-top: 18px;
+  background: #ffffff;
+  border: 1px solid #dee3e9;
+  border-radius: 24px;
+  scroll-margin-top: 84px;
 }
 
 .measurement-method > header {
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr);
+  grid-template-columns: 56px minmax(0, 1fr);
+  align-items: center;
   gap: 16px;
-  padding: 16px 18px;
-  border-bottom: 1px solid var(--line);
+  padding: 20px 24px;
+  border-bottom: 1px solid #dee3e9;
 }
 
 .measurement-method > header > strong {
@@ -135,23 +150,25 @@
   width: 52px;
   height: 36px;
   place-items: center;
-  color: #fff;
-  background: var(--ink);
-  border-left: 4px solid var(--accent);
-  border-radius: 3px;
-  font-size: 0.84rem;
+  color: #ffffff;
+  background: #0a1317;
+  border-left: 0;
+  border-radius: 100px;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .measurement-method h3 {
   margin: 0 0 4px;
-  font-size: 1rem;
-  letter-spacing: 0;
+  color: #0a1317;
+  font-size: 18px;
+  font-weight: 700;
 }
 
 .measurement-method header p {
   margin: 0;
-  color: var(--muted);
-  font-size: 0.8rem;
+  color: #5d6c7b;
+  font-size: 14px;
   line-height: 1.5;
 }
 
@@ -163,7 +180,7 @@
   position: relative;
   width: 100%;
   min-width: 0;
-  background: #fff;
+  background: #ffffff;
 }
 
 .measurement-method-canvas img,
@@ -181,18 +198,18 @@
 
 .measurement-method-canvas svg {
   overflow: visible;
-  color: #17222b;
+  color: #0a1317;
   pointer-events: none;
 }
 
 .measurement-centerline {
-  stroke: #1769aa;
+  stroke: #0064e0;
   stroke-width: 5;
   stroke-dasharray: 14 10;
 }
 
 .measurement-sealing-face {
-  stroke: #c66a15;
+  stroke: #f2a918;
   stroke-width: 6;
 }
 
@@ -203,21 +220,21 @@
 }
 
 .measurement-endpoint {
-  fill: #d12c34;
-  stroke: #fff;
+  fill: #e41e3f;
+  stroke: #ffffff;
   stroke-width: 4;
 }
 
 .measurement-end-label,
 .measurement-length-label {
   paint-order: stroke;
-  fill: #17222b;
-  stroke: #fff;
+  fill: #0a1317;
+  stroke: #ffffff;
   stroke-linejoin: round;
   stroke-width: 8;
   font-family: inherit;
   font-size: 32px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0;
 }
 
@@ -229,11 +246,11 @@
   display: flex;
   flex-wrap: wrap;
   gap: 18px;
-  padding: 10px 16px;
-  color: var(--muted);
-  background: #f4f6f7;
-  border-top: 1px solid var(--line);
-  font-size: 0.72rem;
+  padding: 12px 20px;
+  color: #5d6c7b;
+  background: #f1f4f7;
+  border-top: 1px solid #dee3e9;
+  font-size: 12px;
 }
 
 .measurement-legend-item {
@@ -252,12 +269,12 @@
 .measurement-legend-item.endpoint::before {
   width: 8px;
   height: 8px;
-  background: #d12c34;
+  background: #e41e3f;
   border-radius: 50%;
 }
 
 .measurement-legend-item.centerline::before {
-  color: #1769aa;
+  color: #0064e0;
   background: repeating-linear-gradient(
     90deg,
     currentColor 0 5px,
@@ -266,13 +283,13 @@
 }
 
 .measurement-legend-item.sealing::before {
-  color: #c66a15;
+  color: #f2a918;
 }
 
 .clocking-guide {
-  margin-top: 26px;
-  padding-bottom: 2px;
-  border-top: 1px solid var(--line);
+  margin-top: 32px;
+  padding-bottom: 4px;
+  border-top: 1px solid #dee3e9;
 }
 
 .clocking-guide-layout {
@@ -284,13 +301,15 @@
 
 .clocking-interactive {
   min-width: 0;
+  border-radius: 24px;
+  overflow: hidden;
+  border: 1px solid #dee3e9;
 }
 
 .clocking-controls {
-  padding: 16px;
-  background: #f4f6f7;
-  border: 1px solid var(--line);
-  border-top: 0;
+  padding: 18px 20px;
+  background: #f1f4f7;
+  border-top: 1px solid #dee3e9;
 }
 
 .clocking-control-heading {
@@ -301,21 +320,21 @@
 }
 
 .clocking-control-heading label {
-  color: var(--ink);
-  font-size: 0.9rem;
-  font-weight: 750;
+  color: #0a1317;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .clocking-control-heading p {
-  margin: 3px 0 0;
-  color: var(--muted);
-  font-size: 0.74rem;
+  margin: 4px 0 0;
+  color: #5d6c7b;
+  font-size: 12px;
 }
 
 .clocking-control-heading output {
-  color: var(--ink);
-  font-size: 1.2rem;
-  font-weight: 800;
+  color: #0a1317;
+  font-size: 20px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
@@ -329,12 +348,12 @@
 
 .clocking-input-row input[type="number"] {
   width: 100%;
-  min-height: 40px;
-  padding: 6px 8px;
-  color: var(--ink);
-  background: #fff;
-  border: 1px solid #9da8b2;
-  border-radius: 4px;
+  min-height: 44px;
+  padding: 6px 10px;
+  color: #1c1e21;
+  background: #ffffff;
+  border: 1px solid #ced0d4;
+  border-radius: 8px;
   font: inherit;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -342,7 +361,7 @@
 
 .clocking-input-row input[type="range"] {
   width: 100%;
-  accent-color: var(--accent);
+  accent-color: #0064e0;
 }
 
 .clocking-presets {
@@ -354,24 +373,24 @@
 
 .clocking-presets button {
   min-width: 0;
-  min-height: 34px;
-  padding: 0 5px;
-  color: var(--ink);
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 4px;
+  min-height: 36px;
+  padding: 0 6px;
+  color: #1c1e21;
+  background: #ffffff;
+  border: 1px solid #ced0d4;
+  border-radius: 100px;
   font: inherit;
-  font-size: 0.7rem;
-  font-weight: 750;
+  font-size: 12px;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
 }
 
 .clocking-presets button:hover,
 .clocking-presets button[aria-pressed="true"] {
-  color: #fff;
-  background: var(--ink);
-  border-color: var(--ink);
+  color: #ffffff;
+  background: #0a1317;
+  border-color: #0a1317;
 }
 
 .clocking-guide ol {
@@ -384,24 +403,25 @@
 
 .clocking-guide-layout > div > p {
   margin: 20px 0;
-  color: var(--muted);
-  line-height: 1.6;
+  color: #5d6c7b;
+  line-height: 1.55;
 }
 
 .measurement-manual-review {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 14px;
-  background: #fff7e9;
-  border-left: 4px solid #d78a18;
-  font-size: 0.82rem;
+  padding: 16px;
+  background: #fef8e7;
+  border: 1px solid #f5dfa0;
+  border-radius: 16px;
+  font-size: 14px;
   line-height: 1.5;
 }
 
 .measurement-manual-review svg {
   flex: 0 0 auto;
-  color: #9b5c00;
+  color: #b77700;
 }
 
 @media (max-width: 760px) {
@@ -411,7 +431,8 @@
   }
 
   .measurement-guide-heading {
-    padding-top: 18px;
+    padding: 24px 20px;
+    border-radius: 24px;
   }
 
   .measurement-guide-heading h1 {
@@ -429,7 +450,7 @@
 
   .measurement-method > header {
     grid-template-columns: 52px minmax(0, 1fr);
-    padding: 14px;
+    padding: 16px;
   }
 
   .measurement-method-canvas {
@@ -456,29 +477,35 @@
 
 .policy-section {
   max-width: 820px;
-  padding: 26px 0 4px;
+  margin-top: 24px;
+  padding: 28px;
+  background: #ffffff;
+  border: 1px solid #dee3e9;
+  border-radius: 24px;
 }
 
 .policy-section h2 {
-  margin: 0 0 10px;
-  font-size: 1.25rem;
+  margin: 0 0 12px;
+  color: #0a1317;
+  font-size: 20px;
+  font-weight: 500;
 }
 
 .policy-section ul {
   margin: 0;
   padding-left: 20px;
-  color: var(--ink);
+  color: #1c1e21;
   line-height: 1.65;
 }
 
 .policy-section p {
   margin: 0;
-  color: var(--ink);
+  color: #1c1e21;
   line-height: 1.65;
 }
 
 .policy-section a {
-  color: var(--steel);
+  color: #0064e0;
   font-weight: 700;
   overflow-wrap: anywhere;
 }

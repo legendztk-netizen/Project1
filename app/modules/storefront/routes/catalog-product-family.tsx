@@ -209,9 +209,10 @@ export default function CatalogProductFamily({
     selected,
     selectionRequested: loaderData.selectionRequested,
   });
+
   return (
     <div className="storefront-shell" data-surface="storefront">
-      <StorefrontHeader />
+      <StorefrontHeader floating />
       <main className="product-page">
         <Link className="product-back-link" to={loaderData.backLink.href}>
           <ArrowLeft size={17} /> {loaderData.backLink.label}
@@ -219,7 +220,9 @@ export default function CatalogProductFamily({
 
         <section className="product-overview">
           <div className="product-gallery">
-            <CatalogMedia item={selected} />
+            <div className="product-hero-stage">
+              <CatalogMedia item={selected} />
+            </div>
           </div>
           <div className="product-summary">
             <span className="eyebrow">

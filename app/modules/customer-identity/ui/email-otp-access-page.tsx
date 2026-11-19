@@ -119,6 +119,7 @@ export function EmailOtpAccessPage(input: {
                   defaultValue={input.actionData?.email ?? ""}
                   id="customer-email"
                   inputMode="email"
+                  key="password-email"
                   name="email"
                   placeholder="you@company.com"
                   required
@@ -128,6 +129,7 @@ export function EmailOtpAccessPage(input: {
                 <input
                   autoComplete="current-password"
                   id="customer-password"
+                  key="password-secret"
                   name="password"
                   required
                   type="password"
@@ -136,17 +138,20 @@ export function EmailOtpAccessPage(input: {
             ) : verify ? (
               <>
                 <input
+                  key="verify-challenge"
                   name="challengeId"
                   type="hidden"
                   value={input.actionData?.challengeId ?? ""}
                 />
                 <input
+                  key="verify-email"
                   name="email"
                   type="hidden"
                   value={input.actionData?.email ?? ""}
                 />
                 {input.actionData?.registrationTransactionId ? (
                   <input
+                    key="verify-reg-tx"
                     name="registrationTransactionId"
                     type="hidden"
                     value={input.actionData.registrationTransactionId}
@@ -158,6 +163,7 @@ export function EmailOtpAccessPage(input: {
                   autoFocus
                   id="otp-code"
                   inputMode="numeric"
+                  key="verify-code"
                   maxLength={6}
                   name="code"
                   pattern="[0-9]{6}"
@@ -174,6 +180,7 @@ export function EmailOtpAccessPage(input: {
                   defaultValue={input.actionData?.email ?? ""}
                   id="customer-email"
                   inputMode="email"
+                  key="request-email"
                   name="email"
                   placeholder="you@company.com"
                   required

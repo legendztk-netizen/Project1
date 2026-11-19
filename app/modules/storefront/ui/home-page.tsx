@@ -159,7 +159,7 @@ function useScrollReveal() {
           }
         }
       },
-      { rootMargin: "0px 0px -8% 0px", threshold: 0.12 },
+      { rootMargin: "160px 0px 160px 0px", threshold: 0.01 },
     );
     targets.forEach((target) => observer.observe(target));
     return () => {

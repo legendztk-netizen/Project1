@@ -12,6 +12,7 @@ import type { Route } from "./+types/root";
 import { createCustomerIdentityService } from "./modules/customer-identity/application/customer-identity-service";
 import { createD1MessageCenter } from "./modules/message-center/infrastructure/d1-message-center";
 import "./styles/app.css";
+import "./styles/storefront-meta.css";
 import { cloudflareContext } from "#workers/context";
 
 export interface RootLoaderData {
@@ -50,6 +51,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="icon" href="/favicon.ico" sizes="32x32 48x48" />
+        <link
+          rel="icon"
+          type="image/svg+xml"
+          href="/images/brand/customhoseco-mark.svg"
+        />
+        <link
+          rel="apple-touch-icon"
+          href="/images/brand/customhoseco-mark.png"
+        />
         <Meta />
         <Links />
       </head>
