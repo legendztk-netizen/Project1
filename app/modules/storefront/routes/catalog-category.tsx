@@ -2,7 +2,11 @@ import { storefrontCatalogCache } from "../../catalog/infrastructure/public-cata
 import type { Route } from "./+types/catalog-category";
 import { createD1PublicCatalogRepository } from "../../catalog/infrastructure/d1-public-catalog-repository";
 import { requireCatalogFamilyId } from "../domain/catalog-route";
-import { paginateCatalog } from "../domain/catalog-pagination";
+import {
+  hoseEndInterfaceFilters,
+  paginateCatalog,
+  resolveHoseEndInterfaceFilter,
+} from "../domain/catalog-pagination";
 import { catalogCategorySeo, seoMeta } from "../domain/catalog-seo";
 import { CatalogBrowser } from "../ui/catalog-browser";
 import { cloudflareContext } from "#workers/context";
@@ -22,11 +26,38 @@ export async function loader({ context, params, request }: Route.LoaderArgs) {
     catalog.browse({ category: activeCategory }),
   ]);
   // Summaries stay cached whole; only the requested page is sent to the browser.
-  const { items, pagination } = paginateCatalog(result, searchParams);
+  const presentInterfaceGroups = new Set(
+    category.families
+      .map((family) => family.interfaceGroup)
+      .filter((group): group is string => Boolean(group)),
+  );
+  const interfaceFilters =
+    activeCategory === "hose-ends"
+      ? hoseEndInterfaceFilters.filter((option) =>
+          presentInterfaceGroups.has(option.interfaceGroup),
+        )
+      : [];
+  const requestedInterface =
+    activeCategory === "hose-ends"
+      ? resolveHoseEndInterfaceFilter(searchParams.get("interface"))
+      : null;
+  const activeInterface =
+    requestedInterface &&
+    interfaceFilters.some((option) => option.id === requestedInterface.id)
+      ? requestedInterface
+      : null;
+  const filteredResult = activeInterface
+    ? result.filter(
+        (family) => family.interfaceGroup === activeInterface.interfaceGroup,
+      )
+    : result;
+  const { items, pagination } = paginateCatalog(filteredResult, searchParams);
   return {
     activeCategory,
+    activeInterface: activeInterface?.id ?? null,
     appName: env.PUBLIC_APP_NAME,
     families: items,
+    interfaceFilters,
     pagination,
     query,
     seo: catalogCategorySeo(

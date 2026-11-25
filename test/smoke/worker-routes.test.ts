@@ -5771,6 +5771,7 @@ describe("Cloudflare Worker route surfaces", () => {
     expect(unselectedHoseEnd).toContain("Choose a size to continue.");
     expect(unselectedHoseEnd).not.toContain('data-sku="JIC_F_SW_04_04"');
     expect(unselectedHoseEnd).not.toContain("Technical specifications");
+    expect(unselectedHoseEnd).toContain("Size &amp; Hose Compatibility Chart");
     expect(unselectedHoseEnd).toMatch(/product-quote-command[^>]*disabled/);
 
     const unavailable = await (
@@ -5837,6 +5838,10 @@ describe("Cloudflare Worker route surfaces", () => {
     );
     expect(unselectedAdapter).not.toContain("2. Male NPTF End");
     expect(unselectedAdapter).not.toContain("Size / connection variant");
+    expect(unselectedAdapter).toContain(
+      "2404 Straight Male JIC 37° to Male NPTF Adapter Size &amp; Thread Chart",
+    );
+    expect(unselectedAdapter).not.toContain('class="is-selected"');
     expect(unselectedAdapter).toMatch(/product-quote-command[^>]*disabled/);
 
     const selectedAdapter = await (
@@ -5853,13 +5858,15 @@ describe("Cloudflare Worker route surfaces", () => {
     );
     expect(selectedAdapter).not.toContain('data-end-2-dash="-16"');
     expect(selectedAdapter).toContain("Technical specifications");
-    expect(selectedAdapter).toContain("Dash to thread reference");
     expect(selectedAdapter).toContain(
-      '<td class="is-selected">7/16-20 UNF</td>',
+      "2404 Straight Male JIC 37° to Male NPTF Adapter Size &amp; Thread Chart",
     );
+    expect(selectedAdapter).not.toContain("Dash to thread reference");
     expect(selectedAdapter).toContain(
-      '<td class="is-selected">3/8-18 NPTF</td>',
+      '<tr class="is-selected" data-spec-row-sku="ADP_ST_JIC_M_04_NPT_M_06">',
     );
+    expect(selectedAdapter).toContain("7/16-20 UNF");
+    expect(selectedAdapter).toContain("3/8-18 NPTF");
     expect(selectedAdapter).not.toContain("Threads per");
 
     const inheritedSeriesImage = await (

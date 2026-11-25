@@ -6,6 +6,7 @@ import {
   catalogReturnLink,
   catalogPageWindow,
   paginateCatalog,
+  resolveHoseEndInterfaceFilter,
 } from "../app/modules/storefront/domain/catalog-pagination";
 
 const families = Array.from({ length: 116 }, (_, index) => index + 1);
@@ -63,6 +64,21 @@ describe("catalog pagination", () => {
     expect(catalogPageHref("/catalog", "JIC 37", 3, 20)).toBe(
       "/catalog?q=JIC+37&page=3&perPage=20",
     );
+    expect(
+      catalogPageHref("/catalog/hose-ends", "-8", 2, 10, "code-61-62"),
+    ).toBe("/catalog/hose-ends?interface=code-61-62&q=-8&page=2");
+    // Interface filter applies only to /catalog/hose-ends and ignores unknown ids.
+    expect(catalogPageHref("/catalog/adapters", "", 1, 10, "jic")).toBe(
+      "/catalog/adapters",
+    );
+    expect(catalogPageHref("/catalog/hose-ends", "", 1, 10, "unknown")).toBe(
+      "/catalog/hose-ends",
+    );
+    expect(resolveHoseEndInterfaceFilter("ORFS")).toEqual({
+      id: "orfs",
+      interfaceGroup: "ORFS",
+      label: "ORFS",
+    });
   });
 
   it("returns a product page to the list page it was opened from", () => {
@@ -79,6 +95,12 @@ describe("catalog pagination", () => {
     expect(catalogReturnLink("/catalog?q=JIC&page=3", "hose-ends")).toEqual({
       href: "/catalog?q=JIC&page=3",
       label: "Back to all products",
+    });
+    expect(
+      catalogReturnLink("/catalog/hose-ends?interface=jic&page=2", "hose-ends"),
+    ).toEqual({
+      href: "/catalog/hose-ends?interface=jic&page=2",
+      label: "Back to hose ends",
     });
     // The first page of its own category needs no parameter.
     expect(catalogFamilyHref("adapters", "a1", "/catalog/adapters")).toBe(
