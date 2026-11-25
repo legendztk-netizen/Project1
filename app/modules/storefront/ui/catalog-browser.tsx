@@ -14,6 +14,7 @@ import {
   defaultCatalogPageSize,
   type CatalogPageSize,
   type CatalogPagination,
+  type HoseEndInterfaceFilter,
 } from "../domain/catalog-pagination";
 import { CatalogMedia } from "./catalog-media";
 import { StorefrontFooter } from "./storefront-footer";
@@ -22,9 +23,11 @@ import "../styles/catalog.css";
 
 export interface CatalogBrowserData {
   activeCategory: CatalogFamilyId | null;
+  activeInterface?: string | null;
   appName: string;
   /** The families on the current page only. */
   families: PublicCatalogFamilySummary[];
+  interfaceFilters?: readonly HoseEndInterfaceFilter[];
   pagination: CatalogPagination;
   query: string;
 }
@@ -49,17 +52,19 @@ function price(family: PublicCatalogFamilySummary) {
 }
 
 function CatalogPager({
+  interfaceFilter,
   path,
   pagination,
   query,
 }: {
+  interfaceFilter?: string | null;
   path: string;
   pagination: CatalogPagination;
   query: string;
 }) {
   const { page, pageCount, perPage, total } = pagination;
   const href = (target: number, size: CatalogPageSize = perPage) =>
-    catalogPageHref(path, query, target, size);
+    catalogPageHref(path, query, target, size, interfaceFilter);
   return (
     <nav aria-label="Catalog pages" className="catalog-pager">
       {pageCount > 1 ? (
@@ -119,12 +124,18 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
   const listPath = data.activeCategory
     ? `/catalog/${data.activeCategory}`
     : "/catalog";
+  const interfaceFilters = data.interfaceFilters ?? [];
+  const activeInterfaceOption = data.activeInterface
+    ? (interfaceFilters.find((option) => option.id === data.activeInterface) ??
+      null)
+    : null;
   // Product pages link back to this exact list page.
   const listHref = catalogPageHref(
     listPath,
     data.query,
     data.pagination.page,
     data.pagination.perPage,
+    activeInterfaceOption?.id,
   );
   const activeLabel = data.activeCategory
     ? launchCatalogFamilies.find((family) => family.id === data.activeCategory)
@@ -144,6 +155,13 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
             <p className="catalog-toolbar-subtitle">{subtitle}</p>
           </div>
           <Form className="catalog-search" role="search" method="get">
+            {activeInterfaceOption ? (
+              <input
+                name="interface"
+                type="hidden"
+                value={activeInterfaceOption.id}
+              />
+            ) : null}
             {data.pagination.perPage !== defaultCatalogPageSize ? (
               <input
                 name="perPage"
@@ -195,13 +213,58 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
             ))}
         </nav>
 
+        {data.activeCategory === "hose-ends" && interfaceFilters.length > 0 ? (
+          <nav
+            aria-label="Filter hose ends by interface"
+            className="catalog-interface-pills"
+          >
+            <span className="catalog-interface-label">Interface:</span>
+            <Link
+              aria-current={!activeInterfaceOption ? "true" : undefined}
+              className={!activeInterfaceOption ? "active" : undefined}
+              to={catalogPageHref(
+                listPath,
+                data.query,
+                1,
+                data.pagination.perPage,
+                null,
+              )}
+            >
+              All
+            </Link>
+            {interfaceFilters.map((option) => {
+              const isCurrent = activeInterfaceOption?.id === option.id;
+              return (
+                <Link
+                  aria-current={isCurrent ? "true" : undefined}
+                  className={isCurrent ? "active" : undefined}
+                  key={option.id}
+                  to={catalogPageHref(
+                    listPath,
+                    data.query,
+                    1,
+                    data.pagination.perPage,
+                    isCurrent ? null : option.id,
+                  )}
+                >
+                  {option.label}
+                </Link>
+              );
+            })}
+          </nav>
+        ) : null}
+
         <section className="catalog-layout" aria-label="Catalog workspace">
           <div className="catalog-content">
             <div className="section-heading">
               <h2>
                 {data.query
-                  ? `Results for “${data.query}”`
-                  : "Browse product families"}
+                  ? activeInterfaceOption
+                    ? `${activeInterfaceOption.label} results for “${data.query}”`
+                    : `Results for “${data.query}”`
+                  : activeInterfaceOption
+                    ? `${activeInterfaceOption.label} hose end families`
+                    : "Browse product families"}
               </h2>
               <span className="catalog-result-count">
                 {data.pagination.total}{" "}
@@ -270,6 +333,7 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
                   })}
                 </div>
                 <CatalogPager
+                  interfaceFilter={activeInterfaceOption?.id}
                   path={listPath}
                   pagination={data.pagination}
                   query={data.query}
@@ -283,9 +347,15 @@ export function CatalogBrowser({ data }: { data: CatalogBrowserData }) {
                 <Link
                   className="button button-secondary"
                   to={
-                    data.activeCategory
-                      ? `/catalog/${data.activeCategory}`
-                      : "/catalog"
+                    data.query && activeInterfaceOption
+                      ? catalogPageHref(
+                          listPath,
+                          "",
+                          1,
+                          data.pagination.perPage,
+                          activeInterfaceOption.id,
+                        )
+                      : listPath
                   }
                 >
                   Clear search

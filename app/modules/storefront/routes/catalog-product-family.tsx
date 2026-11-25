@@ -14,8 +14,15 @@ import {
 import { catalogReturnLink } from "../domain/catalog-pagination";
 import { requireCatalogFamilyId } from "../domain/catalog-route";
 import { catalogFamilySeo, seoMeta } from "../domain/catalog-seo";
-import { AdapterThreadReference } from "../ui/adapter-thread-reference";
+import {
+  AdapterSeriesReference,
+  hasAdapterSeriesReference,
+} from "../ui/adapter-series-reference";
 import { CatalogMedia } from "../ui/catalog-media";
+import {
+  HoseEndSeriesReference,
+  selectHoseEndSiblings,
+} from "../ui/hose-end-series-reference";
 import {
   buildHoseSpecTableRows,
   HoseSeriesReference,
@@ -178,11 +185,28 @@ export async function loader({ context, params, request }: Route.LoaderArgs) {
           )
           .catch(() => ({}))
       : {};
+  const publishedAdapterKeys =
+    activeCategory === "adapters" &&
+    hasAdapterSeriesReference(result.family.familyKey)
+      ? await catalog
+          .browseSummaries({ category: "adapters" })
+          .then((summaries) => summaries.map((item) => item.familyKey))
+          .catch(() => null)
+      : null;
+  const hoseEndSiblings =
+    activeCategory === "hose-ends"
+      ? await catalog
+          .browseSummaries({ category: "hose-ends" })
+          .then((summaries) => selectHoseEndSiblings(result.family, summaries))
+          .catch(() => [])
+      : [];
   return {
     ...result,
     appName: env.PUBLIC_APP_NAME,
     assemblyHoseSkus,
     comparisonRows,
+    hoseEndSiblings,
+    publishedAdapterKeys,
     backLink: catalogReturnLink(searchParams.get("back"), activeCategory),
     selectionRequested: Boolean(sku),
     seo: catalogFamilySeo(
@@ -254,9 +278,6 @@ export default function CatalogProductFamily({
                   </div>
                 ))}
               </dl>
-              {selected.productType === "adapter" ? (
-                <AdapterThreadReference family={family} selected={selected} />
-              ) : null}
             </div>
             <aside className="product-policy-band">
               <div>
@@ -301,6 +322,20 @@ export default function CatalogProductFamily({
           assemblyHoseSkus={loaderData.assemblyHoseSkus}
           comparisonRows={loaderData.comparisonRows}
           family={family}
+          selected={selected}
+          selectionComplete={variantSelection.selectionComplete}
+          selectSku={variantSelection.selectSku}
+        />
+        <AdapterSeriesReference
+          family={family}
+          publishedAdapterKeys={loaderData.publishedAdapterKeys}
+          selected={selected}
+          selectionComplete={variantSelection.selectionComplete}
+          selectSku={variantSelection.selectSku}
+        />
+        <HoseEndSeriesReference
+          family={family}
+          hoseEndSiblings={loaderData.hoseEndSiblings}
           selected={selected}
           selectionComplete={variantSelection.selectionComplete}
           selectSku={variantSelection.selectSku}

@@ -14,6 +14,31 @@ export interface CatalogPagination {
   total: number;
 }
 
+export interface HoseEndInterfaceFilter {
+  readonly id: string;
+  readonly interfaceGroup: string;
+  readonly label: string;
+}
+
+export const hoseEndInterfaceFilters: readonly HoseEndInterfaceFilter[] = [
+  { id: "jic", interfaceGroup: "JIC 37°", label: "JIC 37°" },
+  { id: "nptf", interfaceGroup: "NPT / NPTF", label: "NPTF" },
+  { id: "orfs", interfaceGroup: "ORFS", label: "ORFS" },
+  { id: "orb", interfaceGroup: "SAE ORB", label: "ORB" },
+  { id: "bspp", interfaceGroup: "BSPP / BSPT", label: "BSPP" },
+  { id: "code-61-62", interfaceGroup: "SAE Flange", label: "Code 61/62" },
+];
+
+export function resolveHoseEndInterfaceFilter(
+  value: string | null | undefined,
+): HoseEndInterfaceFilter | null {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return null;
+  return (
+    hoseEndInterfaceFilters.find((option) => option.id === normalized) ?? null
+  );
+}
+
 function positiveInteger(value: string | null) {
   return value && /^\d+$/.test(value) ? Number(value) : null;
 }
@@ -59,14 +84,19 @@ export function catalogPageWindow({
     );
 }
 
-/** A catalog list URL that keeps the search query; defaults are left out. */
+/** A catalog list URL that keeps the interface filter and search query; defaults are left out. */
 export function catalogPageHref(
   path: string,
   query: string,
   page: number,
   perPage: CatalogPageSize,
+  interfaceFilter?: string | null,
 ) {
   const params = new URLSearchParams();
+  const resolvedInterface = resolveHoseEndInterfaceFilter(interfaceFilter);
+  if (resolvedInterface && path === "/catalog/hose-ends") {
+    params.set("interface", resolvedInterface.id);
+  }
   if (query) params.set("q", query);
   if (page > 1) params.set("page", String(page));
   if (perPage !== defaultCatalogPageSize)
@@ -111,12 +141,18 @@ export function catalogReturnLink(
     : null;
   if (listCategory === undefined) return fallback;
   const { page, perPage } = catalogListRequest(url.searchParams);
+  const interfaceFilter =
+    listCategory === "hose-ends"
+      ? (resolveHoseEndInterfaceFilter(url.searchParams.get("interface"))?.id ??
+        null)
+      : null;
   return {
     href: catalogPageHref(
       listCategory ? `/catalog/${listCategory}` : "/catalog",
       url.searchParams.get("q")?.trim() ?? "",
       page,
       perPage,
+      interfaceFilter,
     ),
     label: `Back to ${listCategory ? listCategory.replaceAll("-", " ") : "all products"}`,
   };
